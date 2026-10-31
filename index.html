@@ -10013,6 +10013,7 @@ function restore(js) {
   S.profiles = o.profiles && o.profiles.length ? o.profiles : defaultProfiles();
   S.x = o.x || defaultX();
   migrate();
+  if (uiHooks.onChanged) uiHooks.onChanged();
   S.sel = new Set([...S.sel].filter(id => S.ents.some(e => e.id === id)));
   levelsState.LVGEN = (levelsState.LVGEN || 0) + 1;
   levelsState.LVU = null;
@@ -10094,6 +10095,7 @@ function changed() {
     structGuard(documentState.undoS[documentState.undoS.length - 1]);
     log(clash, true);
   }
+  if (uiHooks.onChanged) uiHooks.onChanged();
   documentState.docVer++;
   save();
   dirty();
@@ -10135,22 +10137,12 @@ function eraseIds(ids) {
   return set.size;
 }
 
-// ===== samples/sample-legacy.js =====
+// ===== samples/sample.js =====
 /**
- * samples/sample-legacy.js
+ * samples/sample.js
  *
- * The older demo project (also the fixture of the regression tests).
+ * The demo project (a two-storey house, samples/studio.js) and the default layer set.
  */
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -10174,306 +10166,10 @@ function defaultLayers() {
     ['Текст', '#c9ced6']
   ].map(([name, color]) => ({ name, color, on: true, lock: false }));
 }
-function sampleOld() {
-  S.layers = defaultLayers();
-  S.cur = 'Стены';
-  S.ents = [];
-  S.nextId = 1;
-  S.sel.clear();
-  S.wtypes = defaultWallTypes();
-  S.elec = defaultElec();
-  S.vent = defaultVent();
-  S.ceil = 2700;
-  S.curWt = 'wt_gb';
-  S.profiles = defaultProfiles();
-  S.x = defaultX();
-  const E = (layer, o) => {
-    o.id = S.nextId++;
-    o.layer = layer;
-    S.ents.push(o);
-    return o;
-  };
-  const W = (ax, ay, bx, by, fa) =>
-    E('Стены', {
-      type: 'wall',
-      a: P(ax, ay),
-      b: P(bx, by),
-      th: 200,
-      h: 2700,
-      z: 0,
-      wt: 'wt_gb',
-      fa: fa || { k: 'paint', ral: 'RAL 1013', col: '#e3d9c6' },
-      fb: { k: 'none', ral: '', col: '#d3d0c9' }
-    });
-  const w1 = W(-100, -100, 6100, -100),
-    w2 = W(6100, -100, 6100, 4300),
-    w3 = W(6100, 4300, -100, 4300, { k: 'paint', ral: 'RAL 7044', col: '#cac4b0' });
-  W(-100, 4300, -100, -100);
-  E('Двери', {
-    type: 'door',
-    host: w1.id,
-    t: 1290,
-    w: 866,
-    h: 2041,
-    sill: 0,
-    flip: false,
-    hand: false,
-    cfg: defDoorCfg()
-  });
-  E('Окна', { type: 'window', host: w3.id, t: 3100, w: 2000, h: 1500, sill: 900, cfg: defWinCfg(2000) });
-  E('Окна', { type: 'window', host: w2.id, t: 2300, w: 1200, h: 1500, sill: 900, cfg: defWinCfg(1200) });
-  E('Перекрытия', { type: 'slab', pts: [P(-200, -200), P(6200, -200), P(6200, 4400), P(-200, 4400)], th: 200, z: 0 });
-  const I = (asset, x, y, rot = 0, layer) => {
-    const a = ASSETS.get('b_' + asset);
-    return E(layer || (a ? a.cat : 'Мебель'), { type: 'inst', asset: 'b_' + asset, p: P(x, y), rot, z: 0 });
-  };
-  I('rug', 4700, 1750, 0);
-  I('sofa', 4700, 620, Math.PI);
-  I('tv', 4700, 3950, 0);
-  I('armchair', 3250, 1700, Math.PI / 2);
-  I('dtable', 1550, 2750, 0);
-  I('chair', 1150, 2180, Math.PI);
-  I('chair', 1950, 2180, Math.PI);
-  I('chair', 1150, 3320, 0);
-  I('chair', 1950, 3320, 0);
-  I('plant', 5700, 3800);
-  I('radiator', 3100, 4120, 0);
-  const DV = (kind, x, y, rot, x2 = {}) => {
-    const d = DEVK[kind];
-    return E(FAMS[d.f].cat, {
-      type: 'dev',
-      kind,
-      p: P(x, y),
-      rot,
-      z: d.mount === 'ceil' ? 2700 : d.z,
-      group: d.f === 'vterm' ? null : (x2.group ?? 2),
-      sys: d.f === 'vterm' ? x2.sys || 'П1' : null,
-      pw: d.pw || 0,
-      flow: x2.flow ?? (d.flow || 0),
-      size: x2.size || d.size || ''
-    });
-  };
-  const pan = DV('panel', 0, 600, Math.PI / 2, { group: null });
-  const sA = DV('sock2', 3200, 0, Math.PI),
-    sB = DV('sock1', 3900, 0, Math.PI),
-    sC = DV('sock1', 5600, 0, Math.PI),
-    sD = DV('sock1', 0, 2750, Math.PI / 2),
-    sTV = DV('sock2', 4300, 4200, 0);
-  const tv = DV('tv', 4650, 4200, 0, { group: 4 }),
-    net = DV('rj45', 4950, 4200, 0, { group: 4 });
-  const sw = DV('sw2', 1950, 0, Math.PI, { group: 1 });
-  const lp = DV('lpend', 1550, 2750, 0, { group: 1 });
-  const sp = [
-    [3900, 1100],
-    [5500, 1100],
-    [3900, 2900],
-    [5500, 2900]
-  ].map(([x, y]) => DV('lspot', x, y, 0, { group: 1 }));
-  const gc = n => defaultElec().groups.find(g => g.n === n).cable;
-  const WR = (pts, group, method, from, to) =>
-    E('Электрика', {
-      type: 'wire',
-      pts: pts.map(([x, y]) => P(x, y)),
-      group,
-      cable: gc(group),
-      method,
-      z: method === 'floor' ? 30 : method === 'ceil' ? 2600 : 2550,
-      from: from.id,
-      to: to.id
-    });
-  WR(
-    [
-      [0, 600],
-      [1950, 600],
-      [1950, 0]
-    ],
-    1,
-    'ceil',
-    pan,
-    sw
-  );
-  WR(
-    [
-      [1950, 0],
-      [1950, 1100],
-      [3900, 1100]
-    ],
-    1,
-    'ceil',
-    sw,
-    sp[0]
-  );
-  WR(
-    [
-      [3900, 1100],
-      [5500, 1100]
-    ],
-    1,
-    'ceil',
-    sp[0],
-    sp[1]
-  );
-  WR(
-    [
-      [3900, 1100],
-      [3900, 2900]
-    ],
-    1,
-    'ceil',
-    sp[0],
-    sp[2]
-  );
-  WR(
-    [
-      [3900, 2900],
-      [5500, 2900]
-    ],
-    1,
-    'ceil',
-    sp[2],
-    sp[3]
-  );
-  WR(
-    [
-      [1950, 0],
-      [1950, 2750],
-      [1550, 2750]
-    ],
-    1,
-    'ceil',
-    sw,
-    lp
-  );
-  WR(
-    [
-      [0, 600],
-      [150, 600],
-      [150, 150],
-      [3200, 150],
-      [3200, 0]
-    ],
-    2,
-    'floor',
-    pan,
-    sA
-  );
-  WR(
-    [
-      [3200, 0],
-      [3200, 150],
-      [3900, 150],
-      [3900, 0]
-    ],
-    2,
-    'floor',
-    sA,
-    sB
-  );
-  WR(
-    [
-      [3900, 0],
-      [3900, 150],
-      [5600, 150],
-      [5600, 0]
-    ],
-    2,
-    'floor',
-    sB,
-    sC
-  );
-  WR(
-    [
-      [5600, 0],
-      [5600, 150],
-      [5850, 150],
-      [5850, 4050],
-      [4300, 4050],
-      [4300, 4200]
-    ],
-    2,
-    'floor',
-    sC,
-    sTV
-  );
-  WR(
-    [
-      [0, 600],
-      [150, 600],
-      [150, 2750],
-      [0, 2750]
-    ],
-    2,
-    'floor',
-    pan,
-    sD
-  );
-  WR(
-    [
-      [0, 600],
-      [90, 700],
-      [90, 4110],
-      [4950, 4110],
-      [4950, 4200]
-    ],
-    4,
-    'floor',
-    pan,
-    net
-  );
-  WR(
-    [
-      [4950, 4200],
-      [4950, 4110],
-      [4650, 4110],
-      [4650, 4200]
-    ],
-    4,
-    'floor',
-    net,
-    tv
-  );
-  const d1 = DV('vdiff', 4700, 2300, 0, { sys: 'П1', flow: 90, size: '160' }),
-    g1 = DV('vgrille', 800, 3700, 0, { sys: 'В1', flow: 60, size: '300x150' });
-  E('Вентиляция', {
-    type: 'duct',
-    pts: [P(6000, 3500), P(4700, 3500), P(4700, 2300)],
-    shape: 'round',
-    d: 160,
-    w: 200,
-    hh: 100,
-    z: 2550,
-    sys: 'П1',
-    flow: 90,
-    mat: 'Оцинкованная сталь',
-    ins: 0,
-    from: null,
-    to: d1.id
-  });
-  E('Вентиляция', {
-    type: 'duct',
-    pts: [P(800, 3700), P(800, 4020), P(0, 4020)],
-    shape: 'rect',
-    d: 160,
-    w: 200,
-    hh: 100,
-    z: 2580,
-    sys: 'В1',
-    flow: 60,
-    mat: 'Оцинкованная сталь',
-    ins: 0,
-    from: g1.id,
-    to: null
-  });
-  E('Размеры', { type: 'dim', a: P(-200, -200), b: P(6200, -200), loc: P(3000, -900) });
-  E('Размеры', { type: 'dim', a: P(6200, -200), b: P(6200, 4400), loc: P(6900, 2100) });
-  E('Текст', { type: 'text', p: P(250, 1150), h: 220, s: 'Гостиная', rot: 0 });
-  E('Текст', { type: 'text', p: P(250, 870), h: 150, s: '25.20 м²', rot: 0 });
-  sampleV5(E);
-  documentState.undoS = [];
-  documentState.redoS = [];
-}
 function sample() {
-  if (typeof window !== 'undefined' && window.__legacySample) return sampleOld();
+  // the regression tests start from their own fixture project
+  if (typeof window !== 'undefined' && window.__legacySample && typeof window.__sampleFixture === 'function')
+    return window.__sampleFixture();
   S.layers = defaultLayers();
   S.cur = 'Стены';
   S.ents = [];
@@ -10495,314 +10191,6 @@ function sample() {
   sampleDuplex(E);
   documentState.undoS = [];
   documentState.redoS = [];
-}
-function sampleV5(E) {
-  S.x = defaultX();
-  for (const n of [
-    'Конструкции',
-    'Потолки',
-    'Переходные элементы',
-    'Водоснабжение',
-    'Канализация',
-    'Усиления',
-    'Аннотации'
-  ])
-    ensureLayer(n);
-  const W = (ax, ay, bx, by, wt) => {
-    const t = S.wtypes.find(x => x.id === wt);
-    return E('Стены', {
-      type: 'wall',
-      a: P(ax, ay),
-      b: P(bx, by),
-      th: computeType(t).total,
-      h: 2700,
-      z: 0,
-      wt,
-      fa: { k: 'tile', ral: '', col: '#d9dcd8' },
-      fb: { k: 'paint', ral: 'RAL 9016', col: '#f1f0ea' }
-    });
-  };
-  // bathroom on Knauf partitions
-  const b1 = W(-100, 2000, -2300, 2000, 'wt_c112w'),
-    b2 = W(-2300, 2000, -2300, -100, 'wt_c112w'),
-    b3 = W(-2300, -100, -100, -100, 'wt_c112w');
-  b1.fa = { k: 'paint', ral: 'RAL 9016', col: '#f1f0ea' };
-  b1.fb = { k: 'tile', ral: '', col: '#d9dcd8' };
-  b2.fb = { k: 'tile', ral: '', col: '#d9dcd8' };
-  b3.fa = { k: 'tile', ral: '', col: '#d9dcd8' };
-  E('Двери', {
-    type: 'door',
-    host: b1.id,
-    t: 1550,
-    w: 766,
-    h: 2041,
-    sill: 0,
-    flip: true,
-    hand: false,
-    cfg: defDoorCfg('hidden')
-  });
-  for (const e of S.ents)
-    if (e.type === 'door' && e.host === S.ents.find(w => w.type === 'wall').id) {
-      e.cfg.mode = 'entry';
-      applyDoorMode(e.cfg, 'entry');
-    }
-  const FX = (kind, x, y, rot, host, cfg) =>
-    E('Сантехника', {
-      type: 'fix',
-      kind,
-      p: P(x, y),
-      rot,
-      host: host ? host.id : null,
-      z: 0,
-      cfg: Object.assign(FIXK[kind].cfg(), cfg || {})
-    });
-  const rot = n => ang(n) + Math.PI / 2;
-  const wc = FX('wcinst', -2300 + computeType(typeOf(b2)).total / 2, 1450, rot(P(1, 0)), b2, { mount: 'wall' });
-  const sk = FX('sink', -900, -100 + computeType(typeOf(b3)).total / 2, rot(P(0, 1)), b3);
-  const sh = FX('shower', -1800, -100 + computeType(typeOf(b3)).total / 2, rot(P(0, 1)), b3, {
-    w: 900,
-    d: 900,
-    base: 'channel',
-    glass: 'fixed',
-    screed: 90
-  });
-  const mx = FX('mixhid', -2300 + computeType(typeOf(b2)).total / 2, 350, rot(P(1, 0)), b2, { trop: 'ceil' });
-  const rk = FX('riserK', -200, 1700, rot(P(-1, 0)), null);
-  const rw = FX('riserW', -200, 1250, rot(P(-1, 0)), null);
-  const PP = (sys, d, pts, z, slope) =>
-    E(PSYS[sys].kind === 'sewer' ? 'Канализация' : 'Водоснабжение', {
-      type: 'pipe',
-      sys,
-      mat: PMAT[PSYS[sys].kind][0],
-      d,
-      pts,
-      z,
-      slope: slope || 0,
-      ins: sys === 'gvs'
-    });
-  const port = (f, s) => portsOf(f).find(q => q.s === s);
-  const kr = port(rk, 'k').p,
-    kwc = port(wc, 'k').p,
-    ksh = port(sh, 'k').p,
-    ksk = port(sk, 'k').p;
-  PP('k', 110, [kwc, P(kwc.x + 250, kwc.y), P(kr.x, kwc.y), kr], port(wc, 'k').z + 60, 0.02);
-  PP(
-    'k',
-    50,
-    [ksh, P(ksh.x, ksh.y + 250), P(ksk.x - 150, ksh.y + 250), P(ksk.x - 150, ksk.y + 120), P(ksk.x, ksk.y + 120), ksk],
-    -20,
-    0.03
-  );
-  PP(
-    'k',
-    50,
-    [ksk, P(ksk.x, ksk.y + 300), P(kr.x - 160, ksk.y + 300), P(kr.x - 160, kr.y - 200), P(kr.x, kr.y - 200)],
-    port(sk, 'k').z - 200,
-    0.03
-  );
-  const hr = port(rw, 'hvs').p,
-    gr = port(rw, 'gvs').p;
-  PP(
-    'hvs',
-    20,
-    [
-      hr,
-      P(hr.x - 120, hr.y),
-      P(hr.x - 120, port(sk, 'hvs').p.y + 200),
-      P(port(sk, 'hvs').p.x, port(sk, 'hvs').p.y + 200),
-      port(sk, 'hvs').p
-    ],
-    300
-  );
-  PP(
-    'gvs',
-    20,
-    [
-      gr,
-      P(gr.x - 160, gr.y),
-      P(gr.x - 160, port(sk, 'gvs').p.y + 240),
-      P(port(sk, 'gvs').p.x, port(sk, 'gvs').p.y + 240),
-      port(sk, 'gvs').p
-    ],
-    340
-  );
-  PP(
-    'hvs',
-    20,
-    [
-      P(hr.x - 120, port(sk, 'hvs').p.y + 200),
-      P(port(mx, 'hvs').p.x + 200, port(sk, 'hvs').p.y + 200),
-      P(port(mx, 'hvs').p.x + 200, port(mx, 'hvs').p.y),
-      port(mx, 'hvs').p
-    ],
-    300
-  );
-  E('Усиления', { type: 'reinf', host: b3.id, kind: 'osb', th: 18, side: 1, t0: 1000, t1: 1800, z0: 1200, z1: 1900 });
-  E('Усиления', {
-    type: 'load',
-    host: b3.id,
-    t: 1400,
-    z: 1550,
-    side: 1,
-    kg: 25,
-    k: 'static',
-    dir: 'down',
-    angle: 0,
-    ecc: 150,
-    n: 4,
-    s: 300
-  });
-  E('Усиления', {
-    type: 'reinf',
-    host: b2.id,
-    kind: 'tube',
-    size: '40x40x2',
-    orient: 'v',
-    t: 1700,
-    z0: 0,
-    z1: 2700,
-    fix: 'slab',
-    side: 1
-  });
-  // structure
-  E('Конструкции', {
-    type: 'col',
-    p: P(6100, -100),
-    rot: 0,
-    shape: 'rect',
-    w: 400,
-    d: 400,
-    h: 2700,
-    z: 0,
-    mat: 'rc',
-    rebar: { n: 8, d: 16, cover: 25 }
-  });
-  E('Конструкции', {
-    type: 'beam',
-    a: P(-100, 2150),
-    b: P(6100, 2150),
-    w: 250,
-    h: 300,
-    zt: 2700,
-    mat: 'rc',
-    rebar: { n: 4, d: 16, cover: 25 }
-  });
-  // ceilings, trims, GKL body
-  E('Потолки', {
-    type: 'ceil',
-    kind: 'stretch',
-    pts: [P(0, 0), P(6000, 0), P(6000, 4200), P(0, 4200)],
-    z: 2650,
-    gap: 50,
-    sys: 'П112',
-    layers: 1,
-    sheet: 'ГКЛ',
-    stepB: 1000,
-    stepC: 500,
-    stepH: 900,
-    str: { mat: 'pvc', fin: 'mat', prof: 'shadow', col: '#f4f4f2' },
-    fin: { col: '#f1f0ea' }
-  });
-  E('Потолки', {
-    type: 'ceil',
-    kind: 'gkl',
-    pts: [P(-2200, 0), P(-200, 0), P(-200, 1900), P(-2200, 1900)],
-    z: 2500,
-    gap: 200,
-    sys: 'П112',
-    layers: 1,
-    sheet: 'ГКЛВ',
-    stepB: 1000,
-    stepC: 500,
-    stepH: 900,
-    str: { mat: 'pvc', fin: 'mat', prof: 'shadow', col: '#f4f4f2' },
-    fin: { col: '#f1f0ea' }
-  });
-  E('Переходные элементы', {
-    type: 'trim',
-    kind: 'hplinth',
-    prof: 'tr_hplinth',
-    zone: 'floor',
-    z: 0,
-    side: 'L',
-    closed: false,
-    color: '#c3c8ce',
-    pts: [P(1623, 0), P(5900, 0), P(5900, 200), P(6000, 200), P(6000, 4200), P(0, 4200), P(0, 0), P(757, 0)]
-  });
-  E('Переходные элементы', {
-    type: 'trim',
-    kind: 'shadowC',
-    prof: 'tr_shadowC',
-    zone: 'ceil',
-    z: 2650,
-    side: 'L',
-    closed: true,
-    color: '#24282d',
-    pts: [P(0, 0), P(6000, 0), P(6000, 4200), P(0, 4200)]
-  });
-  const fp = E('Конструкции', {
-    type: 'gbody',
-    name: 'Подвесной камин',
-    pts: [P(1200, 3750), P(2600, 3750), P(2600, 4200), P(1200, 4200)],
-    z0: 350,
-    z1: 1050,
-    mount: 'wall',
-    ly: 2,
-    sheet: 'ГКЛО',
-    step: 400,
-    top: true,
-    bot: true,
-    ops: [{ face: 0, c: 0.5, w: 900, z0: 500, z1: 850, depth: 300 }],
-    against: [2],
-    fin: { col: '#e9e6df' }
-  });
-  E('Аннотации', {
-    type: 'note',
-    target: fp.id,
-    a: P(1900, 3750),
-    p: P(2300, 3000),
-    text: 'Камин: био-топка 900, обшивка ГКЛО 2 слоя'
-  });
-  E('Аннотации', { type: 'sect', a: P(-2600, 900), b: P(6600, 900), flip: false, name: 'А' });
-  E('Аннотации', {
-    type: 'node',
-    c: P(-1800, 350),
-    r: 500,
-    tag: P(-1100, -900),
-    num: '1',
-    sheet: 'Д-3',
-    title: 'Лоток душевой'
-  });
-  E('Аннотации', {
-    type: 'sect',
-    kind: 'elev',
-    a: P(6000, 3500),
-    b: P(0, 3500),
-    flip: true,
-    name: 'Р1',
-    vw: { scale: 20, depth: 900, sheet: '', layers: {} }
-  });
-  const s2 = E('Электрика', {
-    type: 'dev',
-    kind: 'sock2',
-    p: P(6100, 100),
-    rot: 0,
-    z: 300,
-    group: 2,
-    sys: null,
-    pw: 1000,
-    flow: 0,
-    size: '',
-    host: null
-  });
-  for (const e of S.ents) if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
-  const pc = placeOnCol(P(5800, 150));
-  if (pc) {
-    s2.p = pc.p;
-    s2.rot = pc.rot;
-    s2.host = pc.host;
-  }
-  xMigrate();
 }
 
 // ===== view2d/viewport.js =====
@@ -11440,6 +10828,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -11958,23 +11347,13 @@ function placeOnWall(p, mount) {
     const pc = placeOnCol(p);
     if (pc) return pc;
   }
-  let best = null,
-    bd = Infinity;
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
-    const d = dist(segPt(w.a, w.b, p), p);
-    if (d < Math.max(w.th / 2 + 250, 30 / view.k) && d < bd) {
-      bd = d;
-      best = w;
-    }
-  }
-  if (!best) return { p, rot: mkDevice.rot || 0, host: null };
-  const wi = wallInfo(best);
-  const side = dot(sub(p, best.a), wi.n) >= 0 ? 1 : -1;
-  const t = clamp(dot(sub(p, best.a), wi.u), 0, wi.L);
-  const q = add(add(best.a, mul(wi.u, t)), mul(wi.n, (side * best.th) / 2));
-  const nOut = mul(wi.n, side);
-  return { p: q, rot: ang(nOut) + Math.PI / 2, host: best.id };
+  const f = nearestWallFace(p, Math.max(600, 30 / view.k));
+  if (!f) return { p, rot: mkDevice.rot || 0, host: null };
+  const best = f.w,
+    wi = wallInfo(best);
+  const q = add(add(best.a, mul(wi.u, f.t)), mul(wi.n, (f.side * best.th) / 2));
+  const nOut = mul(wi.n, f.side);
+  return { p: q, rot: ang(nOut) + Math.PI / 2, host: best.id, ht: f.t, hs: f.side };
 }
 function mkDevice(fam) {
   const kinds = Object.keys(DEVK).filter(k => DEVK[k].f === fam);
@@ -12041,6 +11420,8 @@ function mkDevice(fam) {
       if (ask) return;
       const d = D(),
         pl = placeOnWall(p, d.mount);
+      if (pl.host == null && d.mount !== 'ceil' && d.mount !== 'floor')
+        log('Рядом нет стены — устройство повиснет в воздухе. Укажите точку ближе к стене (до 600 мм).', true);
       addEnt({
         type: 'dev',
         kind,
@@ -12054,6 +11435,8 @@ function mkDevice(fam) {
         flow: d.flow || 0,
         size: d.size || '',
         host: pl.host,
+        ht: pl.ht,
+        hs: pl.hs,
         layer: ensureLayer(FAMS[fam].cat)
       });
     },
@@ -16022,9 +15405,7 @@ function key3Base(e) {
         e.hh,
         e.shape,
         e.ins,
-        e.type === 'wire'
-          ? [wireColor(e), NV.on && S.elec.eng !== false ? documentState.docVer : 0, e.method, e.cable]
-          : 0,
+        e.type === 'wire' ? [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable] : 0,
         e.group != null ? groupOf(e.group).col : 0,
         e.sys ? sysOf(e.sys).col : 0,
         zs
@@ -16161,7 +15542,8 @@ function build3(e) {
       return g;
     }
     case 'wire': {
-      if (NV.on && S.elec.eng !== false) {
+      // the real route: behind the ceiling / in the screed / in chases, drops inside the wall to the box
+      if (S.elec.eng !== false) {
         const g = wireEng3D(e);
         if (g) return g;
       }
@@ -16174,7 +15556,11 @@ function build3(e) {
         [e.to, pts.length - 1]
       ].map(([id, i]) => {
         const d = id != null ? byId(id) : null;
-        return d && d.type === 'dev' && Math.abs(d.z - z) > 1 ? [pts[i][0], pts[i][1], d.z] : null;
+        if (!(d && d.type === 'dev' && Math.abs(d.z - z) > 1)) return null;
+        // the drop goes inside the wall, not on its face
+        const f = devF(d);
+        pts[i] = [pts[i][0] - f.x * 25, pts[i][1] - f.y * 25, z];
+        return [pts[i][0], pts[i][1], d.z];
       });
       mb.sweep(roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], 45).pts, 8, col, 8);
       return meshGroup(mb.meshes(), {});
@@ -16774,7 +16160,7 @@ function applySel3D() {
   if (!V3.inited) return;
   for (const [id, o] of V3.objs) {
     const sel = S.sel.has(id);
-    const en = byId(id);
+    const en = byId(id) || (o.lv != null && S.x.lv && o.lv !== S.x.lv.cur ? lvEntById(o.lv, id) : null);
     const Ld = en && layerOf(en);
     const gh = (NV.on && !o.net) || !!(Ld && Ld.dim);
     const ph = en && uiHooks.phaseMat3 ? uiHooks.phaseMat3(en) : null;
@@ -20550,6 +19936,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -21083,7 +20470,8 @@ function xSpec() {
       r.q = 1;
     });
   }
-  if (S.ents.some(e => e.type === 'fix')) {
+  // the simple collector — only when no manifold unit is modelled (that one has its own specification)
+  if (S.ents.some(e => e.type === 'fix') && !mfNodes().length) {
     const C_ = S.x.coll;
     if (C_.auto) buildColl();
     const it = collItems();
@@ -39262,7 +38650,6 @@ const DEF_MODS = {
   swx: ['swx'],
   dim: ['dim']
 };
-/* defBlk: replaced below (defBlk) */
 function boxType(e) {
   const b = e.blk || {};
   if (b.box && b.box !== 'auto') return b.box;
@@ -39275,8 +38662,6 @@ function boxType(e) {
   }
   return 'brick';
 }
-/* blkMeshes: replaced below (blkMeshes) */
-/* blkBoxes3D: replaced below (blkBoxes3D) */
 function blkPanel(e) {
   const b = blkNorm(e.blk);
   const n = Math.max(1, b.posts | 0);
@@ -41322,6 +40707,20 @@ function drawWireEng(e, o) {
   return true;
 }
 /* ---------- 3D (network view) ---------- */
+/** Key of the 3D mesh of a wire: changes when its route changes. */
+function wireRouteKey(e) {
+  const R = wireRoute(e);
+  if (!R || !R.pts3.length) return 'none';
+  const a = R.pts3[0],
+    b = R.pts3[R.pts3.length - 1];
+  return [
+    R.pts3.length,
+    Math.round(R.len || 0),
+    a.map(Math.round).join(','),
+    b.map(Math.round).join(','),
+    R.drops.length
+  ].join('|');
+}
 function wireEng3D(e) {
   const R = wireRoute(e);
   if (!R.pts3.length) return null;
@@ -45903,6 +45302,7 @@ XT.node = {
 
 
 
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -46263,6 +45663,11 @@ function validate() {
         );
   }
   switchIssues(add_);
+  try {
+    devHostIssues(add_);
+  } catch (err) {
+    console.error(err);
+  }
   try {
     wireRouteIssues(add_);
   } catch (err) {
@@ -49148,9 +48553,11 @@ function LV() {
   if (!x.lv.ents) x.lv.ents = {};
   return x.lv;
 }
+/** The level being worked on: the open one, or the one swapped in by withLevel (3D of other levels, specs). */
 function lvCur() {
   const L = LV();
-  return L.list.find(l => l.id === L.cur) || L.list[0];
+  const id = WLV != null ? WLV : L.cur;
+  return L.list.find(l => l.id === id) || L.list[0];
 }
 function lvById(id) {
   return LV().list.find(l => l.id === id);
@@ -49280,11 +48687,26 @@ function allEnts() {
   return out;
 }
 /* ---------- 3D: other levels, offsets, visibility ---------- */
-var LVM = { all: 'все этажи', upto: 'до текущего', cur: 'только текущий' };
+var LVM = {
+  auto: 'авто (этажи выше скрыты, когда скрыты или приглушены слои)',
+  all: 'все этажи',
+  upto: 'до текущего',
+  cur: 'только текущий'
+};
+/** Some layer is switched off or dimmed: the user looks inside the current level. */
+function lvFocus() {
+  return S.layers.some(L => !L.on || L.dim);
+}
 function lvShow3(lv) {
-  const m = (V3 && V3.lvMode) || 'all';
+  let m = (V3 && V3.lvMode) || 'auto';
   const c = lvCur();
+  if (m === 'auto') m = lvFocus() ? 'upto' : 'all';
   return m === 'all' || (m === 'cur' ? lv.id === c.id : lv.z <= c.z + 1);
+}
+/** An element of another level by id (for the 3D of other levels). */
+function lvEntById(lvId, id) {
+  const a = LV().ents[lvId];
+  return a ? a.find(e => e.id === id) : null;
 }
 function sync3DLevels(seen) {
   if (!S.x.lv) return;
@@ -49423,10 +48845,10 @@ function lvMenu(btn) {
     ['＋ Добавить пустой этаж выше', () => addLevel({})],
     ['Параметры этажей…', openLevels],
     [
-      `3D: ${LVM[V3.lvMode || 'all']} — переключить`,
+      `3D: ${LVM[V3.lvMode || 'auto']} — переключить`,
       () => {
         const o = Object.keys(LVM);
-        V3.lvMode = o[(o.indexOf(V3.lvMode || 'all') + 1) % o.length];
+        V3.lvMode = o[(o.indexOf(V3.lvMode || 'auto') + 1) % o.length];
         sync3D(true);
         log('3D: ' + LVM[V3.lvMode]);
       }
@@ -50340,14 +49762,39 @@ function stairRailBuild(mb, R, e, G) {
   const col = '#3d4248',
     hcol = '#a8835a',
     hr = 25;
-  const st = { len: 0, posts: 0, bal: 0, glass: 0, clamps: 0, profile: 0, brackets: 0, mount };
-  for (const sg of R.segs) {
+  const st = { len: 0, posts: 0, bal: 0, glass: 0, clamps: 0, profile: 0, brackets: 0, fl: 0, mount };
+  // a handrail that runs into a wall is cut at the wall face and fixed to it by a flange
+  const X = stairXF(e);
+  const segs = R.segs.map(sg => {
+    if (mount === 'wall' || sg.pts.length < 2) return { pts: sg.pts, wallEnd: [false, false] };
+    const J = railWallJoin(sg.pts.map(p => X.xf(p[0], p[1], p[2])));
+    if (!J.wallEnd[0] && !J.wallEnd[1]) return { pts: sg.pts, wallEnd: J.wallEnd };
+    return {
+      pts: J.pts.map(q => {
+        const l = X.inv(P(q[0], q[1]));
+        return [l[0], l[1], q[2] - (e.z || 0)];
+      }),
+      wallEnd: J.wallEnd
+    };
+  });
+  for (const sg of segs) {
     const P_ = sg.pts;
     if (P_.length < 2) continue;
     mb.tag('Поручень Ø50');
     mb.sweep(roundPath(P_, 90).pts, hr, hcol, 14);
     for (let i = 1; i < P_.length; i++)
       st.len += Math.hypot(P_[i][0] - P_[i - 1][0], P_[i][1] - P_[i - 1][1], P_[i][2] - P_[i - 1][2]);
+    mb.tag('Фланец настенный поручня Ø80');
+    for (const end of [0, 1]) {
+      if (!sg.wallEnd[end]) continue;
+      const E = P_[end ? P_.length - 1 : 0],
+        N = P_[end ? P_.length - 2 : 1];
+      const L = Math.hypot(E[0] - N[0], E[1] - N[1]) || 1;
+      const ux = (E[0] - N[0]) / L,
+        uy = (E[1] - N[1]) / L;
+      mb.tube([E[0] - ux * 8, E[1] - uy * 8, E[2]], E, 40, col, 18);
+      st.fl++;
+    }
   }
   const topAt = (x, y) => {
     let best = null,
@@ -51119,6 +50566,11 @@ XT.stair = {
           r.q = Math.round((r.q + rs.profile / 1000) * 10) / 10;
           r.ids.push(e.id);
         });
+      if (rs.fl)
+        put(S_, 'rf', { name: 'Фланец настенный поручня Ø80', u: 'шт' }, r => {
+          r.q += rs.fl;
+          r.ids.push(e.id);
+        });
       if (rs.brackets)
         put(S_, 'rbr', { name: 'Кронштейн настенного поручня', u: 'шт' }, r => {
           r.q += rs.brackets;
@@ -51186,14 +50638,96 @@ function mkStair() {
   };
 }
 
-function railBuild(mb, pts, baseZ, type, o = {}) {
-  if (!pts || pts.length < 2) return { len: 0, posts: 0, bal: 0, glass: 0 };
+/** Where a 3D point (rail level) is inside a wall: the wall, or null. */
+function railWallAt(x, y, z) {
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !visible(w)) continue;
+    const z0 = w.z || 0;
+    if (z < z0 - 1 || z > z0 + (w.h || S.ceil) + 1) continue;
+    const wi = wallInfo(w);
+    const r = [x - w.a.x, y - w.a.y];
+    const t = r[0] * wi.u.x + r[1] * wi.u.y,
+      s = r[0] * wi.n.x + r[1] * wi.n.y;
+    if (t >= -1 && t <= wi.L + 1 && Math.abs(s) <= w.th / 2 + 0.5) return w;
+  }
+  return null;
+}
+/**
+ * Rail ends meeting a wall: an end inside a wall is cut back to the wall face, an end that stops short of a wall
+ * (≤ 150 мм along the rail) is brought to the face. Such an end gets a wall flange and no post.
+ * Returns { pts, wallEnd: [start, end] }.
+ */
+function railWallJoin(pts) {
+  const P3 = pts.map(p => p.slice());
+  const wallEnd = [false, false];
+  const faceOn = (a, b) => {
+    // a — outside, b — inside: the face point by bisection along a→b
+    let lo = 0,
+      hi = 1;
+    for (let k = 0; k < 30; k++) {
+      const m = (lo + hi) / 2;
+      const q = [a[0] + (b[0] - a[0]) * m, a[1] + (b[1] - a[1]) * m, a[2] + (b[2] - a[2]) * m];
+      if (railWallAt(q[0], q[1], q[2])) hi = m;
+      else lo = m;
+    }
+    return [a[0] + (b[0] - a[0]) * hi, a[1] + (b[1] - a[1]) * hi, a[2] + (b[2] - a[2]) * hi];
+  };
+  for (const end of [0, 1]) {
+    const n = P3.length;
+    if (n < 2) break;
+    const iE = end ? n - 1 : 0,
+      iN = end ? n - 2 : 1;
+    const E = P3[iE],
+      N = P3[iN];
+    if (railWallAt(E[0], E[1], E[2])) {
+      // drop the vertices that are inside the wall, cut the first segment that enters it
+      let k = iE;
+      const step = end ? -1 : 1;
+      while (k + step >= 0 && k + step < P3.length && railWallAt(P3[k + step][0], P3[k + step][1], P3[k + step][2]))
+        k += step;
+      const inner = P3[k],
+        outer = P3[k + step];
+      if (!outer) continue;
+      const F = faceOn(outer, inner);
+      if (end) P3.splice(k, P3.length - k, F);
+      else P3.splice(0, k + 1, F);
+      wallEnd[end] = true;
+    } else {
+      const L = Math.hypot(E[0] - N[0], E[1] - N[1], E[2] - N[2]);
+      if (L < 1) continue;
+      const u = [(E[0] - N[0]) / L, (E[1] - N[1]) / L, (E[2] - N[2]) / L];
+      const far = [E[0] + u[0] * 150, E[1] + u[1] * 150, E[2] + u[2] * 150];
+      if (railWallAt(far[0], far[1], far[2])) {
+        P3[iE] = faceOn(E, far);
+        wallEnd[end] = true;
+      }
+    }
+  }
+  return { pts: P3, wallEnd };
+}
+function railBuild(mb, pts0, baseZ, type, o = {}) {
+  if (!pts0 || pts0.length < 2) return { len: 0, posts: 0, bal: 0, glass: 0, fl: 0 };
+  const J = o.noWall ? { pts: pts0, wallEnd: [false, false] } : railWallJoin(pts0);
+  const pts = J.pts;
+  if (pts.length < 2) return { len: 0, posts: 0, bal: 0, glass: 0, fl: 0 };
   const hr = o.hr || 25,
     col = o.col || '#3d4248',
     hcol = o.hcol || '#a8835a';
-  const st = { len: 0, posts: 0, bal: 0, glass: 0 };
+  const st = { len: 0, posts: 0, bal: 0, glass: 0, fl: 0 };
   mb.tag('Поручень Ø50');
   mb.sweep(roundPath(pts, 80).pts, hr, hcol, 14);
+  // wall flanges where the rail meets a wall
+  mb.tag('Фланец настенный поручня Ø80');
+  for (const end of [0, 1]) {
+    if (!J.wallEnd[end]) continue;
+    const E = pts[end ? pts.length - 1 : 0],
+      N = pts[end ? pts.length - 2 : 1];
+    const L = Math.hypot(E[0] - N[0], E[1] - N[1]) || 1;
+    const ux = (E[0] - N[0]) / L,
+      uy = (E[1] - N[1]) / L;
+    mb.tube([E[0] - ux * 8, E[1] - uy * 8, E[2]], [E[0], E[1], E[2]], 40, col, 18);
+    st.fl++;
+  }
   for (let i = 1; i < pts.length; i++)
     st.len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]);
   // posts at the ends, corners and every ≤ 1000 мм
@@ -51210,7 +50744,13 @@ function railBuild(mb, pts, baseZ, type, o = {}) {
     }
   }
   const dedup = [];
-  for (const p of postAt) if (!dedup.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 120)) dedup.push(p);
+  // no post at an end fixed to a wall, nor inside a wall
+  const skip = [J.wallEnd[0] ? pts[0] : null, J.wallEnd[1] ? pts[pts.length - 1] : null].filter(Boolean);
+  for (const p of postAt) {
+    if (skip.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 150)) continue;
+    if (railWallAt(p[0], p[1], p[2])) continue;
+    if (!dedup.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 120)) dedup.push(p);
+  }
   mb.tag('Стойки ограждения 40×40');
   for (const p of dedup) {
     const z0 = baseZ(p[0], p[1]);
@@ -51589,6 +51129,11 @@ XT.rail = {
       r.q += st.posts;
       r.ids.push(e.id);
     });
+    if (st.fl)
+      put(S_, 'rf', { name: 'Фланец настенный поручня Ø80', u: 'шт' }, r => {
+        r.q += st.fl;
+        r.ids.push(e.id);
+      });
     if (st.bal)
       put(S_, 'rb', { name: 'Балясина 20×20', u: 'шт' }, r => {
         r.q += st.bal;
@@ -61032,7 +60577,6 @@ function drawInstPorts(e) {
 
 
 /* replace module mechanisms in assembled blocks */
-/* blkMeshesV2: replaced below (blkMeshes) */
 /* ---------- lights: kinds and models ---------- */
 Object.assign(DEVK, {
   lspotS: { f: 'light', n: 'Спот накладной (цилиндр)', kw: 'Накладной спот', mount: 'ceil', pw: 9 },
@@ -64102,8 +63646,14 @@ const BLUM_NL = d => {
   const nl = [270, 300, 350, 400, 450, 500, 550, 600, 650];
   return nl.filter(x => x <= d - 20).pop() || 270;
 };
+/** Hinges by the door height (Blum chart): up to 900 — 2, 1600 — 3, 2000 — 4, 2400 — 5. */
 function hingeCount(h) {
-  return h <= 1000 ? 2 : h <= 1500 ? 3 : h <= 2000 ? 4 : 5;
+  return h <= 900 ? 2 : h <= 1600 ? 3 : h <= 2000 ? 4 : h <= 2400 ? 5 : 6;
+}
+/** Hinges of a door h × w: by height and by mass (≈ 6 kg on a pair, then +1 per 4 kg) — the larger. */
+function hingesFor(h, w, kgm2 = 13) {
+  const m = ((h * w) / 1e6) * kgm2;
+  return Math.max(hingeCount(h), m > 6 ? 2 + Math.ceil((m - 6) / 4) : 2);
 }
 // parts: every part also carries its box in local coordinates for 3D (so the model is exactly the деталировка)
 function cabParts(c) {
@@ -64114,7 +63664,7 @@ function cabParts(c) {
     pl = +c.plinth || 0,
     lg = c.legs ? 100 : 0;
   const P_ = [];
-  const add_ = (name, L, W, box, edge, mat, qty = 1, grp = 'Корпус') =>
+  const add_ = (name, L, W, box, edge, mat, qty = 1, grp = 'Корпус', hinge) =>
     P_.push({
       name,
       L: Math.round(L),
@@ -64124,7 +63674,8 @@ function cabParts(c) {
       edge: edge || '',
       box,
       qty,
-      grp
+      grp,
+      hinge
     });
   const z0 = pl + lg;
   const inH = h - z0 - 2 * t;
@@ -64231,7 +63782,8 @@ function cabParts(c) {
       'по периметру 2 мм',
       'front',
       1,
-      'Фасады'
+      'Фасады',
+      f.hinge
     );
   }
   return { parts: P_, fronts: fr, t, sw, sec, z0, inH };
@@ -64244,7 +63796,7 @@ function cabHardware(c, R) {
   const doors = R.fronts.filter(f => f.kind === 'door'),
     drw = R.fronts.filter(f => f.kind === 'drawer'),
     rods = R.fronts.filter(f => f.kind === 'rod');
-  const hc = doors.reduce((a, f) => a + hingeCount(f.z1 - f.z0), 0);
+  const hc = doors.reduce((a, f) => a + hingesFor(f.z1 - f.z0, f.x1 - f.x0), 0);
   add_(
     c.handle === 'push'
       ? 'Петля Blum CLIP top 110° без пружины (под TIP-ON) + ответная планка'
@@ -65935,7 +65487,7 @@ function kitHardware(e) {
           c.handle === 'tipon'
             ? 'Blum CLIP top 110° без пружины + TIP-ON'
             : 'Blum CLIP top BLUMOTION 110° (петля + планка)',
-          hingeCount(f.z1 - f.z0)
+          hingesFor(f.z1 - f.z0, f.x1 - f.x0)
         );
       if (f.kind === 'drawer')
         add_(`${BLUM_DR[c.drawer]}, NL ${BLUM_NL(cd)} мм${c.handle === 'tipon' ? ', SERVO-DRIVE' : ', BLUMOTION'}`, 1);
@@ -65946,7 +65498,8 @@ function kitHardware(e) {
         add_('Ручка-скоба Häfele 160 мм', 1);
     }
     if (it.row === 'low') {
-      add_('Опора регулируемая Häfele AXILO 100–150 мм', 4);
+      // a wide module sags in the middle: 6 legs from 900 mm
+      add_('Опора регулируемая Häfele AXILO 100–150 мм', +it.m.w > 900 ? 6 : 4);
       add_('Клипса цоколя Häfele', 2);
     } else add_('Навес для навесного шкафа Häfele + монтажная шина (пара)', 1);
     if (k === 'b_corner') add_('Угловая система LeMans II (Kesseböhmer / Häfele)', 1);
@@ -67168,7 +66721,7 @@ function cwUnits(e, G = cwGeom(e)) {
       w = S_.w,
       R = S_.R;
     const parts = [];
-    const add_ = (name, L, W, box, edge, mat, qty = 1, grp = 'Корпус', th) =>
+    const add_ = (name, L, W, box, edge, mat, qty = 1, grp = 'Корпус', th, hinge) =>
       parts.push({
         name,
         L: cwRound(L),
@@ -67178,7 +66731,8 @@ function cwUnits(e, G = cwGeom(e)) {
         edge: edge || '',
         box,
         qty,
-        grp
+        grp,
+        hinge
       });
     const mod = c.build === 'modules',
       built = c.build === 'built';
@@ -67339,8 +66893,10 @@ function cwUnits(e, G = cwGeom(e)) {
         mat,
         1,
         'Фасады',
-        FT.t
+        FT.t,
+        f.hinge
       );
+      parts[parts.length - 1].kgm2 = FT.kg;
     }
     units.push({
       name: `С${S_.gi} · секция ${Math.round(w)} мм${s.zones && s.zones.length ? ' · ' + s.zones.map(z => (CW_ZK[z.k] || {}).n || z.k).join(' / ') : ''}`,
@@ -67447,9 +67003,7 @@ function cwHingeName(c, FT) {
 }
 /** Hinges per door: by height (Blum chart) and by mass (≈ 6 kg per hinge pair, then +1 per 4 kg). */
 function cwHinges(f) {
-  const h = f.z1 - f.z0,
-    m = cwFrontKg(f);
-  return Math.max(hingeCount(h), m > 6 ? 2 + Math.ceil((m - 6) / 4) : 2);
+  return hingesFor(f.z1 - f.z0, f.x1 - f.x0, f.ft ? f.ft.kg : 11.5);
 }
 function cwFrontKg(f) {
   return (((f.x1 - f.x0) * (f.z1 - f.z0)) / 1e6) * (f.ft ? f.ft.kg : 11.5);
@@ -69007,7 +68561,6 @@ function sampleDuplex(E) {
   DV('tv', X, 3100, { z: 650, group: 4 });
   DV('rj45', X, 3300, { z: 650, group: 4 });
   DV('sock2', 3200, 300, { z: 300 });
-  DV('sock2', 8000, 3600, { z: 300 });
   const tr = E('Освещение', {
     type: 'track',
     kind: 'mag48',
@@ -69958,6 +69511,106 @@ function wireHopsKey(e) {
       return '|h' + R.hops.map(h => Math.round(h.p.x) + ',' + Math.round(h.p.y) + ',' + Math.round(h.dz)).join(';');
   } catch (_) {}
   return '';
+}
+
+// ===== mep/electrical/dev-host.js =====
+/**
+ * mep/electrical/dev-host.js
+ *
+ * Wall-mounted devices (sockets, switches, panels, data outlets…) stay on the face of their wall.
+ * The place on the wall is kept as the distance from the wall start (e.ht) and the side (e.hs, ±1);
+ * after any change the device is put back on the current face — the wall moved, got thicker or thinner,
+ * changed its type. A device the user moved is re-attached to the nearest wall face at its new place.
+ * A wall device with no wall within reach is reported in the issues list.
+ */
+
+
+
+
+
+/** How far (mm from the wall face) a wall device still snaps to a wall. */
+const HOST_REACH = 600;
+const isWallDev = d => d.type === 'dev' && !!DEVK[d.kind] && DEVK[d.kind].mount === 'wall' && !d.free;
+
+/** The nearest visible wall to point p, with the place on it: { w, t, side } or null. */
+function nearestWallFace(p, reach = HOST_REACH) {
+  let best = null,
+    bd = Infinity;
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !visible(w)) continue;
+    const q = segPt(w.a, w.b, p);
+    const d = Math.max(0, dist(q, p) - w.th / 2);
+    if (d < reach && d < bd) {
+      bd = d;
+      best = w;
+    }
+  }
+  if (!best) return null;
+  const wi = wallInfo(best);
+  return {
+    w: best,
+    t: clamp(dot(sub(p, best.a), wi.u), 0, wi.L),
+    side: dot(sub(p, best.a), wi.n) >= 0 ? 1 : -1
+  };
+}
+/** Point on the wall face and the rotation of a device that faces out of it. */
+function facePlace(w, t, side) {
+  const wi = wallInfo(w);
+  const tt = clamp(t, 0, wi.L);
+  const p = add(add(w.a, mul(wi.u, tt)), mul(wi.n, (side * w.th) / 2));
+  return { p, rot: ang(mul(wi.n, side)) + Math.PI / 2 };
+}
+/** Puts every wall device back on its wall face. Returns the number of moved devices. */
+function rehostDevices() {
+  let n = 0;
+  for (const d of S.ents) {
+    if (!isWallDev(d) || !d.p) continue;
+    let w = d.host != null ? byId(d.host) : null;
+    if (w && w.type !== 'wall') continue; // columns and other hosts: as placed
+    const moved = !d._hp || Math.abs(d._hp.x - d.p.x) > 0.5 || Math.abs(d._hp.y - d.p.y) > 0.5;
+    if (moved || !w || d.ht == null || !d.hs) {
+      // first time, or the user moved the device: attach to the nearest wall at its place
+      const f = nearestWallFace(d.p);
+      if (!f) {
+        if (d.host != null && !w) d.host = null;
+        d._hp = { x: d.p.x, y: d.p.y };
+        continue;
+      }
+      w = f.w;
+      d.host = w.id;
+      d.ht = Math.round(f.t * 10) / 10;
+      d.hs = f.side;
+    }
+    const F = facePlace(w, d.ht, d.hs);
+    if (Math.abs(F.p.x - d.p.x) > 0.05 || Math.abs(F.p.y - d.p.y) > 0.05) n++;
+    d.p = F.p;
+    // the device always faces out of its wall
+    const r0 = d.rot || 0;
+    const dr = Math.abs(((r0 - F.rot + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+    if (dr > 0.01) d.rot = F.rot;
+    d._hp = { x: d.p.x, y: d.p.y };
+  }
+  return n;
+}
+uiHooks.onChanged = () => {
+  try {
+    rehostDevices();
+  } catch (err) {
+    console.error(err);
+  }
+};
+/** Issues: wall devices that hang in the air (no wall near). */
+function devHostIssues(add_) {
+  for (const d of S.ents) {
+    if (!isWallDev(d) || !visible(d) || d.kind === 'panel') continue;
+    if (d.host != null && byId(d.host)) continue;
+    add_(
+      d,
+      'bad',
+      `«${(DEVK[d.kind] || {}).n || 'Устройство'}» не стоит на стене (до ближайшей больше 600 мм) — висит в воздухе. Перенесите к стене: встанет на её поверхность сам.`,
+      d.p
+    );
+  }
 }
 
 // ===== interior/kitchen-3d.js =====
@@ -71508,6 +71161,375 @@ defineTools({
   }
 });
 
+// ===== interior/drilling.js =====
+/**
+ * interior/drilling.js
+ *
+ * Drilling (присадка) of case furniture from the geometry of its parts. Every part carries its box in the unit
+ * coordinates (x along the unit, y from the wall to the front, z up), so the joints are found by contact:
+ * the end of one panel resting on the face of another is a butt joint, and it gets the connectors of the chosen
+ * system — confirmat 7×50, or eccentric (minifix 15) + dowels 8×30. On top of the joints: shelf pins under the
+ * adjustable shelves (system 32), hinge cups with INSERTA holes on the doors and mounting plates on the carcass,
+ * drawer runner holes, handle holes through the fronts.
+ *
+ * Every hole is given in the part coordinates (x along the length L, y along the width W, from the part corner)
+ * with its face: A — the face looking into the unit, B — the opposite face, E — an edge (x0 / x1 / y0 / y1).
+ * The same holes give the drawings (part cells, drilling maps), the CSV for the machine and the hardware counts.
+ */
+
+
+/** Connection systems of the carcass. */
+var DR_JOIN = {
+  conf: 'Конфирмат 7×50 (+ заглушки)',
+  minifix: 'Эксцентрик Minifix 15 + шток + шкант 8×30'
+};
+/** Kinds of holes: label and colour on the drawings. */
+var DR_K = {
+  conf: ['Конфирмат: пласть Ø7 насквозь / торец Ø5', '#111'],
+  cam: ['Эксцентрик Ø15', '#7b3fb5'],
+  bolt: ['Шток эксцентрика: пласть Ø5 / торец Ø8', '#7b3fb5'],
+  dowel: ['Шкант 8×30: Ø8', '#2a6fdb'],
+  pin: ['Полкодержатель Ø5', '#2a9d57'],
+  cup: ['Чашка петли Ø35', '#d0451b'],
+  ins: ['Петля, вкладыши INSERTA Ø8', '#d0451b'],
+  plate: ['Монтажная планка петли Ø5', '#e08a1e'],
+  run: ['Направляющая ящика Ø5', '#0f8a8a'],
+  hdl: ['Ручка Ø5 насквозь', '#555']
+};
+const DR_TOL = 2.5;
+const R1 = v => Math.round(v * 10) / 10;
+
+/** Box of a part as lo / hi arrays, thickness axis, length and width axes. */
+function pGeo(p) {
+  const b = p.box;
+  if (!b || b.length < 6) return null;
+  const lo = [Math.min(b[0], b[3]), Math.min(b[1], b[4]), Math.min(b[2], b[5])];
+  const hi = [Math.max(b[0], b[3]), Math.max(b[1], b[4]), Math.max(b[2], b[5])];
+  const ext = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  let at = 0;
+  for (let i = 1; i < 3; i++) if (ext[i] < ext[at]) at = i;
+  const o = [0, 1, 2].filter(i => i !== at);
+  // the length axis: the one whose extent is closest to L
+  const aL = Math.abs(ext[o[0]] - p.L) <= Math.abs(ext[o[1]] - p.L) ? o[0] : o[1];
+  const aW = o[0] === aL ? o[1] : o[0];
+  return { lo, hi, ext, at, aL, aW, t: ext[at] };
+}
+/** Place of a 3D point on a part: x along L, y along W (from the box corner). */
+function toPart(G, q) {
+  return { x: R1(q[G.aL] - G.lo[G.aL]), y: R1(q[G.aW] - G.lo[G.aW]) };
+}
+/** Spots of connectors along a joint of length L: 50 mm from the ends, ≤ 250 mm apart. */
+function drSpots(L, edge = 50, pitch = 250) {
+  if (L < 100) return [L / 2];
+  const e = Math.min(edge, L * 0.2);
+  const n = Math.max(0, Math.ceil((L - 2 * e) / pitch) - 1);
+  const out = [];
+  for (let k = 0; k <= n + 1; k++) out.push(e + (k * (L - 2 * e)) / (n + 1));
+  return out;
+}
+const isFront = p =>
+  /^Фасад|^Дверь-купе|Фальшпланка|^Добор|Панель глухая/.test(p.name) || p.grp === 'Фасады' || p.grp === 'Доборы';
+const isInnerFront = p => /Фронт внутреннего ящика/.test(p.name);
+const isLooseShelf = p => /^Полка/.test(p.name) && !/стационарн|над штангой/.test(p.name);
+/** Parts that take connectors in the carcass. */
+const isCarcass = p =>
+  p.box &&
+  (p.mat === 'ldsp' || p.mat === 'front') &&
+  !isFront(p) &&
+  !isLooseShelf(p) &&
+  p.grp !== 'Ящики' &&
+  !/Проставка|Планка крепления|ХДФ|на клипсах/.test(p.name);
+
+/**
+ * Drilling of one unit. opts: { join: 'conf' | 'minifix', handle, hSize, wallUnit }.
+ * Adds p.holes to the parts and returns the counts { conf, cam, dowel, pin, cups, plates, run, hdlScrews, halfOverlay }.
+ */
+function drillUnit(U, opts = {}) {
+  const join = opts.join === 'minifix' ? 'minifix' : 'conf';
+  const parts = U.parts.filter(p => p.box);
+  const G = new Map();
+  for (const p of parts) {
+    const g = pGeo(p);
+    if (g) G.set(p, g);
+    p.holes = [];
+  }
+  // centre of the carcass: decides which face of a panel looks inside
+  const carc = parts.filter(p => isCarcass(p) && G.has(p));
+  const cLo = [0, 1, 2].map(i => Math.min(...carc.map(p => G.get(p).lo[i])));
+  const cHi = [0, 1, 2].map(i => Math.max(...carc.map(p => G.get(p).hi[i])));
+  const ctr = [0, 1, 2].map(i => (cLo[i] + cHi[i]) / 2);
+  const faceOf = (g, side) => {
+    // side: 'lo' | 'hi' along the thickness axis → 'A' (inside) or 'B'
+    const mid = (g.lo[g.at] + g.hi[g.at]) / 2;
+    const inHi = ctr[g.at] >= mid;
+    return (side === 'hi') === inHi ? 'A' : 'B';
+  };
+  const N = { conf: 0, cam: 0, dowel: 0, pin: 0, cups: 0, plates: 0, run: 0, hdlScrews: 0, halfOverlay: 0, joints: 0 };
+  const hole = (p, g, q, o) => p.holes.push({ ...toPart(g, q), ...o });
+
+  /* ---------- butt joints ---------- */
+  for (const B of carc) {
+    const gb = G.get(B);
+    for (const A of carc) {
+      if (A === B) continue;
+      const ga = G.get(A);
+      const at = ga.at;
+      if (gb.at === at) continue;
+      let side = null;
+      if (Math.abs(gb.lo[at] - ga.hi[at]) <= DR_TOL) side = 'hi';
+      else if (Math.abs(gb.hi[at] - ga.lo[at]) <= DR_TOL) side = 'lo';
+      if (!side) continue;
+      const bt = gb.at,
+        j = 3 - at - bt;
+      // overlap on the face of A
+      const o0 = Math.max(ga.lo[j], gb.lo[j]),
+        o1 = Math.min(ga.hi[j], gb.hi[j]);
+      const t0 = Math.max(ga.lo[bt], gb.lo[bt]),
+        t1 = Math.min(ga.hi[bt], gb.hi[bt]);
+      if (o1 - o0 < 30 || t1 - t0 < gb.t * 0.6) continue;
+      N.joints++;
+      const cB = (gb.lo[bt] + gb.hi[bt]) / 2; // the middle of B's thickness
+      const zA = side === 'hi' ? ga.hi[at] : ga.lo[at]; // the contact plane
+      const fA = faceOf(ga, side);
+      // the edge of B that rests on A
+      const endLo = Math.abs(gb.lo[at] - zA) <= DR_TOL;
+      const edgeB = (gb.aL === at ? 'x' : 'y') + (endLo ? '0' : '1');
+      const sp = drSpots(o1 - o0).map(s => o0 + s);
+      const pt = (along, across, depthAxisVal) => {
+        const q = [0, 0, 0];
+        q[j] = along;
+        q[bt] = across;
+        q[at] = depthAxisVal;
+        return q;
+      };
+      if (join === 'conf') {
+        for (const s of sp) {
+          hole(A, ga, pt(s, cB, zA), { f: fA, d: 7, dep: R1(ga.t), thr: true, k: 'conf' });
+          hole(B, gb, pt(s, cB, zA), { f: 'E', e: edgeB, d: 5, dep: R1(50 - ga.t + 2), k: 'conf' });
+          N.conf++;
+        }
+      } else {
+        // eccentrics at the spots, dowels 32 mm inside each of them
+        const dw = [];
+        sp.forEach((s, i) => {
+          const dir = sp.length === 1 ? 1 : i < sp.length / 2 ? 1 : -1;
+          for (const dd of sp.length === 1 ? [-32, 32] : [32 * dir]) {
+            const v = s + dd;
+            if (
+              v > o0 + 20 &&
+              v < o1 - 20 &&
+              !dw.some(x => Math.abs(x - v) < 40) &&
+              !sp.some(x => Math.abs(x - v) < 25)
+            )
+              dw.push(v);
+          }
+        });
+        const camIn = endLo ? zA + 24 : zA - 24; // 24 mm from A's face, inside B
+        const faceBin = (() => {
+          // B's face that looks into the unit takes the eccentric
+          const mid = (gb.lo[bt] + gb.hi[bt]) / 2;
+          return ctr[bt] >= mid ? 'hi' : 'lo';
+        })();
+        for (const s of sp) {
+          hole(A, ga, pt(s, cB, zA), { f: fA, d: 5, dep: 11, k: 'bolt' });
+          hole(B, gb, pt(s, cB, zA), { f: 'E', e: edgeB, d: 8, dep: 32, k: 'bolt' });
+          hole(B, gb, pt(s, faceBin === 'hi' ? gb.hi[bt] : gb.lo[bt], camIn), {
+            f: faceOf(gb, faceBin),
+            d: 15,
+            dep: R1(Math.min(13, gb.t - 3)),
+            k: 'cam'
+          });
+          N.cam++;
+        }
+        for (const v of dw) {
+          hole(A, ga, pt(v, cB, zA), { f: fA, d: 8, dep: R1(Math.min(12, ga.t - 4)), k: 'dowel' });
+          hole(B, gb, pt(v, cB, zA), { f: 'E', e: edgeB, d: 8, dep: 20, k: 'dowel' });
+          N.dowel++;
+        }
+      }
+    }
+  }
+
+  /* ---------- verticals: panels whose thickness is along x ---------- */
+  // spacers beside inner drawers carry the runners and the hinge-side load too
+  const verts = parts.filter(p => G.has(p) && G.get(p).at === 0 && (isCarcass(p) || /Проставка/.test(p.name)));
+  /** The vertical that bounds the x position from the left ('L') or from the right ('R') and spans z, y. */
+  const vertAt = (x, side, z, yF) => {
+    let best = null,
+      bd = Infinity;
+    for (const v of verts) {
+      const g = G.get(v);
+      if (z < g.lo[2] - 1 || z > g.hi[2] + 1 || yF < g.lo[1] + 30) continue;
+      const face = side === 'L' ? g.hi[0] : g.lo[0];
+      const d_ = side === 'L' ? x - face : face - x;
+      if (d_ > -g.t - 3 && d_ < 45 && Math.abs(d_) < bd) {
+        bd = Math.abs(d_);
+        best = v;
+      }
+    }
+    return best;
+  };
+
+  /* ---------- shelf pins under the loose shelves ---------- */
+  for (const sh of parts.filter(isLooseShelf)) {
+    const g = G.get(sh);
+    if (!g || g.at !== 2) continue;
+    const zH = g.lo[2] - 7; // pin hole centre: 7 mm under the shelf
+    for (const side of ['L', 'R']) {
+      const v = vertAt(side === 'L' ? g.lo[0] : g.hi[0], side, zH, g.hi[1]);
+      if (!v) continue;
+      const gv = G.get(v);
+      const yF = Math.min(gv.hi[1], g.hi[1]) - 37;
+      const span = Math.max(0, Math.floor((g.hi[1] - g.lo[1] - 74) / 32) * 32);
+      const ys = span >= 64 ? [yF, yF - span] : [yF];
+      for (const y of ys) {
+        const q = [side === 'L' ? gv.hi[0] : gv.lo[0], y, zH];
+        hole(v, gv, q, { f: faceOf(gv, side === 'L' ? 'hi' : 'lo'), d: 5, dep: R1(Math.min(12, gv.t - 4)), k: 'pin' });
+        N.pin++;
+      }
+    }
+  }
+
+  /* ---------- fronts: hinges, runners, handles ---------- */
+  const hingeSides = new Map(); // vertical → set of sides with hinge plates
+  for (const f of parts.filter(p => (isFront(p) || isInnerFront(p)) && G.has(p))) {
+    const g = G.get(f);
+    if (g.at !== 1) continue; // fronts stand across y
+    const door = /Фасад распашной|антресоли распашной/.test(f.name);
+    const drawer = /^Фасад ящика|Фронт внутреннего ящика/.test(f.name);
+    const mo = +opts.hSize || (f.W < 450 || door ? 128 : 160);
+    // the inner face of the front: towards the carcass (−y)
+    const yIn = g.lo[1];
+    if (door && (f.hinge === 'L' || f.hinge === 'R') && f.L > 150) {
+      const n = hingesFor(f.L, f.W, f.kgm2 || (f.mat === 'ldsp' ? 11.5 : 13));
+      const e0 = f.L < 400 ? 70 : 100;
+      const zs = [];
+      for (let i = 0; i < n; i++) zs.push(n === 1 ? f.L / 2 : e0 + ((f.L - 2 * e0) * i) / (n - 1));
+      const xE = f.hinge === 'L' ? g.lo[0] : g.hi[0],
+        sg = f.hinge === 'L' ? 1 : -1;
+      for (const zz of zs) {
+        const z = g.lo[2] + zz;
+        hole(f, g, [xE + sg * 22.5, yIn, z], { f: 'A', d: 35, dep: 13, k: 'cup' });
+        for (const dz of [-22.5, 22.5])
+          hole(f, g, [xE + sg * (22.5 + 9.5), yIn, z + dz], { f: 'A', d: 8, dep: 11, k: 'ins' });
+        N.cups++;
+        // mounting plate on the carcass
+        const v = vertAt(f.hinge === 'L' ? g.lo[0] + 20 : g.hi[0] - 20, f.hinge, z, g.lo[1]);
+        if (v) {
+          const gv = G.get(v);
+          const sideV = f.hinge === 'L' ? 'hi' : 'lo';
+          for (const dz of [-16, 16])
+            hole(v, gv, [sideV === 'hi' ? gv.hi[0] : gv.lo[0], gv.hi[1] - 37, z + dz], {
+              f: faceOf(gv, sideV),
+              d: 5,
+              dep: R1(Math.min(12, gv.t - 4)),
+              k: 'plate'
+            });
+          N.plates++;
+          if (!hingeSides.has(v)) hingeSides.set(v, new Set());
+          hingeSides.get(v).add(sideV);
+        }
+      }
+    }
+    if (drawer) {
+      const zr = g.lo[2] + 33;
+      for (const side of ['L', 'R']) {
+        const v = vertAt(side === 'L' ? g.lo[0] + 20 : g.hi[0] - 20, side, zr, g.lo[1]);
+        if (!v) continue;
+        const gv = G.get(v);
+        const yF = Math.min(gv.hi[1], g.lo[1]);
+        for (const off of [37, 261, 485]) {
+          const y = yF - off;
+          if (y < gv.lo[1] + 20) break;
+          hole(v, gv, [side === 'L' ? gv.hi[0] : gv.lo[0], y, zr], {
+            f: faceOf(gv, side === 'L' ? 'hi' : 'lo'),
+            d: 5,
+            dep: R1(Math.min(12, gv.t - 4)),
+            k: 'run'
+          });
+          N.run++;
+        }
+      }
+    }
+    // handles: through holes from the inner face
+    const H = opts.handle;
+    if ((H === 'bar' || H === 'long' || H === 'knob' || H === 'leather') && (door || /^Фасад ящика/.test(f.name))) {
+      const pts = [];
+      if (door) {
+        const yE = f.hinge === 'R' ? g.lo[0] + 40 : g.hi[0] - 40;
+        let zc;
+        if (f.L > 1200) zc = Math.max(g.lo[2] + mo / 2 + 60, Math.min(g.hi[2] - mo / 2 - 60, 1050));
+        else zc = opts.wallUnit ? g.lo[2] + 60 + mo / 2 : g.hi[2] - 60 - mo / 2;
+        if (H === 'knob') pts.push([yE, zc]);
+        else pts.push([yE, zc - mo / 2], [yE, zc + mo / 2]);
+      } else {
+        const xc = (g.lo[0] + g.hi[0]) / 2,
+          zc = f.L < 250 ? (g.lo[2] + g.hi[2]) / 2 : g.hi[2] - 60;
+        if (H === 'knob') pts.push([xc, zc]);
+        else pts.push([xc - mo / 2, zc], [xc + mo / 2, zc]);
+      }
+      for (const [x, z] of pts) {
+        hole(f, g, [x, yIn, z], { f: 'A', d: 5, dep: R1(g.t), thr: true, k: 'hdl' });
+        N.hdlScrews++;
+      }
+    }
+  }
+  for (const s of hingeSides.values()) if (s.size === 2) N.halfOverlay++;
+  return N;
+}
+/** Signature of the drilling of a part (identical parts share a position only with identical holes). */
+function drSig(p) {
+  return (p.holes || [])
+    .map(h => [h.k, h.f, h.e || '', Math.round(h.x), Math.round(h.y), h.d].join(':'))
+    .sort()
+    .join(';');
+}
+/** Hardware rows from the drilling counts: [name, qty, unit]. */
+function drHardware(N, join) {
+  const out = [];
+  const add_ = (n, q, u = 'шт') => {
+    if (q > 0) out.push([n, q, u]);
+  };
+  if (join === 'minifix') {
+    add_('Эксцентрик Minifix 15 (корпус)', N.cam);
+    add_('Шток эксцентрика (под Ø5, ввинчиваемый)', N.cam);
+    add_('Заглушка эксцентрика Ø15', N.cam);
+    add_('Шкант 8×30', N.dowel);
+  } else {
+    add_('Конфирмат 7×50', N.conf);
+    add_('Заглушка конфирмата (в цвет ЛДСП)', N.conf);
+  }
+  add_('Евровинт 6,3×16 (монтажные планки, направляющие)', N.plates * 2 + N.run);
+  add_('Винт М4×25 для ручек', N.hdlScrews);
+  return out;
+}
+/** The drilling of all parts as CSV (one line per hole) for the machine operator. */
+function drCSV(M) {
+  const L = ['Поз.;Деталь;L;W;t;Пласть;Торец;X;Y;Ø;Глубина;Насквозь;Назначение'];
+  for (const p of M.P) {
+    const hs = (p.ex && p.ex.holes) || [];
+    for (const h of hs)
+      L.push(
+        [
+          p.no,
+          p.name,
+          p.L,
+          p.W,
+          p.t,
+          h.f,
+          h.e || '',
+          String(h.x).replace('.', ','),
+          String(h.y).replace('.', ','),
+          h.d,
+          String(h.dep).replace('.', ','),
+          h.thr ? 'да' : '',
+          (DR_K[h.k] || [h.k])[0]
+        ].join(';')
+      );
+  }
+  return L.join('\r\n');
+}
+
 // ===== interior/furniture-drawings.js =====
 /**
  * interior/furniture-drawings.js
@@ -71515,6 +71537,8 @@ defineTools({
  * Drawing set (A3) for case furniture and the kitchen: general view, part drawings, cutting maps, assembly
  * scheme, specification.
  */
+
+
 
 
 
@@ -71707,12 +71731,40 @@ function furnModel(kind, id) {
     title = `Кухня: ${e.runs.length} ${e.runs.length === 1 ? 'стена' : 'стены'}, ${units.length} модулей`;
     hw = kitHardware(e).map(h => [h.n, h.q, h.u]);
   }
-  // positions: identical parts share a number
+  // drilling from the part geometry: connectors at the joints, shelf pins, hinges, runners, handles
+  const cfg = e.cfg || {};
+  const join = cfg.join === 'minifix' ? 'minifix' : 'conf';
+  const NT = {};
+  const sumN = N => {
+    for (const [k, v] of Object.entries(N)) NT[k] = (NT[k] || 0) + v;
+  };
+  const dOpts = { join, handle: cfg.handle, hSize: kind === 'casework' ? cfg.hSize : kind === 'kitchen' ? 160 : 0 };
+  if (kind === 'casework') {
+    // one carcass along each run: the sections share partitions, so they are drilled together
+    const groups = new Map();
+    for (const U of units) {
+      const R = U.S_ ? U.S_.R : U.R;
+      const dx = U.S_ ? U.S_.b0 : R ? R.xs0 : 0;
+      if (!groups.has(R)) groups.set(R, []);
+      for (const p of U.parts) groups.get(R).push({ p, dx });
+    }
+    for (const L of groups.values()) {
+      const W = L.map(({ p, dx }) => ({
+        ...p,
+        box: p.box ? [p.box[0] + dx, p.box[1], p.box[2], p.box[3] + dx, p.box[4], p.box[5]] : null,
+        _src: p
+      }));
+      sumN(drillUnit({ parts: W }, dOpts));
+      for (const w of W) w._src.holes = w.holes || [];
+    }
+  } else for (const U of units) sumN(drillUnit(U, { ...dOpts, wallUnit: !!(U.it && U.it.row !== 'low') }));
+  hw = hw.filter(h => !/^Конфирмат/.test(h[0])).concat(drHardware(NT, join));
+  // positions: identical parts (with identical drilling) share a number
   const pos = new Map();
   let np = 0;
   for (const U of units)
     for (const p of U.parts) {
-      const k = [p.name, p.L, p.W, p.t, p.mat, p.edge].join('|');
+      const k = [p.name, p.L, p.W, p.t, p.mat, p.edge, drSig(p)].join('|');
       if (!pos.has(k))
         pos.set(k, {
           no: ++np,
@@ -71747,7 +71799,7 @@ function furnModel(kind, id) {
     for (const p of P) if (p.mat === mat) for (let i = 0; i < p.qty; i++) items.push({ w: p.L, h: p.W, pos: p.no });
     if (items.length) cut[mat] = furnPackSheets(items, FD_SHEET[mat].W, FD_SHEET[mat].H);
   }
-  return { kind, id, e, title, units, P, hw, area, edges, cut };
+  return { kind, id, e, title, units, P, hw, area, edges, cut, join, drill: NT };
 }
 /* ---------- MaxRects (best short side fit), rotation allowed, kerf + trim ---------- */
 function furnPackSheets(items, SW, SH) {
@@ -72149,23 +72201,15 @@ function fdPartCell(p, x, y, w, h) {
     const q = sd[k_];
     s += svgL(q[0], q[1], q[2], q[3], 1.1, ec);
   }
-  // drilling: system 32 shelf pins and confirmats on sides; hinge cups on doors
-  if (p.name === 'Боковина') {
-    for (const yy of [37, p.W - 37])
-      for (let zz = 200; zz < p.L - 150; zz += 32 * 4)
-        s += `<circle cx="${(px + zz * k).toFixed(2)}" cy="${(py + ph - yy * k).toFixed(2)}" r="${Math.max(0.35, 2.5 * k).toFixed(2)}" fill="none" stroke="#000" stroke-width="0.15"/>`;
-    for (const zz of [8, p.L - 8])
-      for (const yy of [50, p.W / 2, p.W - 50])
-        s += `<circle cx="${(px + zz * k).toFixed(2)}" cy="${(py + ph - yy * k).toFixed(2)}" r="${Math.max(0.45, 3.5 * k).toFixed(2)}" fill="#000"/>`;
-  }
-  if (/Фасад распашной|ПММ/.test(p.name) && p.L > 200) {
-    const n = hingeCount(p.L);
-    for (let i = 0; i < n; i++) {
-      const zz = n === 1 ? p.L / 2 : 100 + ((p.L - 200) * i) / (n - 1);
-      const xx = p.hinge === 'R' ? p.W - 22.5 : 22.5;
-      s += `<circle cx="${(px + zz * k).toFixed(2)}" cy="${(py + ph - xx * k).toFixed(2)}" r="${Math.max(0.6, 17.5 * k).toFixed(2)}" fill="none" stroke="#000" stroke-width="0.2"/>`;
-    }
-  }
+  // drilling from the part geometry
+  s += drHolesSvg(
+    (p.ex && p.ex.holes) || [],
+    x_ => px + x_ * k,
+    y_ => py + ph - y_ * k,
+    k,
+    p.L,
+    p.W
+  );
   s += dimS(px, py + ph, px + pw, py + ph, 5, p.L, 2.6) + dimS(px, py + ph, px, py, 5, p.W, 2.6);
   s += svgT(
     x + 3,
@@ -72192,11 +72236,146 @@ function fdDetails(M, page, per) {
     svgT(67, 234, '2 мм', 2.6) +
     svgL(78, 233, 86, 233, 1.1, '#2a6fdb') +
     svgT(87, 234, '0,4 мм', 2.6) +
-    `<circle cx="102" cy="233" r="1" fill="#000"/>` +
-    svgT(104, 234, 'конфирмат 7×50 / Ø5', 2.6) +
-    `<circle cx="143" cy="233" r="1" fill="none" stroke="#000" stroke-width="0.2"/>` +
-    svgT(145, 234, 'полкодержатель Ø5 · чашка петли Ø35', 2.6);
+    drLegend(25, 228);
   return { body: s, scale: '—' };
+}
+/* ---------- drilling: holes on a part drawing ---------- */
+/** SVG of the holes of a part: X(x), Y(y) map part mm to sheet mm, k — scale; numbers — label each hole. */
+function drHolesSvg(holes, X, Y, k, L, W, numbers) {
+  let s = '';
+  holes.forEach((h, i) => {
+    const col = (DR_K[h.k] || ['', '#000'])[1];
+    const r = Math.max(0.35, (h.d / 2) * k);
+    if (h.f === 'E') {
+      // edge hole: a short line from the edge inwards, as deep as the hole
+      const dl = Math.max(1.2, h.dep * k);
+      let x1 = X(h.x),
+        y1 = Y(h.y),
+        x2 = x1,
+        y2 = y1;
+      if (h.e === 'x0') x2 += dl;
+      else if (h.e === 'x1') x2 -= dl;
+      else if (h.e === 'y0') y2 -= dl;
+      else y2 += dl;
+      s +=
+        svgL(x1, y1, x2, y2, Math.max(0.3, h.d * k), col) +
+        `<circle cx="${x1.toFixed(2)}" cy="${y1.toFixed(2)}" r="0.45" fill="${col}"/>`;
+    } else {
+      const dash = h.f === 'B' ? ' stroke-dasharray="0.8 0.5"' : '';
+      s += `<circle cx="${X(h.x).toFixed(2)}" cy="${Y(h.y).toFixed(2)}" r="${r.toFixed(2)}" fill="${h.thr ? col : 'none'}" fill-opacity="${h.thr ? 0.18 : 1}" stroke="${col}" stroke-width="0.2"${dash}/>`;
+      if (r > 1.2) s += `<circle cx="${X(h.x).toFixed(2)}" cy="${Y(h.y).toFixed(2)}" r="0.25" fill="${col}"/>`;
+    }
+    if (numbers)
+      s += svgT(X(h.x) + Math.max(r, 0.6) + 0.4, Y(h.y) - Math.max(r, 0.6) - 0.2, i + 1, 1.7, 'start', `fill="${col}"`);
+  });
+  return s;
+}
+function drLegend(x, y) {
+  const x0 = x;
+  let s = '';
+  for (const k of ['conf', 'cam', 'dowel', 'pin', 'cup', 'plate', 'run', 'hdl']) {
+    const [n, col] = DR_K[k];
+    s +=
+      `<circle cx="${x + 1}" cy="${y - 1}" r="1" fill="none" stroke="${col}" stroke-width="0.3"/>` +
+      svgT(x + 3, y, n, 2.2);
+    x += 7 + n.length * 1.32;
+    if (x > 395) {
+      x = x0;
+      y += 4;
+    }
+  }
+  return s;
+}
+/** Sheet: drilling map of one part — the part to scale with all holes numbered, ordinate sizes and the hole table. */
+function fdDrill(M, p) {
+  const H = (p.ex && p.ex.holes) || [];
+  let s = '';
+  const k = Math.min(230 / p.L, 165 / p.W, 0.6);
+  const pw = p.L * k,
+    ph = p.W * k;
+  const ox = 32 + (230 - pw) / 2,
+    oy = 30 + (165 - ph) / 2;
+  const X = x => ox + x * k,
+    Y = y => oy + ph - y * k;
+  s +=
+    svgT(25, 14, `Поз. ${p.no} · ${p.name}`, 4.2) +
+    svgT(25, 20, `${p.L} × ${p.W} × ${p.t} мм · ${p.qty} шт · кромка: ${edgeInfo(p.edge, p.L, p.W).label}`, 3);
+  s += svgR(ox, oy, pw, ph, 0.45, '#fff');
+  s += svgT(ox, oy - 2, 'Вид на пласть А (внутренняя). Пунктир — пласть Б, линии от кромки — торцевые отверстия', 2.3);
+  s += drHolesSvg(H, X, Y, k, p.L, p.W, true);
+  // ordinate sizes from the bottom-left corner
+  const xs = [...new Set(H.map(h => Math.round(h.x)))].sort((a, b) => a - b);
+  const ys = [...new Set(H.map(h => Math.round(h.y)))].sort((a, b) => a - b);
+  const yb = oy + ph + 6;
+  s += svgL(ox, yb, ox + pw, yb, 0.2);
+  let lastX = -99;
+  for (const v of xs) {
+    const sx = X(v);
+    s += svgL(sx, oy + ph, sx, yb + 1, 0.12, '#666');
+    if (sx - lastX > 2.6) {
+      s += `<text x="${(sx + 0.8).toFixed(2)}" y="${(yb + 2).toFixed(2)}" font-size="2" font-family="Arial, sans-serif" transform="rotate(90 ${(sx + 0.8).toFixed(2)} ${(yb + 2).toFixed(2)})">${v}</text>`;
+      lastX = sx;
+    }
+  }
+  const xl = ox - 6;
+  s += svgL(xl, oy, xl, oy + ph, 0.2);
+  let lastY = 1e9;
+  for (const v of ys) {
+    const sy = Y(v);
+    s += svgL(ox, sy, xl - 1, sy, 0.12, '#666');
+    if (lastY - sy > 2.6) {
+      s += svgT(xl - 1.5, sy + 0.7, v, 2, 'end');
+      lastY = sy;
+    }
+  }
+  s += dimS(ox, oy + ph + 16, ox + pw, oy + ph + 16, 0, p.L, 2.8) + dimS(ox - 18, oy + ph, ox - 18, oy, 0, p.W, 2.8);
+  s += svgT(ox - 3, oy + ph + 3, '0', 2.2, 'end');
+  // the hole table
+  const tx = 282,
+    cols = [
+      ['№', 7],
+      ['Пл.', 9],
+      ['X', 14],
+      ['Y', 14],
+      ['Ø', 8],
+      ['Гл.', 11],
+      ['Назначение', 66]
+    ];
+  let cx = tx;
+  s += svgR(tx, 10, 129, 5, 0.3, '#f1ece2');
+  for (const [n, w] of cols) {
+    s += svgT(cx + 1, 13.6, n, 2.4);
+    cx += w;
+  }
+  const rows = H.slice(0, 58);
+  rows.forEach((h, i) => {
+    const y = 15 + i * 3.7;
+    cx = tx;
+    const v = [
+      i + 1,
+      h.f === 'E' ? 'Т' + (h.e || '') : h.f,
+      String(h.x).replace('.', ','),
+      String(h.y).replace('.', ','),
+      h.d,
+      h.thr ? 'скв.' : String(h.dep).replace('.', ','),
+      (DR_K[h.k] || [h.k])[0].split(':')[0]
+    ];
+    cols.forEach(([, w], j) => {
+      s += svgT(cx + 1, y + 2.8, v[j], 2.2);
+      cx += w;
+    });
+    s += svgL(tx, y + 3.7, tx + 129, y + 3.7, 0.1, '#bbb');
+  });
+  if (H.length > rows.length)
+    s += svgT(tx, 15 + rows.length * 3.7 + 4, `… ещё ${H.length - rows.length} отв. — в файле CSV`, 2.4);
+  s += drLegend(25, 230);
+  s += svgT(
+    25,
+    224,
+    'X — вдоль длины L, Y — вдоль ширины W от нижнего левого угла пласти А. Т x0/x1/y0/y1 — торец (кромка) детали.',
+    2.3
+  );
+  return { body: s, scale: '1:' + Math.round(1 / k) };
 }
 /* ---------- sheet: cutting maps ---------- */
 function fdCut(M, mat, from) {
@@ -72366,8 +72545,12 @@ function fdAssembly(M, unitIdx) {
   // steps
   const has = n => U.parts.some(p => p.name.includes(n));
   const steps = [
-    'Присадка по деталировке: отверстия под конфирматы Ø5/Ø7 в боковинах, Ø8 в торцах; полкодержатели Ø5 по системе 32 мм; чашки петель Ø35 глубиной 12,5 мм.',
-    'Дно и крышу (царги) соединить с левой боковиной конфирматами 7×50, затем правую боковину.',
+    M.join === 'minifix'
+      ? 'Присадка по картам присадки: эксцентрики Ø15 в пласти, штоки Ø8 в торцах и Ø5 в пласти, шканты Ø8; полкодержатели Ø5; чашки петель Ø35 гл. 13 с вкладышами INSERTA Ø8.'
+      : 'Присадка по картам присадки: конфирматы — Ø7 насквозь в пласти и Ø5 в торце; полкодержатели Ø5; чашки петель Ø35 гл. 13 с вкладышами INSERTA Ø8.',
+    M.join === 'minifix'
+      ? 'Вклеить шканты в торцы, вкрутить штоки в пласти; дно и крышу (царги) соединить с левой боковиной, затянуть эксцентрики, затем правую боковину.'
+      : 'Дно и крышу (царги) соединить с левой боковиной конфирматами 7×50, затем правую боковину.',
     has('Перегородка') ? 'Установить перегородки (конфирматы через дно и крышу).' : null,
     has('Цоколь') ? 'Закрепить цоколь и заднюю царгу.' : null,
     c.back !== 'none' ? 'Проверить диагонали корпуса, прибить/прикрутить заднюю стенку ХДФ (шаг 150 мм).' : null,
@@ -72400,6 +72583,119 @@ function fdAssembly(M, unitIdx) {
     y += 1.2;
   });
   s += svgT(28, 232, `Схема сборки: ${U.name} (аксонометрия, детали разнесены)`, 3);
+  return { body: s, scale: '—' };
+}
+/* ---------- sheet: hardware calculation — what was counted and by which rule ---------- */
+function fdHwCalc(M) {
+  let s = '';
+  const N = M.drill || {};
+  let y = 14;
+  const head = t => {
+    s += svgT(25, y, t, 3.6, 'start', 'font-weight="600"');
+    y += 5;
+  };
+  const table = (cols, rows, maxRows) => {
+    let x = 25;
+    const W_ = cols.reduce((a, c) => a + c[1], 0);
+    s += svgR(25, y - 3.6, W_, 5, 0.25, '#f1ece2');
+    for (const [n, w] of cols) {
+      s += svgT(x + 1, y, n, 2.4, 'start', 'font-weight="600"');
+      x += w;
+    }
+    y += 4.4;
+    for (const r of rows.slice(0, maxRows)) {
+      x = 25;
+      cols.forEach(([, w], j) => {
+        const v = String(r[j] ?? '');
+        s += svgT(x + 1, y, v.length > w / 1.25 ? v.slice(0, Math.floor(w / 1.25) - 1) + '…' : v, 2.3);
+        x += w;
+      });
+      s += svgL(25, y + 1.2, 25 + W_, y + 1.2, 0.1, '#bbb');
+      y += 3.9;
+    }
+    if (rows.length > maxRows) {
+      s += svgT(25, y, `… ещё ${rows.length - maxRows} строк`, 2.3);
+      y += 3.9;
+    }
+    y += 4;
+  };
+  // 1. fronts and hinges
+  const doors = M.P.filter(p => /Фасад распашной|антресоли распашной/.test(p.name));
+  if (doors.length) {
+    head('1. Петли: количество по высоте и по массе фасада');
+    table(
+      [
+        ['Поз.', 10],
+        ['Фасад', 60],
+        ['Размер, мм', 24],
+        ['Масса, кг', 18],
+        ['По высоте', 18],
+        ['По массе', 18],
+        ['Петель', 14],
+        ['Шт.', 10],
+        ['Всего', 14]
+      ],
+      doors.map(p => {
+        const kgm2 = (p.ex && p.ex.kgm2) || (p.mat === 'ldsp' ? 11.5 : 13);
+        const kg = ((p.L * p.W) / 1e6) * kgm2;
+        const byH = hingeCount(p.L),
+          byM = kg > 6 ? 2 + Math.ceil((kg - 6) / 4) : 2;
+        const n = hingesFor(p.L, p.W, kgm2);
+        return [p.no, p.name, `${p.L}×${p.W}`, kg.toFixed(1).replace('.', ','), byH, byM, n, p.qty, n * p.qty];
+      }),
+      14
+    );
+    s += svgT(
+      25,
+      y - 3,
+      'По высоте: до 900 мм — 2, до 1600 — 3, до 2000 — 4, до 2400 — 5. По массе: до 6 кг — 2, далее +1 на каждые 4 кг. Берётся большее.',
+      2.3
+    );
+    y += 3;
+  }
+  // 2. carcass joints
+  head('2. Соединения корпуса');
+  const jr = [];
+  if (M.join === 'minifix') {
+    jr.push(['Эксцентрик Minifix 15 + шток', N.cam || 0, 'по 50 мм от краёв стыка и не реже чем через 250 мм']);
+    jr.push(['Шкант 8×30', N.dowel || 0, '32 мм от эксцентрика к середине стыка; на коротком стыке — по обе стороны']);
+  } else
+    jr.push([
+      'Конфирмат 7×50',
+      N.conf || 0,
+      'по 50 мм от краёв стыка и не реже чем через 250 мм; стык короче 100 мм — один'
+    ]);
+  jr.push(['Стыков (торец на пласть)', N.joints || 0, 'найдены по касанию деталей в модели']);
+  jr.push([
+    'Полкодержатель Ø5',
+    N.pin || 0,
+    'под каждой переставной полкой по 2 с каждой стороны (37 мм от краёв, шаг 32)'
+  ]);
+  jr.push(['Монтажная планка петли', N.plates || 0, 'на стойке у петли, отверстия 37 мм от переднего края, ±16 мм']);
+  if (N.halfOverlay)
+    jr.push(['Стойки с двумя дверями', N.halfOverlay, 'петли полунакладные (две двери на одной стойке)']);
+  jr.push(['Отверстия под направляющие', N.run || 0, '37 / 261 / 485 мм от переднего края, над низом фасада ящика']);
+  jr.push(['Винты ручек', N.hdlScrews || 0, 'Ø5 насквозь; дверь — 40 мм от края без петель, ящик — по центру']);
+  table(
+    [
+      ['Что', 60],
+      ['Кол-во', 16],
+      ['Правило', 150]
+    ],
+    jr,
+    10
+  );
+  // 3. all hardware
+  head('3. Фурнитура изделия');
+  table(
+    [
+      ['Наименование', 170],
+      ['Кол-во', 18],
+      ['Ед.', 12]
+    ],
+    M.hw.map(([n, q, u]) => [n, String(q).replace('.', ','), u]),
+    Math.max(6, Math.floor((228 - y) / 3.9) - 2)
+  );
   return { body: s, scale: '—' };
 }
 /* ---------- sheet: specification ---------- */
@@ -72468,7 +72764,9 @@ function fdSpec(M, page) {
       s += svgT(
         x0,
         y,
-        `${FD_SHEET[m] ? FD_SHEET[m].n : m}: деталей ${a.toFixed(2).replace('.', ',')} м² · листов ${C ? C.sheets.length : 0} × ${FD_SHEET[m].W}×${FD_SHEET[m].H} (средн. использование ${C && C.sheets.length ? ((C.sheets.reduce((q, s_) => q + s_.util, 0) / C.sheets.length) * 100).toFixed(0) : 0}%)`,
+        FD_SHEET[m]
+          ? `${FD_SHEET[m].n}: деталей ${a.toFixed(2).replace('.', ',')} м² · листов ${C ? C.sheets.length : 0} × ${FD_SHEET[m].W}×${FD_SHEET[m].H} (средн. использование ${C && C.sheets.length ? ((C.sheets.reduce((q, s_) => q + s_.util, 0) / C.sheets.length) * 100).toFixed(0) : 0}%)`
+          : `${m}: ${a.toFixed(2).replace('.', ',')} м² — заказ по размерам`,
         2.8
       );
       y += 4.5;
@@ -72506,6 +72804,12 @@ function furnSheets(M, sel) {
   const per = 12;
   for (let i = 0; i * per < M.P.length; i++)
     out.push({ n: `Деталировка${M.P.length > per ? ' ' + (i + 1) : ''}`, f: () => fdDetails(M, i, per) });
+  for (const p of M.P)
+    if (p.ex && p.ex.holes && p.ex.holes.length)
+      out.push({
+        n: `Присадка поз. ${p.no} — ${p.name.length > 26 ? p.name.slice(0, 25) + '…' : p.name}`,
+        f: () => fdDrill(M, p)
+      });
   for (const mat of Object.keys(M.cut)) {
     const C = M.cut[mat];
     for (let i = 0; i < C.sheets.length; i += 2)
@@ -72531,6 +72835,7 @@ function furnSheets(M, sel) {
           );
   }
   out.push({ n: 'Схема сборки', f: () => fdAssembly(M, ui) });
+  out.push({ n: 'Расчёт фурнитуры', f: () => fdHwCalc(M) });
   for (let i = 0; i * 34 < M.P.length; i++)
     out.push({ n: `Спецификация${M.P.length > 34 ? ' ' + (i + 1) : ''}`, f: () => fdSpec(M, i) });
   return out.map((sh, i, arr) => ({
@@ -72552,13 +72857,29 @@ function openFurnDraw(kind, id) {
     d.id = 'fddlg';
     d.className = 'modal';
     d.style.zIndex = '60';
-    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертежи мебели" style="width:min(1400px,100%);height:min(900px,100%)"><div class="dlgh"><h3>Чертежи: деталировка, раскрой, сборка</h3><span class="hint" id="fdSum"></span><button class="btn" id="fdSvg">Скачать лист SVG</button><button class="btn" id="fdAll">Скачать комплект (HTML → PDF)</button><button class="btn pri" id="fdPrint">Печать / PDF</button><button class="x" id="fdClose" aria-label="Закрыть">×</button></div>
+    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертежи мебели" style="width:min(1400px,100%);height:min(900px,100%)"><div class="dlgh"><h3>Чертежи: деталировка, раскрой, сборка</h3><span class="hint" id="fdSum"></span><label class="hint" style="display:flex;align-items:center;gap:6px">Крепёж корпуса<select id="fdJoin">${Object.entries(
+      DR_JOIN
+    )
+      .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
+      .join(
+        ''
+      )}</select></label><button class="btn" id="fdCsv" title="Отверстия всех деталей одной таблицей: деталь, пласть, X, Y, Ø, глубина">Присадка CSV</button><button class="btn" id="fdSvg">Скачать лист SVG</button><button class="btn" id="fdAll">Скачать комплект (HTML → PDF)</button><button class="btn pri" id="fdPrint">Печать / PDF</button><button class="x" id="fdClose" aria-label="Закрыть">×</button></div>
   <div style="display:grid;grid-template-columns:200px minmax(0,1fr);min-height:0;overflow:hidden"><div id="fdList" style="padding:10px;overflow:auto;border-right:1px solid var(--line)"></div><div id="fdView" style="overflow:auto;background:#8f949a;padding:14px;display:flex;justify-content:center;align-items:flex-start"></div></div></div>`;
     document.body.appendChild(d);
     d.querySelector('#fdClose').onclick = () => {
       d.hidden = true;
     };
     d.querySelector('#fdSvg').onclick = () => fdSave('svg');
+    d.querySelector('#fdCsv').onclick = () => fdSave('csv');
+    d.querySelector('#fdJoin').onchange = ev => {
+      const e = byId(FDD.id);
+      if (!e) return;
+      pushUndo();
+      if (FDD.kind === 'cab') e.cfg.join = ev.target.value;
+      else e.cfg = { ...e.cfg, join: ev.target.value };
+      changed();
+      renderFurnDraw();
+    };
     d.querySelector('#fdAll').onclick = () => fdSave('html');
     d.querySelector('#fdPrint').onclick = () => fdPrint();
   }
@@ -72599,6 +72920,8 @@ function renderFurnDraw() {
         })
     );
   $('#fdSum').textContent = M.title;
+  const js = $('#fdJoin');
+  if (js) js.value = M.join;
   $('#fdView').innerHTML =
     `<div style="background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25);width:min(100%,1300px);aspect-ratio:420/297">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
 }
@@ -72641,6 +72964,10 @@ function fdSave(fmt) {
     .replace(/[\\/:*?"<>|×]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (fmt === 'csv') {
+    fdBlobSave(`${base} — присадка.csv`, new Blob(['\ufeff' + drCSV(X.M)], { type: 'text/csv' }));
+    return;
+  }
   if (fmt === 'svg') {
     const sh = X.SH[FDD.i];
     fdBlobSave(`${base} — ${FDD.i + 1} ${sh.n}.svg`, new Blob([sh.svg()], { type: 'image/svg+xml' }));
@@ -74327,12 +74654,6 @@ function addSheet(name, o = {}) {
 }
 function itemById(sh, id) {
   return sh ? sh.items.find(i => i.id === id) : null;
-}
-/** All viewports of the project (for unique ids across sheets). */
-function allVps() {
-  const r = [];
-  for (const sh of proj().sheets) for (const it of sh.items) if (it.t === 'vp') r.push([sh, it]);
-  return r;
 }
 function newItemId() {
   const P_ = proj();
@@ -78705,10 +79026,6 @@ uiHooks.wsSet = id => {
   sheetMode(id === 'proj');
   renderTabs();
 };
-/** layer used by drafting on sheets */
-function sheetLayer() {
-  return ensureLayer('Аннотации');
-}
 
 /* ---------- dimension style ---------- */
 function openDimStyle() {
@@ -79113,11 +79430,6 @@ function sheetCubeHover(it, w2s, dirOf, sx, sy) {
   }
   return !!hit;
 }
-/** Section-box views of the model (for tests). */
-function sbViews() {
-  return viewsList().filter(v => v.type === 'v3sb');
-}
-const sbRenderX = (v, w, h) => sbRender(v, vwOf(v), w, h, 1);
 uiHooks.sheetCube = { draw: sheetCubeDraw, click: sheetCubeClick, hover: sheetCubeHover };
 
 // ===== drafting/stages.js =====
@@ -82763,7 +83075,6 @@ const AR = {
   gps: null,
   heading0: null
 };
-const arState = AR;
 const Toff = () => new THREE.Matrix4().set(0.001, 0, 0, 0, 0, 0, 0.001, 0, 0, -0.001, 0, 0, 0, 0, 0, 1);
 /** Model point (mm, plan) → model in three units (m, Y up), before the calibration. */
 const m3 = p => [p.x / 1000, -p.y / 1000];
@@ -87999,6 +88310,7 @@ function xBoot() {
     isLight,
     lightKeyOf,
     furnModel,
+    openFurnDraw,
     pipeCross,
     S,
     openObj,
