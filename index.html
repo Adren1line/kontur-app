@@ -4973,7 +4973,8 @@ label.ck {
   <button data-f="expProj">Сохранить проект в файл</button>
   <button data-f="expCat">Сохранить каталог в файл</button>
   <hr>
-  <button data-f="sample">Загрузить пример</button>
+  <button data-f="sample">Пример: дом со вторым светом</button>
+  <button data-f="sampleFlat">Пример: двухуровневая квартира</button>
   <button data-f="new">Новый чертёж</button>
 </div>
 
@@ -10150,6 +10151,7 @@ function eraseIds(ids) {
 
 
 
+
 /* ---- sample project ---- */
 function defaultLayers() {
   return [
@@ -10166,7 +10168,8 @@ function defaultLayers() {
     ['Текст', '#c9ced6']
   ].map(([name, color]) => ({ name, color, on: true, lock: false }));
 }
-function sample() {
+/** Builds a demo project: the house with the second light (default) or the two-level flat ('flat'). */
+function sample(kind) {
   // the regression tests start from their own fixture project
   if (typeof window !== 'undefined' && window.__legacySample && typeof window.__sampleFixture === 'function')
     return window.__sampleFixture();
@@ -10188,7 +10191,8 @@ function sample() {
     S.ents.push(o);
     return o;
   };
-  sampleDuplex(E);
+  if (kind === 'flat') sampleDuplex(E);
+  else sampleHouse(E);
   documentState.undoS = [];
   documentState.redoS = [];
 }
@@ -10789,6 +10793,9 @@ function mkText() {
  * Command engine: the command table CMDS of the core tools, command start/finish, point input, core commands
  * (line, rect, wall, device, wire, duct, opening, slab, insert, move, rotate, erase…).
  */
+
+
+
 
 
 
@@ -11798,10 +11805,15 @@ function mkOpening(kind) {
 }
 function mkSlab() {
   const pts = [];
-  let picking = false;
-  const th = 200;
+  let picking = false,
+    room = false;
   const mk = pp => {
-    addEnt({ type: 'slab', pts: pp, th, z: 0, layer: ensureLayer('Перекрытия') });
+    // the slab of the level: its top at the level's slab top, its thickness from the level settings
+    const lv = typeof lvCur === 'function' ? lvCur() : null;
+    const th = (lv && lv.slab) || 200;
+    const e = addEnt({ type: 'slab', pts: pp, th, z: lv ? lv.top : 0, layer: ensureLayer('Перекрытия') });
+    const o = slabOutline(e);
+    if (o !== e.pts) log('Перекрытие доведено до наружных граней стен — опирается на стены по их толщине');
     return 'end';
   };
   return {
@@ -11810,12 +11822,20 @@ function mkSlab() {
     prompt: () =>
       picking
         ? 'Выберите замкнутую полилинию:'
-        : !pts.length
-          ? 'Первая точка контура перекрытия или [Объект]:'
-          : pts.length < 3
-            ? 'Следующая точка:'
-            : 'Следующая точка или Enter — замкнуть:',
+        : room
+          ? 'Щелчок внутри помещения — перекрытие по его контуру, до наружных граней стен:'
+          : !pts.length
+            ? 'Первая точка контура перекрытия или [Объект/Помещение]:'
+            : pts.length < 3
+              ? 'Следующая точка:'
+              : 'Следующая точка или Enter — замкнуть:',
     onPoint(p) {
+      if (room) {
+        const poly = roomPolyAt(p);
+        if (poly && poly.length > 2) return mk(poly.map(q => P(q.x, q.y)));
+        log('Здесь нет замкнутого помещения', true);
+        return;
+      }
       if (picking) {
         const e = pickAt(p, x => x.type === 'pline' && x.closed);
         if (e) return mk(e.pts.slice());
@@ -11827,6 +11847,10 @@ function mkSlab() {
     onInput(s) {
       if (!pts.length && kw(s, 'о', 'объект', 'o')) {
         picking = true;
+        return true;
+      }
+      if (!pts.length && kw(s, 'п', 'помещение', 'r')) {
+        room = true;
         return true;
       }
       return false;
@@ -15372,7 +15396,7 @@ function key3Base(e) {
       return JSON.stringify([e.type, e.t, e.w, e.h, e.sill, e.flip, e.hand, w.a, w.b, w.th, w.z, c, pr, w.fa, w.fb]);
     }
     case 'slab':
-      return JSON.stringify([e.pts, e.th, e.z, typeof slabHoles === 'function' ? slabHoles(e) : 0]);
+      return JSON.stringify([slabOutline(e), e.th, e.z, typeof slabHoles === 'function' ? slabHoles(e) : 0]);
     case 'inst':
       return JSON.stringify([e.asset, ASSETS.has(e.asset), e.p, e.rot, e.z]);
     case 'dev':
@@ -15504,7 +15528,7 @@ function build3(e) {
       return buildWin3(e);
     case 'slab': {
       if (e.pts.length < 3) return null;
-      const sh = new THREE.Shape(e.pts.map(p => new THREE.Vector2(p.x, p.y)));
+      const sh = new THREE.Shape(slabOutline(e).map(p => new THREE.Vector2(p.x, p.y)));
       try {
         for (const h of slabHoles(e)) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p.x, p.y))));
       } catch (err) {}
@@ -17027,7 +17051,8 @@ const MENUS = [
     it: [
       { n: 'Новый чертёж', a: () => fileAct('new') },
       { n: 'Открыть проект…', k: '.kontur', a: () => pickFile('.kontur,.txt,.json') },
-      { n: 'Загрузить пример', a: () => fileAct('sample') },
+      { n: 'Пример: дом со вторым светом', a: () => fileAct('sample') },
+      { n: 'Пример: двухуровневая квартира', a: () => fileAct('sampleFlat') },
       '-',
       {
         n: 'Сохранить в браузере',
@@ -18070,13 +18095,17 @@ function initToolbar() {
     if (f === 'import' || f === 'open') pickFile(f === 'open' ? '.json' : '.ifc,.glb,.gltf,.obj');
     if (f === 'expProj') exportProject();
     if (f === 'expCat') exportCatalog();
-    if (f === 'sample') {
+    if (f === 'sample' || f === 'sampleFlat') {
       const u = snapshot();
-      sample();
+      sample(f === 'sampleFlat' ? 'flat' : 'house');
       documentState.undoS = [u];
       changed();
       zoomExtents();
-      log('Загружен пример: квартира-студия с кухней, санузлом и инженерией');
+      log(
+        f === 'sampleFlat'
+          ? 'Загружен пример: двухуровневая квартира с кухней, санузлами и инженерией'
+          : 'Загружен пример: дом 14 × 10 м со вторым светом, прачечной, кухней и спальнями'
+      );
       if (is3D()) setTimeout(() => camTo('iso'), 60);
     }
     if (f === 'new') {
@@ -21773,6 +21802,8 @@ const WS = [
       '|',
       'pipe',
       'fix',
+      'boiler',
+      'wheater',
       'drain',
       'shole',
       'rhatch',
@@ -21798,8 +21829,12 @@ const WS = [
       'ztrans',
       'zmerge',
       'trim',
+      'molding',
+      'curtain',
       'ceil',
       'fix',
+      'towel',
+      'washer',
       'catalog',
       '|',
       'kitchen',
@@ -29071,6 +29106,8 @@ XT.fix = {
     if (p === 'kind') {
       e.cfg = FIXK[v].cfg();
     }
+    const K = FIXK[e.kind];
+    if (K && K.onSet && p !== 'kind') K.onSet(e, p, v);
   },
   /** Buttons in the fixture panel (data-xa) are handled by the fixture kind: FIXK[kind].action(e, action, el, button). */
   action(e, a, el, b) {
@@ -36728,9 +36765,9 @@ function pipeNet() {
             fix: f,
             kind: f.kind,
             sys: q.s,
-            src: !!(K && K.src) || (f.kind === 'boiler' && q.s === 'gvs'),
+            src: !!(K && K.src) || ((f.kind === 'boiler' || f.kind === 'wheater') && q.s === 'gvs'),
             mf: f.kind === 'manifold',
-            V: f.kind === 'boiler' && q.s === 'gvs' ? 0 : FLOWV[f.kind] || 0,
+            V: (f.kind === 'boiler' || f.kind === 'wheater') && q.s === 'gvs' ? 0 : FLOWV[f.kind] || 0,
             ports: []
           });
         info.get(fid).ports.push({ pipe: e.id, in: /^ввод/.test(q.n || '') });
@@ -42895,7 +42932,7 @@ function renderViewsDialog() {
     }${det}</div>
     ${v.type !== 'plan' && v.type !== 'node' ? catsUI(cfg) : ''}<div class="sech" style="margin-top:6px">Видимые слои</div><div class="lays">${lay}</div>
     <div class="btnrow">${e ? `<button class="btn" id="vwShow">Показать на плане</button>` : ''}${v.type === 'sect' || v.type === 'elev' ? `<button class="btn ${S.x.clip === v.id ? 'pri' : ''}" id="vwClip">${S.x.clip === v.id ? 'Снять подрезку 3D' : 'Подрезать 3D'}</button>` : ''}${v.type === 'v3box' ? `<button class="btn" id="vwFit">Вписать вид</button>` : ''}${v.type === 'v3sb' ? `<button class="btn" id="vwHome">Домой (изометрия)</button>` : ''}<button class="btn pri" id="vwToSheet" title="Поставить вид на текущий лист раздела «Проект»">На лист</button></div>
-    <p class="hint">${{ plan: 'План — общий вид модели со своими видимыми слоями.', node: 'Узел — фрагмент плана в крупном масштабе; стены показываются с пирогом (листы, профили, утеплитель) и выносками слоёв.', sect: 'Вертикальный разрез из 3D-модели в ортогональной проекции.', elev: 'Развёртка стены из 3D-модели.', v3h: 'Горизонтальный разрез: всё ниже секущей плоскости в пределах прямоугольника, вид сверху.', v3c: 'Сложный разрез: вертикальный — участки линии разворачиваются в одну плоскость; горизонтальный — слева и справа от линии разные высоты сечения.', v3box: '3D-куб: видно только то, что внутри куба. Вращайте мышью. «Составные части» раскладывает выбранный объект на элементы.', stage: 'Стадия черчения: план со своими слоями, размерами и текстами, скрытыми элементами. Открывается и настраивается в разделе «Черчение».', v3sb: '3D-вид с секущим кубом: тонировка материалов с кромками, сечения на гранях куба залиты. Видовой куб справа сверху — щелчок по грани, ребру, углу или букве компаса; домик — изометрия.' }[v.type]}</p>`;
+    <p class="hint">${{ plan: 'План — общий вид модели со своими видимыми слоями.', node: 'Узел — фрагмент плана в крупном масштабе; стены показываются с пирогом (листы, профили, утеплитель) и выносками слоёв.', sect: 'Вертикальный разрез из 3D-модели в ортогональной проекции.', elev: 'Развёртка стены из 3D-модели.', v3h: 'Горизонтальный разрез: всё ниже секущей плоскости в пределах прямоугольника, вид сверху.', v3c: 'Сложный разрез: вертикальный — участки линии разворачиваются в одну плоскость; горизонтальный — слева и справа от линии разные высоты сечения.', v3box: '3D-куб: видно только то, что внутри куба. Вращайте мышью. «Составные части» раскладывает выбранный объект на элементы.', stage: 'Стадия черчения: план со своими слоями, размерами и текстами, скрытыми элементами. Открывается и настраивается в разделе «Черчение».', v3sb: '3D-вид с секущим кубом: тонировка материалов с кромками, сечения на гранях куба залиты. Видовой домик справа сверху — щелчок по стене, крыше, ребру, углу или букве компаса; кнопка-домик — изометрия.' }[v.type]}</p>`;
   const ch = () => {
     changed();
     renderViews();
@@ -44499,7 +44536,7 @@ defineTools({
   },
   sbox: {
     command: { t: 'СЕККУБ', m: () => mkVbox('sb'), a: ['sbox', 'секкуб', 'секущийкуб', '3dвид'] },
-    title: '3D-вид с секущим кубом: видовой куб, тонировка, заливка сечений · СЕККУБ',
+    title: '3D-вид с секущим кубом: видовой домик, тонировка, заливка сечений · СЕККУБ',
     icon: '<path d="M4 7l6-3 6 3v7l-6 3-6-3z" stroke-dasharray="2 1.6"/><path d="M7 9l3 1.5 3-1.5v4l-3 1.5-3-1.5z"/>'
   }
 });
@@ -44644,21 +44681,13 @@ const nodeState = {
 /**
  * views/viewcube.js
  *
- * Видовой куб в духе Revit / AutoCAD: куб с подписями граней, кольцо компаса (С/Ю/З/В) и кнопка «Домой».
- * Щелчок по грани, ребру или углу куба ставит вид с этой стороны (26 направлений), по букве компаса — вид
+ * Видовой домик: простой дом с двускатной крышей, подписи стен, кольцо компаса (С/Ю/З/В) и кнопка «Домой».
+ * Дом вписан в куб, поэтому щелчок по стене, крыше, ребру или углу ставит вид с этой стороны (26 направлений), по букве компаса — вид
  * с этой стороны света с прежним наклоном, «Домой» — изометрия ЮЗ. Рисуется на 2D-канвасе по базису камеры
  * {r, u, f} (f — направление взгляда), поэтому подходит и для soft3d-видов, и как наложение на 3D.
  */
 
 
-const VC_FACES = [
-  { n: [0, 0, 1], a: [1, 0, 0], b: [0, 1, 0], t: 'СВЕРХУ' },
-  { n: [0, 0, -1], a: [1, 0, 0], b: [0, -1, 0], t: 'СНИЗУ' },
-  { n: [0, -1, 0], a: [1, 0, 0], b: [0, 0, 1], t: 'СПЕРЕДИ' },
-  { n: [0, 1, 0], a: [-1, 0, 0], b: [0, 0, 1], t: 'СЗАДИ' },
-  { n: [-1, 0, 0], a: [0, -1, 0], b: [0, 0, 1], t: 'СЛЕВА' },
-  { n: [1, 0, 0], a: [0, 1, 0], b: [0, 0, 1], t: 'СПРАВА' }
-];
 const vcDot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const vcNrm = a => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1;
@@ -44672,133 +44701,269 @@ function vcBasis(dir) {
   const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
   return { f, r, u };
 }
-/** Layout of the widget: centre of the cube, its half size in px, compass radius, home button. */
+/* The view house: walls from z −1 to the eaves (VH_E), a gable roof with the ridge along X up to z 1. It fits the
+   cube [−1, 1]³, so the 26 directions of a view cube stay: a click is turned into a zone vector (−1 / 0 / +1 on each
+   axis) and the view looks from that side. The door is on the front (south) wall. */
+const VH_E = 0.12;
+const VH_N = a => vcNrm(a);
+const VH_FACES = [
+  {
+    t: 'СНИЗУ',
+    n: [0, 0, -1],
+    pts: [
+      [-1, -1, -1],
+      [-1, 1, -1],
+      [1, 1, -1],
+      [1, -1, -1]
+    ],
+    a: [1, 0, 0],
+    b: [0, -1, 0],
+    c: [0, 0, -1]
+  },
+  {
+    t: 'СПЕРЕДИ',
+    n: [0, -1, 0],
+    pts: [
+      [-1, -1, -1],
+      [1, -1, -1],
+      [1, -1, VH_E],
+      [-1, -1, VH_E]
+    ],
+    a: [1, 0, 0],
+    b: [0, 0, 1],
+    c: [0, -1, -0.8]
+  },
+  {
+    t: 'СЗАДИ',
+    n: [0, 1, 0],
+    pts: [
+      [1, 1, -1],
+      [-1, 1, -1],
+      [-1, 1, VH_E],
+      [1, 1, VH_E]
+    ],
+    a: [-1, 0, 0],
+    b: [0, 0, 1],
+    c: [0, 1, -0.8]
+  },
+  {
+    t: 'СЛЕВА',
+    n: [-1, 0, 0],
+    pts: [
+      [-1, 1, -1],
+      [-1, -1, -1],
+      [-1, -1, VH_E],
+      [-1, 0, 1],
+      [-1, 1, VH_E]
+    ],
+    a: [0, -1, 0],
+    b: [0, 0, 1],
+    c: [-1, 0, -0.8]
+  },
+  {
+    t: 'СПРАВА',
+    n: [1, 0, 0],
+    pts: [
+      [1, -1, -1],
+      [1, 1, -1],
+      [1, 1, VH_E],
+      [1, 0, 1],
+      [1, -1, VH_E]
+    ],
+    a: [0, 1, 0],
+    b: [0, 0, 1],
+    c: [1, 0, -0.8]
+  },
+  {
+    t: 'СВЕРХУ',
+    roof: true,
+    n: VH_N([0, -(1 - VH_E), 1]),
+    pts: [
+      [-1, -1, VH_E],
+      [1, -1, VH_E],
+      [1, 0, 1],
+      [-1, 0, 1]
+    ]
+  },
+  {
+    t: 'СВЕРХУ',
+    roof: true,
+    n: VH_N([0, 1 - VH_E, 1]),
+    pts: [
+      [1, 1, VH_E],
+      [-1, 1, VH_E],
+      [-1, 0, 1],
+      [1, 0, 1]
+    ]
+  }
+];
+/** Openings drawn on the walls: [face label, x0, z0, x1, z1] in the face axes (a — along, z — up). */
+const VH_OPEN = [
+  ['СПЕРЕДИ', 0.5, -1, 0.82, -0.3, 'door'],
+  ['СПЕРЕДИ', -0.8, -0.55, -0.4, -0.18],
+  ['СЗАДИ', -0.6, -0.55, -0.2, -0.18],
+  ['СЗАДИ', 0.2, -0.55, 0.6, -0.18],
+  ['СЛЕВА', -0.25, -0.55, 0.25, -0.18],
+  ['СПРАВА', -0.25, -0.55, 0.25, -0.18]
+];
+const VC_EDGE = 0.62;
+/** Layout of the widget: centre of the house, the scale in px, home button. Everything stays inside the square. */
 function vcLayout(x, y, size) {
-  const s = size * 0.3;
   return {
     cx: x + size / 2,
-    cy: y + size * 0.47,
-    s,
-    R: size * 0.47,
-    home: { x: x + size * 0.08, y: y + size * 0.08, r: size * 0.07 }
+    cy: y + size / 2 + size * 0.02,
+    s: size * 0.245,
+    home: { x: x + size * 0.09, y: y + size * 0.09, r: size * 0.065 }
   };
 }
 const vcP = (L, B, v) => [L.cx + vcDot(v, B.r) * L.s, L.cy - vcDot(v, B.u) * L.s];
-/** A point on a face in face coords (i, j ∈ −1…1). */
-const vcFP = (F, i, j) => [
-  F.n[0] + F.a[0] * i + F.b[0] * j,
-  F.n[1] + F.a[1] * i + F.b[1] * j,
-  F.n[2] + F.a[2] * i + F.b[2] * j
-];
-const VC_EDGE = 0.62;
-/** The zone of a face point: −1 / 0 / +1 along each face axis. */
-const vcZone = (i, j) => [i < -VC_EDGE ? -1 : i > VC_EDGE ? 1 : 0, j < -VC_EDGE ? -1 : j > VC_EDGE ? 1 : 0];
-const vcZoneDir = (F, zi, zj) =>
-  vcNrm([
-    -(F.n[0] + F.a[0] * zi + F.b[0] * zj),
-    -(F.n[1] + F.a[1] * zi + F.b[1] * zj),
-    -(F.n[2] + F.a[2] * zi + F.b[2] * zj)
-  ]);
+const vhCtr = F => {
+  const c = [0, 0, 0];
+  for (const p of F.pts) for (let i = 0; i < 3; i++) c[i] += p[i] / F.pts.length;
+  return c;
+};
+/** Faces turned to the viewer, far first. */
+const vhVisible = B =>
+  VH_FACES.filter(F => vcDot(F.n, B.f) < -1e-3).sort((a, b) => vcDot(vhCtr(b), B.f) - vcDot(vhCtr(a), B.f));
+/** A 3D point of the house surface for a zone vector (to mark an edge or a corner under the mouse). */
+function vhZonePoint(Z) {
+  const [x, y, z] = Z;
+  if (z > 0) {
+    if (y) return [x, y, VH_E];
+    return [x, 0, 1];
+  }
+  if (z < 0) return [x, y, -1];
+  return [x, y, -0.45];
+}
+function vhPoly(c2d, q) {
+  c2d.beginPath();
+  q.forEach((p, i) => (i ? c2d.lineTo(p[0], p[1]) : c2d.moveTo(p[0], p[1])));
+  c2d.closePath();
+}
 
 /**
- * Draws the cube at (x, y) in a size×size px square for the view direction dir; hover — the zone under the mouse
- * (from vcPick) to highlight.
+ * Draws the view house at (x, y) in a size×size px square for the view direction dir; hover — what is under the
+ * mouse (from vcPick) to highlight.
  */
 function vcDraw(c2d, x, y, size, dir, hover) {
   const B = vcBasis(dir);
   const L = vcLayout(x, y, size);
   c2d.save();
-  // compass ring on the floor of the cube
-  c2d.lineWidth = Math.max(1, size * 0.012);
+  // compass ring on the ground
+  const R0 = 1.42;
   const ring = [];
   for (let k = 0; k <= 48; k++) {
     const t = (k / 48) * Math.PI * 2;
-    ring.push(vcP(L, B, [Math.cos(t) * 1.75, Math.sin(t) * 1.75, -1]));
+    ring.push(vcP(L, B, [Math.cos(t) * R0, Math.sin(t) * R0, -1]));
   }
   c2d.beginPath();
   ring.forEach((p, i) => (i ? c2d.lineTo(p[0], p[1]) : c2d.moveTo(p[0], p[1])));
-  c2d.strokeStyle = 'rgba(120,128,138,0.55)';
-  c2d.lineWidth = size * 0.05;
+  c2d.strokeStyle = 'rgba(120,128,138,0.4)';
+  c2d.lineWidth = size * 0.045;
   c2d.stroke();
-  c2d.strokeStyle = 'rgba(80,86,94,0.6)';
-  c2d.lineWidth = 1;
-  c2d.stroke();
-  c2d.font = `700 ${Math.round(size * 0.085)}px ${TFONT}`;
+  c2d.font = `700 ${Math.round(size * 0.08)}px ${TFONT}`;
   c2d.textAlign = 'center';
   c2d.textBaseline = 'middle';
-  for (const [t, v] of [
-    ['С', [0, 1.75, -1]],
-    ['Ю', [0, -1.75, -1]],
-    ['З', [-1.75, 0, -1]],
-    ['В', [1.75, 0, -1]]
-  ]) {
+  const comp = [
+    ['С', [0, R0, -1]],
+    ['Ю', [0, -R0, -1]],
+    ['З', [-R0, 0, -1]],
+    ['В', [R0, 0, -1]]
+  ];
+  // letters behind the house first
+  const drawLetter = ([t, v]) => {
     const p = vcP(L, B, v);
     const hot = hover && hover.compass === t;
-    c2d.fillStyle = hot ? '#1f6fd1' : '#3b4048';
     c2d.beginPath();
-    c2d.arc(p[0], p[1], size * 0.06, 0, Math.PI * 2);
-    c2d.fillStyle = hot ? '#cfe3fb' : 'rgba(255,255,255,0.92)';
+    c2d.arc(p[0], p[1], size * 0.055, 0, Math.PI * 2);
+    c2d.fillStyle = hot ? '#cfe3fb' : 'rgba(255,255,255,0.94)';
     c2d.fill();
+    c2d.strokeStyle = 'rgba(80,86,94,0.35)';
+    c2d.lineWidth = 1;
+    c2d.stroke();
     c2d.fillStyle = hot ? '#1f6fd1' : '#3b4048';
     c2d.fillText(t, p[0], p[1] + 0.5);
-  }
-  // faces facing the viewer, far first
-  const vis = VC_FACES.filter(F => vcDot(F.n, B.f) < -1e-3).sort((a, b) => vcDot(b.n, B.f) - vcDot(a.n, B.f));
-  for (const F of vis) {
-    const q = [vcFP(F, -1, -1), vcFP(F, 1, -1), vcFP(F, 1, 1), vcFP(F, -1, 1)].map(v => vcP(L, B, v));
-    const lit = 0.86 + 0.14 * Math.max(0, -vcDot(F.n, vcNrm([0.35, -0.55, -0.75])));
-    const g = c2d.createLinearGradient(q[0][0], q[0][1], q[2][0], q[2][1]);
-    const v1 = Math.round(236 * lit),
-      v2 = Math.round(250 * lit);
-    g.addColorStop(0, `rgb(${v1},${v1 + 1},${v1 + 3})`);
-    g.addColorStop(1, `rgb(${v2},${v2},${Math.min(255, v2 + 2)})`);
-    c2d.beginPath();
-    q.forEach((p, i) => (i ? c2d.lineTo(p[0], p[1]) : c2d.moveTo(p[0], p[1])));
-    c2d.closePath();
-    c2d.fillStyle = g;
+  };
+  const behind = c => vcDot(c[1], B.f) > 0;
+  comp.filter(behind).forEach(drawLetter);
+  // the house
+  const sun = vcNrm([0.35, -0.55, -0.75]);
+  for (const F of vhVisible(B)) {
+    const q = F.pts.map(v => vcP(L, B, v));
+    const lit = 0.8 + 0.2 * Math.max(0, -vcDot(F.n, sun));
+    const base = F.roof ? [178, 92, 70] : F.t === 'СНИЗУ' ? [205, 208, 212] : [244, 241, 234];
+    const col = base.map(v => Math.round(v * lit));
+    vhPoly(c2d, q);
+    c2d.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
     c2d.fill();
-    // highlighted zone of this face (a face centre, an edge strip or a corner square)
-    if (hover && hover.face === F.t) {
-      const [zi, zj] = hover.z;
-      const r0 = zi < 0 ? [-1, -VC_EDGE] : zi > 0 ? [VC_EDGE, 1] : [-VC_EDGE, VC_EDGE];
-      const r1 = zj < 0 ? [-1, -VC_EDGE] : zj > 0 ? [VC_EDGE, 1] : [-VC_EDGE, VC_EDGE];
-      const hq = [vcFP(F, r0[0], r1[0]), vcFP(F, r0[1], r1[0]), vcFP(F, r0[1], r1[1]), vcFP(F, r0[0], r1[1])].map(v =>
-        vcP(L, B, v)
-      );
-      c2d.beginPath();
-      hq.forEach((p, i) => (i ? c2d.lineTo(p[0], p[1]) : c2d.moveTo(p[0], p[1])));
-      c2d.closePath();
-      c2d.fillStyle = 'rgba(90,160,235,0.55)';
+    // windows and the door
+    if (!F.roof)
+      for (const [t, a0, z0, a1, z1, k] of VH_OPEN) {
+        if (t !== F.t) continue;
+        const P_ = (i, z) => vcP(L, B, [F.n[0] + F.a[0] * i, F.n[1] + F.a[1] * i, z]);
+        vhPoly(c2d, [P_(a0, z0), P_(a1, z0), P_(a1, z1), P_(a0, z1)]);
+        c2d.fillStyle = k === 'door' ? '#8a6a4f' : '#9ec3e6';
+        c2d.fill();
+      }
+    // the face under the mouse
+    if (hover && hover.z && hover.face === F.t && hover.z.filter(Boolean).length === 1) {
+      vhPoly(c2d, q);
+      c2d.fillStyle = 'rgba(90,160,235,0.45)';
       c2d.fill();
     }
-    c2d.beginPath();
-    q.forEach((p, i) => (i ? c2d.lineTo(p[0], p[1]) : c2d.moveTo(p[0], p[1])));
-    c2d.closePath();
-    c2d.strokeStyle = '#6d747d';
+    vhPoly(c2d, q);
+    c2d.strokeStyle = '#5f666f';
     c2d.lineWidth = Math.max(1, size * 0.01);
+    c2d.lineJoin = 'round';
     c2d.stroke();
-    // the face label, drawn in the plane of the face
-    const o = vcP(L, B, F.n),
-      ax = vcP(L, B, vcFP(F, 1, 0)),
-      by = vcP(L, B, vcFP(F, 0, 1));
-    const ex = [ax[0] - o[0], ax[1] - o[1]],
-      ey = [o[0] - by[0], o[1] - by[1]];
-    const area = Math.abs(ex[0] * ey[1] - ex[1] * ey[0]);
-    if (area > L.s * L.s * 0.12) {
-      c2d.save();
-      c2d.transform(ex[0] / L.s, ex[1] / L.s, ey[0] / L.s, ey[1] / L.s, o[0], o[1]);
-      c2d.font = `600 ${Math.round(L.s * 0.3)}px ${TFONT}`;
-      c2d.fillStyle = '#2e333a';
-      c2d.textAlign = 'center';
-      c2d.textBaseline = 'middle';
-      const w = c2d.measureText(F.t).width;
-      const k = Math.min(1, (L.s * 1.7) / w);
-      c2d.scale(k, k);
-      c2d.fillText(F.t, 0, 0);
-      c2d.restore();
+    // the label in the plane of a wall (or of the floor)
+    if (F.a) {
+      const o = vcP(L, B, F.c),
+        ax = vcP(L, B, [F.c[0] + F.a[0], F.c[1] + F.a[1], F.c[2] + F.a[2]]),
+        by = vcP(L, B, [F.c[0] + F.b[0], F.c[1] + F.b[1], F.c[2] + F.b[2]]);
+      let ex = [ax[0] - o[0], ax[1] - o[1]];
+      const ey = [o[0] - by[0], o[1] - by[1]];
+      const det = ex[0] * ey[1] - ex[1] * ey[0];
+      if (det < 0) ex = [-ex[0], -ex[1]]; // seen from behind (the floor from below): keep the text readable
+      if (Math.abs(det) > L.s * L.s * 0.25) {
+        c2d.save();
+        c2d.transform(ex[0] / L.s, ex[1] / L.s, ey[0] / L.s, ey[1] / L.s, o[0], o[1]);
+        c2d.font = `700 ${Math.round(L.s * 0.22)}px ${TFONT}`;
+        c2d.fillStyle = 'rgba(46,51,58,0.85)';
+        c2d.textAlign = 'center';
+        c2d.textBaseline = 'middle';
+        const w = c2d.measureText(F.t).width;
+        const k = Math.min(1, (L.s * 1.15) / w);
+        c2d.scale(k, k);
+        c2d.fillText(F.t, F.t === 'СПЕРЕДИ' ? -L.s * 0.25 : 0, 0);
+        c2d.restore();
+      }
     }
   }
-  // home button (a small house)
+  // the top: the ridge line, a hint when it is seen from above
+  if (hover && hover.z && hover.z.filter(Boolean).length === 1 && hover.z[2] > 0) {
+    for (const F of vhVisible(B).filter(F => F.roof)) {
+      vhPoly(
+        c2d,
+        F.pts.map(v => vcP(L, B, v))
+      );
+      c2d.fillStyle = 'rgba(90,160,235,0.45)';
+      c2d.fill();
+    }
+  }
+  // an edge or a corner under the mouse: a dot on the house
+  if (hover && hover.z && hover.z.filter(Boolean).length > 1) {
+    const p = vcP(L, B, vhZonePoint(hover.z));
+    c2d.beginPath();
+    c2d.arc(p[0], p[1], size * 0.045, 0, Math.PI * 2);
+    c2d.fillStyle = 'rgba(31,111,209,0.85)';
+    c2d.fill();
+    c2d.strokeStyle = '#fff';
+    c2d.lineWidth = 1.5;
+    c2d.stroke();
+  }
+  comp.filter(c => !behind(c)).forEach(drawLetter);
+  // home button
   const h = L.home;
   c2d.beginPath();
   c2d.moveTo(h.x - h.r, h.y);
@@ -44814,12 +44979,12 @@ function vcDraw(c2d, x, y, size, dir, hover) {
   c2d.restore();
 }
 
-/** Point-in-quad (convex) test in 2D. */
-function vcInQ(q, px, py) {
+/** Point in a convex polygon (2D). */
+function vcInPoly(q, px, py) {
   let sg = 0;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < q.length; i++) {
     const a = q[i],
-      b = q[(i + 1) % 4];
+      b = q[(i + 1) % q.length];
     const c = (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0]);
     if (Math.abs(c) < 1e-9) continue;
     const s = Math.sign(c);
@@ -44828,47 +44993,52 @@ function vcInQ(q, px, py) {
   }
   return true;
 }
+const vcZ1 = v => (v < -VC_EDGE ? -1 : v > VC_EDGE ? 1 : 0);
 /**
- * What is under (px, py): {face, z, dir} — a face / edge / corner zone and the new view direction; {compass, dir};
- * {home, dir}; or null.
+ * What is under (px, py): {face, z, dir} — a side / edge / corner of the house (z — the zone vector) and the new
+ * view direction; {compass, dir}; {home, dir}; or null.
  */
 function vcPick(x, y, size, dir, px, py) {
   if (px < x || py < y || px > x + size || py > y + size) return null;
   const B = vcBasis(dir);
   const L = vcLayout(x, y, size);
   if (Math.hypot(px - L.home.x, py - L.home.y) < L.home.r * 1.5) return { home: true, dir: [1, 1, -0.82] };
-  const vis = VC_FACES.filter(F => vcDot(F.n, B.f) < -1e-3).sort((a, b) => vcDot(a.n, B.f) - vcDot(b.n, B.f));
-  for (const F of vis) {
-    const q = [vcFP(F, -1, -1), vcFP(F, 1, -1), vcFP(F, 1, 1), vcFP(F, -1, 1)].map(v => vcP(L, B, v));
-    if (!vcInQ(q, px, py)) continue;
-    // face coords: solve o + i·ex + j·ey = p
-    const o = vcP(L, B, F.n),
-      ax = vcP(L, B, vcFP(F, 1, 0)),
-      by = vcP(L, B, vcFP(F, 0, 1));
-    const ex = [ax[0] - o[0], ax[1] - o[1]],
-      ey = [by[0] - o[0], by[1] - o[1]];
-    const det = ex[0] * ey[1] - ex[1] * ey[0];
-    if (Math.abs(det) < 1e-9) continue;
-    const dx = px - o[0],
-      dy = py - o[1];
-    const i = (dx * ey[1] - dy * ey[0]) / det,
-      j = (ex[0] * dy - ex[1] * dx) / det;
-    const z = vcZone(i, j);
-    return { face: F.t, z, dir: vcZoneDir(F, z[0], z[1]) };
-  }
+  const R0 = 1.42;
   for (const [t, v, hd] of [
-    ['С', [0, 1.75, -1], [0, -1]],
-    ['Ю', [0, -1.75, -1], [0, 1]],
-    ['З', [-1.75, 0, -1], [1, 0]],
-    ['В', [1.75, 0, -1], [-1, 0]]
+    ['С', [0, R0, -1], [0, -1]],
+    ['Ю', [0, -R0, -1], [0, 1]],
+    ['З', [-R0, 0, -1], [1, 0]],
+    ['В', [R0, 0, -1], [-1, 0]]
   ]) {
     const p = vcP(L, B, v);
-    if (Math.hypot(px - p[0], py - p[1]) < size * 0.08) {
+    if (vcDot(v, B.f) <= 0 && Math.hypot(px - p[0], py - p[1]) < size * 0.07) {
       // look from that side, keep the tilt
       const fz = Math.abs(B.f[2]) > 0.99 ? -0.6 : B.f[2];
       const hl = Math.sqrt(Math.max(0, 1 - fz * fz));
       return { compass: t, dir: [hd[0] * hl, hd[1] * hl, fz] };
     }
+  }
+  // the nearest face under the point
+  const vis = vhVisible(B).reverse();
+  for (const F of vis) {
+    const q = F.pts.map(v => vcP(L, B, v));
+    if (!vcInPoly(q, px, py)) continue;
+    // the 3D point: screen offset along r, u, then along f to the face plane
+    const sx = (px - L.cx) / L.s,
+      sy = (L.cy - py) / L.s;
+    const Q = [0, 1, 2].map(i => B.r[i] * sx + B.u[i] * sy);
+    const d0 = vcDot(F.n, F.pts[0]);
+    const tt = (d0 - vcDot(F.n, Q)) / vcDot(F.n, B.f);
+    const P3 = [0, 1, 2].map(i => Q[i] + B.f[i] * tt);
+    let Z;
+    if (F.roof) Z = [vcZ1(P3[0]), P3[1] < -VC_EDGE ? -1 : P3[1] > VC_EDGE ? 1 : 0, 1];
+    else {
+      const zz = P3[2] > VH_E - 0.32 ? 1 : P3[2] < -0.68 ? -1 : 0;
+      Z = [vcZ1(P3[0]), vcZ1(P3[1]), zz];
+      // the axis of the face itself is ±1
+      for (let i = 0; i < 3; i++) if (Math.abs(F.n[i]) > 0.9) Z[i] = Math.sign(F.n[i]);
+    }
+    return { face: F.t, z: Z, dir: vcNrm([-Z[0], -Z[1], -Z[2]]) };
   }
   return null;
 }
@@ -44909,8 +45079,8 @@ function vcOrbit(dir, dx, dy) {
 /**
  * views/viewcube3d.js
  *
- * Видовой куб в углу основного 3D-окна (как в Revit): показывает, откуда смотрит камера, щелчок по грани / ребру /
- * углу / букве компаса плавно поворачивает камеру вокруг точки вращения, домик — изометрия ЮЗ.
+ * Видовой домик в углу основного 3D-окна: показывает, откуда смотрит камера; щелчок по стене / крыше / ребру /
+ * углу / букве компаса плавно поворачивает камеру вокруг точки вращения, кнопка-домик — изометрия ЮЗ.
  */
 
 
@@ -44961,7 +45131,7 @@ uiHooks.v3Init = () => {
   if (VC3.cv || !V3.host) return;
   const cv = document.createElement('canvas');
   cv.className = 'vcube3';
-  cv.setAttribute('aria-label', 'Видовой куб');
+  cv.setAttribute('aria-label', 'Видовой домик: щелчок — вид с этой стороны');
   cv.style.position = 'absolute';
   V3.host.appendChild(cv);
   VC3.cv = cv;
@@ -48538,6 +48708,7 @@ function initQuality() {
 
 
 
+
 /* levels (этажи). The model of the current level lives in S.ents (all tools work as before);
    other levels are kept in S.x.lv.ents[id] and are swapped in on switch. 3D shows all levels stacked by elevation.
    level: {id, n, z: отметка ±0.000 этажа (чистый пол) в проекте, h: высота этажа (пол–пол), top: отметка верха плиты от ±0.000, slab: толщина плиты} */
@@ -48657,6 +48828,19 @@ function addLevel(o = {}) {
   }
   levelsState.LVGEN++;
   switchLevel(id, true);
+  // the slab of the new level over the walls copied from below: along their outer faces
+  if (o.copyFrom != null && o.slab !== false) {
+    const fp = wallsFootprint();
+    if (fp && fp.length > 2)
+      S.ents.push({
+        id: S.nextId++,
+        type: 'slab',
+        pts: fp.map(p => P(Math.round(p.x), Math.round(p.y))),
+        th: lv.slab || 200,
+        z: lv.top,
+        layer: ensureLayer('Перекрытия')
+      });
+  }
   log(`Добавлен ${lv.n}: отметка ${lvMark(lv.z)}${arr.length ? `, скопировано ${arr.length} объектов` : ''}`);
   return lv;
 }
@@ -51209,6 +51393,75 @@ function mkRail() {
   };
 }
 
+/**
+ * Outline of a slab as it is built: an edge that runs along the inner face of a wall is moved to the far face of
+ * that wall — the slab rests on the wall (on its full thickness, or on half of it when another slab is on the other
+ * side). So a slab drawn along the rooms still covers the walls under it.
+ */
+function slabOutline(e) {
+  const pts = e.pts;
+  const n = pts.length;
+  if (n < 3) return pts;
+  let area = 0;
+  for (let i = 0; i < n; i++) area += pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y;
+  const ccw = area > 0;
+  const walls = S.ents.filter(w => w.type === 'wall' && visible(w));
+  const others = S.ents.filter(x => x.type === 'slab' && x !== e && x.pts && x.pts.length > 2);
+  const off = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i],
+      b = pts[(i + 1) % n];
+    const L = dist(a, b);
+    if (L < 1) {
+      off.push(0);
+      continue;
+    }
+    const u = mul(sub(b, a), 1 / L);
+    const out = ccw ? P(u.y, -u.x) : P(-u.y, u.x); // outward normal
+    let best = 0;
+    for (const w of walls) {
+      const wu = nrm(sub(w.b, w.a));
+      if (Math.abs(wu.x * u.y - wu.y * u.x) > 0.02) continue; // not parallel
+      // distance of the wall axis from the edge line, outward
+      const dd = (w.a.x - a.x) * out.x + (w.a.y - a.y) * out.y;
+      if (Math.abs(dd - w.th / 2) > 25) continue; // the edge is not on the inner face
+      // the wall runs along the edge
+      const t0 = (w.a.x - a.x) * u.x + (w.a.y - a.y) * u.y,
+        t1 = (w.b.x - a.x) * u.x + (w.b.y - a.y) * u.y;
+      const ov = Math.min(L, Math.max(t0, t1)) - Math.max(0, Math.min(t0, t1));
+      if (ov < Math.min(L * 0.5, 300)) continue;
+      // another slab on the far side of the wall: share the wall
+      const m = add(add(a, mul(u, L / 2)), mul(out, w.th + 40));
+      const shared = others.some(o => inPoly(m, o.pts));
+      best = Math.max(best, shared ? w.th / 2 : w.th);
+    }
+    off.push(best);
+  }
+  if (!off.some(Boolean)) return pts;
+  // offset edge lines, new corners at their intersections
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i],
+      b = pts[(i + 1) % n];
+    const L = dist(a, b) || 1;
+    const u = mul(sub(b, a), 1 / L);
+    const out = ccw ? P(u.y, -u.x) : P(-u.y, u.x);
+    lines.push({ p: add(a, mul(out, off[i])), u });
+  }
+  const res = [];
+  for (let i = 0; i < n; i++) {
+    const A = lines[(i - 1 + n) % n],
+      B = lines[i];
+    const den = A.u.x * B.u.y - A.u.y * B.u.x;
+    if (Math.abs(den) < 1e-6) {
+      res.push(B.p);
+      continue;
+    }
+    const t = ((B.p.x - A.p.x) * B.u.y - (B.p.y - A.p.y) * B.u.x) / den;
+    res.push(add(A.p, mul(A.u, t)));
+  }
+  return res;
+}
 function slabHoles(e) {
   const out = [];
   try {
@@ -52458,6 +52711,10 @@ function roomPolyAt(p) {
         stack.push(q);
       }
   }
+  return rasterLoop(F, nx, ny, ox, oy, st, polys);
+}
+/** The largest boundary loop of the filled cells F, simplified and snapped to the wall faces. */
+function rasterLoop(F, nx, ny, ox, oy, st, polys) {
   // boundary edges of the filled region → loops
   const E = new Map();
   const key = (i, j) => i + ',' + j;
@@ -52518,6 +52775,77 @@ function roomPolyAt(p) {
   }
   const clean = out.filter((q, i) => dist(q, out[(i + 1) % out.length]) > 1);
   return clean.length > 2 ? clean : null;
+}
+/**
+ * Footprint of the building on this level: the outline along the outer faces of the walls (everything the outside
+ * cannot reach). Used for the slab of a new level.
+ */
+function wallsFootprint() {
+  const walls = S.ents.filter(e => e.type === 'wall' && visible(e));
+  if (walls.length < 3) return null;
+  const polys = walls.map(w => wallInfo(w).poly);
+  let x0 = 1e9,
+    y0 = 1e9,
+    x1 = -1e9,
+    y1 = -1e9;
+  for (const q of polys)
+    for (const v of q) {
+      x0 = Math.min(x0, v.x);
+      y0 = Math.min(y0, v.y);
+      x1 = Math.max(x1, v.x);
+      y1 = Math.max(y1, v.y);
+    }
+  const st = 20;
+  const nx = Math.ceil((x1 - x0) / st) + 5,
+    ny = Math.ceil((y1 - y0) / st) + 5;
+  if (nx * ny > 6e6) return null;
+  const ox = x0 - 2 * st,
+    oy = y0 - 2 * st;
+  const G = new Uint8Array(nx * ny);
+  for (const q of polys) {
+    let a = 1e9,
+      b = 1e9,
+      c = -1e9,
+      d = -1e9;
+    for (const v of q) {
+      a = Math.min(a, v.x);
+      b = Math.min(b, v.y);
+      c = Math.max(c, v.x);
+      d = Math.max(d, v.y);
+    }
+    for (let j = Math.max(0, Math.floor((b - oy) / st) - 1); j <= Math.min(ny - 1, Math.ceil((d - oy) / st) + 1); j++)
+      for (
+        let i = Math.max(0, Math.floor((a - ox) / st) - 1);
+        i <= Math.min(nx - 1, Math.ceil((c - ox) / st) + 1);
+        i++
+      ) {
+        const cp = P(ox + (i + 0.5) * st, oy + (j + 0.5) * st);
+        if (inPoly(cp, q) || distToPoly(cp, q) < st * 0.75) G[j * nx + i] = 1;
+      }
+  }
+  // flood the outside from the border; the rest is the building
+  const O = new Uint8Array(nx * ny);
+  const stack = [0];
+  O[0] = 1;
+  while (stack.length) {
+    const k = stack.pop();
+    const i = k % nx,
+      j = (k / nx) | 0;
+    for (const [q, ok] of [
+      [k - 1, i > 0],
+      [k + 1, i < nx - 1],
+      [k - nx, j > 0],
+      [k + nx, j < ny - 1]
+    ])
+      if (ok && !O[q] && !G[q]) {
+        O[q] = 1;
+        stack.push(q);
+      }
+  }
+  const F = new Uint8Array(nx * ny);
+  for (let k = 0; k < nx * ny; k++) F[k] = O[k] ? 0 : 1;
+  // the border cells are outside (the loop extraction looks at the neighbours)
+  return rasterLoop(F, nx, ny, ox, oy, st, polys);
 }
 function distToPoly(p, q) {
   let m = Infinity;
@@ -68951,6 +69279,493 @@ function sampleDuplex(E) {
   }
 }
 
+// ===== samples/house.js =====
+/**
+ * samples/house.js
+ *
+ * Demo house 14 × 10 m on two levels with a double-height living room («второй свет»):
+ *  Этаж 1 — прихожая, прачечная (колонна стиральная + сушильная, вторая машина, хозяйственная раковина, бойлер,
+ *           электрический полотенцесушитель для сушки, стеллаж), гостевой санузел с проточным водонагревателем,
+ *           кухня-столовая с островом, лестница, гостиная высотой в два этажа с высокими окнами, шторами на
+ *           штангах и молдингами.
+ *  Этаж 2 — галерея над гостиной с ограждением, коридор, две спальни (карниз в нише потолка, рамки молдингов,
+ *           шкаф), кабинет-гардеробная, ванная с водяным полотенцесушителем.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function sampleHouse(E) {
+  for (const n of [
+    'Конструкции',
+    'Потолки',
+    'Переходные элементы',
+    'Водоснабжение',
+    'Канализация',
+    'Аннотации',
+    'Освещение',
+    'Мебель',
+    'Кухня',
+    'Полы',
+    'Отделка',
+    'Лестницы и ограждения',
+    'Отопление',
+    'Отверстия и проходки'
+  ])
+    ensureLayer(n);
+  const X = 14000,
+    Y = 10000,
+    XL = 8000; // the living room with the second light: x 8000…14000
+  const th = computeType(S.wtypes.find(x => x.id === 'wt_gb')).total;
+  const h = th / 2;
+  const WHITE = { k: 'paint', ral: 'RAL 9010', col: '#f1efe8' },
+    WARM = { k: 'paint', ral: 'RAL 9001', col: '#ece5d6' },
+    TILE = { k: 'tile', ral: '', col: '#d9dcd8' };
+  const H2 = 5700; // walls of the double-height room: up to the top of level 2
+  const Wt = (ax, ay, bx, by, wt, o = {}) => {
+    const t = S.wtypes.find(x => x.id === wt);
+    return E('Стены', {
+      type: 'wall',
+      a: P(ax, ay),
+      b: P(bx, by),
+      th: computeType(t).total,
+      h: o.h || 2700,
+      z: 0,
+      wt,
+      fa: o.fa || WHITE,
+      fb: o.fb || { k: 'none', ral: '', col: '#d3d0c9' }
+    });
+  };
+  const g100 = (ax, ay, bx, by, o) => Wt(ax, ay, bx, by, 'wt_gb100', { fa: WHITE, fb: WHITE, ...o });
+  const wet = (ax, ay, bx, by, o) => Wt(ax, ay, bx, by, 'wt_c112w', { fa: WHITE, fb: TILE, ...o });
+  const slab = hole =>
+    E('Перекрытия', {
+      type: 'slab',
+      pts: [P(-h - 100, -h - 100), P(X + h + 100, -h - 100), P(X + h + 100, Y + h + 100), P(-h - 100, Y + h + 100)],
+      th: 200,
+      z: lvCur().top
+    });
+  const FZ = (pts, pre, o = {}) =>
+    E('Полы', {
+      type: 'floorz',
+      pts,
+      pre,
+      name: o.name || '',
+      ffl: 0,
+      wet: pre === 'wet',
+      layers: o.layers ? o.layers.map(floorLayer) : floorLayersOf(pre),
+      slope: { mode: 'none', i: 1.5 },
+      ...(o.cover ? { cover: o.cover } : {})
+    });
+  const ceil = (pts, z, o = {}) =>
+    E('Потолки', {
+      type: 'ceil',
+      kind: o.kind || 'stretch',
+      pts,
+      z,
+      gap: o.gap ?? 60,
+      sys: 'П112',
+      layers: 1,
+      sheet: o.sheet || 'ГКЛ',
+      stepB: 1000,
+      stepC: 500,
+      stepH: 900,
+      str: { mat: 'pvc', fin: 'mat', prof: 'shadow', col: '#f4f4f2' },
+      fin: { col: '#f1f0ea' }
+    });
+  const FX = (kind, x, y, cfg) => {
+    const pl = placeOnWall(P(x, y), 'wall');
+    return E('Сантехника', {
+      type: 'fix',
+      kind,
+      p: pl.host ? pl.p : P(x, y),
+      rot: pl.host ? pl.rot : 0,
+      host: pl.host || null,
+      z: 0,
+      cfg: Object.assign(FIXK[kind].cfg(), cfg || {})
+    });
+  };
+  const DV = (kind, x, y, o = {}) => {
+    const d = DEVK[kind];
+    let p = P(x, y),
+      rot = 0,
+      host = null;
+    const z = d.mount === 'ceil' ? (o.z ?? ceilAt(P(x, y))) : (o.z ?? d.z);
+    if (d.mount === 'wall') {
+      const pl = placeOnWall(p, 'wall');
+      if (pl.host) {
+        p = pl.p;
+        rot = pl.rot;
+        host = pl.host;
+      }
+    }
+    return E(FAMS[d.f].cat, {
+      type: 'dev',
+      kind,
+      p,
+      rot,
+      host,
+      ht: undefined,
+      z,
+      group: o.group ?? 2,
+      sys: null,
+      pw: o.pw ?? d.pw ?? 0,
+      flow: 0,
+      size: ''
+    });
+  };
+  const RAD = (kind, x, y, cfg = {}) => {
+    const pl = placeOnWall(P(x, y), 'wall');
+    return E('Отопление', {
+      type: 'rad',
+      kind,
+      p: pl.p,
+      rot: pl.rot,
+      host: pl.host,
+      z: null,
+      cfg: { ...radDefaults(kind), ...cfg }
+    });
+  };
+  const I = (asset, x, y, rot = 0) => {
+    const a = ASSETS.get('b_' + asset);
+    return a ? E(a.cat || 'Мебель', { type: 'inst', asset: 'b_' + asset, p: P(x, y), rot, z: 0 }) : null;
+  };
+  const DOOR = (host, t, w, o = {}) =>
+    E('Двери', {
+      type: 'door',
+      host: host.id,
+      t,
+      w,
+      h: o.h || 2100,
+      sill: 0,
+      flip: !!o.flip,
+      hand: !!o.hand,
+      cfg: defDoorCfg(o.kind)
+    });
+  const WIN = (host, t, w, hh, sill) =>
+    E('Окна', { type: 'window', host: host.id, t, w, h: hh, sill, cfg: defWinCfg(w) });
+  const T_ = (x, y, s, hh = 180) => E('Текст', { type: 'text', p: P(x, y), h: hh, s, rot: 0 });
+  const curtain = (x, y, kind, o = {}) => {
+    const c = curtainAtWindow(P(x, y), kind, o.ext ?? 200);
+    if (c) E('Отделка', { ...c, ...o });
+  };
+  const molding = (x, y, mode, o = {}) => {
+    const m = moldingAt(P(x, y), mode);
+    if (m) E('Отделка', { ...m, ...o });
+  };
+
+  /* ================= Этаж 1 ================= */
+  const lv1 = lvCur();
+  lv1.n = 'Этаж 1';
+  lv1.h = 3000;
+  // outer walls: the part around the living room goes up through both levels
+  const wB1 = Wt(-h, -h, XL, -h, 'wt_gb'),
+    wB2 = Wt(XL, -h, X + h, -h, 'wt_gb', { h: H2 }),
+    wR = Wt(X + h, -h, X + h, Y + h, 'wt_gb', { h: H2 }),
+    wT2 = Wt(X + h, Y + h, XL, Y + h, 'wt_gb', { h: H2, fa: WARM }),
+    wT1 = Wt(XL, Y + h, -h, Y + h, 'wt_gb'),
+    wL = Wt(-h, Y + h, -h, -h, 'wt_gb');
+  // west zone: hall, laundry, guest bathroom
+  const wHL = g100(0, 3200, 3600, 3200);
+  const wE1 = g100(3600, 3200, 3600, 6400);
+  const wLW = wet(0, 6400, 3600, 6400, { fa: TILE, fb: TILE });
+  const wWC = wet(3600, 6400, 3600, Y, { fa: TILE, fb: WHITE });
+  // doors and windows
+  const dE = DOOR(wB1, h + 1600, 960, { kind: undefined });
+  dE.cfg.mode = 'entry';
+  try {
+    applyDoorMode(dE.cfg, 'entry');
+  } catch (err) {}
+  DOOR(wHL, 2800, 800, { flip: true });
+  DOOR(wWC, 800, 700, { kind: 'hidden', flip: true });
+  WIN(wL, h + (Y - 4800), 1200, 1200, 1000); // laundry window (wL runs north→south)
+  WIN(wT1, XL - 1800, 600, 600, 1500); // bathroom
+  WIN(wT1, XL - 6300, 1800, 1200, 1050); // kitchen, above the worktop
+  WIN(wB1, h + 6000, 1800, 1500, 850); // dining
+  // the second light: tall windows to the south and the east
+  WIN(wB2, 1500, 1600, 4800, 400);
+  WIN(wB2, 4300, 1600, 4800, 400);
+  WIN(wR, h + 5000, 3000, 5000, 300);
+  slab();
+  // stair from the hall up to the north
+  E('Лестницы и ограждения', {
+    type: 'stair',
+    kind: 'straight',
+    ...stairDefaults(),
+    p: P(4150, 600),
+    rot: Math.PI / 2,
+    mat: 'wood',
+    fin: 'wood',
+    w: 1000,
+    rails: {
+      outer: { on: true, type: 'bal', mount: 'top', H: 900 },
+      inner: { on: false, type: 'none', mount: 'wall', H: 900 }
+    }
+  });
+  // floors and ceilings
+  FZ([P(0, 0), P(3600, 0), P(3600, 3200), P(0, 3200)], 'tile', { name: 'Прихожая' });
+  FZ([P(0, 3200), P(3600, 3200), P(3600, 6400), P(0, 6400)], 'wet', { name: 'Прачечная' });
+  FZ([P(0, 6400), P(3600, 6400), P(3600, Y), P(0, Y)], 'wet', { name: 'Санузел гостевой' });
+  FZ([P(3600, 0), P(X, 0), P(X, Y), P(3600, Y)], 'eng', {
+    name: 'Кухня-столовая, гостиная',
+    cover: { mat: 'eng', pat: 'herring', size: '120x600', col: '#b48a5e', trans: {} }
+  });
+  ceil([P(0, 0), P(3600, 0), P(3600, 3200), P(0, 3200)], 2650);
+  ceil([P(0, 3200), P(3600, 3200), P(3600, 6400), P(0, 6400)], 2550, { kind: 'gkl', gap: 150, sheet: 'ГКЛВ' });
+  ceil([P(0, 6400), P(3600, 6400), P(3600, Y), P(0, Y)], 2500, { kind: 'gkl', gap: 200, sheet: 'ГКЛВ' });
+  ceil([P(4700, 0), P(XL, 0), P(XL, Y), P(4700, Y)], 2650);
+  // laundry: a washer-dryer column and a second machine, utility sink, storage heater, drying towel warmer
+  FX('washer', 0, 3800, { type: 'column', w: 600, d: 650, h: 1750 });
+  FX('washer', 0, 4550, { type: 'front' });
+  FX('sink', 0, 5600, { w: 600 });
+  FX('boiler', 3500, 4200, { type: 'round', vol: 100, pw: 2000, z: 1350 });
+  FX('towel', 3500, 5500, { kind: 'el', shape: 'shelf', w: 600, h: 1000, z: 500, pw: 400, col: 'white' });
+  // guest bathroom: WC, sink with an instantaneous heater under it, shower
+  FX('wcinst', 0, 7200, { mount: 'wall' });
+  FX('sink', 0, 8600, { w: 500 });
+  FX('wheater', 0, 9300, { type: 'one', pw: 6500, z: 1300 });
+  FX('towel', 3500, 8800, { kind: 'el', shape: 'ladder', w: 450, h: 800, z: 800, pw: 250 });
+  // kitchen along the north wall, the island, the dining table
+  const kit = E('Кухня', {
+    type: 'kitchen',
+    runs: [{ a: P(XL, Y), b: P(4750, Y), n: P(0, -1) }],
+    cfg: kitDefaults(),
+    mods: []
+  });
+  kitAutofill(kit);
+  E('Кухня', {
+    type: 'kisland',
+    kind: 'island_seat',
+    p: P(6300, 6900),
+    rot: 0,
+    cfg: { equip: 'hob', L: 2200, ov: 300 },
+    mods: null,
+    kit: kit.id
+  });
+  I('dtable', 6300, 2200, 0);
+  for (const [x, y, r] of [
+    [5800, 1700, 0],
+    [6800, 1700, 0],
+    [5800, 2700, Math.PI],
+    [6800, 2700, Math.PI]
+  ])
+    I('chair', x, y, r);
+  // living room under the second light: sofa, TV stand with the TV, wall lights, moldings, curtains
+  I('rug', 11000, 5000, 0);
+  I('sofa', 10200, 5000, Math.PI / 2);
+  I('ctable', 11300, 5000, 0);
+  I('armchair', 11400, 7200, Math.PI);
+  I('floorlamp', 9600, 6600, 0);
+  I('plant', 13500, 9500);
+  {
+    const pc = placeOnWall(P(X - 100, 5000), 'wall');
+    E('Мебель', { type: 'cab', p: pc.p, rot: pc.rot, host: pc.host, z: 0, cfg: { ...cbDefaults('tvst'), w: 2000 } });
+  }
+  molding(11000, Y - 100, 'two', { s0: 0, s1: 6000, z1: 2800, railZ: 950 });
+  curtain(9500, 300, 'wall_rod', { ext: 250, open: 0.65, col: '#8b7d6b' });
+  curtain(12300, 300, 'wall_rod', { ext: 250, open: 0.65, col: '#8b7d6b' });
+  curtain(X - 300, 5000, 'wall_rod', { ext: 300, open: 0.7, col: '#8b7d6b' });
+  // electrics: panel in the hall, switches, sockets, lights
+  DV('panel', 0, 1200, { group: null, z: 1700 });
+  DV('sw1', 3600, 2700, { group: 1, z: 900 });
+  DV('sw1', 3300, 3300, { group: 1, z: 900 });
+  DV('sw2', 4900, 0, { group: 1, z: 900 });
+  for (const [x, y] of [
+    [1200, 1600],
+    [2400, 1600],
+    [1800, 4800],
+    [1800, 8200],
+    [5800, 4000],
+    [7000, 4000],
+    [5800, 8200],
+    [7000, 8200]
+  ])
+    DV('lspot', x, y, { group: 1 });
+  for (const [x, y] of [
+    [9500, Y],
+    [12500, Y],
+    [X, 2000],
+    [X, 8000]
+  ])
+    DV('lwall', x, y, { group: 1, z: 2200 });
+  for (const [x, y, k, z] of [
+    [0, 4200, 'sockIP', 1000],
+    [0, 4900, 'sockIP', 1000],
+    [3500, 3900, 'sockIP', 1700],
+    [3500, 5900, 'sockIP', 600],
+    [0, 8100, 'sockIP', 1050],
+    [5300, Y, 'sock2', 1100],
+    [6900, Y, 'sock2', 1100],
+    [X, 4200, 'sock2', 300],
+    [X, 5800, 'tv', 650],
+    [XL + 2000, 0, 'sock1', 300],
+    [XL, 300, 'sock2', 300]
+  ])
+    DV(k, x, y, { z, group: 3 });
+  RAD('panel', 2000, 0, { type: '22', h: 500, L: 800 });
+  RAD('panel', h + 6000, 0, { type: '22', h: 500 });
+  RAD('conv', XL + 1500, 0, { L: 1500, w: 280, d: 110 });
+  RAD('conv', XL + 4300, 0, { L: 1500, w: 280, d: 110 });
+  T_(400, 2000, 'Прихожая', 150);
+  T_(400, 5000, 'Прачечная', 150);
+  T_(400, 9000, 'С/у', 150);
+  T_(5200, 5200, 'Кухня-столовая');
+  T_(9000, 3000, 'Гостиная — второй свет');
+  T_(X / 2, -700, 'Этаж 1 — дом 14 × 10 м, гостиная высотой в два этажа', 150);
+
+  /* ================= Этаж 2 ================= */
+  for (const r of S.ents.filter(e => e.type === 'rad')) radFit(r);
+  const LVs = LV();
+  const lv2 = { id: LVs.nid++, n: 'Этаж 2', z: lv1.z + lv1.h, h: 3000, top: lv1.top, slab: lv1.slab };
+  LVs.list.push(lv2);
+  LVs.ents[lv1.id] = S.ents;
+  S.ents = [];
+  LVs.cur = lv2.id;
+  documentState.docVer++;
+  // outer walls only over the west part: over the living room the walls of level 1 go on
+  const uB = Wt(-h, -h, XL, -h, 'wt_gb'),
+    uT = Wt(XL, Y + h, -h, Y + h, 'wt_gb'),
+    uL = Wt(-h, Y + h, -h, -h, 'wt_gb');
+  slab();
+  // the void of the second light: the slab is open over the living room
+  E('Отверстия и проходки', {
+    type: 'shole',
+    shape: 'rect',
+    p: P((XL + X) / 2, Y / 2),
+    w: X - XL,
+    h: Y,
+    rot: 0,
+    sleeve: false,
+    name: 'Второй свет'
+  });
+  // gallery along the void with a glass railing
+  E('Лестницы и ограждения', { type: 'rail', kind: 'glass', h: 1000, z: 0, pts: [P(XL, -50), P(XL, Y + 50)] });
+  const GX = 7000; // bedrooms end here, the gallery is 1 m wide
+  const wG = g100(GX, 0, GX, Y);
+  const wC = g100(4800, 0, 4800, Y);
+  const wBd = g100(4800, 4400, GX, 4400);
+  const wBa = wet(0, 5600, 3600, 5600, { fa: WHITE, fb: TILE });
+  const wBa2 = wet(3600, 5600, 3600, Y, { fa: TILE, fb: WHITE });
+  const wOf = g100(3600, 0, 3600, 5600);
+  DOOR(wC, 6400, 800);
+  DOOR(wC, 2000, 800, { flip: true });
+  DOOR(wOf, 4000, 800);
+  DOOR(wBa2, 600, 700, { kind: 'hidden', flip: true });
+  DOOR(wG, 7600, 900, { kind: 'hidden' });
+  WIN(uT, XL - 2000, 900, 900, 1400); // bathroom
+  WIN(uT, XL + h - 5900, 1500, 1500, 850); // master bedroom
+  WIN(uB, h + 5900, 1400, 1500, 850); // bedroom 2
+  WIN(uB, h + 1800, 1400, 1500, 850); // office
+  // floors and ceilings
+  FZ([P(0, 5600), P(3600, 5600), P(3600, Y), P(0, Y)], 'wet', { name: 'Ванная' });
+  FZ([P(0, 0), P(3600, 0), P(3600, 5600), P(0, 5600)], 'eng', { name: 'Кабинет-гардеробная' });
+  FZ([P(3600, 0), P(4800, 0), P(4800, Y), P(3600, Y)], 'eng', { name: 'Коридор' });
+  FZ([P(4800, 4400), P(GX, 4400), P(GX, Y), P(4800, Y)], 'eng', {
+    name: 'Спальня 1',
+    cover: { mat: 'eng', pat: 'deck', size: '190x1900', col: '#a98560', trans: {} }
+  });
+  FZ([P(4800, 0), P(GX, 0), P(GX, 4400), P(4800, 4400)], 'eng', { name: 'Спальня 2' });
+  FZ([P(GX, 0), P(XL, 0), P(XL, Y), P(GX, Y)], 'eng', { name: 'Галерея' });
+  ceil([P(0, 5600), P(3600, 5600), P(3600, Y), P(0, Y)], 2500, { kind: 'gkl', gap: 200, sheet: 'ГКЛВ' });
+  ceil([P(0, 0), P(3600, 0), P(3600, 5600), P(0, 5600)], 2650);
+  ceil([P(4800, 4400), P(GX, 4400), P(GX, Y), P(4800, Y)], 2600, { kind: 'gkl', gap: 160 });
+  ceil([P(4800, 0), P(GX, 0), P(GX, 4400), P(4800, 4400)], 2650);
+  // bathroom: bath, WC, sink, water towel warmer on the hot water loop
+  FX('bath', 1800, Y, { w: 1700, d: 750, type: 'acryl', mixer: 'wall', screen: true });
+  FX('wcinst', 0, 6600, { mount: 'wall' });
+  FX('sink', 3500, 7600, { w: 600 });
+  FX('towel', 3500, 8900, { kind: 'water', shape: 'm', w: 500, h: 800, z: 900, con: 'side', col: 'chrome' });
+  // master bedroom: curtains in a ceiling niche, moldings, a wardrobe; bedroom 2: ceiling rail
+  curtain(5900, Y - 300, 'niche', { ext: 300, open: 0.4, col: '#6f7f86', ceil: 2600 });
+  curtain(5900, 300, 'ceil_pl', { ext: 250, open: 0.5, col: '#a59b8c', rows: 2, z: 2650 });
+  molding(4900, 7000, 'frames', {
+    corner: 'inset',
+    R: 80,
+    z0: 900,
+    z1: 2300,
+    n: 4,
+    s0: 4600,
+    s1: 9800,
+    margin: 100,
+    prof: 'ml_20'
+  });
+  const tg = computeType(S.wtypes.find(x => x.id === 'wt_gb100')).total / 2;
+  const cw = cwCreate([{ a: P(GX - tg, 4500), b: P(GX - tg, 6300), n: P(-1, 0) }], 'wardrobe', o => E('Мебель', o));
+  cw.layer = 'Мебель';
+  I('bed', 5900, 8400, Math.PI);
+  // lights, switches, sockets
+  DV('sw1', 4900, 7000, { group: 1, z: 900 });
+  DV('sw1', 4900, 2600, { group: 1, z: 900 });
+  for (const [x, y] of [
+    [1800, 7800],
+    [1200, 2800],
+    [2400, 2800],
+    [4200, 2000],
+    [4200, 8000],
+    [5900, 7200],
+    [5900, 2200]
+  ])
+    DV('lspot', x, y, { group: 1 });
+  for (const [x, y, k, z] of [
+    [3500, 8300, 'sockIP', 1050],
+    [5000, Y, 'sock2', 300],
+    [6800, Y, 'sock2', 300],
+    [4900, 1200, 'sock1', 300],
+    [0, 3000, 'sock2', 300]
+  ])
+    DV(k, x, y, { z, group: 3 });
+  RAD('panel', h + 5900, Y, { type: '22', h: 500 });
+  RAD('panel', h + 5900, 0, { type: '22', h: 500 });
+  RAD('panel', h + 1800, 0, { type: '22', h: 500 });
+  for (const r of S.ents.filter(e => e.type === 'rad')) radFit(r);
+  T_(400, 8000, 'Ванная', 150);
+  T_(400, 2500, 'Кабинет', 150);
+  T_(5000, 8000, 'Спальня 1', 150);
+  T_(5000, 2000, 'Спальня 2', 150);
+  T_(7100, 5000, 'Галерея', 130);
+  T_(X / 2, -700, 'Этаж 2 — спальни, ванная, кабинет, галерея над гостиной', 150);
+  for (const e of S.ents) if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
+  void [wBd, wBa, wE1, wLW];
+  // back to level 1
+  LVs.ents[lv2.id] = S.ents;
+  S.ents = LVs.ents[lv1.id];
+  delete LVs.ents[lv1.id];
+  LVs.cur = lv1.id;
+  for (const e of S.ents) if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
+  levelsState.LVGEN++;
+  documentState.docVer++;
+  void [XT, wB2, wR, wT2];
+  try {
+    const sh0 = addSheet('Общие данные');
+    void sh0;
+    addStarterSet();
+    proj().cur = proj().sheets[1].id;
+  } catch (err) {
+    console.error('sample sheets', err);
+  }
+}
+
 // ===== mep/electrical/auto-wiring.js =====
 /**
  * mep/electrical/auto-wiring.js
@@ -79266,7 +80081,7 @@ function sbPreview(cvs, v, cfg) {
   c.font = `12px ${TFONT}`;
   c.fillStyle = '#5b626b';
   c.fillText(
-    'Видовой куб — грани, рёбра, углы, компас; мышь — вращать, Shift/средняя — сдвиг, колесо — масштаб',
+    'Видовой домик — стены, крыша, рёбра, углы, компас; мышь — вращать, Shift/средняя — сдвиг, колесо — масштаб',
     14,
     hpx - 12
   );
@@ -81634,7 +82449,7 @@ function mkFix(kind0) {
     prompt: () =>
       ask
         ? 'Угол поворота:'
-        : `${FIXK[kind].n}: точка у стены или [${['Инсталляция', 'Унитаз', 'Раковина', 'Мойка', 'Смеситель', 'Душ', 'Ванна', 'Стиралка', 'Бойлер', 'Сушитель', 'СтоякК', 'СтоякВ'].join('/')}/Поворот]:`,
+        : `${FIXK[kind].n}: точка у стены или [${['Инсталляция', 'Унитаз', 'Раковина', 'Мойка', 'Смеситель', 'Душ', 'Ванна', 'Стиралка', 'Бойлер', 'Проточный', 'Сушитель', 'СтоякК', 'СтоякВ'].join('/')}/Поворот]:`,
     hasValue: () => ask,
     onValue(v) {
       rot = mkFix.rot = v * D2R;
@@ -81665,6 +82480,7 @@ function mkFix(kind0) {
         лоток: 'fdrain',
         стиралка: 'washer',
         бойлер: 'boiler',
+        проточный: 'wheater',
         сушитель: 'towel',
         стояк: 'riserK',
         стоякк: 'riserK',
@@ -81967,6 +82783,579 @@ defineTools({
   }
 });
 
+// ===== mep/plumbing/appliances.js =====
+/**
+ * mep/plumbing/appliances.js
+ *
+ * Household appliances on the water: washing machine (front, narrow, top-loading, a washer-dryer column),
+ * storage water heater (round vertical, horizontal, flat), instantaneous water heater (tap, 1-phase, 3-phase),
+ * towel warmers (water / electric; ladder, M, U, with a shelf). Real sizes from the volume / power, connections,
+ * power line notes, the specification. The tools sit where they belong: water heaters in «Инженерия»,
+ * the washing machine and the towel warmers in «Интерьер».
+ */
+
+
+
+
+
+/* ---------- washing machine ---------- */
+const WM_K = {
+  front: { n: 'фронтальная', w: 600, d: 600, h: 850 },
+  narrow: { n: 'узкая фронтальная', w: 600, d: 420, h: 850 },
+  top: { n: 'с вертикальной загрузкой', w: 400, d: 600, h: 900 },
+  column: { n: 'колонна: стиральная + сушильная', w: 600, d: 650, h: 1750 },
+  built: { n: 'встраиваемая под столешницу', w: 600, d: 560, h: 820 }
+};
+Object.assign(FIXK.washer, {
+  n: 'Стиральная машина',
+  cfg: () => ({ type: 'front', w: 600, d: 600, h: 850, kg: 7, pw: 2200, col: '#f2f3f4' }),
+  ports: e => [
+    { s: 'hvs', d: 16, x: e.cfg.w / 2 - 80, y: 0, z: 600, n: 'кран ¾″ с отсечкой' },
+    { s: 'k', d: 50, x: -e.cfg.w / 2 + 120, y: 0, z: 600, n: 'слив Ø40/50 (сифон с обратным клапаном)' }
+  ],
+  plan: e => {
+    const c = e.cfg,
+      w = c.w / 2;
+    const out = [
+      {
+        poly: [
+          [-w, 20],
+          [w, 20],
+          [w, 20 + c.d],
+          [-w, 20 + c.d]
+        ]
+      }
+    ];
+    if (c.type === 'top')
+      out.push({
+        poly: [
+          [-w + 40, 80],
+          [w - 40, 80],
+          [w - 40, c.d - 60],
+          [-w + 40, c.d - 60]
+        ],
+        dash: true
+      });
+    else
+      out.push({
+        poly: [
+          [-w * 0.6, 20 + c.d],
+          [w * 0.6, 20 + c.d],
+          [w * 0.6, 20 + c.d + 40],
+          [-w * 0.6, 20 + c.d + 40]
+        ],
+        dash: true
+      });
+    return out;
+  },
+  build(mb, e) {
+    const c = e.cfg,
+      w = c.w / 2,
+      y1 = 20 + c.d;
+    const body = (z0, h, label, dryer) => {
+      mb.tag(label);
+      mb.rbox(-w, 20, z0, w, y1, z0 + h, 18, c.col);
+      mb.tag('Панель управления');
+      mb.box(-w + 20, y1, z0 + h - 120, w - 20, y1 + 4, z0 + h - 30, '#e3e6e9');
+      if (c.type === 'top' && !dryer) return;
+      // door: a ring and the glass, on the front face
+      mb.tag(dryer ? 'Люк сушильной машины' : 'Люк');
+      const zc = z0 + h * 0.46,
+        R = Math.min(w * 0.68, h * 0.3);
+      const ring = [];
+      for (let k = 0; k <= 32; k++) {
+        const t = (k / 32) * Math.PI * 2;
+        ring.push([Math.cos(t) * R, y1 + 10, zc + Math.sin(t) * R]);
+      }
+      mb.smooth(true);
+      mb.sweep(ring, 16, '#9aa1a9', 12);
+      mb.smooth(false);
+      mb.tag('Стекло люка');
+      const gl = [];
+      for (let k = 0; k <= 32; k++) {
+        const t = (k / 32) * Math.PI * 2;
+        gl.push([Math.cos(t) * (R - 14), y1 + 6, zc + Math.sin(t) * (R - 14)]);
+      }
+      for (let k = 0; k < 32; k++) mb.tri3('#53606c', [0, y1 + 6, zc], gl[k + 1], gl[k], 0.75);
+    };
+    if (c.type === 'column') {
+      body(0, 850, 'Стиральная машина', false);
+      mb.tag('Соединительный элемент колонны');
+      mb.box(-w, 20, 850, w, y1, 870, '#d9dde1');
+      body(870, Math.max(600, c.h - 870), 'Сушильная машина', true);
+    } else if (c.type === 'top') {
+      body(0, c.h, 'Стиральная машина', false);
+      mb.tag('Крышка загрузки');
+      mb.box(-w + 40, 80, c.h, w - 40, c.d - 60, c.h + 6, '#dfe3e7');
+    } else body(0, c.h, 'Стиральная машина', false);
+    // hoses to the wall
+    mb.tag('Заливной шланг');
+    mb.tube([w - 80, 30, 600], [w - 80, 20, 500], 8, '#d8dce0', 8);
+    mb.tag('Сливной шланг');
+    mb.tube([-w + 120, 30, 600], [-w + 120, 20, 450], 10, '#7d858e', 8);
+  },
+  panel: e => [
+    ['Исполнение', 'cfg.type', 's', Object.entries(WM_K).map(([k, v]) => [k, v.n])],
+    ['Ширина', 'cfg.w', 'n'],
+    ['Глубина', 'cfg.d', 'n'],
+    ['Высота', 'cfg.h', 'n'],
+    ['Загрузка, кг', 'cfg.kg', 'n'],
+    ['Мощность, Вт', 'cfg.pw', 'n'],
+    ['Цвет', 'cfg.col', 'c']
+  ],
+  onSet(e, p, v) {
+    if (p === 'cfg.type' && WM_K[v]) Object.assign(e.cfg, { w: WM_K[v].w, d: WM_K[v].d, h: WM_K[v].h });
+  },
+  info: e => [
+    'Подключение',
+    WM_K[e.cfg.type] ? WM_K[e.cfg.type].n : '',
+    `<p class="hint" style="margin:4px 0">Вода: кран ¾″ с отсечкой, давление 0,1–1 МПа. Слив — в сифон с обратным клапаном, точка слива не выше 600–800 мм от пола. Питание: розетка IP44 с заземлением, отдельная группа ${e.cfg.type === 'column' ? '2 × 16 А (две машины)' : '16 А'} с УЗО 30 мА, кабель 3×2,5. Под машину — ровное основание, вокруг ≥ 10–20 мм на вибрацию.</p>`
+  ],
+  spec: e => {
+    const c = e.cfg;
+    const K = WM_K[c.type] || WM_K.front;
+    return [
+      ['wm' + c.type + c.w + c.d, `Стиральная машина ${K.n}, ${c.w}×${c.d}×${c.h}, ${c.kg} кг`],
+      ...(c.type === 'column' ? [['wmdr' + c.w, 'Сушильная машина + соединительный элемент колонны']] : []),
+      ['wmv', 'Кран шаровой ¾″ для стиральной машины'],
+      ['wms', 'Сифон с отводом и обратным клапаном (для стиральной машины)']
+    ];
+  }
+});
+
+/* ---------- storage water heater ---------- */
+const BL_K = {
+  round: 'круглый вертикальный',
+  horiz: 'круглый горизонтальный',
+  flat: 'плоский (узкий)'
+};
+/** Body sizes of a storage heater by its volume and shape: { D or W×T, H }. */
+function boilerSize(vol, type) {
+  const v = Math.max(10, +vol || 80);
+  if (type === 'flat') {
+    // flat 30…100 l: 520 wide, 260–290 thick
+    const T = v <= 50 ? 260 : 290;
+    return { W: 520, T, H: Math.round(470 + v * 8.3) };
+  }
+  const D = v <= 30 ? 360 : v <= 50 ? 400 : v <= 100 ? 450 : v <= 150 ? 520 : 560;
+  const H = Math.round((v / 1000 / (Math.PI * ((D - 60) / 2000) ** 2)) * 1000 + 140);
+  return { D, H };
+}
+Object.assign(FIXK.boiler, {
+  n: 'Водонагреватель накопительный (бойлер)',
+  cfg: () => ({ type: 'round', vol: 80, pw: 2000, z: 1200, phase: 1 }),
+  ports: e => {
+    const c = e.cfg,
+      S_ = boilerSize(c.vol, c.type);
+    const dep = c.type === 'flat' ? S_.T : S_.D;
+    const zb = c.type === 'horiz' ? c.z + dep / 2 : c.z;
+    return [
+      { s: 'hvs', d: 20, x: -50, y: dep / 2, z: zb - 120, n: 'вход ХВС ½″ (через группу безопасности)' },
+      { s: 'gvs', d: 20, x: 50, y: dep / 2, z: zb - 120, n: 'выход ГВС ½″' }
+    ];
+  },
+  plan: e => {
+    const c = e.cfg,
+      S_ = boilerSize(c.vol, c.type);
+    if (c.type === 'flat')
+      return [
+        {
+          poly: [
+            [-S_.W / 2, 0],
+            [S_.W / 2, 0],
+            [S_.W / 2, S_.T],
+            [-S_.W / 2, S_.T]
+          ]
+        }
+      ];
+    if (c.type === 'horiz')
+      return [
+        {
+          poly: [
+            [-S_.H / 2, 0],
+            [S_.H / 2, 0],
+            [S_.H / 2, S_.D],
+            [-S_.H / 2, S_.D]
+          ]
+        }
+      ];
+    return [{ circ: [0, S_.D / 2, S_.D / 2] }];
+  },
+  k3: e => JSON.stringify(e.cfg),
+  build(mb, e) {
+    const c = e.cfg,
+      S_ = boilerSize(c.vol, c.type);
+    mb.tag('Водонагреватель накопительный');
+    mb.smooth(true);
+    let zb = c.z,
+      dep;
+    if (c.type === 'flat') {
+      dep = S_.T;
+      mb.rbox(-S_.W / 2, 0, c.z, S_.W / 2, S_.T, c.z + S_.H, 40, '#eef0f2');
+      mb.tag('Панель управления');
+      mb.box(-60, S_.T, c.z + S_.H * 0.55, 60, S_.T + 4, c.z + S_.H * 0.55 + 60, '#2e3338');
+    } else if (c.type === 'horiz') {
+      dep = S_.D;
+      zb = c.z + S_.D / 2;
+      const r = S_.D / 2;
+      const ring = [
+        [-S_.H / 2, r, c.z + r],
+        [S_.H / 2, r, c.z + r]
+      ];
+      mb.sweep(ring, r, '#eef0f2', 32, 1, true);
+    } else {
+      dep = S_.D;
+      mb.cyl(0, S_.D / 2, c.z, c.z + S_.H, S_.D / 2, '#eef0f2', 32);
+      mb.cyl(0, S_.D / 2, c.z - 50, c.z, S_.D / 2 - 30, '#dfe2e6', 32, 1, S_.D / 2 - 90);
+      mb.tag('Терморегулятор');
+      mb.cyl(0, S_.D / 2, c.z - 70, c.z - 50, 40, '#3a4046', 16);
+    }
+    mb.smooth(false);
+    // connections and the safety group
+    mb.tag('Группа безопасности (клапан 8 бар, кран, тройник)');
+    for (const [x, col] of [
+      [-50, '#3b82c4'],
+      [50, '#d0453b']
+    ])
+      mb.tube([x, dep / 2, zb - (c.type === 'horiz' ? 0 : 50)], [x, dep / 2, zb - 220], 10, col, 10);
+    mb.box(-90, dep / 2 - 20, zb - 260, -20, dep / 2 + 20, zb - 200, CHR);
+    mb.tag('Кронштейн');
+    mb.box(
+      -S_.D * 0.3 || -150,
+      0,
+      c.z + (S_.H || 600) * 0.75,
+      (S_.D || 300) * 0.3,
+      20,
+      c.z + (S_.H || 600) * 0.75 + 60,
+      '#7b838c'
+    );
+  },
+  panel: e => [
+    ['Исполнение', 'cfg.type', 's', Object.entries(BL_K)],
+    ['Объём, л', 'cfg.vol', 'n'],
+    ['Мощность ТЭН, Вт', 'cfg.pw', 'n'],
+    ['Низ корпуса', 'cfg.z', 'n']
+  ],
+  info: e => {
+    const c = e.cfg,
+      S_ = boilerSize(c.vol, c.type);
+    const I = c.pw / 230;
+    const kg = Math.round(c.vol * 1.25 + 15);
+    const t = Math.round(((c.vol * 4.19 * 45) / (c.pw / 1000) / 3600) * 60);
+    return [
+      'Расчёт',
+      `${c.vol} л`,
+      `<p class="hint" style="margin:4px 0">Корпус ≈ ${S_.D ? 'Ø' + S_.D : S_.W + '×' + S_.T} × ${S_.H} мм. Масса с водой ≈ ${kg} кг — крепление на анкеры в несущую стену или закладную в ГКЛ. Нагрев с 10 до 55 °C ≈ ${t} мин. Ток ${I.toFixed(1)} А: розетка с заземлением IP44 или отдельная линия 3×2,5, автомат 16 А, УЗО 30 мА. На входе ХВС — группа безопасности, слив клапана — в канализацию. Снизу — ≥ 300 мм свободно для обслуживания, сбоку — доступ к анодному узлу.</p>`
+    ];
+  },
+  spec: e => {
+    const c = e.cfg;
+    return [
+      [
+        'blr' + c.type + c.vol,
+        `Водонагреватель накопительный ${BL_K[c.type] || ''} ${c.vol} л, ${(c.pw / 1000).toFixed(1)} кВт`
+      ],
+      ['blrv', 'Группа безопасности водонагревателя (клапан 8 бар, кран, тройник)'],
+      ['blra', 'Анкеры / кронштейн крепления водонагревателя (комплект)']
+    ];
+  }
+});
+
+/* ---------- instantaneous water heater ---------- */
+const WH_K = {
+  tap: { n: 'на кран (безнапорный)', pw: 3500, w: 160, h: 260, d: 110, ph: 1 },
+  one: { n: 'напорный, 1 фаза', pw: 8000, w: 230, h: 370, d: 110, ph: 1 },
+  three: { n: 'напорный, 3 фазы', pw: 18000, w: 470, h: 470, d: 140, ph: 3 }
+};
+/** Line of the heater: current, cable, breaker. */
+function wheaterLine(pw, ph) {
+  const I = ph === 3 ? pw / (Math.sqrt(3) * 400) : pw / 230;
+  // copper, hidden wiring: cross-section → breaker
+  const tab = [
+    [1.5, 10],
+    [2.5, 16],
+    [4, 32],
+    [6, 40],
+    [10, 50],
+    [16, 63]
+  ];
+  const row = tab.find(([, brk]) => brk >= I) || tab[tab.length - 1];
+  return { I, sect: row[0], brk: row[1], cable: `ВВГнг(А)-LS ${ph === 3 ? 5 : 3}×${String(row[0]).replace('.', ',')}` };
+}
+FIXK.wheater = {
+  n: 'Водонагреватель проточный',
+  cfg: () => ({ type: 'one', pw: 8000, z: 1400 }),
+  ports: e => {
+    const c = e.cfg;
+    const K = WH_K[c.type] || WH_K.one;
+    return [
+      { s: 'hvs', d: 16, x: -40, y: K.d / 2, z: c.z - 30, n: 'вход ХВС ½″' },
+      { s: 'gvs', d: 16, x: 40, y: K.d / 2, z: c.z - 30, n: 'выход ГВС ½″' }
+    ];
+  },
+  plan: e => {
+    const K = WH_K[e.cfg.type] || WH_K.one;
+    return [
+      {
+        poly: [
+          [-K.w / 2, 0],
+          [K.w / 2, 0],
+          [K.w / 2, K.d],
+          [-K.w / 2, K.d]
+        ]
+      }
+    ];
+  },
+  k3: e => JSON.stringify(e.cfg),
+  build(mb, e) {
+    const c = e.cfg;
+    const K = WH_K[c.type] || WH_K.one;
+    mb.tag('Водонагреватель проточный');
+    mb.smooth(true);
+    mb.rbox(-K.w / 2, 0, c.z, K.w / 2, K.d, c.z + K.h, 18, '#f3f4f5');
+    mb.smooth(false);
+    mb.tag('Индикатор');
+    mb.box(-30, K.d, c.z + K.h * 0.62, 30, K.d + 3, c.z + K.h * 0.62 + 24, '#2e3338');
+    mb.tag('Подключения ХВС / ГВС');
+    mb.tube([-40, K.d / 2, c.z], [-40, K.d / 2, c.z - 120], 8, '#3b82c4', 8);
+    mb.tube([40, K.d / 2, c.z], [40, K.d / 2, c.z - 120], 8, '#d0453b', 8);
+    if (c.type === 'tap') {
+      mb.tag('Излив и лейка');
+      mb.tube([0, K.d, c.z + 40], [0, K.d + 160, c.z + 40], 9, CHR, 10);
+    }
+  },
+  panel: e => [
+    ['Исполнение', 'cfg.type', 's', Object.entries(WH_K).map(([k, v]) => [k, v.n])],
+    ['Мощность, Вт', 'cfg.pw', 'n'],
+    ['Низ корпуса', 'cfg.z', 'n']
+  ],
+  onSet(e, p, v) {
+    if (p === 'cfg.type' && WH_K[v]) e.cfg.pw = WH_K[v].pw;
+  },
+  info: e => {
+    const c = e.cfg;
+    const K = WH_K[c.type] || WH_K.one;
+    const L = wheaterLine(c.pw, K.ph);
+    const flow = (c.pw / 1000 / (4.19 * 25)) * 60; // l/min with Δt 25 °C
+    return [
+      'Расчёт',
+      `${(c.pw / 1000).toFixed(1)} кВт`,
+      `<p class="hint" style="margin:4px 0">Производительность ≈ ${flow.toFixed(1).replace('.', ',')} л/мин при нагреве на 25 °C${flow < 4 ? ' — хватит на кухонную мойку или раковину, не на душ' : flow < 7 ? ' — одна точка (душ или мойка)' : ' — две точки одновременно'}. Ток ${L.I.toFixed(1).replace('.', ',')} А: отдельная линия от щита ${esc(L.cable)}, автомат ${L.brk} А, УЗО/дифавтомат 30 мА${K.ph === 3 ? '; нужен трёхфазный ввод' : c.pw > 7000 ? '; проверьте разрешённую мощность ввода' : ''}. Розетка не применяется — только стационарное подключение.</p>`
+    ];
+  },
+  spec: e => {
+    const c = e.cfg;
+    const K = WH_K[c.type] || WH_K.one;
+    const L = wheaterLine(c.pw, K.ph);
+    return [
+      ['wh' + c.type + c.pw, `Водонагреватель проточный ${K.n}, ${(c.pw / 1000).toFixed(1)} кВт`],
+      [
+        'whb' + L.brk + K.ph,
+        `Автомат ${K.ph === 3 ? '3P' : '1P'} ${L.brk} А + УЗО 30 мА для проточного водонагревателя`
+      ]
+    ];
+  }
+};
+
+/* ---------- towel warmers ---------- */
+const TW_SHAPE = {
+  ladder: 'лесенка',
+  m: 'М-образный',
+  u: 'U-образный',
+  shelf: 'лесенка с полкой'
+};
+const TW_COL = {
+  chrome: ['хром', '#c7ccd2'],
+  black: ['чёрный матовый', '#2b2d30'],
+  white: ['белый', '#eef0f2'],
+  bronze: ['бронза', '#9a7550']
+};
+Object.assign(FIXK.towel, {
+  n: 'Полотенцесушитель',
+  cfg: () => ({
+    kind: 'water',
+    shape: 'ladder',
+    w: 500,
+    h: 800,
+    z: 900,
+    con: 'side',
+    col: 'chrome',
+    pw: 300,
+    wiring: 'hidden'
+  }),
+  ports: e =>
+    e.cfg.kind === 'water'
+      ? e.cfg.con === 'bottom'
+        ? [
+            { s: 'gvs', d: 20, x: -e.cfg.w / 2 + 25, y: 0, z: e.cfg.z - 60, n: 'подача ½″ (нижнее подключение)' },
+            { s: 'gvc', d: 20, x: e.cfg.w / 2 - 25, y: 0, z: e.cfg.z - 60, n: 'обратка ½″' }
+          ]
+        : [
+            {
+              s: 'gvs',
+              d: 20,
+              x: -e.cfg.w / 2 + 25,
+              y: 0,
+              z: e.cfg.z + (e.cfg.shape === 'm' || e.cfg.shape === 'u' ? e.cfg.h - 60 : e.cfg.h - 80),
+              n: 'подача ½″'
+            },
+            { s: 'gvc', d: 20, x: -e.cfg.w / 2 + 25, y: 0, z: e.cfg.z + 60, n: 'обратка ½″' }
+          ]
+      : [],
+  plan: e => [
+    {
+      poly: [
+        [-e.cfg.w / 2, 0],
+        [e.cfg.w / 2, 0],
+        [e.cfg.w / 2, e.cfg.shape === 'shelf' ? 250 : 90],
+        [-e.cfg.w / 2, e.cfg.shape === 'shelf' ? 250 : 90]
+      ]
+    }
+  ],
+  k3: e => JSON.stringify(e.cfg),
+  build(mb, e) {
+    const c = e.cfg;
+    const col = (TW_COL[c.col] || TW_COL.chrome)[1];
+    const y = 70,
+      x0 = -c.w / 2 + 25,
+      x1 = c.w / 2 - 25;
+    mb.tag('Полотенцесушитель');
+    mb.smooth(true);
+    if (c.shape === 'm' || c.shape === 'u') {
+      // a bent tube: up, across, down (M — with a dip in the middle)
+      const top = c.z + c.h,
+        bot = c.z;
+      const pts =
+        c.shape === 'u'
+          ? [
+              [x0, y, bot],
+              [x0, y, top],
+              [x1, y, top],
+              [x1, y, bot]
+            ]
+          : [
+              [x0, y, bot],
+              [x0, y, top],
+              [(x0 + x1) / 2, y, bot + c.h * 0.35],
+              [x1, y, top],
+              [x1, y, bot]
+            ];
+      mb.sweep(pts, 16, col, 14);
+    } else {
+      for (const x of [x0, x1]) mb.cyl(x, y, c.z, c.z + c.h, 15, col, 14);
+      const n = Math.max(3, Math.round(c.h / 110));
+      for (let i = 0; i < n; i++) {
+        const z = c.z + 40 + ((c.h - 80) * i) / (n - 1);
+        mb.tube([x0, y, z], [x1, y, z], 10, col, 10);
+      }
+      if (c.shape === 'shelf') {
+        mb.tag('Полка');
+        for (let i = 0; i < 5; i++) {
+          const yy = y + 30 + i * 40;
+          mb.tube([x0, yy, c.z + c.h], [x1, yy, c.z + c.h], 7, col, 8);
+        }
+      }
+    }
+    mb.smooth(false);
+    // connections to the wall
+    mb.tag(c.kind === 'water' ? 'Отводы и краны «американка»' : 'Крепления');
+    for (const zz of c.kind === 'water' && c.con === 'bottom' ? [] : [c.z + 60, c.z + c.h - 80])
+      for (const x of c.kind === 'water' ? [x0] : [x0, x1]) mb.tube([x, 0, zz], [x, y, zz], 9, col, 10);
+    if (c.kind === 'water' && c.con === 'bottom')
+      for (const x of [x0, x1]) mb.tube([x, y, c.z], [x, y, c.z - 70], 10, col, 10);
+    if (c.kind === 'el') {
+      mb.tag(c.wiring === 'plug' ? 'Вилка и шнур' : 'Скрытое подключение (выход кабеля)');
+      mb.box(x1 - 25, 0, c.z + 20, x1 + 25, 30, c.z + 70, '#e9ecef');
+    }
+  },
+  panel: e => [
+    [
+      'Тип',
+      'cfg.kind',
+      's',
+      [
+        ['water', 'водяной (от ГВС / отопления)'],
+        ['el', 'электрический']
+      ]
+    ],
+    ['Форма', 'cfg.shape', 's', Object.entries(TW_SHAPE)],
+    ['Ширина', 'cfg.w', 'n'],
+    ['Высота', 'cfg.h', 'n'],
+    ['Низ', 'cfg.z', 'n'],
+    ['Цвет', 'cfg.col', 's', Object.entries(TW_COL).map(([k, v]) => [k, v[0]])],
+    ...(e.cfg.kind === 'water'
+      ? [
+          [
+            'Подключение',
+            'cfg.con',
+            's',
+            [
+              ['side', 'боковое'],
+              ['bottom', 'нижнее']
+            ]
+          ]
+        ]
+      : [
+          ['Мощность, Вт', 'cfg.pw', 'n'],
+          [
+            'Питание',
+            'cfg.wiring',
+            's',
+            [
+              ['hidden', 'скрытое (выход кабеля)'],
+              ['plug', 'вилка в розетку']
+            ]
+          ]
+        ])
+  ],
+  info: e => {
+    const c = e.cfg;
+    return [
+      'Подключение',
+      c.kind === 'water' ? 'водяной' : 'электрический',
+      `<p class="hint" style="margin:4px 0">${
+        c.kind === 'water'
+          ? 'Подключение к ГВС с циркуляцией (иначе тёплый только при разборе воды) или к отоплению. Краны «американка» на подаче и обратке, байпас на стояке; уклон подводок — к стояку.'
+          : `Мощность ${c.pw} Вт. ${c.wiring === 'plug' ? 'Розетка IP44 рядом (не над ванной).' : 'Скрытый вывод кабеля 3×1,5 в подрозетник за прибором, группа с УЗО 30 мА.'} В ванной — вне зоны 0–1 (не ближе 600 мм от края ванны/душа).`
+      }</p>`
+    ];
+  },
+  spec: e => {
+    const c = e.cfg;
+    return [
+      [
+        'tw' + c.kind + c.shape + c.w + c.h + c.col,
+        `Полотенцесушитель ${c.kind === 'water' ? 'водяной' : 'электрический ' + c.pw + ' Вт'}, ${TW_SHAPE[c.shape] || ''}, ${c.w}×${c.h}, ${(TW_COL[c.col] || TW_COL.chrome)[0]}`
+      ],
+      ...(c.kind === 'water' ? [['twv', 'Кран «американка» ½″ для полотенцесушителя', 2]] : [])
+    ];
+  }
+});
+
+/* ---------- tools in their sections ---------- */
+defineTools({
+  boiler: {
+    command: { t: 'БОЙЛЕР', m: () => mkFix('boiler'), a: ['boiler', 'бойлер', 'водонагреватель', 'накопительный'] },
+    title: 'Водонагреватель накопительный: объём → размеры, группа безопасности · БОЙЛЕР',
+    icon: '<rect x="6" y="2.5" width="8" height="13" rx="4"/><path d="M8.5 15.5v2M11.5 15.5v2"/><path d="M8.5 8h3"/>'
+  },
+  wheater: {
+    command: { t: 'ПРОТОЧНЫЙ', m: () => mkFix('wheater'), a: ['wheater', 'проточный', 'проточник'] },
+    title: 'Водонагреватель проточный: мощность → расход, кабель и автомат · ПРОТОЧНЫЙ',
+    icon: '<rect x="5.5" y="3" width="9" height="11" rx="2"/><path d="M8 14v3M12 14v3"/><path d="M10.5 6l-2 3h3l-2 3"/>'
+  },
+  washer: {
+    command: { t: 'СТИРАЛКА', m: () => mkFix('washer'), a: ['washer', 'стиралка', 'стиральная'] },
+    title: 'Стиральная машина (в т. ч. колонна с сушильной) · СТИРАЛКА',
+    icon: '<rect x="4" y="2.5" width="12" height="15" rx="1.5"/><circle cx="10" cy="11" r="3.6"/><path d="M6.5 5h3"/>'
+  },
+  towel: {
+    command: { t: 'СУШИТЕЛЬ', m: () => mkFix('towel'), a: ['towel', 'сушитель', 'полотенцесушитель'] },
+    title: 'Полотенцесушитель водяной или электрический · СУШИТЕЛЬ',
+    icon: '<path d="M6 3v14M14 3v14"/><path d="M6 6h8M6 9.5h8M6 13h8"/>'
+  }
+});
+
 // ===== interior/room-fill.js =====
 /**
  * interior/room-fill.js
@@ -82204,6 +83593,1075 @@ defineTools({
     title: 'Отделка помещения: пол, потолок, стены и плинтус одним щелчком · ПОМЕЩЕНИЕ',
     icon: '<rect x="3" y="3" width="14" height="14"/><path d="M3 13l4-3 4 3 6-4" class="t"/><path d="M6 17v-2M10 17v-2M14 17v-2" class="t"/>',
     help: 'Щёлкните внутри помещения: появятся пол с пирогом, потолок, покраска сторон стен и плинтус. Уже существующие пол, потолок и отделка не заменяются; всё созданное дальше настраивается вручную.'
+  }
+});
+
+// ===== interior/curtains.js =====
+/**
+ * interior/curtains.js
+ *
+ * Curtain rails: hidden in a ceiling niche (plasterboard) or in a stretch ceiling, ceiling plastic or aluminium
+ * rails, wall rods on brackets, wall profile rails, motorised rails; 1–3 rows. Optional drapes (main curtain and
+ * tulle, open or closed) for the look of the room. A click near a window places the rail over the window with an
+ * overhang on both sides; two points — anywhere along a wall. Specification: rail bars, fasteners / brackets,
+ * runners, end caps, the niche, the motor, the fabric.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** Kinds of rails: name, where it hangs, row gap, profile size, standard bar lengths (mm). */
+var CRK = {
+  niche: {
+    n: 'Скрытый в нише потолка (ГКЛ)',
+    ceil: true,
+    niche: 'gkl',
+    gap: 60,
+    w: 22,
+    h: 24,
+    bars: [6000],
+    cut: true
+  },
+  stretch: {
+    n: 'Скрытый в натяжном потолке (ПК-14 / ПК-15)',
+    ceil: true,
+    niche: 'stretch',
+    gap: 45,
+    w: 22,
+    h: 24,
+    bars: [6000],
+    cut: true
+  },
+  ceil_pl: {
+    n: 'Потолочный пластиковый (шина)',
+    ceil: true,
+    gap: 25,
+    w: 0,
+    h: 16,
+    bars: [2000, 2400, 3000, 3600, 4000]
+  },
+  ceil_al: { n: 'Потолочный алюминиевый профильный', ceil: true, gap: 40, w: 22, h: 22, bars: [6000], cut: true },
+  electric: {
+    n: 'Электрокарниз потолочный (с мотором)',
+    ceil: true,
+    gap: 60,
+    w: 34,
+    h: 32,
+    bars: [6000],
+    cut: true,
+    motor: true
+  },
+  wall_rod: {
+    n: 'Настенный штанговый (круглая штанга)',
+    wall: true,
+    rod: true,
+    gap: 70,
+    w: 22,
+    h: 22,
+    bars: [1600, 2000, 2400, 3000, 3600, 4000]
+  },
+  wall_prof: {
+    n: 'Настенный профильный на кронштейнах',
+    wall: true,
+    gap: 50,
+    w: 20,
+    h: 30,
+    bars: [2000, 2400, 3000, 3600, 4000]
+  }
+};
+const CR_NICHE_D = 100;
+
+function crU(e) {
+  const L = dist(e.a, e.b) || 1;
+  const u = mul(sub(e.b, e.a), 1 / L);
+  return { L, u, n: P(-u.y, u.x) }; // n — into the room (on the left of a→b)
+}
+/** Axis offsets of the rows from the wall face. */
+function crRows(e) {
+  const K = CRK[e.kind] || CRK.ceil_pl;
+  const g = +e.gap || K.gap;
+  return Array.from({ length: Math.max(1, Math.min(3, e.rows | 0 || 1)) }, (_, i) => (+e.off || 0) + i * g);
+}
+/** Height of the rail top: the ceiling plane, the top of the niche, or the rod axis on the wall. */
+function crZ(e) {
+  const K = CRK[e.kind] || CRK.ceil_pl;
+  if (K.niche) return (+e.ceil || S.ceil) + CR_NICHE_D;
+  return +e.z || (K.ceil ? S.ceil : S.ceil - 150);
+}
+/** Width of the niche (the rails plus 40 mm on the room side). */
+function crNicheW(e) {
+  const r = crRows(e);
+  return r[r.length - 1] + 40;
+}
+/** Bars of rail of one row for length L: [{len, n}], joints. */
+function crBars(K, L) {
+  if (K.cut) {
+    const n = Math.ceil(L / K.bars[0]);
+    return { txt: `${(L / 1000).toFixed(2).replace('.', ',')} м (нарезка)`, joints: n - 1, n, m: L / 1000 };
+  }
+  const b = K.bars.find(x => x >= L);
+  if (b) return { txt: `${(b / 1000).toFixed(1).replace('.', ',')} м`, joints: 0, n: 1, m: b / 1000 };
+  const mx = K.bars[K.bars.length - 1];
+  const n = Math.ceil(L / mx);
+  return {
+    txt: `${n} × ${(mx / 1000).toFixed(1).replace('.', ',')} м со стыком`,
+    joints: n - 1,
+    n,
+    m: (n * mx) / 1000
+  };
+}
+/** Fasteners: ceiling — every ≤ 500 mm, wall brackets — every ≤ 1200 mm (one bracket carries all rows). */
+function crFix(e) {
+  const K = CRK[e.kind] || CRK.ceil_pl;
+  const L = crU(e).L;
+  if (K.wall) return Math.max(2, Math.ceil(L / 1200) + 1);
+  return Math.ceil(L / 500) + 1;
+}
+
+XT.curtain = {
+  layer: 'Отделка',
+  prims: e => [{ t: 's', a: e.a, b: e.b }],
+  dist: (e, p) => dist(segPt(e.a, e.b, p), p) - 20,
+  keys: e => [
+    { p: e.a, k: 'end' },
+    { p: e.b, k: 'end' },
+    { p: mid(e.a, e.b), k: 'mid' }
+  ],
+  sample: e => [e.a, e.b],
+  map: (n, e, f) => {
+    n.a = f(e.a);
+    n.b = f(e.b);
+  },
+  grips: (e, set) => [
+    { p: e.a, apply: set((n, p) => (n.a = p)) },
+    { p: e.b, apply: set((n, p) => (n.b = p)) }
+  ],
+  draw(e, color, o, ghost, col) {
+    const K = CRK[e.kind] || CRK.ceil_pl;
+    const { u, n } = crU(e);
+    ctx.save();
+    ctx.strokeStyle = ghost ? '#8aa' : col;
+    ctx.lineWidth = o.hover ? 2 : 1.2;
+    ctx.setLineDash(K.ceil ? [7, 4] : []);
+    for (const r of crRows(e)) {
+      pathPoly([add(e.a, mul(n, r)), add(e.b, mul(n, r))], false);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // end caps / finials
+    const rr = crRows(e);
+    for (const p of [e.a, e.b]) {
+      pathPoly([add(p, mul(n, rr[0] - 15)), add(p, mul(n, rr[rr.length - 1] + 15))], false);
+      ctx.stroke();
+    }
+    if (K.niche) {
+      ctx.setLineDash([2, 3]);
+      const w = crNicheW(e);
+      pathPoly([e.a, add(e.a, mul(n, w)), add(e.b, mul(n, w)), e.b], false);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (!ghost && view.k * crU(e).L > 90) {
+      const m = w2s(add(mid(e.a, e.b), mul(n, rr[rr.length - 1] + 40)));
+      let an = -ang(u);
+      if (an > Math.PI / 2) an -= Math.PI;
+      if (an < -Math.PI / 2) an += Math.PI;
+      ctx.translate(m.x, m.y);
+      ctx.rotate(an);
+      ctx.font = `10px ${TFONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = col;
+      ctx.fillText(
+        `Карниз ${K.n.split(' ')[0].toLowerCase()}, ${rr.length} ряд. · ${(crU(e).L / 1000).toFixed(2)} м`,
+        0,
+        0
+      );
+    }
+    ctx.restore();
+  },
+  k3: e => [S.ceil, JSON.stringify(e)],
+  build3(e) {
+    const K = CRK[e.kind] || CRK.ceil_pl;
+    const { L, u, n } = crU(e);
+    const mb = MB();
+    const z = crZ(e);
+    const rows = crRows(e);
+    const at = (s, o, zz) => {
+      const p = add(add(e.a, mul(u, s)), mul(n, o));
+      return [p.x, p.y, zz];
+    };
+    const col = e.rcol || (K.wall && K.rod ? '#2f3236' : '#e9ebee');
+    // the niche: a board on the room side from the ceiling plane up to the niche top, the top of the niche
+    if (K.niche) {
+      const w = crNicheW(e);
+      const c0 = +e.ceil || S.ceil;
+      mb.tag(K.niche === 'gkl' ? 'Ниша ГКЛ под карниз' : 'Профиль скрытого карниза ПК-14 (натяжной потолок)');
+      mb.obox(at(0, w + 6, c0 - 10), at(L, w + 6, c0 - 10), 12.5, 20, K.niche === 'gkl' ? '#f4f3ef' : '#d9dde1');
+      for (let zz = c0; zz < z; zz += 25) mb.obox(at(0, w + 6, zz), at(L, w + 6, zz), 12.5, 25, '#f4f3ef');
+      mb.tag('Тень ниши');
+      mb.obox(at(0, w / 2, z + 3), at(L, w / 2, z + 3), w, 6, '#3c3f44');
+    }
+    mb.tag(K.n);
+    if (K.rod) {
+      mb.smooth(true);
+      for (const r of rows) mb.tube(at(-60, r, z), at(L + 60, r, z), (e.rd || 25) / 2, col, 16);
+      mb.tag('Наконечники');
+      for (const r of rows)
+        for (const s of [-75, L + 75]) {
+          const p = at(s, r, z);
+          mb.cyl(p[0], p[1], z - 28, z + 28, 22, col, 16, 1, 6);
+        }
+      mb.tag('Кронштейны');
+      const nb = crFix(e);
+      for (let i = 0; i < nb; i++) {
+        const s = nb === 1 ? L / 2 : 60 + ((L - 120) * i) / (nb - 1);
+        mb.obox(at(s, 0, z), at(s, rows[rows.length - 1] + 12, z), 14, 14, col);
+        mb.cyl(...at(s, 4, 0).slice(0, 2), z - 35, z + 35, 30, col, 16);
+      }
+      mb.smooth(false);
+    } else if (!K.w) {
+      // a one-piece plastic rail with all rows
+      const w = rows[rows.length - 1] - rows[0] + 26;
+      const oc = (rows[0] + rows[rows.length - 1]) / 2;
+      mb.obox(at(0, oc, z - K.h / 2), at(L, oc, z - K.h / 2), w, K.h, col);
+    } else
+      for (const r of rows) {
+        mb.obox(at(0, r, z - K.h / 2), at(L, r, z - K.h / 2), K.w, K.h, col);
+        if (K.wall) {
+          mb.tag('Кронштейны');
+          const nb = crFix(e);
+          for (let i = 0; i < nb; i++) {
+            const s = nb === 1 ? L / 2 : 60 + ((L - 120) * i) / (nb - 1);
+            mb.obox(at(s, 0, z + K.h / 2 + 6), at(s, r, z + K.h / 2 + 6), 12, 12, '#9aa1a8');
+          }
+          mb.tag(K.n);
+        }
+      }
+    if (K.motor) {
+      mb.tag('Электропривод');
+      mb.obox(at(-40, rows[0], z - 60), at(-40, rows[rows.length - 1], z - 60), 70, 90, '#5d636b');
+    }
+    // drapes
+    if (e.drape) {
+      const zTop = z - (K.niche ? CR_NICHE_D + 10 : K.rod ? 0 : K.h + 6);
+      const zBot = 15;
+      const leaves = (r, amp, lam, colr, op, open) => {
+        const segs = [];
+        if (open > 0.02) {
+          const lw = (L / 2) * (1 - open) + 140;
+          segs.push([-40, lw], [L + 40 - lw, L + 40]);
+        } else segs.push([-40, L + 40]);
+        for (const [s0, s1] of segs) {
+          const N = Math.max(8, Math.ceil((s1 - s0) / 20));
+          const col_ = [];
+          for (let i = 0; i <= N; i++) {
+            const s = s0 + ((s1 - s0) * i) / N;
+            const o = r + amp * Math.sin(((s - s0) / lam) * Math.PI * 2);
+            col_.push([at(s, o, zTop), at(s, o, zBot)]);
+          }
+          for (let i = 0; i < N; i++) {
+            const [a1, a2] = col_[i],
+              [b1, b2] = col_[i + 1];
+            mb.tri3(colr, a1, b1, b2, op);
+            mb.tri3(colr, a1, b2, a2, op);
+          }
+        }
+      };
+      const rr = rows.slice();
+      mb.smooth(true); // the folds shade softly (the material is two-sided)
+      if (e.tulle && rr.length > 1) {
+        mb.tag('Тюль');
+        leaves(rr[0], 14, 90, e.tcol || '#f5f2ea', 0.5, 0);
+        rr.shift();
+      }
+      mb.tag('Шторы');
+      leaves(rr[rr.length - 1], 30, 150, e.col || '#7d8c96', 1, +e.open || 0);
+      mb.smooth(false);
+    }
+    return meshGroup(mb.meshes(), { edges: false });
+  },
+  group: e => `Карниз · ${(CRK[e.kind] || {}).n || ''}`,
+  panel: e => {
+    const K = CRK[e.kind] || CRK.ceil_pl;
+    const L = crU(e).L;
+    const B = crBars(K, L);
+    return xGroups(e, [
+      [
+        'Карниз',
+        K.n,
+        [
+          ['Вид', 'kind', 's', Object.entries(CRK).map(([k, v]) => [k, v.n])],
+          [
+            'Рядов',
+            'rows',
+            's',
+            [
+              [1, '1'],
+              [2, '2'],
+              [3, '3']
+            ]
+          ],
+          ['От стены до 1-го ряда', 'off', 'n'],
+          ['Шаг рядов', 'gap', 'n'],
+          ...(K.niche ? [['Плоскость потолка', 'ceil', 'n']] : [[K.rod ? 'Ось штанги' : 'Верх карниза', 'z', 'n']]),
+          ...(K.rod
+            ? [
+                [
+                  'Диаметр штанги',
+                  'rd',
+                  's',
+                  [
+                    [19, 'Ø19'],
+                    [25, 'Ø25'],
+                    [28, 'Ø28']
+                  ]
+                ]
+              ]
+            : []),
+          ['Цвет', 'rcol', 'c'],
+          ['Длина', `${(L / 1000).toFixed(2)} м · ${B.txt}`, 'r'],
+          ['Крепёж', `${crFix(e)} ${K.wall ? 'кронштейна' : 'точек'}`, 'r']
+        ]
+      ],
+      [
+        'Шторы',
+        e.drape ? 'показаны' : 'нет',
+        [
+          ['Показать шторы', 'drape', 'b'],
+          ['Тюль в 1-м ряду', 'tulle', 'b'],
+          ['Открыто, 0…1', 'open', 'n'],
+          ['Ткань штор', 'col', 'c'],
+          ['Тюль', 'tcol', 'c'],
+          ['Коэффициент сборки', 'full', 'n']
+        ]
+      ]
+    ]);
+  },
+  onSet(e, p, v) {
+    if (p === 'kind') {
+      const K = CRK[v];
+      e.gap = K.gap;
+      if (K.wall && (!e.z || e.z >= S.ceil - 20)) e.z = S.ceil - 150;
+      if (K.ceil) e.z = S.ceil;
+      e.off = K.wall ? 90 : 110;
+    }
+    if (p === 'rows') e.rows = +v;
+  },
+  spec(e, put) {
+    const K = CRK[e.kind] || CRK.ceil_pl;
+    const L = crU(e).L;
+    const rows = crRows(e).length;
+    const B = crBars(K, L);
+    const S_ = 'Карнизы и шторы';
+    const one = !K.w && !K.rod; // a single multi-row plastic rail
+    put(
+      S_,
+      'cr' + e.kind + rows + Math.round(L),
+      { name: `${K.n}, ${rows}-рядный, L ${fmt(L)} мм (${B.txt})`, u: 'шт' },
+      r => {
+        r.q += one ? 1 : rows;
+        r.ids.push(e.id);
+      }
+    );
+    if (B.joints)
+      put(S_, 'crj' + e.kind, { name: `Соединитель профиля карниза (${K.n})`, u: 'шт' }, r => {
+        r.q += B.joints * (one ? 1 : rows);
+        r.ids.push(e.id);
+      });
+    put(
+      S_,
+      'crf' + (K.wall ? 'w' + rows : 'c'),
+      {
+        name: K.wall ? `Кронштейн настенный ${rows}-рядный` : 'Крепление к потолку (дюбель-саморез / клипса)',
+        u: 'шт'
+      },
+      r => {
+        r.q += crFix(e) * (K.wall || one ? 1 : rows);
+        r.ids.push(e.id);
+      }
+    );
+    put(S_, 'crr', { name: 'Бегунки / крючки (шаг 80 мм)', u: 'шт' }, r => {
+      r.q += rows * (Math.ceil(L / 80) + 2);
+      r.ids.push(e.id);
+    });
+    put(
+      S_,
+      'cre' + (K.rod ? 'r' : 'p'),
+      { name: K.rod ? 'Наконечник штанги' : 'Заглушка торцевая карниза', u: 'шт' },
+      r => {
+        r.q += 2 * (one ? 1 : rows);
+        r.ids.push(e.id);
+      }
+    );
+    if (K.niche === 'gkl')
+      put(
+        S_,
+        'crn',
+        { name: `Ниша под карниз в ГКЛ-потолке, ширина ${Math.round(crNicheW(e))}, глубина ${CR_NICHE_D} мм`, u: 'м' },
+        r => {
+          r.q = Math.round((r.q + L / 1000) * 100) / 100;
+          r.ids.push(e.id);
+        }
+      );
+    if (K.niche === 'stretch') {
+      put(S_, 'crpk', { name: 'Профиль скрытого карниза ПК-14 / ПК-15 (натяжной потолок)', u: 'м' }, r => {
+        r.q = Math.round((r.q + L / 1000) * 100) / 100;
+        r.ids.push(e.id);
+      });
+      put(S_, 'crbr', { name: 'Брус закладной 50×40 под карниз', u: 'м' }, r => {
+        r.q = Math.round((r.q + L / 1000) * 100) / 100;
+        r.ids.push(e.id);
+      });
+    }
+    if (K.motor)
+      put(S_, 'crm', { name: 'Электропривод карниза + пульт (питание 230 В у края карниза)', u: 'шт' }, r => {
+        r.q += 1;
+        r.ids.push(e.id);
+      });
+    if (e.drape) {
+      const H = crZ(e) - (K.niche ? CR_NICHE_D : 0) - 15;
+      const full = +e.full || 2;
+      const fab = (L + 80) * full;
+      put(S_, 'crfab', { name: `Ткань штор (сборка ×${full}), высота ${fmt(H)} мм`, u: 'м' }, r => {
+        r.q = Math.round((r.q + fab / 1000) * 10) / 10;
+        r.ids.push(e.id);
+      });
+      if (e.tulle && rows > 1)
+        put(S_, 'crtul', { name: `Тюль (сборка ×${full}), высота ${fmt(H)} мм`, u: 'м' }, r => {
+          r.q = Math.round((r.q + fab / 1000) * 10) / 10;
+          r.ids.push(e.id);
+        });
+    }
+  }
+};
+
+/** A curtain rail over the window near p (overhang ext on each side), or null. */
+function curtainAtWindow(p, kind = 'niche', ext = 200) {
+  const f = nearestWallFace(p, 800);
+  if (!f) return null;
+  const w = f.w,
+    wi = wallInfo(w);
+  const op = wi.ops.find(o => ['window', 'vitrage'].includes(o.o.type) && f.t >= o.s0 - 400 && f.t <= o.s1 + 400);
+  const s0 = op ? Math.max(0, op.s0 - ext) : Math.max(0, f.t - 1000),
+    s1 = op ? Math.min(wi.L, op.s1 + ext) : Math.min(wi.L, f.t + 1000);
+  const face = t => add(add(w.a, mul(wi.u, t)), mul(wi.n, (f.side * w.th) / 2));
+  let a = face(s0),
+    b = face(s1);
+  // the room on the left of a→b
+  const u = nrm(sub(b, a));
+  if (dot(P(-u.y, u.x), mul(wi.n, f.side)) < 0) [a, b] = [b, a];
+  const K = CRK[kind];
+  const top = op ? (op.o.sill || 0) + (op.o.h || 1400) : S.ceil - 300;
+  return {
+    type: 'curtain',
+    kind,
+    a,
+    b,
+    rows: 2,
+    gap: K.gap,
+    off: K.wall ? 90 : 110,
+    z: K.wall ? Math.min((f.w.h || S.ceil) - 40, top + 130) : S.ceil,
+    ceil: S.ceil,
+    rd: 25,
+    drape: true,
+    tulle: true,
+    open: 0.55,
+    full: 2,
+    col: '#7d8c96',
+    tcol: '#f5f2ea',
+    win: op ? op.o.id : null
+  };
+}
+function mkCurtain() {
+  let kind = mkCurtain.k || 'niche';
+  let first = null;
+  return {
+    name: 'curtain',
+    base: () => first,
+    prompt: () =>
+      first
+        ? 'Вторая точка карниза вдоль стены:'
+        : `${CRK[kind].n}: щелчок у окна — по окну с выпуском 200 мм, или первая точка [Вид]:`,
+    onInput(s) {
+      if (/^(в|вид|k)$/i.test(s.trim())) {
+        const ks = Object.keys(CRK);
+        kind = mkCurtain.k = ks[(ks.indexOf(kind) + 1) % ks.length];
+        log('Карниз: ' + CRK[kind].n);
+        return true;
+      }
+      return false;
+    },
+    onPoint(p) {
+      if (!first) {
+        const c = curtainAtWindow(p, kind);
+        if (c && c.win != null) {
+          addEnt({ ...c, layer: ensureLayer('Отделка') });
+          log(`Карниз над окном: ${(dist(c.a, c.b) / 1000).toFixed(2)} м`);
+          return;
+        }
+        first = p;
+        return;
+      }
+      const c = curtainAtWindow(first, kind);
+      if (!c) {
+        log('Нужна стена рядом', true);
+        first = null;
+        return;
+      }
+      // the two points projected onto that wall face
+      const f = nearestWallFace(first, 800);
+      const wi = wallInfo(f.w);
+      const proj = q =>
+        add(
+          add(f.w.a, mul(wi.u, Math.max(0, Math.min(wi.L, dot(sub(q, f.w.a), wi.u))))),
+          mul(wi.n, (f.side * f.w.th) / 2)
+        );
+      let a = proj(first),
+        b = proj(p);
+      const u = nrm(sub(b, a));
+      if (dot(P(-u.y, u.x), mul(wi.n, f.side)) < 0) [a, b] = [b, a];
+      addEnt({ ...c, a, b, win: null, layer: ensureLayer('Отделка') });
+      first = null;
+    },
+    onEnter() {
+      return 'end';
+    },
+    preview(cur) {
+      if (!first) {
+        const c = curtainAtWindow(cur, kind);
+        if (c) XT.curtain.draw(c, '', { hover: false }, true, '#5aa0eb');
+      }
+    }
+  };
+}
+defineTools({
+  curtain: {
+    command: { t: 'КАРНИЗ', m: mkCurtain, a: ['curtain', 'карниз', 'шторы', 'гардина'] },
+    title: 'Карниз для штор: в нише, в натяжном потолке, потолочный, настенный, электро · КАРНИЗ',
+    icon: '<path d="M2.5 4.5h15"/><path d="M4 4.5c0 4 1 8 0 12M7 4.5c0 4-1 8 0 12M13 4.5c0 4 1 8 0 12M16 4.5c0 4-1 8 0 12"/>'
+  }
+});
+
+// ===== interior/moldings.js =====
+/**
+ * interior/moldings.js
+ *
+ * Wall moldings: a profile is swept along a geometry drawn on the face of a wall. The geometry is a layout —
+ * frames (with sharp, rounded, inset or arched corners), a horizontal rail, or the classic scheme «frames below,
+ * a rail, frames above» — over a part of the wall; frames that would cross a window or a door are left out.
+ * The section is any profile of the «trim» kind (the catalogue below or one drawn in «Сечения (DXF)»).
+ * Specification: metres by profile with waste, bars, mitre cuts, frames, glue.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** Molding sections added to the project's profiles when missing (X — off the wall, Y — across). */
+const ML_PROFILES = [
+  {
+    id: 'ml_20',
+    kind: 'trim',
+    name: 'Молдинг полиуретановый 20×10',
+    color: '#f2f0ea',
+    pts: [
+      [0, 0],
+      [4, 0],
+      [7, 3],
+      [10, 8],
+      [10, 12],
+      [7, 17],
+      [4, 20],
+      [0, 20]
+    ],
+    an: { W: [0, 0] }
+  },
+  {
+    id: 'ml_40',
+    kind: 'trim',
+    name: 'Молдинг классический 40×16',
+    color: '#f2f0ea',
+    pts: [
+      [0, 0],
+      [6, 0],
+      [8, 4],
+      [14, 8],
+      [16, 14],
+      [14, 22],
+      [10, 26],
+      [10, 30],
+      [7, 36],
+      [3, 40],
+      [0, 40]
+    ],
+    an: { W: [0, 0] }
+  },
+  {
+    id: 'ml_60',
+    kind: 'trim',
+    name: 'Молдинг широкий 60×22',
+    color: '#f2f0ea',
+    pts: [
+      [0, 0],
+      [5, 0],
+      [9, 6],
+      [16, 10],
+      [22, 18],
+      [22, 30],
+      [18, 38],
+      [14, 44],
+      [14, 50],
+      [8, 56],
+      [4, 60],
+      [0, 60]
+    ],
+    an: { W: [0, 0] }
+  },
+  {
+    id: 'ml_rail',
+    kind: 'trim',
+    name: 'Стеновой бордюр (поясок) 70×25',
+    color: '#f2f0ea',
+    pts: [
+      [0, 0],
+      [8, 0],
+      [14, 6],
+      [25, 14],
+      [25, 30],
+      [18, 40],
+      [18, 52],
+      [12, 62],
+      [6, 70],
+      [0, 70]
+    ],
+    an: { W: [0, 0] }
+  }
+];
+function mlEnsureProfiles() {
+  if (!S.profiles) return;
+  for (const p of ML_PROFILES) if (!S.profiles.some(q => q.id === p.id)) S.profiles.push(JSON.parse(JSON.stringify(p)));
+}
+const mlProf = id => {
+  mlEnsureProfiles();
+  return getProf(id, 'trim') || ML_PROFILES[1];
+};
+
+var ML_MODE = {
+  frames: 'Рамки',
+  rail: 'Горизонтальный молдинг (поясок)',
+  two: 'Рамки снизу, поясок, рамки сверху'
+};
+var ML_CORNER = {
+  miter: 'Прямые углы (запил 45°)',
+  round: 'Скруглённые углы',
+  inset: 'Фигурные (вогнутые) углы',
+  arch: 'Арочный верх'
+};
+
+/** Wall, its frame and the face side of a molding. */
+function mlWall(e) {
+  const w = byId(e.host);
+  if (!w || w.type !== 'wall') return null;
+  const wi = wallInfo(w);
+  const n = mul(wi.n, e.side || 1);
+  const o = add(w.a, mul(wi.n, ((e.side || 1) * w.th) / 2));
+  return { w, wi, n, o };
+}
+/** An arc of points (s, z) around (cs, cz) from a0 to a1 (radians). */
+function mlArc(cs, cz, r, a0, a1, k = 10) {
+  const out = [];
+  for (let i = 0; i <= k; i++) {
+    const t = a0 + ((a1 - a0) * i) / k;
+    out.push([cs + Math.cos(t) * r, cz + Math.sin(t) * r]);
+  }
+  return out;
+}
+/** A closed frame path (s, z), starting in the middle of the bottom edge (the seam on a straight piece). */
+function mlFramePath(s0, z0, s1, z1, corner, R) {
+  const r = Math.max(0, Math.min(R || 0, (s1 - s0) / 2 - 1, (z1 - z0) / 2 - 1));
+  const H = Math.PI / 2;
+  const sm = (s0 + s1) / 2;
+  const P_ = [[sm, z0]];
+  if (corner === 'arch') {
+    const ra = (s1 - s0) / 2;
+    const zt = Math.max(z0 + 50, z1 - ra);
+    P_.push([s1, z0], [s1, zt], ...mlArc(sm, zt, ra, 0, Math.PI, 16).slice(1, -1), [s0, zt], [s0, z0]);
+  } else if (corner === 'round' && r > 2) {
+    P_.push(
+      ...mlArc(s1 - r, z0 + r, r, -H, 0),
+      ...mlArc(s1 - r, z1 - r, r, 0, H),
+      ...mlArc(s0 + r, z1 - r, r, H, 2 * H),
+      ...mlArc(s0 + r, z0 + r, r, 2 * H, 3 * H)
+    );
+  } else if (corner === 'inset' && r > 2) {
+    // concave quarter circles centred in the corners
+    P_.push(
+      [s1 - r, z0],
+      ...mlArc(s1, z0, r, Math.PI, H, 8).slice(1, -1),
+      [s1, z0 + r],
+      [s1, z1 - r],
+      ...mlArc(s1, z1, r, -H, -Math.PI, 8).slice(1, -1),
+      [s1 - r, z1],
+      [s0 + r, z1],
+      ...mlArc(s0, z1, r, 0, -H, 8).slice(1, -1),
+      [s0, z1 - r],
+      [s0, z0 + r],
+      ...mlArc(s0, z0, r, H, 0, 8).slice(1, -1),
+      [s0 + r, z0]
+    );
+  } else P_.push([s1, z0], [s1, z1], [s0, z1], [s0, z0]);
+  P_.push([sm, z0]);
+  return P_;
+}
+/** The layout: [{path:[[s,z]…], closed, len, corners}], skipping frames over openings. */
+function mlLayout(e) {
+  const M = mlWall(e);
+  if (!M) return [];
+  const pr = mlProf(e.prof);
+  const pw = Math.max(...pr.pts.map(p => p[1])); // profile width across the path
+  const s0 = Math.max(0, +e.s0 || 0),
+    s1 = Math.min(M.wi.L, +e.s1 || M.wi.L);
+  const out = [];
+  const ops = M.wi.ops.map(o => ({
+    s0: o.s0 - 40,
+    s1: o.s1 + 40,
+    z0: (o.o.type === 'door' ? 0 : o.o.sill || 0) - 40,
+    z1: (o.o.type === 'door' ? 0 : o.o.sill || 0) + (o.o.h || 2100) + 40
+  }));
+  const hitsOp = (a0, b0, a1, b1) => ops.some(o => a0 < o.s1 && a1 > o.s0 && b0 < o.z1 && b1 > o.z0);
+  const frames = (zA, zB) => {
+    const n = Math.max(1, e.n | 0 || Math.round((s1 - s0) / 800));
+    const m = +e.margin || 100,
+      g = +e.gapF || 100;
+    const W = (s1 - s0 - 2 * m - (n - 1) * g) / n;
+    if (W < 80 || zB - zA < 80) return;
+    for (let i = 0; i < n; i++) {
+      const a = s0 + m + i * (W + g);
+      if (hitsOp(a, zA, a + W, zB)) continue;
+      const path = mlFramePath(a, zA, a + W, zB, e.corner, +e.R || 60);
+      let len = 0;
+      for (let k = 1; k < path.length; k++) len += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1]);
+      out.push({
+        path,
+        closed: true,
+        len,
+        corners: e.corner === 'miter' ? 4 : e.corner === 'arch' ? 2 : 0,
+        frame: true
+      });
+    }
+  };
+  const rail = z => {
+    // a rail is cut at the openings
+    let segs = [[s0, s1]];
+    for (const o of ops)
+      if (z > o.z0 && z < o.z1)
+        segs = segs.flatMap(([a, b]) =>
+          o.s1 <= a || o.s0 >= b
+            ? [[a, b]]
+            : [
+                [a, o.s0],
+                [o.s1, b]
+              ].filter(([x, y]) => y - x > 60)
+        );
+    for (const [a, b] of segs)
+      out.push({
+        path: [
+          [a, z],
+          [b, z]
+        ],
+        closed: false,
+        len: b - a,
+        corners: 0,
+        rail: true
+      });
+  };
+  const z0 = +e.z0 || 150,
+    z1 = +e.z1 || S.ceil - 150,
+    zr = +e.railZ || 900;
+  const vg = +e.gapV || 100;
+  if (e.mode === 'rail') rail(zr);
+  else if (e.mode === 'two') {
+    frames(z0, zr - pw / 2 - vg);
+    rail(zr);
+    frames(zr + pw / 2 + vg, z1);
+  } else frames(z0, z1);
+  return out;
+}
+
+XT.molding = {
+  layer: 'Отделка',
+  prims: e => {
+    const M = mlWall(e);
+    if (!M) return [];
+    const at = s => add(M.o, mul(M.wi.u, s));
+    return [{ t: 's', a: at(+e.s0 || 0), b: at(+e.s1 || M.wi.L) }];
+  },
+  dist: (e, p) => {
+    const M = mlWall(e);
+    if (!M) return null;
+    const s = dot(sub(p, M.o), M.wi.u),
+      d = Math.abs(dot(sub(p, M.o), M.n));
+    return s >= (+e.s0 || 0) - 20 && s <= (+e.s1 || M.wi.L) + 20 && d < 60 ? d : null;
+  },
+  keys: e => [],
+  sample: e => {
+    const M = mlWall(e);
+    if (!M) return [];
+    return [add(M.o, mul(M.wi.u, +e.s0 || 0)), add(M.o, mul(M.wi.u, +e.s1 || M.wi.L))];
+  },
+  map: () => {},
+  draw(e, color, o, ghost, col) {
+    const M = mlWall(e);
+    if (!M) return;
+    const pr = mlProf(e.prof);
+    const dep = Math.max(...pr.pts.map(p => p[0]));
+    const at = (s, d) => add(add(M.o, mul(M.wi.u, s)), mul(M.n, d));
+    const s0 = +e.s0 || 0,
+      s1 = +e.s1 || M.wi.L;
+    ctx.save();
+    ctx.strokeStyle = ghost ? '#8aa' : col;
+    ctx.lineWidth = o.hover ? 2.2 : 1.2;
+    pathPoly([at(s0, Math.max(6, dep)), at(s1, Math.max(6, dep))], false);
+    ctx.stroke();
+    // a tick at each frame
+    for (const it of mlLayout(e).filter(x => x.frame)) {
+      const xs = it.path.map(p => p[0]);
+      for (const s of [Math.min(...xs), Math.max(...xs)]) {
+        pathPoly([at(s, 0), at(s, Math.max(14, dep * 2))], false);
+        ctx.stroke();
+      }
+    }
+    if (!ghost && view.k * (s1 - s0) > 100) {
+      const m = w2s(at((s0 + s1) / 2, Math.max(40, dep + 40)));
+      let an = -ang(M.wi.u);
+      if (an > Math.PI / 2) an -= Math.PI;
+      if (an < -Math.PI / 2) an += Math.PI;
+      ctx.translate(m.x, m.y);
+      ctx.rotate(an);
+      ctx.font = `10px ${TFONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = col;
+      const L = mlLayout(e);
+      ctx.fillText(
+        `Молдинги: ${L.filter(x => x.frame).length} рамок${L.some(x => x.rail) ? ' + поясок' : ''} · ${pr.name}`,
+        0,
+        0
+      );
+    }
+    ctx.restore();
+  },
+  k3: e => {
+    const M = mlWall(e);
+    return M ? [JSON.stringify([M.w.a, M.w.b, M.w.th, M.wi.ops.map(o => [o.s0, o.s1, o.o.h, o.o.sill])]), S.ceil] : 0;
+  },
+  build3(e) {
+    const M = mlWall(e);
+    if (!M) return null;
+    const pr = mlProf(e.prof);
+    const pw = Math.max(...pr.pts.map(p => p[1]));
+    // profile in the sweep frame: X — across the path (centred), Y — off the wall
+    const pts = pr.pts.map(([x, y]) => [y - pw / 2, x + 0.5]);
+    const mb = MB((s, d, z) => {
+      const p = add(add(M.o, mul(M.wi.u, s)), mul(M.n, d));
+      return [p.x, p.y, z + (M.w.z || 0)];
+    });
+    mb.tag(pr.name);
+    for (const it of mlLayout(e))
+      sweepProfile(
+        mb,
+        pts,
+        e.col || pr.color,
+        it.path.map(([s, z]) => P(s, z)),
+        Y => Y
+      );
+    return meshGroup(mb.meshes(), { edges: false });
+  },
+  group: e => `Молдинги · ${mlProf(e.prof).name}`,
+  panel: e =>
+    xGroups(e, [
+      [
+        'Молдинги',
+        ML_MODE[e.mode] || '',
+        [
+          ['Раскладка', 'mode', 's', Object.entries(ML_MODE)],
+          ['Сечение', 'prof', 's', (mlEnsureProfiles(), profOpts('trim'))],
+          ['Углы рамок', 'corner', 's', Object.entries(ML_CORNER)],
+          ['Радиус угла', 'R', 'n'],
+          ['Рамок в ряду (0 — авто)', 'n', 'n'],
+          ['Между рамками', 'gapF', 'n'],
+          ['Отступ от краёв участка', 'margin', 'n'],
+          ['Начало участка по стене', 's0', 'n'],
+          ['Конец участка по стене', 's1', 'n'],
+          ['Низ', 'z0', 'n'],
+          ['Верх', 'z1', 'n'],
+          ['Высота пояска', 'railZ', 'n'],
+          ['Зазор у пояска', 'gapV', 'n'],
+          ['Цвет', 'col', 'c'],
+          [
+            'Итого',
+            (() => {
+              const L = mlLayout(e);
+              return `${L.filter(x => x.frame).length} рамок · ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(2)} м`;
+            })(),
+            'r'
+          ]
+        ]
+      ]
+    ]),
+  onSet(e, p, v) {
+    if (p === 'prof') e.col = mlProf(v).color;
+  },
+  spec(e, put) {
+    const pr = mlProf(e.prof);
+    const L = mlLayout(e);
+    const len = L.reduce((a, x) => a + x.len, 0);
+    const S_ = 'Отделка: молдинги';
+    put(S_, 'ml' + pr.id, { name: `${pr.name} (с запасом 10 %)`, u: 'м' }, r => {
+      r.L = (r.L || 0) + len;
+      r.q = Math.round(((r.L * 1.1) / 1000) * 10) / 10;
+      r.ids.push(e.id);
+    });
+    put(S_, 'mlb' + pr.id, { name: `${pr.name} — хлыстов по 2 м`, u: 'шт' }, r => {
+      r.L = (r.L || 0) + len;
+      r.q = Math.ceil((r.L * 1.1) / 2000);
+      r.ids.push(e.id);
+    });
+    const fr = L.filter(x => x.frame).length;
+    if (fr)
+      put(S_, 'mlf', { name: `Рамки из молдинга (${ML_CORNER[e.corner] || ''})`, u: 'шт' }, r => {
+        r.q += fr;
+        r.ids.push(e.id);
+      });
+    const cuts = L.reduce((a, x) => a + x.corners, 0);
+    if (cuts)
+      put(S_, 'mlc', { name: 'Запилы 45° (по 2 на угол)', u: 'шт' }, r => {
+        r.q += cuts * 2;
+        r.ids.push(e.id);
+      });
+    put(S_, 'mlg', { name: 'Клей монтажный для молдингов (туба на 8 м)', u: 'шт' }, r => {
+      r.L = (r.L || 0) + len;
+      r.q = Math.ceil(r.L / 8000);
+      r.ids.push(e.id);
+    });
+  }
+};
+
+/** A molding entity on the wall face near p (whole wall, or s0…s1). */
+function moldingAt(p, mode = 'two') {
+  const f = nearestWallFace(p, 600);
+  if (!f) return null;
+  mlEnsureProfiles();
+  const wi = wallInfo(f.w);
+  return {
+    type: 'molding',
+    host: f.w.id,
+    side: f.side,
+    s0: 0,
+    s1: Math.round(wi.L),
+    mode,
+    prof: mode === 'rail' ? 'ml_rail' : 'ml_40',
+    corner: 'miter',
+    R: 60,
+    n: 0,
+    gapF: 100,
+    margin: 150,
+    z0: 160,
+    z1: Math.round(S.ceil - 200),
+    railZ: 900,
+    gapV: 100,
+    col: '#f2f0ea'
+  };
+}
+function mkMolding() {
+  let mode = mkMolding.m || 'two';
+  let part = false,
+    first = null;
+  return {
+    name: 'molding',
+    base: () => null,
+    prompt: () =>
+      part
+        ? first
+          ? 'Конец участка на той же стене:'
+          : 'Начало участка на грани стены:'
+        : `${ML_MODE[mode]}: щелчок у грани стены — на всю стену, или [Участок/Вид]:`,
+    onInput(s) {
+      const t = s.trim().toLowerCase();
+      if (t === 'у' || t === 'участок' || t === 'p') {
+        part = true;
+        return true;
+      }
+      if (t === 'в' || t === 'вид' || t === 'k') {
+        const ks = Object.keys(ML_MODE);
+        mode = mkMolding.m = ks[(ks.indexOf(mode) + 1) % ks.length];
+        log('Молдинги: ' + ML_MODE[mode]);
+        return true;
+      }
+      return false;
+    },
+    onPoint(p) {
+      const m = moldingAt(part && first ? first : p, mode);
+      if (!m) {
+        log('Укажите точку у грани стены', true);
+        return;
+      }
+      if (part && !first) {
+        first = p;
+        return;
+      }
+      if (part) {
+        const w = byId(m.host),
+          wi = wallInfo(w);
+        const a = dot(sub(first, w.a), wi.u),
+          b = dot(sub(p, w.a), wi.u);
+        m.s0 = Math.round(Math.max(0, Math.min(a, b)));
+        m.s1 = Math.round(Math.min(wi.L, Math.max(a, b)));
+        m.margin = 0;
+        first = null;
+      }
+      const e = addEnt({ ...m, layer: ensureLayer('Отделка') });
+      const L = mlLayout(e);
+      log(
+        `Молдинги: ${L.filter(x => x.frame).length} рамок, ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(1)} м — размеры и сечение в свойствах`
+      );
+    },
+    onEnter() {
+      return 'end';
+    },
+    preview(cur) {
+      const m = moldingAt(cur, mode);
+      if (m && !part) XT.molding.draw(m, '', { hover: false }, true, '#5aa0eb');
+    }
+  };
+}
+defineTools({
+  molding: {
+    command: { t: 'МОЛДИНГ', m: mkMolding, a: ['molding', 'молдинг', 'молдинги', 'рамки', 'буазери'] },
+    title: 'Молдинги на стене: рамки, поясок — профиль выдавливается по раскладке · МОЛДИНГ',
+    icon: '<rect x="3" y="3" width="14" height="14" rx="0.5"/><rect x="5.5" y="5.5" width="9" height="4"/><rect x="5.5" y="11" width="9" height="3.5"/>'
   }
 });
 
