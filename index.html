@@ -5072,6 +5072,8 @@ label.ck {
  *
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
+/** Version of the program (shown in «Справка → О программе» and on the logo). */
+const APP_VER = '35.1';
 const TAU = Math.PI * 2,
   D2R = Math.PI / 180;
 const $ = s => document.querySelector(s);
@@ -17549,7 +17551,7 @@ function openAbout() {
   miniDlg(
     'aboutdlg',
     'О программе',
-    `<p><b>Контур</b> — проектирование интерьера: черчение, BIM-стены и узлы, ГКЛ, инженерия (электрика, вода, канализация, вентиляция), виды и разрезы.</p><p class="hint">Проект хранится в этом браузере и сохраняется в файл через «Файл → Сохранить проект в файл». Нормативные значения в программе ориентировочные — сверяйте с актуальными техлистами и нормами.</p>`,
+    `<p><b>Контур</b>, версия ${APP_VER} — проектирование интерьера: черчение, BIM-стены и узлы, ГКЛ, инженерия (электрика, вода, канализация, вентиляция), виды и разрезы.</p><p class="hint">Проект хранится в этом браузере и сохраняется в файл через «Файл → Сохранить проект в файл». Нормативные значения в программе ориентировочные — сверяйте с актуальными техлистами и нормами.</p>`,
     520
   );
 }
@@ -17557,6 +17559,10 @@ function openAbout() {
 /** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
 function initMenubar() {
   applyUI();
+  {
+    const br = document.querySelector('.brand');
+    if (br) br.title = 'Контур, версия ' + APP_VER;
+  }
   renderMbar();
   $('#mbar').addEventListener('click', e => {
     const b = e.target.closest('[data-mi]');
