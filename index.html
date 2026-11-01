@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Контур CAD</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=PT+Mono&family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=PT+Sans:ital,wght@0,400;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Roboto+Condensed:ital,wght@0,400;0,700;1,400&family=Open+Sans:ital,wght@0,400;0,700;1,400&family=Montserrat:ital,wght@0,400;0,700;1,400&family=Caveat:wght@400;700&display=swap">
@@ -4856,6 +4858,449 @@ label.ck {
   box-shadow: none !important;
   background: transparent !important;
 }
+
+/* ===== phones, tablets, touch (ui/responsive.js sets html[data-form][data-touch][data-orient]) ===== */
+#bMenu,
+#mquick,
+#cmdKeys,
+#sideHandle,
+#propChip {
+  display: none;
+}
+[hidden] {
+  display: none !important;
+}
+
+/* ---------- any touch screen: larger targets, ✓ / ✕ in the command line ---------- */
+html[data-touch='1'] #app {
+  --toolS: 42px;
+  --toolI: 22px;
+}
+html[data-touch='1'] #cmdKeys {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+html[data-touch='1'] #cmdKeys button {
+  min-width: 40px;
+  height: 34px;
+  border-radius: 8px;
+  font-size: 16px;
+  background: var(--panel2);
+  color: var(--fg);
+  font-family: var(--f-ui);
+}
+html[data-touch='1'] #cmdKeys button.pri {
+  background: var(--accent);
+  color: #fff;
+}
+html[data-touch='1'] #mbar button {
+  padding: 5px 12px;
+}
+html[data-touch='1'] #status .mode,
+html[data-touch='1'] .seg button,
+html[data-touch='1'] .hmenu button {
+  min-height: 34px;
+}
+html[data-touch='1'] .pop.menu button,
+html[data-touch='1'] .ctx button,
+html[data-touch='1'] #mbmenu button {
+  min-height: 40px;
+}
+html[data-touch='1'] #cv,
+html[data-touch='1'] #v3 canvas {
+  touch-action: none;
+}
+html[data-touch='1'] #tabs button {
+  padding: 8px 14px;
+}
+
+/* ---------- tablet in portrait: the panel slides over the plan ---------- */
+html[data-form='tablet'][data-orient='port'] #app {
+  grid-template-columns: calc(var(--toolS, 34px) * 2 + 16px) minmax(0, 1fr);
+  grid-template-areas: 'mbar mbar' 'top top' 'tools stage' 'tools cmd' 'status status';
+}
+html[data-form='tablet'][data-orient='port'] #sideGrip,
+html[data-form='tablet'][data-orient='port'] #sideTog {
+  display: none;
+}
+html[data-form='tablet'][data-orient='port'] #side {
+  position: fixed;
+  right: 0;
+  top: 80px;
+  bottom: 40px;
+  width: min(380px, 70vw);
+  z-index: 30;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.25);
+  transform: translateX(105%);
+  transition: transform 0.22s;
+  border-radius: 14px 0 0 14px;
+}
+html[data-form='tablet'][data-orient='port'] #side.open {
+  transform: none;
+}
+html[data-form='tablet'][data-orient='port'] #bPanel {
+  display: block;
+}
+html[data-form='tablet'][data-orient='port'] .hmenu .wide {
+  display: none;
+}
+html[data-form='tablet'] #sideHandle {
+  display: none;
+}
+html[data-form='tablet'][data-orient='port'] #propChip:not([hidden]) {
+  display: block;
+}
+
+/* ---------- phone ---------- */
+html[data-form='phone'] #app {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 50px minmax(0, 1fr) auto calc(58px + env(safe-area-inset-bottom, 0px));
+  grid-template-areas: 'top' 'stage' 'cmd' 'tools';
+  --toolS: 42px;
+}
+html[data-form='phone'] #mbar,
+html[data-form='phone'] #status,
+html[data-form='phone'] #sideGrip,
+html[data-form='phone'] #sideTog,
+html[data-form='phone'] #wsbar,
+html[data-form='phone'] .file,
+html[data-form='phone'] .brand span,
+html[data-form='phone'] .hmenu .wide,
+html[data-form='phone'] #bCat,
+html[data-form='phone'] #bFile,
+html[data-form='phone'] #bAR,
+html[data-form='phone'] #v3msg {
+  display: none;
+}
+/* header */
+html[data-form='phone'] #top {
+  gap: 6px;
+  padding-inline: max(8px, env(safe-area-inset-left, 0px)) max(8px, env(safe-area-inset-right, 0px));
+}
+html[data-form='phone'] #bMenu {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--fg);
+  flex: none;
+}
+html[data-form='phone'] .brand svg {
+  width: 26px;
+  height: 26px;
+}
+html[data-form='phone'] #lvseg button {
+  padding: 4px 8px;
+}
+html[data-form='phone'] .hmenu {
+  margin-left: auto;
+  gap: 2px;
+}
+html[data-form='phone'] .hmenu button {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 4px 8px;
+}
+html[data-form='phone'] #bPanel {
+  display: block;
+}
+/* the menu: quick actions and the menu bar as two columns */
+html[data-form='phone'].mopen #mquick,
+html[data-form='phone'].mopen #mbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  position: fixed;
+  top: 54px;
+  z-index: 70;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+  padding: 6px;
+  gap: 2px;
+  border-radius: 14px;
+  background: var(--solid, var(--panel));
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.28),
+    0 0 0 0.5px rgba(0, 0, 0, 0.15);
+  height: auto;
+  backdrop-filter: none;
+}
+html[data-form='phone'].mopen #mquick {
+  left: 8px;
+  width: calc(50vw - 12px);
+}
+html[data-form='phone'].mopen #mbar {
+  right: 8px;
+  left: auto;
+  width: calc(50vw - 12px);
+}
+html[data-form='phone'] #mquick button,
+html[data-form='phone'].mopen #mbar button {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 15px;
+  color: var(--fg);
+}
+html[data-form='phone'] #mquick button:active,
+html[data-form='phone'].mopen #mbar button:active {
+  background: var(--panel2);
+}
+/* tools: a strip at the bottom */
+html[data-form='phone'] #tools {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: 0;
+  border-top: 0.5px solid var(--line);
+  scrollbar-width: none;
+}
+html[data-form='phone'] #tools::-webkit-scrollbar {
+  display: none;
+}
+html[data-form='phone'] #tools .ttop {
+  padding: 0;
+  margin: 0 4px 0 0;
+  border: 0;
+  flex: none;
+}
+html[data-form='phone'] #tools .wsbtn {
+  height: 40px;
+  min-width: 64px;
+}
+html[data-form='phone'] #tools .tmain {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+html[data-form='phone'] #tools .tgrid {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+html[data-form='phone'] #tools .tgrid .tsep {
+  width: 1px;
+  height: 28px;
+  margin: 0 3px;
+  grid-column: auto;
+}
+html[data-form='phone'] #tools .tfix {
+  border-top: 0;
+  border-left: 0.5px solid var(--line);
+  padding: 0 0 0 6px;
+  margin: 0 0 0 4px;
+}
+html[data-form='phone'] #tools .tfix .tlab {
+  display: none;
+}
+/* the side panel: a bottom sheet */
+html[data-form='phone'] #side {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  height: min(72dvh, 640px);
+  z-index: 50;
+  border-left: 0;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.25);
+  transform: translateY(105%);
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  visibility: visible;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--solid, var(--panel));
+}
+html[data-form='phone'] #side.open {
+  transform: none;
+}
+html[data-form='phone'] #sideHandle {
+  display: grid;
+  place-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  width: 100%;
+  height: 26px;
+  flex: none;
+  background: inherit;
+}
+html[data-form='phone'] #sideHandle i {
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.22);
+}
+html[data-form='phone'] #propChip:not([hidden]) {
+  display: block;
+}
+#propChip {
+  position: fixed;
+  right: 12px;
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+/* command line: the last message and one row */
+html[data-form='phone'] #cmdline {
+  font-size: 12px;
+}
+html[data-form='phone'] #hist {
+  min-height: 0;
+  max-height: 2.8em;
+  padding: 4px 10px 0;
+}
+html[data-form='phone'] #cmdline .row {
+  padding: 4px 8px 6px;
+  flex-wrap: wrap;
+}
+html[data-form='phone'] #prompt {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.35;
+  flex: 1 1 100%;
+  font-size: 12px;
+}
+html[data-form='phone'] #cin {
+  font-size: 16px; /* no zoom-in on focus in iOS */
+  min-height: 34px;
+}
+/* status toggles: a pop-up from the menu («Привязки и режимы») */
+html[data-form='phone'].stopen #status {
+  display: flex;
+  flex-wrap: wrap;
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  height: auto;
+  z-index: 60;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+html[data-form='phone'].stopen #status #views {
+  margin-left: 0;
+  flex-wrap: wrap;
+}
+/* the stage */
+html[data-form='phone'] #tabs {
+  max-width: 100%;
+}
+html[data-form='phone'] #stage.v-split {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr 1fr;
+}
+html[data-form='phone'] #v3bar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+}
+html[data-form='phone'] #v3 canvas.vcube3 {
+  width: 88px !important;
+  height: 88px !important;
+  top: 50px;
+  right: 6px;
+}
+/* dialogs: full screen */
+html[data-form='phone'] .modal .dlg {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+}
+html[data-form='phone'] .pop {
+  max-width: calc(100vw - 16px);
+}
+/* status bar on touch screens: scrolls sideways instead of being cut */
+html[data-touch='1'] #status {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+html[data-touch='1'] #status::-webkit-scrollbar {
+  display: none;
+}
+html[data-form='phone'].stopen #status {
+  overflow: visible;
+}
+/* phone: the command line in two short rows at most */
+html[data-form='phone'] #hist {
+  max-height: 1.45em;
+}
+html[data-form='phone'] #cmdline .row {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+html[data-form='phone'] #prompt {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 2.8em;
+  overflow: hidden;
+}
+html[data-form='phone'] #cin {
+  flex: 0 1 70px;
+  min-width: 36px;
+}
+html[data-form='phone'] #cmdKeys button {
+  min-width: 38px;
+}
+html[data-form='phone'] #cmdKeys [data-k='undo'] {
+  display: none;
+}
+html[data-form='phone'] #tabs button {
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+html[data-form='phone'] #mbar .mbproj {
+  display: none;
+}
+html[data-form='phone'].mopen #mquick,
+html[data-form='phone'].mopen #mbar {
+  box-sizing: border-box;
+  width: calc(50vw - 12px);
+}
+html[data-form='phone'] #hist {
+  max-height: none;
+  display: block;
+}
+html[data-form='phone'] #hist div {
+  display: none;
+  line-height: 1.45;
+}
+html[data-form='phone'] #hist div:last-child {
+  display: block;
+}
+html[data-form='phone'] #lvName {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-form='phone'] #top {
+  overflow: hidden;
+}
+html[data-form='phone'] .brand {
+  flex: none;
+}
+html[data-form='phone'] #lvseg {
+  flex: 0 1 auto;
+  min-width: 0;
+}
 </style>
 
 <div id="app">
@@ -5073,7 +5518,9 @@ label.ck {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '35.1';
+const APP_VER = '36.0';
+/** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
+const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
   D2R = Math.PI / 180;
 const $ = s => document.querySelector(s);
@@ -12574,7 +13021,7 @@ function segDirsAt(p) {
 }
 function nearSeg(w) {
   let best = null,
-    bd = 8 / view.k;
+    bd = (8 * INPUT.k) / view.k;
   for (const e of S.ents) {
     if (!visible(e) || !in2d(e) || e.type === 'dim' || e.type === 'text') continue;
     for (const q of prims(e)) {
@@ -12645,11 +13092,12 @@ function acquire(r, w) {
 
 
 
+
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
   const w = s2w(sx, sy),
-    tol = 7 / view.k;
+    tol = (7 * INPUT.k) / view.k;
   let best = null,
     bd = tol;
   for (const e of S.ents) {
@@ -12773,12 +13221,18 @@ function gripList() {
   if (es.length > 60) return [];
   return es.flatMap(e => gripsOf(e).map(g => ({ e, g })));
 }
-function hitGrip(sx, sy) {
+function hitGrip(sx, sy, r = 6) {
+  let best = null,
+    bd = Infinity;
   for (const it of gripList()) {
     const s = w2s(it.g.p);
-    if (Math.abs(s.x - sx) <= 6 && Math.abs(s.y - sy) <= 6) return it;
+    const d = Math.max(Math.abs(s.x - sx), Math.abs(s.y - sy));
+    if (d <= r && d < bd) {
+      bd = d;
+      best = it;
+    }
   }
-  return null;
+  return best;
 }
 function entInside(e, r) {
   const ps = samplePts(e);
@@ -13981,7 +14435,9 @@ const CAD_SLANT = Math.tan((15 * Math.PI) / 180);
 const renderHooks = { sheet: null };
 const renderState = {
   hoverEnt: null,
-  hoverGrip: null
+  hoverGrip: null,
+  /** the finger while it aims a point above itself (touch) */
+  touchFinger: null
 };
 /**
  * The model on the plan (no grid, no UI overlays): walls, openings, elements, networks, level overlays.
@@ -14363,6 +14819,19 @@ function render() {
         ctx.rect(x - 5, y - 5, 10, 10);
       }
       ctx.stroke();
+      if (renderState.touchFinger) {
+        const f = renderState.touchFinger;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(f.x, f.y);
+        ctx.lineTo(x, y + 6);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, 18, 0, Math.PI * 2);
+        ctx.globalAlpha = 0.5;
+        ctx.stroke();
+      }
       ctx.restore();
       tip(lines, p.x, p.y);
     }
@@ -14565,6 +15034,7 @@ function reportRenderError(err) {
  *
  * three.js scene, materials, mesh groups, 3D view state.
  */
+
 
 
 
@@ -14846,10 +15316,30 @@ function init3D() {
     'wheel',
     ev => {
       ev.preventDefault();
-      zoom3(ev);
+      if (ev.ctrlKey)
+        // a touchpad pinch: small deltas — scaled up
+        zoom3({ clientX: ev.clientX, clientY: ev.clientY, deltaY: ev.deltaY * 6, deltaMode: 0 });
+      else if (wheelIsPad(ev)) pad3(ev);
+      else zoom3(ev);
     },
     { passive: false }
   );
+  // a pinch on a touch screen: OrbitControls dolly works only while a finger is down (the wheel is ours)
+  host.addEventListener(
+    'pointerdown',
+    ev => {
+      ctl.enableZoom = ev.pointerType === 'touch';
+    },
+    true
+  );
+  for (const t of ['pointerup', 'pointercancel'])
+    host.addEventListener(
+      t,
+      ev => {
+        if (ev.pointerType === 'touch') setTimeout(() => (ctl.enableZoom = false), 0);
+      },
+      true
+    );
   try {
     cutLabels();
   } catch (err) {}
@@ -16413,9 +16903,12 @@ function initBuild() {
 
 
 
+
 /* pointer input (plan) */
 let panning = null,
-  lastMid = 0;
+  lastMid = 0,
+  lastPtr = 'mouse',
+  twoTap = null;
 const touches = new Map();
 let pinch = null;
 const evPos = e => {
@@ -16442,8 +16935,17 @@ function updateCursor(sx, sy) {
 const up = e => {
   const { sx, sy } = evPos(e);
   if (e.pointerType === 'touch') {
+    const was = touches.size;
     touches.delete(e.pointerId);
+    if (pinch && was === 2) twoTap = pinch;
     if (touches.size < 2) pinch = null;
+    if (!touches.size && twoTap) {
+      const T = twoTap;
+      twoTap = null;
+      if (T.tap && e.type === 'pointerup' && performance.now() - T.t0 < 350) undo();
+      return;
+    }
+    if (TT_ && TT_.id === e.pointerId && touchUp(e, sx, sy)) return;
   }
   if (panning) {
     panning = null;
@@ -16459,19 +16961,161 @@ const up = e => {
   }
 };
 
+/* ---------- touch: one finger ----------
+   idle: a tap selects (empty — clears), a drag pans, a long press opens the context menu (or, dragged on,
+   draws a selection box); a command that wants a point: the finger aims (the point is 64 px above the finger,
+   so the finger does not hide it), lifting places the point; a quick tap places it right under the finger;
+   a grip under the finger is dragged the same way. */
+let TT_ = null;
+const TOUCH_AIM = 64;
+function touchCancel() {
+  if (TT_) clearTimeout(TT_.timer);
+  TT_ = null;
+  renderState.touchFinger = null;
+}
+function touchDown(e, sx, sy) {
+  touchCancel();
+  const T = (TT_ = {
+    id: e.pointerId,
+    x0: sx,
+    y0: sy,
+    t0: performance.now(),
+    moved: false,
+    mode: null,
+    vx: view.x,
+    vy: view.y
+  });
+  if (uiHooks.sheetDown && uiHooks.sheetDown(sx, sy, e)) {
+    T.mode = 'sheet';
+    return;
+  }
+  if (commandsState.cmd && commandsState.cmd.pan) {
+    T.mode = 'pan';
+    return;
+  }
+  if (wantsPoint()) {
+    T.mode = 'aim';
+    updateCursor(sx, sy);
+    return;
+  }
+  if (!commandsState.cmd) {
+    const g = hitGrip(sx, sy, 16);
+    if (g) {
+      commandsState.cmd = mkGrip(g.e, g.g);
+      refreshPrompt();
+      syncTools();
+      T.mode = 'aim';
+      T.grip = true;
+      updateCursor(sx, sy);
+      return;
+    }
+  }
+  T.timer = setTimeout(() => {
+    if (TT_ === T && !T.moved && touches.size === 1) {
+      T.mode = 'long';
+      try {
+        if (navigator.vibrate) navigator.vibrate(12);
+      } catch (err) {}
+    }
+  }, 480);
+}
+function touchMove(e, sx, sy) {
+  const T = TT_;
+  if (Math.hypot(sx - T.x0, sy - T.y0) > 9) T.moved = true;
+  if (T.mode === 'sheet') {
+    if (uiHooks.sheetMove) uiHooks.sheetMove(sx, sy);
+    return;
+  }
+  if (T.mode === 'aim') {
+    if (T.moved) {
+      // the grip follows the finger; a new point is aimed above it
+      const ay = T.grip ? sy : sy - TOUCH_AIM;
+      renderState.touchFinger = T.grip ? null : { x: sx, y: sy };
+      updateCursor(sx, ay);
+    }
+    return;
+  }
+  if (T.mode === 'long') {
+    if (T.moved) {
+      if (!pickingState.box) pickingState.box = { s: P(T.x0, T.y0), e: P(sx, sy), pending: false, down: true };
+      pickingState.box.e = P(sx, sy);
+      dirty();
+    }
+    return;
+  }
+  if (T.moved || T.mode === 'pan') {
+    clearTimeout(T.timer);
+    T.mode = 'pan';
+    view.x = T.vx - (sx - T.x0) / view.k;
+    view.y = T.vy + (sy - T.y0) / view.k;
+    dirty();
+  }
+}
+/** Returns true when the touch is fully handled here. */
+function touchUp(e, sx, sy) {
+  const T = TT_;
+  touchCancel();
+  if (!T) return false;
+  if (e.type === 'pointercancel') {
+    pickingState.box = null;
+    return true;
+  }
+  if (T.mode === 'sheet') return false;
+  if (T.mode === 'pan') return true;
+  if (T.mode === 'aim') {
+    if (!T.moved) updateCursor(sx, sy);
+    if (wantsPoint()) {
+      deliverPoint(cur.r.p);
+      updateProps();
+    }
+    cur.in = false;
+    dirty();
+    return true;
+  }
+  if (T.mode === 'long') {
+    if (pickingState.box && T.moved) {
+      finishBox(sx, sy, false);
+      pickingState.box = null;
+    } else {
+      const ent = pickEnt(sx, sy);
+      if (ent && !S.sel.has(ent.id)) {
+        S.sel = new Set([ent.id]);
+        selChanged();
+      }
+      showCtx(e.clientX, e.clientY, s2w(sx, sy));
+    }
+    dirty();
+    return true;
+  }
+  // a tap
+  if (uiHooks.sheetDown && uiHooks.sheetDown(sx, sy, e)) return false;
+  const ent = pickEnt(sx, sy);
+  if (ent) S.sel.has(ent.id) ? S.sel.delete(ent.id) : S.sel.add(ent.id);
+  else S.sel.clear();
+  selChanged();
+  dirty();
+  return true;
+}
+
 /** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
 function initPointer() {
   cv.addEventListener('pointerdown', e => {
     const { sx, sy } = evPos(e);
     hideMenus();
+    lastPtr = e.pointerType;
     if (e.pointerType === 'touch') {
       touches.set(e.pointerId, { x: sx, y: sy });
       if (touches.size === 2) {
+        // the second finger: pinch / two-finger pan; a short two-finger tap is «undo»
         const [a, b] = [...touches.values()];
-        pinch = { d: dist(a, b), m: mid(a, b) };
+        const d = dist(a, b),
+          m = mid(a, b);
+        pinch = { d, m, d0: d, m0: m, t0: performance.now(), tap: true };
+        touchCancel();
         pickingState.box = null;
         return;
       }
+      if (touches.size > 2) return;
     }
     cv.setPointerCapture(e.pointerId);
     if (e.button === 1) {
@@ -16487,6 +17131,52 @@ function initPointer() {
       return;
     }
     if (e.button !== 0) return;
+    if (e.pointerType === 'touch') {
+      touchDown(e, sx, sy);
+      return;
+    }
+    primaryDown(e, sx, sy);
+  });
+  cv.addEventListener('pointermove', e => {
+    const { sx, sy } = evPos(e);
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, { x: sx, y: sy });
+      if (pinch && touches.size === 2) {
+        const [a, b] = [...touches.values()],
+          d = dist(a, b),
+          m = mid(a, b);
+        zoomAt(m.x, m.y, d / pinch.d);
+        view.x -= (m.x - pinch.m.x) / view.k;
+        view.y += (m.y - pinch.m.y) / view.k;
+        if (pinch.tap && (Math.abs(d - pinch.d0) > 12 || dist(m, pinch.m0) > 12)) pinch.tap = false;
+        pinch = { ...pinch, d, m };
+        return;
+      }
+      if (TT_ && TT_.id === e.pointerId) {
+        touchMove(e, sx, sy);
+        return;
+      }
+    }
+    if (panning) {
+      view.x = panning.vx - (sx - panning.sx) / view.k;
+      view.y = panning.vy + (sy - panning.sy) / view.k;
+      dirty();
+      cur.sx = sx;
+      cur.sy = sy;
+      return;
+    }
+    if (uiHooks.sheetMove && uiHooks.sheetMove(sx, sy)) {
+      updateCursor(sx, sy);
+      return;
+    }
+    if (pickingState.box) pickingState.box.e = P(sx, sy);
+    updateCursor(sx, sy);
+  });
+  initPointerRest();
+}
+/** The left button / a tap: a point for the command, a grip, a pick, or the start of a selection box. */
+function primaryDown(e, sx, sy) {
+  {
     if (uiHooks.sheetDown && uiHooks.sheetDown(sx, sy, e)) return;
     if (commandsState.cmd && commandsState.cmd.pan) {
       panning = { sx, sy, vx: view.x, vy: view.y };
@@ -16523,37 +17213,9 @@ function initPointer() {
     }
     pickingState.box = { s: P(sx, sy), e: P(sx, sy), pending: false, down: true };
     dirty();
-  });
-  cv.addEventListener('pointermove', e => {
-    const { sx, sy } = evPos(e);
-    if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
-      touches.set(e.pointerId, { x: sx, y: sy });
-      if (pinch && touches.size === 2) {
-        const [a, b] = [...touches.values()],
-          d = dist(a, b),
-          m = mid(a, b);
-        zoomAt(m.x, m.y, d / pinch.d);
-        view.x -= (m.x - pinch.m.x) / view.k;
-        view.y += (m.y - pinch.m.y) / view.k;
-        pinch = { d, m };
-        return;
-      }
-    }
-    if (panning) {
-      view.x = panning.vx - (sx - panning.sx) / view.k;
-      view.y = panning.vy + (sy - panning.sy) / view.k;
-      dirty();
-      cur.sx = sx;
-      cur.sy = sy;
-      return;
-    }
-    if (uiHooks.sheetMove && uiHooks.sheetMove(sx, sy)) {
-      updateCursor(sx, sy);
-      return;
-    }
-    if (pickingState.box) pickingState.box.e = P(sx, sy);
-    updateCursor(sx, sy);
-  });
+  }
+}
+function initPointerRest() {
   cv.addEventListener('pointerup', up);
   cv.addEventListener('pointercancel', up);
   cv.addEventListener('pointerleave', () => {
@@ -16566,14 +17228,41 @@ function initPointer() {
     e => {
       e.preventDefault();
       const { sx, sy } = evPos(e);
-      const dy = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
-      zoomAt(sx, sy, Math.exp(-dy * 0.0015));
+      const k = e.deltaMode === 1 ? 30 : e.deltaMode === 2 ? 400 : 1;
+      const dy = e.deltaY * k,
+        dx = e.deltaX * k;
+      if (e.ctrlKey)
+        zoomAt(sx, sy, Math.exp(-dy * 0.01)); // pinch on a touchpad
+      else if (wheelIsPad(e)) {
+        // two fingers on a touchpad: move the plan
+        view.x += dx / view.k;
+        view.y -= dy / view.k;
+        dirty();
+      } else zoomAt(sx, sy, Math.exp(-dy * 0.0015));
       updateCursor(sx, sy);
     },
     { passive: false }
   );
+  // Safari on macOS: the pinch comes as gesture events
+  let G = null;
+  cv.addEventListener('gesturestart', e => {
+    e.preventDefault();
+    G = { s: 1 };
+  });
+  cv.addEventListener('gesturechange', e => {
+    e.preventDefault();
+    if (!G) return;
+    const { sx, sy } = evPos(e);
+    zoomAt(sx, sy, e.scale / G.s);
+    G.s = e.scale;
+  });
+  cv.addEventListener('gestureend', e => {
+    e.preventDefault();
+    G = null;
+  });
   cv.addEventListener('contextmenu', e => {
     e.preventDefault();
+    if (lastPtr === 'touch') return; // a long press is handled by the touch code
     if (e.shiftKey || e.ctrlKey) {
       if (wantsPoint()) showSnapMenu(e.clientX, e.clientY);
       return;
@@ -17002,12 +17691,244 @@ function inkC(c) {
   return r;
 }
 
+// ===== ui/responsive.js =====
+/**
+ * ui/responsive.js
+ *
+ * Phones, tablets and laptops with a touchpad.
+ *  - The form of the device goes to <html data-form="phone|tablet|desk" data-touch="0|1">; the layout is in
+ *    styles/zz-responsive.css. Phone: a compact header with the menu button, the tools in a bottom strip, the
+ *    side panel as a bottom sheet («Свойства» chip when something is selected), the command line in one row
+ *    with ✓ / ✕ buttons, the status toggles in a pop-up. Tablet: larger targets, the panel slides over in
+ *    portrait.
+ *  - On a touch screen the command input does not grab the focus (no keyboard popping up on every tap);
+ *    pick and snap radii are larger.
+ *  - Touchpad: two fingers move the view, a pinch zooms; in 3D two fingers orbit (with Shift — pan).
+ *    «Настройки → Колесо и тачпад» forces mouse or touchpad behaviour.
+ */
+
+
+
+
+
+
+
+
+const RESP = { form: 'desk', touch: false, padSeen: 0, padAt: 0 };
+
+/** Phone / tablet / desktop from the size and the pointer. */
+function respDetect() {
+  if (typeof window === 'undefined' || !window.matchMedia) return;
+  const w = window.innerWidth,
+    h = window.innerHeight;
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const anyCoarse = matchMedia('(any-pointer: coarse)').matches;
+  const form = w <= 700 || (coarse && Math.min(w, h) <= 520) ? 'phone' : coarse ? 'tablet' : 'desk';
+  RESP.form = form;
+  RESP.touch = coarse || (anyCoarse && form !== 'desk');
+  const de = document.documentElement;
+  de.dataset.form = form;
+  de.dataset.touch = RESP.touch ? '1' : '0';
+  de.dataset.orient = w > h ? 'land' : 'port';
+  INPUT.k = RESP.touch ? 2.2 : 1;
+}
+
+/**
+ * Is this wheel event a touchpad (two fingers) and not a mouse wheel? A mouse gives whole steps along Y only;
+ * a touchpad gives small and fractional deltas and almost always some X. «Настройки» can force either.
+ */
+function wheelIsPad(e) {
+  const m = (themeState.UI && themeState.UI.wheel) || 'auto';
+  if (m === 'mouse') return false;
+  if (m === 'pad') return true;
+  if (e.deltaMode !== 0) return false;
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (e.deltaX && !e.shiftKey) {
+    RESP.padSeen++;
+    RESP.padAt = now;
+  }
+  const dy = Math.abs(e.deltaY);
+  const wheelStep = !e.deltaX && dy >= 50 && Math.abs(dy - Math.round(dy)) < 1e-6;
+  if (wheelStep) return false;
+  if (e.deltaX && !e.shiftKey) return true;
+  // a fractional or small vertical move right after touchpad gestures — still the touchpad
+  return RESP.padSeen >= 3 && (now - RESP.padAt < 4000 || dy % 1 !== 0 || dy < 12);
+}
+
+/** Two fingers on a touchpad in 3D: orbit around the target (Shift — pan). */
+function pad3(e) {
+  if (!V3.cam || !V3.ctl) return;
+  const cam = V3.cam,
+    t = V3.ctl.target;
+  const dx = e.deltaX,
+    dy = e.deltaY;
+  if (e.shiftKey) {
+    const d = cam.position.distanceTo(t);
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+    const k = d * 0.0012;
+    const mv = right.multiplyScalar(dx * k).add(up.multiplyScalar(-dy * k));
+    cam.position.add(mv);
+    t.add(mv);
+  } else {
+    const off = cam.position.clone().sub(t);
+    const r = off.length();
+    let az = Math.atan2(off.y, off.x),
+      el = Math.atan2(off.z, Math.hypot(off.x, off.y));
+    az -= dx * 0.005;
+    el = Math.max(-1.5, Math.min(1.5, el + dy * 0.005));
+    cam.position.set(
+      t.x + r * Math.cos(el) * Math.cos(az),
+      t.y + r * Math.cos(el) * Math.sin(az),
+      t.z + r * Math.sin(el)
+    );
+    cam.lookAt(t);
+  }
+  V3.ctl.update();
+  req3();
+}
+
+/** Wires the layout to the device. Called once by app/boot.js. */
+function initResponsive() {
+  if (typeof document === 'undefined' || !document.documentElement || !document.querySelector) return;
+  respDetect();
+  window.addEventListener('resize', respDetect);
+  window.addEventListener('orientationchange', () => setTimeout(respDetect, 120));
+  // the command line does not take the focus by itself on a touch screen: no keyboard on every tap
+  if (cin && cin.focus) {
+    const f = cin.focus.bind(cin);
+    cin.focus = o => {
+      if (RESP.touch && document.activeElement !== cin) return;
+      f(o);
+    };
+  }
+  const top = $('#top');
+  if (!top || !top.insertBefore) return;
+  // header: the menu button (phone) and the status toggles pop-up
+  const bm = document.createElement('button');
+  bm.id = 'bMenu';
+  bm.setAttribute('aria-label', 'Меню');
+  bm.innerHTML =
+    '<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>';
+  top.insertBefore(bm, top.firstChild);
+  const quick = document.createElement('div');
+  quick.id = 'mquick';
+  quick.innerHTML = [
+    ['bCat', 'Каталог'],
+    ['bIss', 'Проверки'],
+    ['bNV', 'Сети'],
+    ['bLC', 'Светорасчёт'],
+    ['bAR', 'AR'],
+    ['bFile', 'Файл'],
+    ['#views [data-v=plan]', 'План'],
+    ['#views [data-v=3d]', '3D'],
+    ['#views [data-v=spec]', 'Спецификация'],
+    ['sb', 'Привязки и режимы']
+  ]
+    .map(([id, n]) => `<button data-q="${id}">${n}</button>`)
+    .join('');
+  document.body.appendChild(quick);
+  const closeMenu = () => document.documentElement.classList.remove('mopen');
+  bm.onclick = ev => {
+    ev.stopPropagation();
+    document.documentElement.classList.toggle('mopen');
+  };
+  quick.onclick = ev => {
+    const b = ev.target.closest('[data-q]');
+    if (!b) return;
+    closeMenu();
+    const q = b.dataset.q;
+    if (q === 'sb') {
+      document.documentElement.classList.toggle('stopen');
+      return;
+    }
+    const t = q.startsWith('#') ? document.querySelector(q) : document.getElementById(q);
+    if (t) setTimeout(() => t.click(), 0);
+  };
+  document.addEventListener('pointerdown', ev => {
+    const de = document.documentElement;
+    if (de.classList.contains('mopen') && !ev.target.closest('#mbar,#mquick,#bMenu,#mbmenu')) closeMenu();
+    if (de.classList.contains('stopen') && !ev.target.closest('#status,#mquick,#ospop')) de.classList.remove('stopen');
+  });
+  // the menu bar: a tap on an item of a submenu closes the drawer
+  const mb = $('#mbmenu');
+  if (mb) mb.addEventListener('click', () => setTimeout(closeMenu, 0));
+  // command line: ✓ (Enter) and ✕ (Esc) for a screen without a keyboard
+  const row = $('#cmdline .row');
+  if (row) {
+    const k = document.createElement('div');
+    k.id = 'cmdKeys';
+    k.innerHTML =
+      '<button data-k="kb" title="Клавиатура" aria-label="Клавиатура">⌨</button><button data-k="undo" aria-label="Отменить">↶</button><button data-k="esc" aria-label="Отмена (Esc)">✕</button><button data-k="ok" class="pri" aria-label="Ввод (Enter)">✓</button>';
+    row.appendChild(k);
+    k.onclick = ev => {
+      const b = ev.target.closest('[data-k]');
+      if (!b) return;
+      const a = b.dataset.k;
+      if (a === 'ok') submit();
+      else if (a === 'esc') escape();
+      else if (a === 'undo') undo();
+      else if (a === 'kb') HTMLElement.prototype.focus.call(cin);
+    };
+  }
+  // the side panel as a sheet: a handle to close it, a chip to open it when something is selected
+  const side = $('#side');
+  if (side) {
+    const h = document.createElement('button');
+    h.id = 'sideHandle';
+    h.setAttribute('aria-label', 'Свернуть панель');
+    h.innerHTML = '<i></i>';
+    side.insertBefore(h, side.firstChild);
+    h.onclick = () => side.classList.remove('open');
+    // a swipe down on the handle closes it
+    let y0 = null;
+    h.addEventListener('pointerdown', e => (y0 = e.clientY));
+    h.addEventListener('pointerup', e => {
+      if (y0 != null && e.clientY - y0 > 40) side.classList.remove('open');
+      y0 = null;
+    });
+  }
+  const chip = document.createElement('button');
+  chip.id = 'propChip';
+  chip.hidden = true;
+  document.body.appendChild(chip);
+  chip.onclick = () => {
+    if (side) side.classList.add('open');
+    chip.hidden = true;
+  };
+  setInterval(() => {
+    if (RESP.form === 'desk') {
+      if (!chip.hidden) chip.hidden = true;
+      return;
+    }
+    const n = S.sel ? S.sel.size : 0;
+    const show = n > 0 && side && !side.classList.contains('open');
+    chip.textContent = n > 1 ? `Свойства · ${n} ▴` : 'Свойства ▴';
+    if (chip.hidden === !!show) chip.hidden = !show;
+  }, 350);
+}
+
+/** «Настройки» menu: wheel behaviour. */
+function wheelModeMenu() {
+  const m = () => (themeState.UI && themeState.UI.wheel) || 'auto';
+  const set = v => () => {
+    themeState.UI.wheel = v;
+    saveUI();
+  };
+  return [
+    { n: 'Колесо и тачпад: авто', a: set('auto'), c: () => m() === 'auto' },
+    { n: 'Колесо — масштаб (мышь)', a: set('mouse'), c: () => m() === 'mouse' },
+    { n: 'Два пальца — сдвиг, щипок — масштаб (тачпад)', a: set('pad'), c: () => m() === 'pad' }
+  ];
+}
+
 // ===== ui/menubar.js =====
 /**
  * ui/menubar.js
  *
  * Menu bar and small dialogs.
  */
+
 
 
 
@@ -17319,6 +18240,8 @@ const MENUS = [
     it: [
       { n: 'Интерфейс…', a: () => openUI() },
       { n: 'Объектная привязка…', k: 'F3', a: () => setTimeout(() => clickId('bOs'), 0) },
+      '-',
+      ...wheelModeMenu(),
       '-',
       {
         n: 'Студия',
@@ -90655,6 +91578,7 @@ const solidEditorState = ED;
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -90842,6 +91766,7 @@ initKeyboard();
 initHeating();
 initLayerSwitch();
 initToolbar();
+initResponsive();
 initLayersPanel();
 initBrowserPanel();
 initCatalog();
