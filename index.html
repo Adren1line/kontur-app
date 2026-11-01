@@ -5301,6 +5301,25 @@ html[data-form='phone'] #lvseg {
   flex: 0 1 auto;
   min-width: 0;
 }
+/* the sheet: no rubber band of the page behind, a larger handle, a backdrop */
+html[data-form='phone'] #side {
+  overscroll-behavior: contain;
+}
+html[data-form='phone'] #sideHandle {
+  height: 34px;
+  touch-action: none;
+  cursor: grab;
+}
+#sheetShade {
+  display: none;
+}
+html[data-form='phone'].sheetopen #sheetShade {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.18);
+}
 </style>
 
 <div id="app">
@@ -5518,7 +5537,7 @@ html[data-form='phone'] #lvseg {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '36.0';
+const APP_VER = '36.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -17879,14 +17898,75 @@ function initResponsive() {
     h.setAttribute('aria-label', 'Свернуть панель');
     h.innerHTML = '<i></i>';
     side.insertBefore(h, side.firstChild);
-    h.onclick = () => side.classList.remove('open');
-    // a swipe down on the handle closes it
-    let y0 = null;
-    h.addEventListener('pointerdown', e => (y0 = e.clientY));
-    h.addEventListener('pointerup', e => {
-      if (y0 != null && e.clientY - y0 > 40) side.classList.remove('open');
-      y0 = null;
+    h.onclick = () => {
+      if (!dragMoved) closeSheet();
+    };
+    // a dimmed backdrop: a tap on the plan around the sheet closes it
+    const shade = document.createElement('div');
+    shade.id = 'sheetShade';
+    document.body.appendChild(shade);
+    shade.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      closeSheet();
     });
+    const closeSheet = () => {
+      side.classList.remove('open');
+      side.style.transform = '';
+      side.style.transition = '';
+    };
+    new MutationObserver(() =>
+      document.documentElement.classList.toggle('sheetopen', side.classList.contains('open'))
+    ).observe(side, { attributes: true, attributeFilter: ['class'] });
+    // drag the sheet down: from the handle always, from the content when it is scrolled to the top
+    let drag = null,
+      dragMoved = false;
+    const sheetMode = () => RESP.form === 'phone' && side.classList.contains('open');
+    side.addEventListener(
+      'touchstart',
+      e => {
+        if (!sheetMode() || e.touches.length !== 1) return;
+        const onHandle = !!e.target.closest('#sideHandle');
+        if (!onHandle && (side.scrollTop > 0 || e.target.closest('input,select,textarea'))) return;
+        drag = { y0: e.touches[0].clientY, t0: Date.now(), dy: 0, on: false, onHandle };
+        dragMoved = false;
+      },
+      { passive: true }
+    );
+    side.addEventListener(
+      'touchmove',
+      e => {
+        if (!drag) return;
+        const dy = e.touches[0].clientY - drag.y0;
+        // a move up inside the content is an ordinary scroll
+        if (!drag.on && !drag.onHandle && (dy < 0 || side.scrollTop > 0)) {
+          drag = null;
+          return;
+        }
+        if (!drag.on && Math.abs(dy) > 6) {
+          drag.on = true;
+          side.style.transition = 'none';
+        }
+        if (!drag.on) return;
+        e.preventDefault();
+        drag.dy = Math.max(0, dy);
+        dragMoved = true;
+        side.style.transform = `translateY(${drag.dy}px)`;
+      },
+      { passive: false }
+    );
+    const endDrag = () => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      if (!d.on) return;
+      side.style.transition = '';
+      const v = d.dy / Math.max(1, Date.now() - d.t0);
+      if (d.dy > Math.min(140, side.clientHeight * 0.25) || v > 0.6) closeSheet();
+      else side.style.transform = '';
+      setTimeout(() => (dragMoved = false), 50);
+    };
+    side.addEventListener('touchend', endDrag);
+    side.addEventListener('touchcancel', endDrag);
   }
   const chip = document.createElement('button');
   chip.id = 'propChip';
