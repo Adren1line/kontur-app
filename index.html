@@ -5537,7 +5537,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '37';
+const APP_VER = '38';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -18066,6 +18066,7 @@ function wheelModeMenu() {
 
 
 
+
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -18099,6 +18100,7 @@ const MENUS = [
       { n: 'Импорт модели…', k: 'IFC, GLB, OBJ', a: () => pickFile('.ifc,.glb,.gltf,.obj') },
       { n: 'Импорт чертежа…', k: 'DWG, DXF', a: () => pickFile('.dwg,.dxf') },
       { n: 'Экспорт в DWG / DXF…', k: 'план, листы, 3D', a: () => openCadExport() },
+      { n: 'Экспорт в IFC…', k: 'IFC4, все этажи', a: () => saveIFC() },
       {
         n: 'Сечение профиля из DXF…',
         a: () => {
@@ -24176,7 +24178,10 @@ async function parseIFC(text, progress) {
   // relations
   const psets = new Map(),
     types = new Map(),
-    levels = new Map();
+    levels = new Map(),
+    storeyOf = new Map(),
+    voidHost = new Map(), // opening → the element it cuts
+    fillOf = new Map(); // door / window → its opening
   const valStr = v => {
     if (v === null || v === undefined) return '';
     if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000);
@@ -24222,7 +24227,17 @@ async function parseIFC(text, progress) {
       const st = R(a[5]);
       if (!st) continue;
       const nm = st.a[2] || '';
-      for (const o of a[4] || []) if (o) levels.set(o.r, nm);
+      for (const o of a[4] || [])
+        if (o) {
+          levels.set(o.r, nm);
+          storeyOf.set(o.r, a[5].r);
+        }
+    } else if (r.t === 'IFCRELVOIDSELEMENT') {
+      const a = E(id).a;
+      if (a[4] && a[5]) voidHost.set(a[5].r, a[4].r);
+    } else if (r.t === 'IFCRELFILLSELEMENT') {
+      const a = E(id).a;
+      if (a[4] && a[5]) fillOf.set(a[5].r, a[4].r);
     }
   }
   const SKIPREP = new Set([
@@ -24240,9 +24255,11 @@ async function parseIFC(text, progress) {
   const els = [];
   let n = 0;
   const ids = [...recs.keys()];
+  const filledSet = new Set(fillOf.values());
   for (const id of ids) {
     const r = recs.get(id);
-    if (IFC_SKIP.has(r.t) || !r.raw.startsWith("('")) continue;
+    const isVoid = (r.t === 'IFCOPENINGELEMENT' || r.t === 'IFCOPENINGSTANDARDCASE') && voidHost.has(id);
+    if ((IFC_SKIP.has(r.t) && !isVoid) || !r.raw.startsWith("('")) continue;
     if (
       /^IFC(REL|PROPERTY|QUANTITY|ELEMENTQUANTITY|OWNERHISTORY|PERSON|ORGANIZATION|APPLICATION|MATERIAL|PRESENTATION|.*TYPE$|.*STYLE)/.test(
         r.t
@@ -24287,7 +24304,14 @@ async function parseIFC(text, progress) {
         op: b.st ? b.st.op : r.t.includes('WINDOW') ? 0.6 : 1
       }));
     if (!meshes.length) continue;
+    const op = fillOf.get(id);
     els.push({
+      id,
+      void: isVoid,
+      host: isVoid ? voidHost.get(id) : op != null ? voidHost.get(op) : undefined,
+      opening: op,
+      filled: isVoid ? filledSet.has(id) : undefined,
+      storey: storeyOf.get(id),
       cls: r.t,
       guid: a[0] || '',
       name: a[2] || '',
@@ -24302,6 +24326,16 @@ async function parseIFC(text, progress) {
       await new Promise(res => setTimeout(res, 0));
     }
   }
+  // storeys with their world elevation (placement), for the levels of the project
+  els.storeys = [];
+  for (const [id, r] of recs)
+    if (r.t === 'IFCBUILDINGSTOREY') {
+      const a = E(id).a;
+      const Mz = S1.clone().multiply(lp(a[5])).elements[14];
+      const el = typeof a[9] === 'number' ? a[9] * scale : null;
+      els.storeys.push({ id, name: a[2] || a[7] || 'Этаж', z: Number.isFinite(Mz) && (Mz || el == null) ? Mz : el });
+    }
+  els.storeys.sort((x, y) => x.z - y.z);
   return els;
 }
 
@@ -24311,6 +24345,7 @@ async function parseIFC(text, progress) {
  *
  * Import dialog and file reading (IFC, glTF/GLB, OBJ).
  */
+
 
 
 
@@ -24382,8 +24417,9 @@ function openImport(f) {
     <label>Название<input type="text" id="impName" value="${esc(base)}"></label>
     <div class="two"><label>Категория${isIfc ? ' (для режима «в каталог»)' : ''}<select id="impCat">${CATS.map(c => `<option ${c[0] === 'Мебель' ? 'selected' : ''}>${c[0]}</option>`).join('')}</select></label>
     ${isIfc ? '<div></div>' : `<label>Единицы файла<select id="impUnit"><option value="1000" ${ext !== 'obj' ? 'selected' : ''}>метры</option><option value="10">сантиметры</option><option value="1" ${ext === 'obj' ? 'selected' : ''}>миллиметры</option></select></label>`}</div>
+    ${isIfc ? `<label class="chk"><input type="checkbox" id="impLv" checked> Этажи IFC → уровни проекта (по отметкам)</label><label class="chk"><input type="checkbox" id="impNat" checked> Стены, двери и окна — элементами Контура (редактируются, считаются в спецификациях)</label>` : ''}
     ${isIfc ? '' : `<label>Вертикальная ось<select id="impUp"><option value="y" selected>Y (glTF, большинство программ)</option><option value="z">Z (Revit, 3ds Max, SketchUp)</option></select></label>`}
-    <div class="note">${isIfc ? 'Категории назначаются по классам IFC: IfcWall → Стены, IfcDoor → Двери, IfcFurnishingElement → Мебель и т. д. Параметры (Pset), тип и уровень сохраняются у каждого элемента. Проёмы, вырезанные булевыми операциями, пока не вычитаются из стен.' : 'Текстуры не переносятся, цвета материалов сохраняются. Из Revit удобнее выгружать IFC; GLB подходит для мебели и декора из других программ.'}</div>
+    <div class="note">${isIfc ? 'Прямые стены становятся стенами Контура с типом нужной толщины, двери и окна встают в них проёмами. Остальное (перекрытия, лестницы, мебель, инженерия) — объектами по категориям IFC с параметрами (Pset) и типом. Стены сложной формы остаются объектами.' : 'Текстуры не переносятся, цвета материалов сохраняются. Из Revit удобнее выгружать IFC; GLB подходит для мебели и декора из других программ.'}</div>
     <div class="btnrow"><button class="btn pri" id="impGo">Импортировать</button><button class="btn" id="impCancel">Отмена</button></div>`;
   $('#impdlg').hidden = false;
   $('#impGo').onclick = runImport;
@@ -24458,7 +24494,7 @@ async function runImport() {
       const els = await parseIFC(text, t => busy('Разбираю IFC… ' + t));
       if (!els.length) throw new Error('В файле не нашлось элементов с геометрией, которую умеет читать импорт.');
       if (mode === 'project') {
-        const all = els.flatMap(e => e.meshes);
+        const all = els.filter(e => !e.void).flatMap(e => e.meshes);
         let mn = [Infinity, Infinity],
           mx = [-Infinity, -Infinity];
         for (const m of all)
@@ -24471,9 +24507,10 @@ async function runImport() {
         const cx = (mn[0] + mx[0]) / 2,
           cy = (mn[1] + mx[1]) / 2;
         const shift = Math.hypot(cx, cy) > 200000 ? P(-cx, -cy) : P(0, 0);
+        const opts = { levels: !!($('#impLv') || {}).checked, native: !!($('#impNat') || {}).checked };
         pushUndo();
         const assets = [];
-        for (const el of els) {
+        const mkInst = el => {
           const a = assetGeomInfo({
             id: uid(),
             name: el.name || el.cls,
@@ -24499,16 +24536,20 @@ async function runImport() {
             layer: el.cat,
             name: el.name || ''
           });
-        }
+        };
+        const res = ifcToProject(els, opts, shift, mkInst);
         busy('Сохраняю элементы…');
         await idb.putMany('assets', assets);
         changed();
         zoomExtents();
         if (is3D()) setTimeout(() => camTo('iso'), 80);
-        log(`IFC: импортировано элементов ${els.length}${shift.x ? ', модель сдвинута к началу координат' : ''}`);
+        const nat = res.walls + res.doors + res.windows + res.openings;
+        log(
+          `IFC: ${nat ? `стен ${res.walls}, дверей ${res.doors}, окон ${res.windows}${res.openings ? `, проёмов ${res.openings}` : ''} — элементами Контура; ` : ''}объектов ${res.meshes}${res.levels ? `; этажей ${res.levels}${res.newLevels ? ` (новых ${res.newLevels})` : ''}` : ''}${shift.x ? '; модель сдвинута к началу координат' : ''}`
+        );
       } else {
         const mb = MB();
-        for (const el of els) for (const m of el.meshes) mb.raw(m.color, m.op, m.pos);
+        for (const el of els) if (!el.void) for (const m of el.meshes) mb.raw(m.color, m.op, m.pos);
         const a = normalizeAsset({
           id: uid(),
           name,
@@ -74849,14 +74890,15 @@ function fdCadMenu() {
   m.id = 'fdCadMenu';
   m.className = 'modal';
   m.style.zIndex = '70';
-  m.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертежи в DWG / DXF" style="width:min(480px,100%)"><div class="dlgh"><h3>Мебель в DWG / DXF</h3><button class="x" id="fdcX" aria-label="Закрыть">×</button></div>
-  <div style="padding:14px 16px;display:grid;gap:8px">
-  <label class="radio"><input type="radio" name="fdcw" value="all" checked> Все листы чертежей рядом (общий вид, деталировка, присадка, раскрой, сборка)</label>
-  <label class="radio"><input type="radio" name="fdcw" value="one"> Только текущий лист</label>
+  m.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертежи в DWG / DXF" style="width:min(480px,100%);height:auto"><div class="dlgh"><h3>Мебель в DWG / DXF</h3><button class="x" id="fdcX" aria-label="Закрыть">×</button></div>
+  <div style="padding:14px 16px;display:grid;gap:8px;align-content:start">
+  <label class="radio"><input type="radio" name="fdcw" value="real" checked> Чертежи в натуральную величину 1:1 — модули, детали с кромкой и отверстиями, раскрой листов (для работы в CAD)</label>
+  <label class="radio"><input type="radio" name="fdcw" value="all"> Листы А3 как на бумаге (все, в масштабе листа)</label>
+  <label class="radio"><input type="radio" name="fdcw" value="one"> Только текущий лист А3</label>
   <label class="radio"><input type="radio" name="fdcw" value="cnc"> Присадка для ЧПУ: все детали одной раскладкой</label>
   <label class="radio"><input type="radio" name="fdcw" value="cncz"> Присадка для ЧПУ: по файлу на деталь (ZIP)</label>
   <label>Формат<select id="fdcFmt"><option value="dwg">DWG (AutoCAD 2000)</option><option value="dxf">DXF (AutoCAD 2000)</option></select></label>
-  <p class="hint">ЧПУ: контур детали на слое CONTOUR, отверстия пласти А — окружности на слоях DRILL_A_D⌀_Z⌀глубины (сквозные — …_THRU), пласть Б — справа, зеркально, отверстия в торцах — линии на слоях DRILL_E_…, глубиной как отверстие. Начало координат — левый нижний угол пласти А, как в таблице присадки.</p>
+  <p class="hint">1:1 — всё в миллиметрах модели: лист раскроя 2800×2070 в AutoCAD и есть 2800×2070. ЧПУ: контур детали на слое CONTOUR, отверстия пласти А — окружности на слоях DRILL_A_D⌀_Z⌀глубины (сквозные — …_THRU), пласть Б — справа, зеркально, отверстия в торцах — линии на слоях DRILL_E_…, глубиной как отверстие. Начало координат — левый нижний угол пласти А, как в таблице присадки.</p>
   <div class="btnrow"><button class="btn pri" id="fdcGo">Сохранить</button></div></div></div>`;
   document.body.appendChild(m);
   m.querySelector('#fdcX').onclick = () => m.remove();
@@ -74866,6 +74908,7 @@ function fdCadMenu() {
     m.remove();
     try {
       if (w === 'cnc' || w === 'cncz') saveCnc(X.M, fmt, w === 'cncz');
+      else if (w === 'real') saveCad(furnCad11(FDD.kind, FDD.id), `${base} — 1-1`, fmt);
       else if (w === 'one') saveCad(furnCad(FDD.kind, FDD.id, FDD.i), `${base} — ${FDD.i + 1} ${X.SH[FDD.i].n}`, fmt);
       else saveCad(furnCad(FDD.kind, FDD.id), `${base} — чертежи`, fmt);
     } catch (err) {
@@ -91768,6 +91811,8 @@ const solidEditorState = ED;
 
 
 
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -91888,6 +91933,8 @@ function xBoot() {
     lightKeyOf,
     furnModel,
     openFurnDraw,
+    writeIFC,
+    parseIFC,
     pipeCross,
     S,
     openObj,
@@ -94038,6 +94085,7 @@ const cadSym = s =>
 
 
 
+
 /** Bounding box of the visible plan entities of the current level. */
 function planBox() {
   let x0 = Infinity,
@@ -94214,6 +94262,381 @@ function furnCad(kind, id, only) {
     cadLayer(cad, 'Присадка · ' + n.split(/[:,(]/)[0].trim(), { color: c });
   const list = only != null ? [SH[only]] : SH;
   list.forEach((sh, i) => svgToCad(cad, sh.svg(), { dx: i * 440, dy: 0, layer: furnLayer }));
+  cad.title = M.title;
+  return cad;
+}
+/* ---------- furniture at 1:1 (model space, real millimetres) ---------- */
+/** A linear dimension: extension lines, dimension line with 45° ticks, the value above it. */
+function cadDim(cad, a, b, off, txt, layer = 'Размеры', th = 30) {
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1],
+    L = Math.hypot(dx, dy);
+  if (L < 1e-6) return;
+  const ux = dx / L,
+    uy = dy / L,
+    nx = -uy,
+    ny = ux;
+  const A = [a[0] + nx * off, a[1] + ny * off],
+    B = [b[0] + nx * off, b[1] + ny * off];
+  const s = Math.sign(off) || 1,
+    g = 15 * s,
+    ov = 20 * s;
+  cadAdd(cad, { t: 'line', a: [a[0] + nx * g, a[1] + ny * g], b: [A[0] + nx * ov, A[1] + ny * ov], layer });
+  cadAdd(cad, { t: 'line', a: [b[0] + nx * g, b[1] + ny * g], b: [B[0] + nx * ov, B[1] + ny * ov], layer });
+  cadAdd(cad, { t: 'line', a: [A[0] - ux * 20, A[1] - uy * 20], b: [B[0] + ux * 20, B[1] + uy * 20], layer });
+  const tk = 12;
+  for (const P_ of [A, B])
+    cadAdd(cad, {
+      t: 'line',
+      a: [P_[0] - (ux + nx) * tk, P_[1] - (uy + ny) * tk],
+      b: [P_[0] + (ux + nx) * tk, P_[1] + (uy + ny) * tk],
+      layer
+    });
+  let rot = (Math.atan2(uy, ux) * 180) / Math.PI;
+  if (rot > 90.01 || rot <= -90) rot += 180;
+  const r = (rot * Math.PI) / 180;
+  const M = [(A[0] + B[0]) / 2 - Math.sin(r) * th * 0.5, (A[1] + B[1]) / 2 + Math.cos(r) * th * 0.5];
+  cadAdd(cad, {
+    t: 'text',
+    p: M,
+    h: th,
+    s: String(txt),
+    rot: Math.abs(rot) < 1e-9 ? 0 : rot,
+    ha: 1,
+    va: 1,
+    layer: 'Размеры'
+  });
+}
+const T11 = (cad, p, s, h, layer = 'Текст', o = {}) => cadAdd(cad, { t: 'text', p, h, s, layer, ...o });
+/**
+ * Furniture drawings in real size (1:1, mm) for work in CAD: module fronts, every part with its edging, holes and
+ * sizes, and the cutting maps of the boards — each block below the previous one.
+ */
+function furnCad11(kind, id) {
+  const M = furnModel(kind, id);
+  if (!M) return null;
+  const cad = cadNew();
+  cadLayer(cad, 'Детали', { color: 7, lw: 50 });
+  cadLayer(cad, 'Фасады', { color: 30, lw: 35 });
+  cadLayer(cad, 'Кромка 2 мм', { color: 1, lw: 70 });
+  cadLayer(cad, 'Кромка 0,4 мм', { color: 5, lw: 50 });
+  cadLayer(cad, 'Размеры', { color: 8, lw: 18 });
+  cadLayer(cad, 'Текст', { color: 7 });
+  cadLayer(cad, 'Листы', { color: 7, lw: 70 });
+  cadLayer(cad, 'Обзол', { color: 8, lw: 13 });
+  const holeLayer = h => 'Присадка · ' + ((DR_K[h.k] || [h.k || 'Отверстие'])[0] || '').split(/[:,(]/)[0].trim();
+  for (const [, [n, c]] of Object.entries(DR_K))
+    cadLayer(cad, 'Присадка · ' + n.split(/[:,(]/)[0].trim(), { color: c, lw: 25 });
+  const dashB = cadLtype(cad, [6, 3], 'Пласть Б');
+  const MAXW = 9000;
+  let y = 0;
+  const block = title => {
+    T11(cad, [0, y], title, 120, 'Текст');
+    y -= 400;
+  };
+  T11(cad, [0, 250], M.title || 'Изделие', 160);
+  /* 1a. kitchen: wall elevations with the fronts, at their real heights */
+  if (M.kind === 'kitchen') {
+    const e = M.e,
+      c = e.cfg,
+      KL = kitLayout(e);
+    const H = Math.max(c.wallZ + c.wallH, S.ceil || 2700),
+      zt = c.legs + c.baseH;
+    let x = 0;
+    block('Развёртка — вид на фасады, 1:1');
+    const top = y,
+      Z = z => top - H + z;
+    for (const r of KL.runs) {
+      const X = v => x + v;
+      T11(cad, [X(0), Z(H) + 80], `Стена ${r.i + 1}`, 60);
+      cadAdd(cad, { t: 'line', a: [X(0), Z(0)], b: [X(r.L), Z(0)], layer: 'Детали' });
+      for (const it of KL.items.filter(i => i.r === r)) {
+        const m = it.m;
+        if (m.kind === 'gap' || m.kind === 'wgap') continue;
+        const t_ =
+            it.row === 'low' ? (it.tall ? c.wallZ + c.wallH : m.kind === 'b_fridgeF' ? 2000 : zt) : c.wallZ + c.wallH,
+          b_ = it.row === 'low' ? 0 : c.wallZ;
+        cadAdd(cad, {
+          t: 'pline',
+          pts: [
+            [X(it.s0), Z(b_)],
+            [X(it.s1), Z(b_)],
+            [X(it.s1), Z(t_)],
+            [X(it.s0), Z(t_)]
+          ],
+          closed: true,
+          layer: 'Детали'
+        });
+        for (const f of kitFrontsOf(e, it))
+          cadAdd(cad, {
+            t: 'pline',
+            pts: [
+              [X(it.s0 + f.x0), Z(f.z0)],
+              [X(it.s0 + f.x1), Z(f.z0)],
+              [X(it.s0 + f.x1), Z(f.z1)],
+              [X(it.s0 + f.x0), Z(f.z1)]
+            ],
+            closed: true,
+            layer: 'Фасады'
+          });
+        const U = M.units.find(u => u.mod === m.id);
+        if (U) T11(cad, [X((it.s0 + it.s1) / 2), Z((t_ + b_) / 2)], 'М' + U.no, 70, 'Текст', { ha: 1, va: 2 });
+        cadDim(
+          cad,
+          [X(it.s0), Z(it.row === 'low' ? 0 : t_)],
+          [X(it.s1), Z(it.row === 'low' ? 0 : t_)],
+          it.row === 'low' ? -100 : 100,
+          Math.round(it.s1 - it.s0)
+        );
+      }
+      for (const it of KL.items.filter(
+        i => i.r === r && i.row === 'low' && !i.tall && !['gap', 'b_fridgeF'].includes(i.m.kind)
+      ))
+        cadAdd(cad, {
+          t: 'pline',
+          pts: [
+            [X(it.s0), Z(zt)],
+            [X(it.s1), Z(zt)],
+            [X(it.s1), Z(zt + c.top)],
+            [X(it.s0), Z(zt + c.top)]
+          ],
+          closed: true,
+          layer: 'Детали'
+        });
+      cadDim(cad, [X(0), Z(0)], [X(r.L), Z(0)], -260, Math.round(r.L));
+      x += r.L + 1500;
+    }
+    cadDim(cad, [-150, Z(0)], [-150, Z(c.legs)], 0.001, c.legs);
+    for (const [z0, z1] of [
+      [c.legs, zt],
+      [zt, zt + c.top],
+      [c.wallZ, c.wallZ + c.wallH]
+    ])
+      cadDim(cad, [0, Z(z1)], [0, Z(z0)], -150, Math.round(z1 - z0));
+    cadDim(cad, [0, Z(c.wallZ)], [0, Z(0)], -400, Math.round(c.wallZ));
+    y = top - H - 900;
+  }
+  /* 1b. modules: front view of every carcass (with its fronts for single cabinets) */
+  block(M.kind === 'kitchen' ? 'Модули — каркас без фасадов, 1:1' : 'Модули — вид спереди, 1:1');
+  {
+    let x = 0,
+      rowH = 0,
+      top = y;
+    for (const U of M.units) {
+      const bx = U.parts.filter(p => p.box && p.mat !== 'hdf' && p.grp !== 'Фасады');
+      if (!bx.length) continue;
+      const x0 = Math.min(...bx.map(p => Math.min(p.box[0], p.box[3]))),
+        x1 = Math.max(...bx.map(p => Math.max(p.box[0], p.box[3]))),
+        z0 = Math.min(...bx.map(p => Math.min(p.box[2], p.box[5]))),
+        z1 = Math.max(...bx.map(p => Math.max(p.box[2], p.box[5])));
+      const w = x1 - x0,
+        h = z1 - z0;
+      const name =
+        String(U.name || '')
+          .split(' · ')
+          .slice(1)
+          .join(' · ') ||
+        U.name ||
+        '';
+      const span = Math.max(w + 600, Math.min(2400, name.length * 26) + 200);
+      if (x > 0 && x + span > MAXW) {
+        x = 0;
+        top -= rowH + 500;
+        rowH = 0;
+      }
+      const X = v => x + v - x0,
+        Z = v => top - 260 - h + (v - z0);
+      for (const p of bx) {
+        const b = p.box;
+        cadAdd(cad, {
+          t: 'pline',
+          pts: [
+            [X(b[0]), Z(b[2])],
+            [X(b[3]), Z(b[2])],
+            [X(b[3]), Z(b[5])],
+            [X(b[0]), Z(b[5])]
+          ],
+          closed: true,
+          layer: 'Детали'
+        });
+      }
+      if (M.kind !== 'kitchen')
+        for (const f of (U.R && U.R.fronts) || []) {
+          if (f.kind === 'rod') continue;
+          cadAdd(cad, {
+            t: 'pline',
+            pts: [
+              [X(f.x0), Z(f.z0)],
+              [X(f.x1), Z(f.z0)],
+              [X(f.x1), Z(f.z1)],
+              [X(f.x0), Z(f.z1)]
+            ],
+            closed: true,
+            layer: 'Фасады'
+          });
+          if (f.kind === 'door') {
+            const hx = f.hinge === 'L' ? f.x0 : f.x1,
+              ox = f.hinge === 'L' ? f.x1 : f.x0;
+            cadAdd(cad, {
+              t: 'pline',
+              pts: [
+                [X(ox), Z(f.z1)],
+                [X(hx), Z((f.z0 + f.z1) / 2)],
+                [X(ox), Z(f.z0)]
+              ],
+              closed: false,
+              layer: 'Фасады',
+              lt: dashB
+            });
+          }
+        }
+      T11(cad, [X(x0), top - 80], 'М' + (U.no || ''), 80);
+      if (name) T11(cad, [X(x0), top - 170], name.length > 90 ? name.slice(0, 88) + '…' : name, 36);
+      cadDim(cad, [X(x0), Z(z0)], [X(x1), Z(z0)], -120, Math.round(w));
+      cadDim(cad, [X(x0), Z(z1)], [X(x0), Z(z0)], -120, Math.round(h));
+      rowH = Math.max(rowH, h + 520);
+      x += span;
+    }
+    y = top - rowH - 600;
+  }
+  /* 2. parts */
+  block('Детали — пласть А, 1:1 (пунктир — отверстия пласти Б)');
+  {
+    let x = 0,
+      rowH = 0,
+      top = y;
+    for (const p of M.P) {
+      const L = p.L,
+        W = p.W;
+      const ei = edgeInfo(p.edge, L, W);
+      const t1 = `Поз. ${p.no} · ${p.name} · ${p.qty} шт`,
+        t2 = `${L}×${W}×${p.t} · кромка: ${ei.label}`;
+      // text width ≈ 0.8 × cap height per character (Arial-like fonts)
+      const lw = Math.max(L + 150, t1.length * 0.8 * 40, t2.length * 0.8 * 30);
+      if (x > 0 && x + lw > MAXW) {
+        x = 0;
+        top -= rowH + 600;
+        rowH = 0;
+      }
+      const o = [x, top - W];
+      cadAdd(cad, {
+        t: 'pline',
+        pts: [o, [o[0] + L, o[1]], [o[0] + L, o[1] + W], [o[0], o[1] + W]],
+        closed: true,
+        layer: 'Детали'
+      });
+      const el = ei.t === '0,4' ? 'Кромка 0,4 мм' : 'Кромка 2 мм';
+      const side = {
+        b: [
+          [0, 0],
+          [L, 0]
+        ],
+        t: [
+          [0, W],
+          [L, W]
+        ],
+        l: [
+          [0, 0],
+          [0, W]
+        ],
+        r: [
+          [L, 0],
+          [L, W]
+        ]
+      };
+      for (const sd of ei.sides) {
+        const [a, b] = side[sd];
+        cadAdd(cad, { t: 'line', a: [o[0] + a[0], o[1] + a[1]], b: [o[0] + b[0], o[1] + b[1]], layer: el });
+      }
+      for (const h of (p.ex && p.ex.holes) || []) {
+        if (h.f === 'E') {
+          const dir = { x0: [1, 0], x1: [-1, 0], y0: [0, 1], y1: [0, -1] }[h.e] || [1, 0];
+          cadAdd(cad, {
+            t: 'line',
+            a: [o[0] + h.x, o[1] + h.y],
+            b: [o[0] + h.x + dir[0] * h.dep, o[1] + h.y + dir[1] * h.dep],
+            layer: holeLayer(h)
+          });
+          continue;
+        }
+        cadAdd(cad, {
+          t: 'circle',
+          c: [o[0] + h.x, o[1] + h.y],
+          r: h.d / 2,
+          layer: holeLayer(h),
+          ...(h.f === 'B' ? { lt: dashB } : {})
+        });
+      }
+      T11(cad, [o[0], o[1] + W + 70], t1, 40);
+      T11(cad, [o[0], o[1] + W + 20], t2, 30);
+      cadDim(cad, [o[0], o[1]], [o[0] + L, o[1]], -90, L);
+      cadDim(cad, [o[0] + L, o[1]], [o[0] + L, o[1] + W], -90, W);
+      rowH = Math.max(rowH, W + 350);
+      x += lw + 400;
+    }
+    y = top - rowH - 600;
+  }
+  /* 3. cutting maps */
+  for (const mat of Object.keys(M.cut)) {
+    const C = M.cut[mat];
+    block(`Раскрой: ${FD_SHEET[mat].n} ${C.SW}×${C.SH}, пропил ${FD_KERF} мм, обзол ${FD_TRIM} мм — 1:1`);
+    let x = 0;
+    const top = y;
+    C.sheets.forEach((S_, i) => {
+      const o = [x, top - C.SH];
+      cadAdd(cad, {
+        t: 'pline',
+        pts: [o, [o[0] + C.SW, o[1]], [o[0] + C.SW, o[1] + C.SH], [o[0], o[1] + C.SH]],
+        closed: true,
+        layer: 'Листы'
+      });
+      cadAdd(cad, {
+        t: 'pline',
+        pts: [
+          [o[0] + FD_TRIM, o[1] + FD_TRIM],
+          [o[0] + C.SW - FD_TRIM, o[1] + FD_TRIM],
+          [o[0] + C.SW - FD_TRIM, o[1] + C.SH - FD_TRIM],
+          [o[0] + FD_TRIM, o[1] + C.SH - FD_TRIM]
+        ],
+        closed: true,
+        layer: 'Обзол'
+      });
+      T11(
+        cad,
+        [o[0], o[1] + C.SH + 60],
+        `Лист ${i + 1} из ${C.sheets.length} · использование ${(S_.util * 100).toFixed(0)}%`,
+        60
+      );
+      for (const q of S_.placed) {
+        // the packer counts y from the top edge of the sheet
+        const px = o[0] + FD_TRIM + q.x,
+          py = o[1] + C.SH - FD_TRIM - q.y - q.rh;
+        cadAdd(cad, {
+          t: 'pline',
+          pts: [
+            [px, py],
+            [px + q.rw, py],
+            [px + q.rw, py + q.rh],
+            [px, py + q.rh]
+          ],
+          closed: true,
+          layer: 'Детали'
+        });
+        const th = Math.min(60, q.rh * 0.25, q.rw * 0.12);
+        if (th >= 8) {
+          const rot = q.rh > q.rw * 1.5 ? 90 : 0;
+          const c = [px + q.rw / 2, py + q.rh / 2];
+          T11(cad, c, `${q.pos} · ${Math.round(q.w)}×${Math.round(q.h)}${q.rot ? ' ↻' : ''}`, th, 'Текст', {
+            ha: 1,
+            va: 2,
+            rot
+          });
+        }
+      }
+      x += C.SW + 500;
+    });
+    y = top - C.SH - 900;
+  }
   cad.title = M.title;
   return cad;
 }
@@ -99252,6 +99675,908 @@ function writeDXF(cad) {
   end();
   w(0, 'EOF');
   return o.join('\r\n') + '\r\n';
+}
+
+// ===== io/ifc-native.js =====
+/**
+ * IFC elements → the project: storeys become levels, straight walls become Kontur walls (with a wall type of their
+ * thickness), doors / windows / unfilled openings become Kontur openings hosted in those walls; everything else stays
+ * a mesh object on its level.
+ */
+
+
+
+
+
+
+
+
+
+/** Convex hull (monotone chain) of plan points [[x, y]…]. */
+function hull2(pts) {
+  const P_ = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P_.length < 3) return P_;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [],
+    up = [];
+  for (const p of P_) {
+    while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop();
+    lo.push(p);
+  }
+  for (let i = P_.length - 1; i >= 0; i--) {
+    const p = P_[i];
+    while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop();
+    up.push(p);
+  }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+/** Smallest-area rectangle around the points: {c: [x, y], u: [ux, uy] (long side), L, W, fill (hull / rect area)}. */
+function minRect(pts) {
+  const H = hull2(pts);
+  if (H.length < 3) return null;
+  let ha = 0;
+  for (let i = 0; i < H.length; i++) {
+    const a = H[i],
+      b = H[(i + 1) % H.length];
+    ha += a[0] * b[1] - b[0] * a[1];
+  }
+  ha = Math.abs(ha) / 2;
+  let best = null;
+  for (let i = 0; i < H.length; i++) {
+    const a = H[i],
+      b = H[(i + 1) % H.length];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l < 1e-6) continue;
+    const ux = (b[0] - a[0]) / l,
+      uy = (b[1] - a[1]) / l;
+    let u0 = Infinity,
+      u1 = -Infinity,
+      v0 = Infinity,
+      v1 = -Infinity;
+    for (const p of H) {
+      const u = p[0] * ux + p[1] * uy,
+        v = -p[0] * uy + p[1] * ux;
+      u0 = Math.min(u0, u);
+      u1 = Math.max(u1, u);
+      v0 = Math.min(v0, v);
+      v1 = Math.max(v1, v);
+    }
+    const area = (u1 - u0) * (v1 - v0);
+    if (!best || area < best.area - 1e-6) best = { area, ux, uy, u0, u1, v0, v1 };
+  }
+  if (!best) return null;
+  const { ux, uy, u0, u1, v0, v1 } = best;
+  const cu = (u0 + u1) / 2,
+    cv = (v0 + v1) / 2;
+  const c = [cu * ux - cv * uy, cu * uy + cv * ux];
+  let du = u1 - u0,
+    dv = v1 - v0,
+    u = [ux, uy];
+  if (dv > du) {
+    [du, dv] = [dv, du];
+    u = [-uy, ux];
+  }
+  return { c, u, L: du, W: dv, fill: best.area > 0 ? ha / best.area : 0 };
+}
+const vertsOf = el => {
+  const out = [];
+  let z0 = Infinity,
+    z1 = -Infinity;
+  for (const m of el.meshes)
+    for (let i = 0; i + 2 < m.pos.length; i += 3) {
+      out.push([m.pos[i], m.pos[i + 1]]);
+      z0 = Math.min(z0, m.pos[i + 2]);
+      z1 = Math.max(z1, m.pos[i + 2]);
+    }
+  return { xy: out, z0, z1 };
+};
+const IS_WALL = c => /^IFCWALL(STANDARDCASE|ELEMENTEDCASE)?$/.test(c);
+const IS_DOOR = c => /^IFCDOOR(STANDARDCASE)?$/.test(c);
+const IS_WIN = c => /^IFCWINDOW(STANDARDCASE)?$/.test(c);
+
+/**
+ * Places parsed IFC elements into the project. opts.levels — storeys → levels; opts.native — walls / doors / windows
+ * as Kontur elements; shift — plan shift of the whole model; mkInst(el, lv) adds a mesh object (on the current
+ * level, called inside the level of the element). Returns counts.
+ */
+function ifcToProject(els, opts, shift, mkInst) {
+  const res = { walls: 0, doors: 0, windows: 0, openings: 0, meshes: 0, levels: 0, newLevels: 0 };
+  const Lv = LV();
+  // 1. levels
+  const map = new Map(); // storey id → level
+  const storeys = (els.storeys || []).filter(s => Number.isFinite(s.z));
+  if (opts.levels && storeys.length) {
+    for (let i = 0; i < storeys.length; i++) {
+      const s = storeys[i];
+      let lv = Lv.list.find(l => Math.abs((l.z || 0) - s.z) < 50);
+      if (!lv) {
+        const next = storeys[i + 1];
+        const h = next ? Math.max(2000, next.z - s.z) : (Lv.list[Lv.list.length - 1] || {}).h || 3000;
+        lv = { id: Lv.nid++, n: s.name, z: Math.round(s.z), h: Math.round(h), top: -(S.x.screed || 80), slab: 200 };
+        Lv.list.push(lv);
+        Lv.ents[lv.id] = [];
+        res.newLevels++;
+      } else if (/^Этаж \d+$/.test(lv.n) && s.name) lv.n = s.name;
+      map.set(s.id, lv);
+    }
+    levelsState.LVGEN++;
+    res.levels = map.size;
+  }
+  const lvOfEl = el => {
+    if (!opts.levels || !storeys.length) return lvCur();
+    if (el.storey != null && map.has(el.storey)) return map.get(el.storey);
+    const { z0 } = vertsOf(el);
+    let best = storeys[0];
+    for (const s of storeys) if (s.z <= z0 + 10) best = s;
+    return map.get(best.id) || lvCur();
+  };
+  const byLv = new Map();
+  for (const el of els) {
+    const lv = lvOfEl(el);
+    if (!byLv.has(lv.id)) byLv.set(lv.id, { lv, list: [] });
+    byLv.get(lv.id).list.push(el);
+  }
+  const sh = [shift.x || 0, shift.y || 0];
+  for (const { lv, list } of byLv.values())
+    withLevel(lv.id, () => {
+      const lz = opts.levels && storeys.length ? lv.z || 0 : 0;
+      const wallOf = new Map(); // IFC id → Kontur wall
+      const rest = [];
+      // walls first: the openings need their hosts
+      for (const el of list) {
+        if (el.void) continue;
+        if (opts.native && IS_WALL(el.cls)) {
+          const V = vertsOf(el);
+          const r = V.xy.length >= 4 ? minRect(V.xy) : null;
+          if (r && r.fill > 0.82 && r.W >= 30 && r.W <= 1500 && r.L >= r.W * 0.9 && V.z1 - V.z0 > 100) {
+            const th = Math.round(r.W);
+            const c = [r.c[0] + sh[0], r.c[1] + sh[1]];
+            const a = P(c[0] - (r.u[0] * r.L) / 2, c[1] - (r.u[1] * r.L) / 2),
+              b = P(c[0] + (r.u[0] * r.L) / 2, c[1] + (r.u[1] * r.L) / 2);
+            let t = S.wtypes.find(x => Math.abs(computeType(x).total - th) <= 2);
+            if (!t)
+              t = findOrMakeType({
+                kind: 'layers',
+                name: el.type || `Стена ${th} мм (IFC)`,
+                layers: [{ m: 'Кладка', th }]
+              });
+            const w = addEntNoUndo({
+              type: 'wall',
+              a,
+              b,
+              th: computeType(t).total,
+              h: Math.round(V.z1 - V.z0),
+              z: Math.round(V.z0 - lz),
+              wt: t.id,
+              loc: 'c',
+              ro: 0,
+              fa: defFin(),
+              fb: defFin(),
+              layer: ensureLayer('Стены'),
+              name: el.name || '',
+              ifc: { guid: el.guid, cls: el.cls, type: el.type }
+            });
+            wallOf.set(el.id, w);
+            res.walls++;
+            continue;
+          }
+        }
+        rest.push(el);
+      }
+      // doors, windows and bare openings hosted in the new walls
+      const hostFor = (el, V) => {
+        if (el.host != null && wallOf.has(el.host)) return wallOf.get(el.host);
+        // geometric: the wall whose band contains the centre of the element
+        const r = minRect(V.xy);
+        if (!r) return null;
+        const p = P(r.c[0] + sh[0], r.c[1] + sh[1]);
+        let best = null,
+          bd = Infinity;
+        for (const w of wallOf.values()) {
+          const d = dist(segPt(w.a, w.b, p), p);
+          if (d < w.th / 2 + 120 && d < bd) {
+            bd = d;
+            best = w;
+          }
+        }
+        return best;
+      };
+      for (const el of opts.native ? list : []) {
+        const kind = IS_DOOR(el.cls) ? 'door' : IS_WIN(el.cls) ? 'window' : el.void && !el.filled ? 'opening' : null;
+        if (!kind) continue;
+        // the size of the hole: from the opening the element fills (the rough opening), else from the element itself
+        const opEl = el.opening != null ? list.find(x => x.id === el.opening) : null;
+        const V = vertsOf(opEl || el);
+        const w = V.xy.length ? hostFor(el, vertsOf(el)) : null;
+        if (!w) continue; // stays a mesh object
+        const wi = wallInfo(w);
+        let t0 = Infinity,
+          t1 = -Infinity;
+        for (const q of V.xy) {
+          const t = (q[0] + sh[0] - w.a.x) * wi.u.x + (q[1] + sh[1] - w.a.y) * wi.u.y;
+          t0 = Math.min(t0, t);
+          t1 = Math.max(t1, t);
+        }
+        const ow = Math.round(t1 - t0),
+          oh = Math.round(V.z1 - V.z0);
+        if (!(ow > 100 && oh > 100) || t0 < -50 || t1 > wi.L + 50) continue;
+        const sill = Math.max(0, Math.round(V.z0 - lz - (w.z || 0)));
+        const base = {
+          host: w.id,
+          t: Math.round((t0 + t1) / 2),
+          w: ow,
+          h: oh,
+          sill,
+          name: el.name || '',
+          ifc: { guid: el.guid, cls: el.cls, type: el.type }
+        };
+        if (kind === 'door')
+          addEntNoUndo({
+            type: 'door',
+            ...base,
+            flip: false,
+            hand: false,
+            cfg: defDoorCfg(),
+            layer: ensureLayer('Двери')
+          });
+        else if (kind === 'window')
+          addEntNoUndo({
+            type: 'window',
+            ...base,
+            flip: false,
+            hand: false,
+            cfg: defWinCfg(ow),
+            layer: ensureLayer('Окна')
+          });
+        else addEntNoUndo({ type: 'opening', ...base, shape: 'rect', rise: 300, layer: w.layer });
+        res[kind === 'door' ? 'doors' : kind === 'window' ? 'windows' : 'openings']++;
+        el.placed = true;
+      }
+      for (const el of rest) {
+        if (el.placed || el.void) continue;
+        if (lz)
+          for (const m of el.meshes) {
+            const p = m.pos;
+            for (let i = 2; i < p.length; i += 3) p[i] -= lz;
+          }
+        mkInst(el, lv);
+        res.meshes++;
+      }
+    });
+  return res;
+}
+
+// ===== io/ifc-write.js =====
+/**
+ * IFC4 export: the model with its spatial structure (project → site → building → storeys from the levels), elements
+ * by IFC class with their geometry as triangulated face sets, colours, wall build-ups as material layer sets,
+ * openings that void the walls and the doors / windows that fill them, rooms as spaces, property sets and base
+ * quantities. Coordinates in millimetres, every element placed in its storey.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const IFC64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
+/** 128-bit hash of a string (cyrb128) → the 22-character compressed IFC GlobalId; the same key gives the same id. */
+function ifcGuid(key) {
+  let h1 = 1779033703,
+    h2 = 3144134277,
+    h3 = 1013904242,
+    h4 = 2773480762;
+  const s = String(key);
+  for (let i = 0; i < s.length; i++) {
+    const k = s.charCodeAt(i);
+    h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+    h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+    h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+    h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+  }
+  h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+  h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+  h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+  h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+  let n = 0n;
+  for (const h of [h1 ^ h2 ^ h3 ^ h4, h2 ^ h1, h3 ^ h1, h4 ^ h1]) n = (n << 32n) | BigInt(h >>> 0);
+  let out = '';
+  for (let i = 0; i < 22; i++) {
+    out = IFC64[Number(n & 63n)] + out;
+    n >>= 6n;
+  }
+  return out;
+}
+/** STEP string literal: quotes doubled, backslashes escaped, everything outside printable ASCII as \X2\…\X0\. */
+function stepStr(s) {
+  if (s === null || s === undefined) return '$';
+  let out = '';
+  const t = String(s);
+  for (let i = 0; i < t.length; ) {
+    const c = t.charCodeAt(i);
+    if (c >= 32 && c < 127) {
+      out += c === 39 ? "''" : c === 92 ? '\\\\' : t[i];
+      i++;
+      continue;
+    }
+    let hex = '';
+    while (i < t.length && !(t.charCodeAt(i) >= 32 && t.charCodeAt(i) < 127)) {
+      hex += t.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0');
+      i++;
+    }
+    out += '\\X2\\' + hex + '\\X0\\';
+  }
+  return "'" + out + "'";
+}
+/** STEP real: always with a decimal point. */
+const R_ = (v, d = 3) => {
+  const k = 10 ** d;
+  let r = Math.round((+v || 0) * k) / k;
+  if (Object.is(r, -0)) r = 0;
+  const s = String(r);
+  return /[.eE]/.test(s) ? s : s + '.';
+};
+
+/** IFC class, predefined type and property set of a Kontur element. */
+function ifcClassOf(e, cat) {
+  switch (e.type) {
+    case 'wall':
+      return ['IFCWALL', 'STANDARD', 'Pset_WallCommon'];
+    case 'door':
+      return ['IFCDOOR', 'DOOR', 'Pset_DoorCommon'];
+    case 'window':
+      return ['IFCWINDOW', 'WINDOW', 'Pset_WindowCommon'];
+    case 'slab':
+      return ['IFCSLAB', 'FLOOR', 'Pset_SlabCommon'];
+    case 'floorz':
+      return ['IFCCOVERING', 'FLOORING', 'Pset_CoveringCommon'];
+    case 'ceil':
+      return ['IFCCOVERING', 'CEILING', 'Pset_CoveringCommon'];
+    case 'molding':
+    case 'trim':
+      return ['IFCCOVERING', 'MOLDING', 'Pset_CoveringCommon'];
+    case 'gbody':
+      return ['IFCCOVERING', 'CLADDING', 'Pset_CoveringCommon'];
+    case 'stair':
+      return ['IFCSTAIR', 'NOTDEFINED', 'Pset_StairCommon'];
+    case 'rail':
+      return ['IFCRAILING', 'GUARDRAIL', 'Pset_RailingCommon'];
+    case 'col':
+      return ['IFCCOLUMN', 'COLUMN', 'Pset_ColumnCommon'];
+    case 'beam':
+      return ['IFCBEAM', 'BEAM', 'Pset_BeamCommon'];
+    case 'kitchen':
+    case 'kisland':
+    case 'cab':
+    case 'casework':
+    case 'tv':
+    case 'mirror':
+    case 'curtain':
+      return ['IFCFURNITURE', 'NOTDEFINED', 'Pset_FurnitureTypeCommon'];
+    case 'rad':
+      return ['IFCSPACEHEATER', 'CONVECTOR', null];
+    case 'pipe':
+      return ['IFCPIPESEGMENT', 'NOTDEFINED', null];
+    case 'duct':
+      return ['IFCDUCTSEGMENT', 'NOTDEFINED', null];
+    case 'fix':
+      return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
+    case 'dev':
+      if (isLight(e)) return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
+      if (isSwitch(e)) return ['IFCSWITCHINGDEVICE', 'SWITCH', null];
+      return ['IFCOUTLET', /tv|lan|data|rj|тв|интернет/i.test(e.kind || '') ? 'DATAOUTLET' : 'POWEROUTLET', null];
+  }
+  const c = String(cat || '');
+  if (/Освещ/.test(c)) return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
+  if (/Сантех/.test(c)) return ['IFCSANITARYTERMINAL', 'NOTDEFINED', null];
+  if (/Мебел|Кухн|Декор/.test(c)) return ['IFCFURNITURE', 'NOTDEFINED', 'Pset_FurnitureTypeCommon'];
+  if (/Электр/.test(c)) return ['IFCELECTRICAPPLIANCE', 'NOTDEFINED', null];
+  if (/Двери/.test(c)) return ['IFCDOOR', 'DOOR', null];
+  if (/Окна/.test(c)) return ['IFCWINDOW', 'WINDOW', null];
+  if (/Стены/.test(c)) return ['IFCWALL', 'NOTDEFINED', null];
+  if (/Перекр/.test(c)) return ['IFCSLAB', 'NOTDEFINED', null];
+  return ['IFCBUILDINGELEMENTPROXY', 'NOTDEFINED', null];
+}
+/** Classes whose IFC4 entity has a PredefinedType attribute at position 9 (everything above but these). */
+const NO_PREDEF = new Set(['IFCFLOWTERMINAL']);
+const IFC_ENUM = new Set([
+  'IFCWALL',
+  'IFCSLAB',
+  'IFCCOVERING',
+  'IFCSTAIR',
+  'IFCRAILING',
+  'IFCCOLUMN',
+  'IFCBEAM',
+  'IFCFURNITURE',
+  'IFCSPACEHEATER',
+  'IFCPIPESEGMENT',
+  'IFCDUCTSEGMENT',
+  'IFCLIGHTFIXTURE',
+  'IFCSANITARYTERMINAL',
+  'IFCELECTRICAPPLIANCE',
+  'IFCSWITCHINGDEVICE',
+  'IFCOUTLET',
+  'IFCBUILDINGELEMENTPROXY',
+  'IFCCURTAINWALL',
+  'IFCMEMBER',
+  'IFCPLATE',
+  'IFCROOF',
+  'IFCRAMP',
+  'IFCFOOTING'
+]);
+
+/** Triangles of a mesh part → deduplicated points (0.1 mm) and 1-based index triples. */
+function meshIndex(pos) {
+  const map = new Map(),
+    pts = [],
+    tri = [];
+  const id = i => {
+    const x = Math.round(pos[i] * 10) / 10,
+      y = Math.round(pos[i + 1] * 10) / 10,
+      z = Math.round(pos[i + 2] * 10) / 10;
+    const k = x + ',' + y + ',' + z;
+    let n = map.get(k);
+    if (!n) {
+      pts.push([x, y, z]);
+      n = pts.length;
+      map.set(k, n);
+    }
+    return n;
+  };
+  for (let i = 0; i + 8 < pos.length; i += 9) {
+    const a = id(i),
+      b = id(i + 3),
+      c = id(i + 6);
+    if (a !== b && b !== c && a !== c) tri.push([a, b, c]);
+  }
+  return { pts, tri };
+}
+
+/**
+ * The IFC4 file of the project (all levels). Options: o.name — project name; o.onlyVisible — skip hidden layers.
+ * Returns {text, stats: {elements, storeys, openings, spaces, byClass}}.
+ */
+function writeIFC(o = {}) {
+  const L = [];
+  let n = 0;
+  const put = s => {
+    L.push(`#${++n}=${s};`);
+    return '#' + n;
+  };
+  const list = a => '(' + a.join(',') + ')';
+  const T = (() => {
+    try {
+      return proj().tpl.fields || {};
+    } catch (err) {
+      return {};
+    }
+  })();
+  const pname = o.name || T.object || (S.x && S.x.title) || 'Проект';
+  const seed = (S.x && (S.x.uid || S.x.title)) || pname;
+  const G = k => stepStr(ifcGuid(seed + '|' + k));
+  // units, contexts
+  const pt3 = (x, y, z) => put(`IFCCARTESIANPOINT((${R_(x)},${R_(y)},${R_(z)}))`);
+  const dir3 = (x, y, z) => put(`IFCDIRECTION((${R_(x, 6)},${R_(y, 6)},${R_(z, 6)}))`);
+  const O = pt3(0, 0, 0),
+    DZ = dir3(0, 0, 1),
+    DX = dir3(1, 0, 0);
+  const ax3 = (p = O) => put(`IFCAXIS2PLACEMENT3D(${p},${DZ},${DX})`);
+  const A0 = ax3();
+  const units = put(
+    `IFCUNITASSIGNMENT((${[
+      put('IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)'),
+      put('IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)'),
+      put('IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.)'),
+      put('IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.)')
+    ].join(',')}))`
+  );
+  const ctx = put(`IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,${A0},${put('IFCDIRECTION((0.,1.))')})`);
+  const body = put(`IFCGEOMETRICREPRESENTATIONSUBCONTEXT('Body','Model',*,*,*,*,${ctx},$,.MODEL_VIEW.,$)`);
+  const axisCtx = put(`IFCGEOMETRICREPRESENTATIONSUBCONTEXT('Axis','Model',*,*,*,*,${ctx},$,.GRAPH_VIEW.,$)`);
+  const project = put(`IFCPROJECT(${G('project')},$,${stepStr(pname)},$,$,$,$,(${ctx}),${units})`);
+  const plSite = put(`IFCLOCALPLACEMENT($,${A0})`);
+  const site = put(`IFCSITE(${G('site')},$,${stepStr('Участок')},$,$,${plSite},$,$,.ELEMENT.,$,$,$,$,$)`);
+  const plBld = put(`IFCLOCALPLACEMENT(${plSite},${ax3()})`);
+  const bld = put(`IFCBUILDING(${G('building')},$,${stepStr(pname)},$,$,${plBld},$,$,.ELEMENT.,$,$,$)`);
+  put(`IFCRELAGGREGATES(${G('agg-project')},$,$,$,${project},(${site}))`);
+  put(`IFCRELAGGREGATES(${G('agg-site')},$,$,$,${site},(${bld}))`);
+  // colours
+  const styles = new Map();
+  const styleOf = (c, op = 1) => {
+    const k = c.map(v => Math.round(v * 255)).join(',') + '|' + Math.round(op * 100);
+    if (styles.has(k)) return styles.get(k);
+    const col = put(`IFCCOLOURRGB($,${R_(c[0], 4)},${R_(c[1], 4)},${R_(c[2], 4)})`);
+    const sh = put(`IFCSURFACESTYLESHADING(${col},${R_(1 - op, 3)})`);
+    const st = put(`IFCSURFACESTYLE($,.BOTH.,(${sh}))`);
+    styles.set(k, st);
+    return st;
+  };
+  // materials
+  const mats = new Map();
+  const matOf = name => {
+    name = String(name || 'Материал');
+    if (!mats.has(name)) mats.set(name, put(`IFCMATERIAL(${stepStr(name)},$,$)`));
+    return mats.get(name);
+  };
+  const layerSets = new Map(),
+    wallTypes = new Map();
+  const matAssoc = new Map(); // usage/material ref → element refs
+  const typeRel = new Map(); // type ref → element refs
+  const assoc = (m, el) => {
+    if (!matAssoc.has(m)) matAssoc.set(m, []);
+    matAssoc.get(m).push(el);
+  };
+  // property sets
+  const propVal = v =>
+    typeof v === 'boolean'
+      ? `IFCBOOLEAN(${v ? '.T.' : '.F.'})`
+      : typeof v === 'number'
+        ? `IFCREAL(${R_(v)})`
+        : Array.isArray(v)
+          ? `${v[0]}(${typeof v[1] === 'number' ? R_(v[1]) : stepStr(v[1])})`
+          : `IFCLABEL(${stepStr(v)})`;
+  const pset = (key, name, props, el) => {
+    const ps = Object.entries(props)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => put(`IFCPROPERTYSINGLEVALUE(${stepStr(k)},$,${propVal(v)},$)`));
+    if (!ps.length) return;
+    const s = put(`IFCPROPERTYSET(${G(key + '|' + name)},$,${stepStr(name)},$,${list(ps)})`);
+    put(`IFCRELDEFINESBYPROPERTIES(${G(key + '|r|' + name)},$,$,$,(${el}),${s})`);
+  };
+  const qto = (key, name, qs, el) => {
+    const q = [];
+    for (const [k, [kind, v]] of Object.entries(qs)) {
+      if (!(v > 0)) continue;
+      q.push(put(`IFCQUANTITY${kind}(${stepStr(k)},$,$,${R_(v, 4)},$)`));
+    }
+    if (!q.length) return;
+    const s = put(`IFCELEMENTQUANTITY(${G(key + '|' + name)},$,${stepStr(name)},$,$,${list(q)})`);
+    put(`IFCRELDEFINESBYPROPERTIES(${G(key + '|q|' + name)},$,$,$,(${el}),${s})`);
+  };
+  // geometry
+  const bodyRep = parts => {
+    const items = [];
+    const byCol = new Map();
+    for (const m of parts) {
+      const c = m.color || [0.8, 0.8, 0.8],
+        op = m.op ?? 1;
+      const k = c.join(',') + '|' + op;
+      if (!byCol.has(k)) byCol.set(k, { c, op, arr: [] });
+      byCol.get(k).arr.push(m.pos);
+    }
+    for (const { c, op, arr } of byCol.values()) {
+      let len = 0;
+      for (const a of arr) len += a.length;
+      const pos = new Float32Array(len);
+      let off = 0;
+      for (const a of arr) {
+        pos.set(a, off);
+        off += a.length;
+      }
+      const { pts, tri } = meshIndex(pos);
+      if (!tri.length) continue;
+      const pl = put(
+        `IFCCARTESIANPOINTLIST3D((${pts.map(p => `(${R_(p[0], 1)},${R_(p[1], 1)},${R_(p[2], 1)})`).join(',')}))`
+      );
+      const fs = put(`IFCTRIANGULATEDFACESET(${pl},$,$,(${tri.map(t => `(${t.join(',')})`).join(',')}),$)`);
+      put(`IFCSTYLEDITEM(${fs},(${styleOf(c, op)}),$)`);
+      items.push(fs);
+    }
+    return items.length ? put(`IFCSHAPEREPRESENTATION(${body},'Body','Tessellation',${list(items)})`) : null;
+  };
+  const boxTris = (q, z0, z1) => {
+    // q: 4 plan corners (counter-clockwise or not) → a closed box of 12 triangles
+    const v = [...q.map(p => [p.x, p.y, z0]), ...q.map(p => [p.x, p.y, z1])];
+    const F = [
+      [0, 2, 1],
+      [0, 3, 2],
+      [4, 5, 6],
+      [4, 6, 7],
+      [0, 1, 5],
+      [0, 5, 4],
+      [1, 2, 6],
+      [1, 6, 5],
+      [2, 3, 7],
+      [2, 7, 6],
+      [3, 0, 4],
+      [3, 4, 7]
+    ];
+    const pos = new Float32Array(F.length * 9);
+    F.forEach((f, i) => f.forEach((k, j) => pos.set(v[k], i * 9 + j * 3)));
+    return pos;
+  };
+  const stats = { elements: 0, storeys: 0, openings: 0, spaces: 0, byClass: {} };
+  const LVs = LV()
+    .list.slice()
+    .sort((a, b) => (a.z || 0) - (b.z || 0));
+  const storeyRefs = [];
+  for (const lv of LVs) {
+    const plSt = put(`IFCLOCALPLACEMENT(${plBld},${ax3(pt3(0, 0, lv.z || 0))})`);
+    const st = put(
+      `IFCBUILDINGSTOREY(${G('storey|' + lv.id)},$,${stepStr(lv.n)},$,$,${plSt},$,$,.ELEMENT.,${R_(lv.z || 0)})`
+    );
+    storeyRefs.push(st);
+    stats.storeys++;
+    const inStorey = [],
+      spaces = [];
+    const plEl = () => put(`IFCLOCALPLACEMENT(${plSt},${A0})`);
+    withLv(lv.id, () => {
+      const refOf = new Map(); // Kontur id → IFC element ref (walls for the voids)
+      const fills = [];
+      for (const e of S.ents) {
+        if (o.onlyVisible !== false && !visible(e)) continue;
+        // rooms: floor zones → spaces from the floor to the ceiling
+        if (e.type === 'floorz' && e.pts && e.pts.length > 2) {
+          const h = Math.max(500, (lv.h || 3000) - (lv.slab || 200) - 100);
+          const area =
+            Math.abs(
+              e.pts.reduce((s, p, i) => {
+                const q = e.pts[(i + 1) % e.pts.length];
+                return s + p.x * q.y - q.x * p.y;
+              }, 0)
+            ) / 2e6;
+          const pos = prismTris(e.pts, 0, h);
+          const rep = bodyRep([{ pos, color: [0.62, 0.78, 0.9], op: 0.25 }]);
+          const sp = put(
+            `IFCSPACE(${G('space|' + lv.id + '|' + e.id)},$,${stepStr(e.name || 'Помещение ' + (spaces.length + 1))},$,$,${plEl()},${rep ? put(`IFCPRODUCTDEFINITIONSHAPE($,$,(${rep}))`) : '$'},${stepStr(e.name || '')},.ELEMENT.,.INTERNAL.,$)`
+          );
+          qto(
+            'sp' + lv.id + '|' + e.id,
+            'Qto_SpaceBaseQuantities',
+            { NetFloorArea: ['AREA', area], Height: ['LENGTH', h] },
+            sp
+          );
+          pset('sp' + lv.id + '|' + e.id, 'Pset_SpaceCommon', { IsExternal: false, Reference: e.name || '' }, sp);
+          spaces.push(sp);
+          stats.spaces++;
+        }
+        if (e.type === 'opening') continue; // written with the wall below
+        let parts = [];
+        try {
+          parts = entTris(e, 0);
+        } catch (err) {
+          parts = [];
+        }
+        if (!parts.length) continue;
+        const asset = e.type === 'inst' ? ASSETS.get(e.asset) : null;
+        const cat = asset ? asset.cat : (layerOf(e) || {}).name;
+        let [cls, pdt, psName] = ifcClassOf(e, cat);
+        if (asset && asset.ifc && /^IFC[A-Z]+$/.test(asset.ifc.cls)) {
+          cls = asset.ifc.cls === 'IFCWALLSTANDARDCASE' ? 'IFCWALL' : asset.ifc.cls;
+          pdt = 'NOTDEFINED';
+        }
+        const rep = bodyRep(parts.map(m => ({ pos: m.pos, color: m.color, op: m.op })));
+        if (!rep) continue;
+        const reps = [rep];
+        if (e.type === 'wall')
+          reps.unshift(
+            put(
+              `IFCSHAPEREPRESENTATION(${axisCtx},'Axis','Curve2D',(${put(`IFCPOLYLINE((${put(`IFCCARTESIANPOINT((${R_(e.a.x)},${R_(e.a.y)}))`)},${put(`IFCCARTESIANPOINT((${R_(e.b.x)},${R_(e.b.y)}))`)}))`)}))`
+            )
+          );
+        const pds = put(`IFCPRODUCTDEFINITIONSHAPE($,$,${list(reps)})`);
+        const key = lv.id + '|' + e.id;
+        const name =
+          e.name ||
+          (asset && asset.name) ||
+          {
+            wall: 'Стена',
+            door: 'Дверь',
+            window: 'Окно',
+            slab: 'Перекрытие',
+            stair: 'Лестница',
+            rail: 'Ограждение',
+            kitchen: 'Кухня',
+            floorz: 'Пол',
+            ceil: 'Потолок'
+          }[e.type] ||
+          cat ||
+          e.type;
+        const head = `${G(key)},$,${stepStr(name)},$,${stepStr(e.type)},${plEl()},${pds},${stepStr(String(e.id))}`;
+        let el;
+        if (cls === 'IFCDOOR' && e.type === 'door')
+          el = put(`IFCDOOR(${head},${R_(+e.h || 0)},${R_(+e.w || 0)},.DOOR.,.NOTDEFINED.,$)`);
+        else if (cls === 'IFCWINDOW' && e.type === 'window')
+          el = put(`IFCWINDOW(${head},${R_(+e.h || 0)},${R_(+e.w || 0)},.WINDOW.,.NOTDEFINED.,$)`);
+        else if (cls === 'IFCDOOR' || cls === 'IFCWINDOW') el = put(`${cls}(${head},$,$,.NOTDEFINED.,.NOTDEFINED.,$)`);
+        else if (IFC_ENUM.has(cls) && !NO_PREDEF.has(cls)) el = put(`${cls}(${head},.${pdt}.)`);
+        else el = put(`${cls}(${head})`);
+        inStorey.push(el);
+        refOf.set(e.id, el);
+        stats.elements++;
+        stats.byClass[cls] = (stats.byClass[cls] || 0) + 1;
+        // properties, materials, quantities
+        const kp = { 'ID Контура': String(e.id), Тип: e.type, Слой: (layerOf(e) || {}).name || '' };
+        if (e.type === 'wall') {
+          const t = typeOf(e),
+            ct = computeType(t);
+          const tname = (t && t.name) || `Стена ${Math.round(ct.total)} мм`;
+          const len = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+          let ls = layerSets.get(tname);
+          if (!ls) {
+            const lays = ct.layers.map(l => put(`IFCMATERIALLAYER(${matOf(l.m)},${R_(l.th)},$,${stepStr(l.m)},$,$,$)`));
+            ls = put(`IFCMATERIALLAYERSET(${list(lays)},${stepStr(tname)},$)`);
+            layerSets.set(tname, ls);
+          }
+          const use = put(`IFCMATERIALLAYERSETUSAGE(${ls},.AXIS2.,.POSITIVE.,${R_(-ct.total / 2)},$)`);
+          assoc(use, el);
+          if (!wallTypes.has(tname))
+            wallTypes.set(tname, put(`IFCWALLTYPE(${G('wt|' + tname)},$,${stepStr(tname)},$,$,$,$,$,$,.STANDARD.)`));
+          const wt = wallTypes.get(tname);
+          if (!typeRel.has(wt)) typeRel.set(wt, []);
+          typeRel.get(wt).push(el);
+          pset(
+            key,
+            'Pset_WallCommon',
+            {
+              Reference: tname,
+              IsExternal: false,
+              LoadBearing: /несущ|кладк|бетон|кирпич|газобетон/i.test(ct.layers.map(l => l.m).join(' '))
+            },
+            el
+          );
+          let open = 0;
+          for (const h of hosted(e.id)) open += (+h.w || 0) * (+h.h || 0);
+          qto(
+            key,
+            'Qto_WallBaseQuantities',
+            {
+              Length: ['LENGTH', len],
+              Width: ['LENGTH', ct.total],
+              Height: ['LENGTH', +e.h || 0],
+              GrossSideArea: ['AREA', (len * (+e.h || 0)) / 1e6],
+              NetSideArea: ['AREA', (len * (+e.h || 0) - open) / 1e6],
+              GrossVolume: ['VOLUME', (len * (+e.h || 0) * ct.total) / 1e9]
+            },
+            el
+          );
+          kp['Толщина, мм'] = ct.total;
+          kp['Высота, мм'] = +e.h || 0;
+          kp['Длина, мм'] = Math.round(len);
+        } else if (e.type === 'door' || e.type === 'window') {
+          pset(
+            key,
+            e.type === 'door' ? 'Pset_DoorCommon' : 'Pset_WindowCommon',
+            { Reference: e.name || '', IsExternal: false },
+            el
+          );
+          qto(
+            key,
+            e.type === 'door' ? 'Qto_DoorBaseQuantities' : 'Qto_WindowBaseQuantities',
+            { Width: ['LENGTH', +e.w], Height: ['LENGTH', +e.h], Area: ['AREA', ((+e.w || 0) * (+e.h || 0)) / 1e6] },
+            el
+          );
+          kp['Ширина, мм'] = +e.w || 0;
+          kp['Высота, мм'] = +e.h || 0;
+          kp['Низ от пола, мм'] = +e.sill || 0;
+          fills.push([e, el]);
+        } else if (e.type === 'slab') {
+          pset(key, 'Pset_SlabCommon', { IsExternal: false, LoadBearing: true }, el);
+          qto(key, 'Qto_SlabBaseQuantities', { Width: ['LENGTH', +e.th || 0] }, el);
+        } else if (psName) pset(key, psName, { Reference: name }, el);
+        if (asset && asset.ifc && asset.ifc.psets)
+          for (const [pn, pv] of Object.entries(asset.ifc.psets))
+            if (pv && typeof pv === 'object') pset(key, pn, pv, el);
+        pset(key, 'Контур', kp, el);
+      }
+      // openings: every hosted door / window / opening voids its wall; doors and windows fill them
+      for (const e of S.ents) {
+        if (!(e.type === 'door' || e.type === 'window' || e.type === 'opening')) continue;
+        if (o.onlyVisible !== false && !visible(e)) continue;
+        const I = opInfo(e);
+        const wref = I && refOf.get(I.w.id);
+        if (!wref) continue;
+        const ext = mul(I.wi.n, 20);
+        const q = [add(I.rect[0], ext), add(I.rect[1], ext), sub(I.rect[2], ext), sub(I.rect[3], ext)];
+        const z0 = (I.w.z || 0) + (+e.sill || 0),
+          z1 = z0 + (+e.h || 0); // the niche the wall model cuts
+        const rep = bodyRep([{ pos: boxTris(q, z0, z1), color: [1, 1, 1], op: 1 }]);
+        if (!rep) continue;
+        const key = lv.id + '|' + e.id + '|op';
+        const op = put(
+          `IFCOPENINGELEMENT(${G(key)},$,${stepStr('Проём ' + Math.round(+e.w || 0) + '×' + Math.round(+e.h || 0))},$,$,${plEl()},${put(`IFCPRODUCTDEFINITIONSHAPE($,$,(${rep}))`)},$,.OPENING.)`
+        );
+        put(`IFCRELVOIDSELEMENT(${G(key + '|v')},$,$,$,${wref},${op})`);
+        const f = fills.find(x => x[0] === e);
+        if (f) put(`IFCRELFILLSELEMENT(${G(key + '|f')},$,$,$,${op},${f[1]})`);
+        stats.openings++;
+      }
+    });
+    if (inStorey.length) put(`IFCRELCONTAINEDINSPATIALSTRUCTURE(${G('cont|' + lv.id)},$,$,$,${list(inStorey)},${st})`);
+    if (spaces.length) put(`IFCRELAGGREGATES(${G('agg-sp|' + lv.id)},$,$,$,${st},${list(spaces)})`);
+  }
+  if (storeyRefs.length) put(`IFCRELAGGREGATES(${G('agg-bld')},$,$,$,${bld},${list(storeyRefs)})`);
+  let i = 0;
+  for (const [m, els] of matAssoc) put(`IFCRELASSOCIATESMATERIAL(${G('mat|' + i++)},$,$,$,${list(els)},${m})`);
+  for (const [t, els] of typeRel) put(`IFCRELDEFINESBYTYPE(${G('type|' + i++)},$,$,$,${list(els)},${t})`);
+  const now = new Date();
+  const ts = now.toISOString().slice(0, 19);
+  const head = [
+    'ISO-10303-21;',
+    'HEADER;',
+    "FILE_DESCRIPTION(('ViewDefinition [ReferenceView_V1.2]'),'2;1');",
+    `FILE_NAME(${stepStr(pname + '.ifc')},'${ts}',(''),(''),'Kontur IFC writer','Kontur ${APP_VER}','');`,
+    "FILE_SCHEMA(('IFC4'));",
+    'ENDSEC;',
+    'DATA;'
+  ];
+  return { text: head.join('\n') + '\n' + L.join('\n') + '\nENDSEC;\nEND-ISO-10303-21;\n', stats };
+}
+/** Closed prism over a plan polygon (fan triangulation of convex parts is not enough — ear clipping). */
+function prismTris(pts, z0, z1) {
+  const P_ = pts.map(p => [p.x, p.y]);
+  let area = 0;
+  for (let i = 0; i < P_.length; i++) {
+    const a = P_[i],
+      b = P_[(i + 1) % P_.length];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  const idx = P_.map((_, i) => i);
+  if (area < 0) idx.reverse();
+  const tris = [];
+  const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const inside = (p, a, b, c) => cross(a, b, p) >= 0 && cross(b, c, p) >= 0 && cross(c, a, p) >= 0;
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 10000) {
+    let cut = false;
+    for (let i = 0; i < idx.length; i++) {
+      const ia = idx[(i + idx.length - 1) % idx.length],
+        ib = idx[i],
+        ic = idx[(i + 1) % idx.length];
+      const a = P_[ia],
+        b = P_[ib],
+        c = P_[ic];
+      if (cross(a, b, c) <= 1e-9) continue;
+      if (idx.some(k => k !== ia && k !== ib && k !== ic && inside(P_[k], a, b, c))) continue;
+      tris.push([ia, ib, ic]);
+      idx.splice(i, 1);
+      cut = true;
+      break;
+    }
+    if (!cut) break;
+  }
+  if (idx.length === 3) tris.push(idx.slice());
+  const out = [];
+  const V = (k, z) => [P_[k][0], P_[k][1], z];
+  for (const [a, b, c] of tris) out.push(V(a, z0), V(c, z0), V(b, z0), V(a, z1), V(b, z1), V(c, z1));
+  for (let i = 0; i < P_.length; i++) {
+    const j = (i + 1) % P_.length;
+    out.push(V(i, z0), V(j, z0), V(j, z1), V(i, z0), V(j, z1), V(i, z1));
+  }
+  return new Float32Array(out.flat());
+}
+
+/** Menu command: the IFC file of the whole project. */
+function saveIFC() {
+  busy('Готовлю IFC…');
+  setTimeout(() => {
+    try {
+      const T = proj().tpl.fields || {};
+      const base = String(T.code || T.object || (S.x && S.x.title) || 'Проект')
+        .replace(/[\\/:*?"<>|×]+/g, ' ')
+        .trim();
+      const { text, stats } = writeIFC({ name: T.object || (S.x && S.x.title) || base });
+      if (!stats.elements) {
+        busy('');
+        return log('Нечего выгружать: в модели нет элементов с 3D-геометрией', true);
+      }
+      fdBlobSave(`${base}.ifc`, new Blob([text], { type: 'application/x-step' }));
+      log(
+        `IFC4: элементов ${stats.elements}, этажей ${stats.storeys}, проёмов ${stats.openings}${stats.spaces ? `, помещений ${stats.spaces}` : ''} · ${(text.length / 1048576).toFixed(1)} МБ`
+      );
+    } catch (err) {
+      log('Не удалось выгрузить IFC: ' + (err.message || err), true);
+    }
+    busy('');
+  }, 30);
 }
 
 // ===== io/svg-cad.js =====
