@@ -5818,7 +5818,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.4';
+const APP_VER = '39.5';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -10759,7 +10759,7 @@ function restore(js) {
   S.elec = o.elec || defaultElec();
   S.vent = o.vent || defaultVent();
   S.ceil = o.ceil || 2700;
-  S.curWt = o.curWt || 'wt_gb';
+  S.curWt = o.curWt || (uiHooks.lastWt && uiHooks.lastWt()) || 'wt_gb';
   S.profiles = o.profiles && o.profiles.length ? o.profiles : defaultProfiles();
   S.x = o.x || defaultX();
   migrate();
@@ -11589,6 +11589,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -11924,6 +11925,12 @@ function mkWall() {
   const pts = [],
     offs = [],
     made = [];
+  // started with a wall selected: draw on with its type and height
+  const sw = S.ents.filter(e => S.sel.has(e.id) && e.type === 'wall');
+  if (sw.length === 1 && sw[0].wt && S.wtypes.some(t => t.id === sw[0].wt)) {
+    setCurWt(sw[0].wt, true);
+    if (sw[0].h > 0) mkWall.h = sw[0].h;
+  }
   let h = mkWall.h || 2700,
     ask = null,
     loc = WLOC[mkWall.loc] ? mkWall.loc : 'c',
@@ -12046,7 +12053,8 @@ function mkWall() {
         return true;
       }
       if (kw(s, 'т', 'тип', 't', 'type')) {
-        openWT(S.curWt);
+        const r = cin.getBoundingClientRect ? cin.getBoundingClientRect() : { left: 200, top: 400 };
+        wtQuickMenu(r.left, r.top);
         return true;
       }
       if (kw(s, 'в', 'высота', 'h', 'height')) {
@@ -17352,6 +17360,7 @@ function initBuild() {
 
 
 
+
 /* pointer input (plan) */
 let panning = null,
   lastMid = 0,
@@ -17743,6 +17752,10 @@ function initPointerRest() {
     else if (a.startsWith('loc:')) {
       if (commandsState.cmd && commandsState.cmd.setLoc) commandsState.cmd.setLoc(a.slice(4));
       refreshPrompt();
+    } else if (a.startsWith('wt:')) {
+      setCurWt(a.slice(3));
+      refreshPrompt();
+      updateProps();
     } else if (a.startsWith('opt:')) sendInput(a.slice(4));
     else if (a === 'snap') showSnapMenu(e.clientX, e.clientY);
     else if (a === 'copyc') clipCopy(false);
@@ -17917,7 +17930,13 @@ function showCtx(x, y, at) {
           ''
         );
     }
-    const op = cmdOptions().filter(o => !(commandsState.cmd.name === 'wall' && /^привязка$/i.test(o)));
+    if (commandsState.cmd.name === 'wall') {
+      HR();
+      H('Тип стены');
+      for (const t of S.wtypes.slice(0, 14)) B('wt:' + t.id, (t.id === S.curWt ? '● ' : '○ ') + esc(t.name), '');
+      if (S.wtypes.length > 14) B('opt:Тип', 'Другие типы…', '');
+    }
+    const op = cmdOptions().filter(o => !(commandsState.cmd.name === 'wall' && /^(привязка|тип)$/i.test(o)));
     if (op.length) {
       HR();
       H('Параметры');
@@ -19883,6 +19902,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -20147,7 +20167,10 @@ function fieldSet(e, k, raw) {
       if (isFinite(v)) e.rot = v * D2R;
       return;
     case 'wt':
-      if (raw) e.wt = raw;
+      if (raw) {
+        e.wt = raw;
+        setCurWt(raw, true);
+      }
       return;
     case 'swk':
       if (raw) {
@@ -20775,8 +20798,14 @@ function updateProps() {
         ['wall', 'door', 'window', 'slab', 'inst', 'dev', 'wire', 'duct'].includes(e.type)
       ).length;
     const wt = S.wtypes.find(t => t.id === S.curWt);
-    el.innerHTML = `<div class="empty">Ничего не выбрано. Щёлкните объект на плане или в 3D. Рамка слева направо берёт объекты целиком, справа налево — все пересечённые.</div><dl class="props"><dt>Текущий слой</dt><dd>${esc(S.cur)}</dd><dt>Стена для рисования</dt><dd title="${esc(wt ? wt.name : '')}">${esc(wt ? wt.name : '—')}</dd><dt>Объектов</dt><dd>${n}</dd><dt>BIM и инженерия</dt><dd>${bim}</dd></dl><div class="btnrow"><button class="btn" id="bWT2">Типы стен…</button><button class="btn" id="bMEP2">Инженерия…</button></div>`;
+    el.innerHTML = `<div class="empty">Ничего не выбрано. Щёлкните объект на плане или в 3D. Рамка слева направо берёт объекты целиком, справа налево — все пересечённые.</div><dl class="props"><dt>Текущий слой</dt><dd>${esc(S.cur)}</dd><dt>Стена для рисования</dt><dd><select id="pCurWt" title="${esc(wt ? wt.name : '')}">${S.wtypes.map(t => `<option value="${esc(t.id)}" ${t.id === S.curWt ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></dd><dt>Объектов</dt><dd>${n}</dd><dt>BIM и инженерия</dt><dd>${bim}</dd></dl><div class="btnrow"><button class="btn" id="bWT2">Типы стен…</button><button class="btn" id="bMEP2">Инженерия…</button></div>`;
     $('#bWT2').onclick = () => openWT();
+    const cw = $('#pCurWt');
+    if (cw)
+      cw.onchange = () => {
+        setCurWt(cw.value);
+        refreshPrompt();
+      };
     $('#bMEP2').onclick = () => openMEP();
     return;
   }
@@ -22097,6 +22126,7 @@ function customSpec(e, ty, ct, A, put, kn, mas) {
 
 
 
+
 /* wall types dialog */
 let wtSel = null;
 const wtUsage = id => S.ents.filter(e => e.type === 'wall' && e.wt === id).length;
@@ -22314,7 +22344,7 @@ function wtEditor(el, t, mode) {
     };
   if (!side)
     el.querySelector('#wtUse').onclick = () => {
-      S.curWt = t.id;
+      setCurWt(t.id, true);
       save();
       rer();
       updateProps();
@@ -22383,7 +22413,7 @@ function wtEditor(el, t, mode) {
       log('Стороны стены поменяны местами (А↔Б)');
     };
     q('#wtSideUse').onclick = () => {
-      S.curWt = t.id;
+      setCurWt(t.id, true);
       save();
       updateProps();
       log(`Стены будут рисоваться типом «${t.name}»`);
@@ -90144,6 +90174,72 @@ function ceilSlabTop(pts) {
   }
   return { z, bot: z - (lv.slab || 200) };
 }
+
+// ===== elements/wall-current.js =====
+/**
+ * elements/wall-current.js
+ *
+ * The wall type new walls are drawn with: it follows the last type chosen anywhere — in the wall command, in its
+ * right-click menu, in the properties of a wall, in the panel with nothing selected, in the wall types dialog — and
+ * is remembered in the browser for new projects (it used to start with aerated concrete every time).
+ */
+
+
+
+
+
+
+
+const WT_KEY = 'kontur.curWt';
+/** Makes type id the type for drawing (and remembers it). */
+function setCurWt(id, quiet) {
+  const t = S.wtypes.find(x => x.id === id);
+  if (!t) return;
+  S.curWt = id;
+  try {
+    localStorage.setItem(WT_KEY, id);
+  } catch (err) {}
+  if (!quiet) log('Стены рисуются типом: ' + t.name);
+}
+/** The remembered type, if this project has it. */
+function lastWt() {
+  try {
+    const id = localStorage.getItem(WT_KEY);
+    return id && S.wtypes.some(t => t.id === id) ? id : null;
+  } catch (err) {
+    return null;
+  }
+}
+/** Quick list of wall types at a screen point (the [Тип] option of the wall command). */
+function wtQuickMenu(x, y) {
+  const m = $('#flymenu');
+  if (!m) return openWT(S.curWt);
+  m.classList.remove('grpm');
+  const items = S.wtypes.map(t => [`${t.id === S.curWt ? '● ' : '○ '}${t.name}`, () => setCurWt(t.id)]);
+  items.push(['Все типы стен, создать свой…', () => openWT(S.curWt)]);
+  m.innerHTML =
+    `<div class="mh">Тип стены для рисования</div>` +
+    items.map(([n], i) => `<button data-i="${i}">${esc(n)}</button>`).join('');
+  m.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    m.hidden = true;
+    items[+b.dataset.i][1]();
+    refreshPrompt();
+    updateProps();
+    cin.focus({ preventScroll: true });
+  };
+  hideMenus();
+  m.hidden = false;
+  placePop(m, x, y - m.offsetHeight - 8);
+}
+uiHooks.lastWt = lastWt;
+// a fresh project (nothing restored): the remembered type
+if (typeof setTimeout !== 'undefined')
+  setTimeout(() => {
+    const l = lastWt();
+    if (l && S.curWt === 'wt_gb' && !S.ents.some(e => e.type === 'wall')) S.curWt = l;
+  }, 0);
 
 // ===== mep/electrical/photometry.js =====
 /**
