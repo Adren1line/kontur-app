@@ -5818,7 +5818,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.5';
+const APP_VER = '39.6';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -9164,6 +9164,43 @@ function endCut(w, end, J) {
     return { L: ok(lineX(fl, d, q, Bo.u), fl), R: ok(lineX(fr, d, q, Bo.u), fr), mid: [], kind, o: o.id };
   };
   if (!E.parts.length) return E.host ? faceCut(E.host.o, 1, 'T') : perp;
+  // three or more walls in one point: the two main walls (the thickest; a straight pair first) join each other as
+  // a corner or run straight through, every other wall stops at the face of a main wall across it — instead of
+  // mitring all of them around the point (which cut thin walls and thick ones on odd diagonals)
+  const nodeEq =
+    E.parts.every(p => Math.abs(p.o.th - w.th) < 1) &&
+    ![{ d }, ...E.parts].some((x, i, arr) => arr.some((y, j) => j > i && dot(x.d, y.d) < -0.985));
+  // equal walls with no straight pair (a «Y», a star): the even mitre around the point below fits best
+  if (E.parts.length >= 2 && !nodeEq) {
+    const all = [{ o: w, d, end, me: true }, ...E.parts.map(p => ({ o: p.o, d: p.d, end: p.end, part: p }))];
+    let best = null;
+    for (let i = 0; i < all.length; i++)
+      for (let j = i + 1; j < all.length; j++) {
+        const A = all[i],
+          B = all[j];
+        const straight = dot(A.d, B.d) < -0.985;
+        const sc = (A.o.th + B.o.th) * 10 + (straight ? 5 : 0) - Math.min(A.o.id, B.o.id) * 1e-9;
+        if (!best || sc > best.sc) best = { A, B, sc, straight };
+      }
+    const mine = best.A.me ? best.B : best.B.me ? best.A : null;
+    if (mine) {
+      if (best.straight) return { ...perp, kind: 'line' };
+      // a two-wall joint with the partner only
+      const E1 = { ...E, parts: [mine.part] };
+      return endCut(w, end, { ends: end ? [J.ends[0], E1] : [E1, J.ends[1]] });
+    }
+    // a minor wall: against the main wall that crosses its direction most
+    let host = null,
+      hv = 0.2;
+    for (const m of [best.A, best.B]) {
+      const v = Math.abs(dot(d, wBasis(m.o).n));
+      if (v > hv) {
+        hv = v;
+        host = m.o;
+      }
+    }
+    return host ? faceCut(host, 1, 'T') : perp;
+  }
   if (E.parts.length === 1) {
     const p = E.parts[0],
       o = p.o;
@@ -26619,6 +26656,7 @@ const gklSheetsState = {
 
 
 
+
 /* ---------- ceilings: slab finish, Knauf frame ceilings, stretch ---------- */
 const CEILK = { gkl: 'Каркасный из ГКЛ (Кнауф)', stretch: 'Натяжной', slab: 'По плите перекрытия' };
 const CEIL_SYS = {
@@ -26638,14 +26676,22 @@ const STR_FIN = { mat: 'матовое', sat: 'сатиновое', gl: 'гля�
 function ceilPts(e) {
   return ceilCut(e).pts;
 }
+/** The outline after shadow gaps along the walls and the worked corners (round / chamfer / notch). */
 function ceilBase(e) {
-  if (!(+e.rOut > 0 || +e.rIn > 0) || !e.pts || e.pts.length < 3) return e.pts;
-  return filletPoly(e.pts, (i, convex) => (convex ? +e.rOut || 0 : +e.rIn || 0), 8);
+  if (!e.pts || e.pts.length < 3) return e.pts;
+  return ceilCorners(ceilShadowGaps(e, e.pts), ceilCornerCfg(e)).pts;
 }
+const ceilOutline = e => ceilPts(e);
 /** The ceiling outline without columns and shafts at its edges, and the ones inside as holes (cached). */
 const CEILC = new Map();
 function ceilCut(e) {
-  const k = documentState.docVer + '|' + e.id + '|' + JSON.stringify(e.pts) + (e.rOut || 0) + (e.rIn || 0);
+  const k =
+    documentState.docVer +
+    '|' +
+    e.id +
+    '|' +
+    JSON.stringify(e.pts) +
+    [e.rOut, e.rIn, e.cOut, e.cIn, e.shadowGap].join(',');
   const hit = CEILC.get(e.id);
   if (hit && hit.k === k) return hit.v;
   let v;
@@ -26658,22 +26704,10 @@ function ceilCut(e) {
   CEILC.set(e.id, { k, v });
   return v;
 }
-/** Curved part of the ceiling perimeter, m (bent profiles / flexible baguette): sum of the fillet arcs. */
+/** Curved part of the ceiling perimeter, m (bent profiles / flexible baguette): arcs of rounded and notched corners. */
 function ceilCurvedLen(e) {
-  if (!(+e.rOut > 0 || +e.rIn > 0) || !e.pts || e.pts.length < 3) return 0;
-  const n = e.pts.length,
-    A = polyArea(e.pts);
-  let L = 0;
-  for (let i = 0; i < n; i++) {
-    const V = e.pts[i],
-      a = e.pts[(i - 1 + n) % n],
-      b = e.pts[(i + 1) % n];
-    const turn = cross(sub(V, a), sub(b, V));
-    const r = (A > 0 ? turn > 0 : turn < 0) ? +e.rOut || 0 : +e.rIn || 0;
-    const phi = Math.acos(clamp(dot(nrm(sub(a, V)), nrm(sub(b, V))), -1, 1));
-    if (r > 0 && phi > 1e-3) L += r * (Math.PI - phi);
-  }
-  return L / 1000;
+  if (!e.pts || e.pts.length < 3) return 0;
+  return ceilCorners(ceilShadowGaps(e, e.pts), ceilCornerCfg(e)).curved;
 }
 function ceilRot(e) {
   const a = ang(sub(e.pts[1], e.pts[0]));
@@ -26730,6 +26764,7 @@ function ceilLayout(e) {
     }
   }
   r.sheets = (full + Math.ceil(part * 1.15)) * (e.layers || 1);
+  r.sheetsRaw = (full + part * 1.15) * (e.layers || 1);
   // bearing profiles (along y), base profiles (along x) — clipped to the contour
   const sC = e.stepC || 500,
     sB = e.stepB || 1000,
@@ -26814,6 +26849,12 @@ function buildCeil3(e) {
   l.visible = V3.edges;
   g.add(l);
   g.position.z = e.z;
+  // boards: free edges up to the slab, steps to the neighbouring ceilings (in world z: lowered by e.z)
+  const bmb = MB((x, y, zz) => [x, y, zz - e.z]);
+  bmb.tag(e.kind === 'gkl' ? 'Короб / перепад ГКЛ' : 'Перепад потолка');
+  ceilBoardsMesh(e, bmb, col, e.kind === 'gkl' ? SH_T * (e.layers || 1) : 12.5);
+  const bm = bmb.meshes();
+  if (bm.length) g.add(meshGroup(bm, { edges: true }));
   return g;
 }
 /** Polygon (array points) clipped by an axis-aligned rectangle (Sutherland–Hodgman, the window is convex). */
@@ -26897,6 +26938,21 @@ function buildCeilParts3(e) {
         mb.raw(m.color, m.op, m.pos);
       });
     }
+    mb.tag('Короб / перепад ГКЛ');
+    const xfW = MB();
+    ceilBoardsMesh(e, xfW, scol, SH_T * (e.layers || 1));
+    for (const m of xfW.meshes()) {
+      // boards are built in world plan coordinates: back into the rotated frame of this builder
+      const pos = m.pos,
+        out = new Float32Array(pos.length);
+      for (let i = 0; i + 2 < pos.length; i += 3) {
+        const q = R.to(P(pos[i], pos[i + 1]));
+        out[i] = q.x;
+        out[i + 1] = q.y;
+        out[i + 2] = pos[i + 2];
+      }
+      mb.raw(m.color, m.op, out);
+    }
   } else {
     mb.tag(e.kind === 'stretch' ? 'Полотно' : 'Окраска по плите');
     const sh = r.poly;
@@ -26931,6 +26987,19 @@ function buildCeilParts3(e) {
   }
   return meshGroup(mb.meshes(), { edges: true });
 }
+/** Boards of a ceiling: area m², running length m, studs m (ПП 60/27 every 600 mm). */
+function ceilBoardQ(e) {
+  let A = 0,
+    L = 0,
+    st = 0;
+  for (const b of ceilBoards(e)) {
+    const h = b.z1 - b.z0;
+    A += (b.len * h) / 1e6;
+    L += b.len / 1000;
+    st += ((Math.ceil(b.len / 600) + 1) * h) / 1000;
+  }
+  return { A, L, st };
+}
 XT.ceil = {
   layer: 'Потолки',
   prims: e => closedSegs(ceilPts(e)),
@@ -26945,7 +27014,7 @@ XT.ceil = {
     drawCeilPlan(e, color, o, ghost, col);
     if (!ghost) drawCeilLightsOverlay(e, o);
   },
-  k3: e => ceilLightsKey(e),
+  k3: e => [ceilLightsKey(e), ceilBoards(e).map(b => [b.a, b.b, b.z0, b.z1]), e.sep, e.cOut, e.cIn],
   build3(e) {
     const g = buildCeil3(e);
     if (g) addCeilSpotHoles(e, g);
@@ -26964,7 +27033,9 @@ XT.ceil = {
         : 'Потолок по плите',
   panel(e) {
     const r = ceilLayout(e);
-    const info = `<dl class="props">${cR('Площадь', r.A.toFixed(2) + ' м²')}${cR('Периметр', r.Pm.toFixed(2) + ' м')}${e.kind === 'gkl' ? cR('Листов (раскрой)', r.sheets + ' шт') + cR('Подвесов', r.hang.length + ' шт') + cR('ПП 60/27', (r.bearL + r.baseL).toFixed(1) + ' м') : ''}${e.kind === 'stretch' ? cR('Закладных под светильники', stretchLights(e) + ' шт') : ''}</dl>`;
+    const bq = ceilBoardQ(e),
+      grp = ceilGroup(e);
+    const info = `<dl class="props">${cR('Площадь', r.A.toFixed(2) + ' м²')}${cR('Периметр', r.Pm.toFixed(2) + ' м')}${bq.A > 0.005 ? cR('Короба и перепады', `${bq.A.toFixed(2)} м² · ${bq.L.toFixed(2)} м`) : ''}${grp.length > 1 ? cR('Единый каркас', `с ${grp.length - 1} потол. (общий раскрой, без ПН на стыке)`) : ''}${e.kind === 'gkl' ? cR('Листов (раскрой)', r.sheets + ' шт') + cR('Подвесов', r.hang.length + ' шт') + cR('ПП 60/27', (r.bearL + r.baseL).toFixed(1) + ' м') : ''}${e.kind === 'stretch' ? cR('Закладных под светильники', stretchLights(e) + ' шт') : ''}</dl>`;
     const G = [
       [
         'Общее',
@@ -26973,8 +27044,14 @@ XT.ceil = {
           ['Тип', 'kind', 's', Object.entries(CEILK)],
           ['Низ потолка, отметка', 'z', 'n'],
           ['Высота пространства до плиты', 'gap', 'n'],
-          ['Скругление наружных углов R, мм', 'rOut', 'n'],
-          ['Скругление внутренних углов R, мм', 'rIn', 'n']
+          ['Наружные углы', 'cOut', 's', Object.entries(CEIL_CORN)],
+          ['Наружные углы: R / катет, мм', 'rOut', 'n'],
+          ['Внутренние углы', 'cIn', 's', Object.entries(CEIL_CORN_IN)],
+          ['Внутренние углы: R / катет, мм', 'rIn', 'n'],
+          ['Теневой зазор у стен (с теневым профилем), мм', 'shadowGap', 'n'],
+          ...(e.kind === 'gkl'
+            ? [['Отдельная конструкция (свой каркас, не объединять с соседними ГКЛ-потолками)', 'sep', 'b']]
+            : [])
         ]
       ]
     ];
@@ -27056,18 +27133,32 @@ XT.ceil = {
           x.ids.push(e.id);
         }
       );
-      put(S_, 'cs' + e.sheet, { name: `Лист ${SHEETS[e.sheet].n} 1200×2500×12,5 (по раскрою)`, u: 'шт' }, x => {
-        x.q += r.sheets;
-        x.ids.push(e.id);
-      });
+      // a joint frame: the sheets of the group are cut together (counted once, by its first ceiling),
+      // no perimeter track along the joints; boards (free edges, steps) — their own sheets, tracks and studs
+      const grp = ceilGroup(e),
+        bq = ceilBoardQ(e);
+      const sheetRaw = c => {
+        const rc = c === e ? r : ceilLayout(c);
+        return (rc.sheetsRaw || 0) + (ceilBoardQ(c).A * (c.layers || 1) * 1.1) / (1.2 * 2.5);
+      };
+      if (grp[0] === e)
+        put(S_, 'cs' + e.sheet, { name: `Лист ${SHEETS[e.sheet].n} 1200×2500×12,5 (по раскрою)`, u: 'шт' }, x => {
+          x.q += Math.ceil(grp.reduce((a, c) => a + sheetRaw(c), 0));
+          for (const c of grp) x.ids.push(c.id);
+        });
       put(S_, 'cpp', { name: 'Профиль ПП 60/27, L=3000', u: 'шт' }, x => {
-        x.q += Math.ceil(((r.bearL + r.baseL) / 3) * 1.05);
+        x.q += Math.ceil(((r.bearL + r.baseL + bq.st) / 3) * 1.05);
         x.ids.push(e.id);
       });
       put(S_, 'cpn', { name: 'Профиль ПН 28/27, L=3000', u: 'шт' }, x => {
-        x.q += Math.ceil((r.Pm / 3) * 1.05);
+        x.q += Math.ceil(((Math.max(0, r.Pm - ceilJointLen(e)) + 2 * bq.L) / 3) * 1.05);
         x.ids.push(e.id);
       });
+      if (bq.A > 0.005)
+        put(S_, 'cbx' + e.sheet, { name: `Короба и перепады потолка, ${SHEETS[e.sheet].n}`, u: 'м²' }, x => {
+          x.q += Math.round(bq.A * 100) / 100;
+          x.ids.push(e.id);
+        });
       put(S_, 'chg', { name: 'Подвес прямой / с тягой', u: 'шт' }, x => {
         x.q += r.hang.length;
         x.ids.push(e.id);
@@ -85610,6 +85701,16 @@ function crFix(e) {
 
 XT.curtain = {
   layer: 'Отделка',
+  // a rail in a plasterboard niche: the ceiling stops at the niche (its edge rises to the slab there)
+  cut: (e, where) => {
+    const K = CRK[e.kind] || CRK.ceil_pl;
+    if (where !== 'ceil' || K.niche !== 'gkl') return null;
+    const { u, n } = crU(e);
+    const w = crNicheW(e);
+    const a = sub(e.a, mul(u, 5)),
+      b = add(e.b, mul(u, 5));
+    return [sub(a, mul(n, 30)), sub(b, mul(n, 30)), add(b, mul(n, w)), add(a, mul(n, w))];
+  },
   prims: e => [{ t: 's', a: e.a, b: e.b }],
   dist: (e, p) => dist(segPt(e.a, e.b, p), p) - 20,
   keys: e => [
@@ -93487,6 +93588,302 @@ function csgFrame(n, o) {
   return { o: o.slice(), u, v, n: nn };
 }
 const CSGV = { csgSub, csgDot, csgCross, csgLen };
+
+// ===== elements/ceiling-edges.js =====
+/**
+ * elements/ceiling-edges.js
+ *
+ * What lies along the edges of a ceiling, and what follows from it:
+ *  - corners of the outline: rounded, chamfered or notched (a quarter-circle cut out of an outer corner);
+ *  - shadow gaps (ceiling shadow profile along the edge): the sheet stops short of the wall by the gap;
+ *  - edge runs: against a wall, against another ceiling, or free;
+ *  - boards: a free edge rises to the slab (the gap above the ceiling is closed), a step between two ceilings is
+ *    closed from the lower to the higher plane (by the plasterboard ceiling of the pair, else by the lower one);
+ *  - joint frame: plasterboard ceilings that touch form one frame for the count (no perimeter profile along the
+ *    joint, sheets cut together), unless a ceiling is set to be a separate construction.
+ */
+
+
+
+
+
+
+const CEIL_CORN = { none: 'Без обработки', round: 'Скругление', chamfer: 'Фаска', notch: 'Обратная выборка' };
+const CEIL_CORN_IN = { none: 'Без обработки', round: 'Скругление', chamfer: 'Фаска' };
+/** Corner modes of a ceiling (old projects: rOut / rIn were radii of rounding). */
+function ceilCornerCfg(e) {
+  return {
+    out: CEIL_CORN[e.cOut] ? e.cOut : +e.rOut > 0 ? 'round' : 'none',
+    rOut: +e.rOut || 0,
+    in: CEIL_CORN_IN[e.cIn] ? e.cIn : +e.rIn > 0 ? 'round' : 'none',
+    rIn: +e.rIn || 0
+  };
+}
+/**
+ * Outline with its corners worked: {pts, curved (m of curved edge)}. Convex (outer) corners take cOut, concave
+ * (inner) ones cIn; r — the radius, the chamfer leg or the notch radius.
+ */
+function ceilCorners(pts, cfg) {
+  const n = pts.length;
+  if (n < 3 || ((cfg.out === 'none' || !cfg.rOut) && (cfg.in === 'none' || !cfg.rIn))) return { pts, curved: 0 };
+  let A = 0;
+  for (let i = 0; i < n; i++) A += pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y;
+  const sg = Math.sign(A) || 1;
+  const out = [];
+  let curved = 0;
+  for (let i = 0; i < n; i++) {
+    const a = pts[(i - 1 + n) % n],
+      v = pts[i],
+      b = pts[(i + 1) % n];
+    const la = dist(a, v),
+      lb = dist(v, b);
+    if (la < 1 || lb < 1) {
+      out.push(v);
+      continue;
+    }
+    const ua = mul(sub(a, v), 1 / la),
+      ub = mul(sub(b, v), 1 / lb);
+    const cr = (v.x - a.x) * (b.y - v.y) - (v.y - a.y) * (b.x - v.x);
+    const convex = Math.sign(cr) === sg;
+    const mode = convex ? cfg.out : cfg.in,
+      r0 = convex ? cfg.rOut : cfg.rIn;
+    const phi = Math.acos(clamp(dot(ua, ub), -1, 1)); // interior angle at a convex corner
+    if (mode === 'none' || !(r0 > 0) || phi > Math.PI - 0.02 || phi < 0.02) {
+      out.push(v);
+      continue;
+    }
+    const lim = Math.min(la, lb) / 2;
+    if (mode === 'chamfer') {
+      const r = Math.min(r0, lim);
+      out.push(add(v, mul(ua, r)), add(v, mul(ub, r)));
+      continue;
+    }
+    if (mode === 'notch') {
+      // a quarter (or other) circle centred in the corner, cut into the ceiling
+      const r = Math.min(r0, lim);
+      const a0 = Math.atan2(ua.y, ua.x);
+      let a1 = Math.atan2(ub.y, ub.x);
+      let dA = a1 - a0;
+      while (dA > Math.PI) dA -= 2 * Math.PI;
+      while (dA < -Math.PI) dA += 2 * Math.PI;
+      const k = Math.max(4, Math.ceil(Math.abs(dA) / 0.12));
+      for (let j = 0; j <= k; j++) {
+        const t = a0 + (dA * j) / k;
+        out.push(P(v.x + Math.cos(t) * r, v.y + Math.sin(t) * r));
+      }
+      curved += (Math.abs(dA) * r) / 1000;
+      continue;
+    }
+    // round: tangent arc
+    const tl = Math.min(r0 / Math.tan(phi / 2), lim);
+    const r = tl * Math.tan(phi / 2);
+    const bis = nrm(add(ua, ub));
+    const c = add(v, mul(bis, r / Math.sin(phi / 2)));
+    const t1 = add(v, mul(ua, tl)),
+      t2 = add(v, mul(ub, tl));
+    const s0 = Math.atan2(t1.y - c.y, t1.x - c.x);
+    let dA = Math.atan2(t2.y - c.y, t2.x - c.x) - s0;
+    while (dA > Math.PI) dA -= 2 * Math.PI;
+    while (dA < -Math.PI) dA += 2 * Math.PI;
+    const k = Math.max(4, Math.ceil(Math.abs(dA) / 0.12));
+    for (let j = 0; j <= k; j++) {
+      const t = s0 + (dA * j) / k;
+      out.push(P(c.x + Math.cos(t) * r, c.y + Math.sin(t) * r));
+    }
+    curved += (Math.abs(dA) * r) / 1000;
+  }
+  return { pts: out, curved };
+}
+/**
+ * Edges along which a ceiling shadow profile runs move inward by the gap (the sheet stops short of the wall).
+ * Returns the outline (same vertex count) or the input.
+ */
+function ceilShadowGaps(e, pts) {
+  const trims = S.ents.filter(t => t.type === 'trim' && t.kind === 'shadowC' && t.pts && t.pts.length > 1);
+  if (!trims.length || pts.length < 3) return pts;
+  const gap = +e.shadowGap || 10;
+  const n = pts.length;
+  let A = 0;
+  for (let i = 0; i < n; i++) A += pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y;
+  const off = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i],
+      b = pts[(i + 1) % n];
+    const L = dist(a, b);
+    let hit = false;
+    if (L > 50) {
+      const u = mul(sub(b, a), 1 / L);
+      for (const t of trims) {
+        const tp = t.closed ? [...t.pts, t.pts[0]] : t.pts;
+        for (let k = 0; k + 1 < tp.length && !hit; k++) {
+          const p = tp[k],
+            q = tp[k + 1];
+          const lq = dist(p, q);
+          if (lq < 50) continue;
+          const v = mul(sub(q, p), 1 / lq);
+          if (Math.abs(u.x * v.y - u.y * v.x) > 0.03) continue;
+          const dd = Math.abs((p.x - a.x) * u.y - (p.y - a.y) * u.x);
+          if (dd > 40) continue;
+          const t0 = dot(sub(p, a), u),
+            t1 = dot(sub(q, a), u);
+          if (Math.min(L, Math.max(t0, t1)) - Math.max(0, Math.min(t0, t1)) > L * 0.5) hit = true;
+        }
+        if (hit) break;
+      }
+    }
+    off.push(hit ? gap : 0);
+  }
+  if (!off.some(Boolean)) return pts;
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[i],
+      b = pts[(i + 1) % n];
+    const u = nrm(sub(b, a));
+    const inw = A > 0 ? P(-u.y, u.x) : P(u.y, -u.x);
+    lines.push({ p: add(a, mul(inw, off[i])), u });
+  }
+  const res = [];
+  for (let i = 0; i < n; i++) {
+    const L1 = lines[(i - 1 + n) % n],
+      L2 = lines[i];
+    const den = L1.u.x * L2.u.y - L1.u.y * L2.u.x;
+    if (Math.abs(den) < 1e-6) {
+      res.push(L2.p);
+      continue;
+    }
+    const t = ((L2.p.x - L1.p.x) * L2.u.y - (L2.p.y - L1.p.y) * L2.u.x) / den;
+    res.push(add(L1.p, mul(L1.u, t)));
+  }
+  return res;
+}
+
+/* ---------- edge runs ---------- */
+const CE = { ver: -1, m: new Map() };
+const ceilTopOf = e => (+e.z || 0) + (e.kind === 'gkl' ? SH_T * (e.layers || 1) : 0);
+/** Top of the space over a ceiling: the slab bottom (z + gap). */
+const ceilSlabZ = e => (+e.z || 0) + Math.max(0, +e.gap || 0);
+/**
+ * Runs along the outline of a ceiling: [{a, b, len, kind: 'wall' | 'ceil' | 'free', o (the other ceiling),
+ * z0, z1 (a board to draw, z0 = z1 when none), joint (the other ceiling shares the frame)}].
+ */
+function ceilRuns(e) {
+  if (CE.ver !== documentState.docVer) {
+    CE.ver = documentState.docVer;
+    CE.m = new Map();
+  }
+  if (CE.m.has(e.id)) return CE.m.get(e.id);
+  const res = [];
+  CE.m.set(e.id, res);
+  const pts = ceilOutline(e);
+  if (!pts || pts.length < 3) return res;
+  const n = pts.length;
+  let A = 0;
+  for (let i = 0; i < n; i++) A += pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y;
+  const walls = S.ents.filter(w => w.type === 'wall');
+  const wpolys = walls.map(w => {
+    try {
+      return wallInfo(w).poly;
+    } catch (err) {
+      return null;
+    }
+  });
+  const others = S.ents.filter(o => o.type === 'ceil' && o !== e && o.pts && o.pts.length > 2);
+  const oPolys = others.map(o => ceilOutline(o));
+  const classify = (p, outw) => {
+    for (const d of [25, 60]) {
+      const q = add(p, mul(outw, d));
+      if (wpolys.some(w => w && inPoly(q, w))) return { kind: 'wall' };
+      const k = oPolys.findIndex(o => o && inPoly(q, o));
+      if (k >= 0) return { kind: 'ceil', o: others[k] };
+    }
+    return { kind: 'free' };
+  };
+  for (let i = 0; i < n; i++) {
+    const a = pts[i],
+      b = pts[(i + 1) % n];
+    const L = dist(a, b);
+    if (L < 1) continue;
+    const u = mul(sub(b, a), 1 / L);
+    const outw = A > 0 ? P(u.y, -u.x) : P(-u.y, u.x);
+    const step = Math.max(40, Math.min(200, L / 6));
+    let cur = null;
+    for (let s = 0; s < L; s += step) {
+      const s1 = Math.min(L, s + step);
+      const c = classify(add(a, mul(u, (s + s1) / 2)), outw);
+      if (cur && cur.kind === c.kind && cur.o === c.o) cur.s1 = s1;
+      else {
+        if (cur) res.push(cur);
+        cur = { ...c, s0: s, s1 };
+      }
+    }
+    if (cur) res.push(cur);
+    for (const r of res) if (!r.a) Object.assign(r, { a: add(a, mul(u, r.s0)), b: add(a, mul(u, r.s1)), u, outw });
+  }
+  for (const r of res) {
+    r.len = dist(r.a, r.b);
+    r.z0 = r.z1 = +e.z || 0;
+    if (r.kind === 'free' && e.kind !== 'slab') {
+      r.z1 = Math.max(r.z0, ceilSlabZ(e));
+    } else if (r.kind === 'ceil') {
+      const o = r.o;
+      const zo = +o.z || 0,
+        ze = +e.z || 0;
+      if (Math.abs(zo - ze) > 1) {
+        // the board of the step: the plasterboard ceiling of the pair draws it, else the lower one
+        const drawer =
+          e.kind === 'gkl' && o.kind !== 'gkl'
+            ? e
+            : o.kind === 'gkl' && e.kind !== 'gkl'
+              ? o
+              : ze < zo || (ze === zo && e.id < o.id)
+                ? e
+                : o;
+        if (drawer === e) {
+          r.z0 = Math.min(ze, zo);
+          r.z1 = Math.max(ze, zo) + (ze < zo && o.kind === 'gkl' ? 0 : 0);
+        }
+      }
+      r.joint = e.kind === 'gkl' && o.kind === 'gkl' && e.sep !== true && o.sep !== true;
+    }
+  }
+  return res;
+}
+/** Boards of a ceiling (free edges up to the slab, steps to the neighbour): [{a, b, inw, z0, z1, len}]. */
+function ceilBoards(e) {
+  return ceilRuns(e)
+    .filter(r => r.z1 - r.z0 > 1 && r.len > 10)
+    .map(r => ({ a: r.a, b: r.b, inw: mul(r.outw, -1), z0: r.z0, z1: r.z1, len: r.len, kind: r.kind }));
+}
+/** Plasterboard ceilings joined into one frame with e (sorted by id; [e] when alone or separate). */
+function ceilGroup(e) {
+  if (e.kind !== 'gkl' || e.sep === true) return [e];
+  const seen = new Set([e]),
+    st = [e];
+  while (st.length) {
+    const c = st.pop();
+    for (const r of ceilRuns(c))
+      if (r.kind === 'ceil' && r.joint && !seen.has(r.o)) {
+        seen.add(r.o);
+        st.push(r.o);
+      }
+  }
+  return [...seen].sort((a, b) => a.id - b.id);
+}
+/** Length of the edges a ceiling shares with the ceilings of its joint frame, m. */
+function ceilJointLen(e) {
+  return (
+    ceilRuns(e)
+      .filter(r => r.kind === 'ceil' && r.joint)
+      .reduce((s, r) => s + r.len, 0) / 1000
+  );
+}
+/** 3D boards as prisms (thickness th, inside the outline) into a mesh builder. */
+function ceilBoardsMesh(e, mb, col, th) {
+  for (const bd of ceilBoards(e)) {
+    const q = [bd.a, bd.b, add(bd.b, mul(bd.inw, th)), add(bd.a, mul(bd.inw, th))].map(p => [p.x, p.y]);
+    prismL(mb, q, bd.z0, bd.z1, col);
+  }
+}
 
 // ===== elements/solid-body.js =====
 /**
