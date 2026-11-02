@@ -5831,7 +5831,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.7';
+const APP_VER = '39.8';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -66348,7 +66348,11 @@ XT.cab = {
   }
 };
 function mkCab() {
-  let kind = mkCab.k || 'wardrobe';
+  let kind = mkCab.k || 'wardrobe',
+    ask = false;
+  // a set height per kind of furniture (remembered), else the default of the kind
+  mkCab.hs = mkCab.hs || {};
+  const Hk = () => mkCab.hs[kind] || cbDefaults(kind).h;
   const mk = p => {
     const pl = placeOnWall(p, 'wall');
     const near = pl.host && dist(pl.p, p) < 400;
@@ -66358,14 +66362,35 @@ function mkCab() {
       rot: near ? pl.rot : 0,
       host: near ? pl.host : null,
       z: 0,
-      cfg: cbDefaults(kind)
+      cfg: { ...cbDefaults(kind), h: Hk() }
     };
   };
   return {
     name: 'cab',
     base: () => null,
-    prompt: () => `Корпусная мебель (${CBK[kind]}): точка у стены [Шкаф/Стеллаж/Комод/Тумба ТВ/Прикроватная]:`,
+    prompt: () =>
+      ask
+        ? `Высота (${CBK[kind]}), мм <${Hk()}>:`
+        : `Корпусная мебель (${CBK[kind]}, высота ${Hk()} мм): точка у стены [Высота/Шкаф/Стеллаж/Комод/Тумба ТВ/Прикроватная]:`,
+    bar: () => [
+      ...Object.entries(CBK)
+        .filter(([k]) => k !== 'custom')
+        .map(([k, n]) => ({ n, on: kind === k, a: () => (kind = mkCab.k = k) })),
+      { n: `Высота ${Hk()} ✎`, on: ask, a: () => (ask = true), t: 'Ввести высоту, мм' }
+    ],
+    hasValue: () => ask,
+    onValue(v) {
+      if (v > 100) {
+        mkCab.hs[kind] = Math.round(v);
+        log(`${CBK[kind]}: высота ${Math.round(v)} мм`);
+      }
+      ask = false;
+    },
     onInput(s) {
+      if (/^(высота|в|h)$/i.test(s.trim())) {
+        ask = true;
+        return true;
+      }
       const k = {
         шкаф: 'wardrobe',
         стеллаж: 'shelf',
@@ -66381,7 +66406,15 @@ function mkCab() {
       return false;
     },
     onPoint(p) {
+      if (ask) return;
       addEnt({ ...mk(p), layer: ensureLayer('Мебель') });
+      return 'end';
+    },
+    onEnter() {
+      if (ask) {
+        ask = false;
+        return;
+      }
       return 'end';
     },
     preview(cur) {
@@ -70318,15 +70351,55 @@ function cwCreate(runs, product = 'wardrobe', put = addEnt) {
 }
 function mkCasework() {
   const pts = [];
+  let ask = false;
+  // the height of the product: 0 — up to the ceiling (minus the gap), or a set height (remembered)
+  const H = () => mkCasework.H || 0;
+  const setH = v => {
+    mkCasework.H = Math.max(0, Math.round(v) || 0);
+    log('Высота шкафа: ' + (mkCasework.H ? mkCasework.H + ' мм' : 'до потолка'));
+  };
   return {
     name: 'casework',
-    base: () => pts[pts.length - 1] || null,
+    bar: () => [
+      { n: 'До потолка', on: !H(), a: () => setH(0), t: 'Высота по потолку помещения с зазором' },
+      ...[2100, 2400, 2600].map(v => ({ n: String(v), on: H() === v, a: () => setH(v), t: `Высота ${v} мм` })),
+      {
+        n: H() && ![2100, 2400, 2600].includes(H()) ? `${H()} ✎` : 'Своя…',
+        on: !!H() && ![2100, 2400, 2600].includes(H()),
+        a: () => (ask = true),
+        t: 'Ввести высоту, мм'
+      }
+    ],
+    base: () => (ask ? null : pts[pts.length - 1] || null),
+    hasValue: () => ask,
+    onValue(v) {
+      if (v >= 0) setH(v);
+      ask = false;
+    },
+    onInput(s) {
+      if (/^(высота|в|h)$/i.test(s.trim())) {
+        ask = true;
+        return true;
+      }
+      if (/^(до потолка|потолок|п)$/i.test(s.trim())) {
+        setH(0);
+        return true;
+      }
+      return false;
+    },
     prompt: () =>
-      `Корпусная мебель: точки вдоль стен по чистовой поверхности${pts.length ? ' — следующая точка или Enter' : ' — начало; или одна точка внутри ниши и Enter (ниша по стенам)'}:`,
+      ask
+        ? `Высота шкафа, мм (0 — до потолка) <${H() || 0}>:`
+        : `Корпусная мебель, высота ${H() ? H() + ' мм' : 'до потолка'}: точки вдоль стен по чистовой поверхности${pts.length ? ' — следующая точка или Enter' : ' — начало; или одна точка внутри ниши и Enter (ниша по стенам)'} [Высота/До потолка]:`,
     onPoint(p) {
+      if (ask) return;
       pts.push(p);
     },
     onEnter() {
+      if (ask) {
+        ask = false;
+        return;
+      }
       let runs = [];
       if (pts.length === 1) {
         const N = cwNiche(pts[0]);
@@ -70339,6 +70412,7 @@ function mkCasework() {
         for (let i = 1; i < pts.length; i++) runs.push({ a: pts[i - 1], b: pts[i], n: kitNormal(pts[i - 1], pts[i]) });
       else return 'end';
       const e = cwCreate(runs, runs.length === 1 && pts.length === 1 ? 'niche' : 'wardrobe');
+      if (H()) e.cfg.H = H();
       changed();
       setTimeout(() => openCasework(e.id), 50);
       return 'end';
