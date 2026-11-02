@@ -5831,7 +5831,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.10';
+const APP_VER = '39.11';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -68670,10 +68670,11 @@ const CW_KG = { ldsp: 11.5, hdf: 2.6 };
 function cwDefaults() {
   return {
     product: 'wardrobe',
-    H: 0, // 0 — up to the ceiling minus the ceiling gap
+    H: 2400, // set height of the product; 0 — up to the ceiling minus the ceiling gap (only on request)
     D: 600, // full depth: carcass + fronts (or + the sliding door zone)
     gTop: 40,
-    topFill: 'strip', // strip | none | ant
+    hv: 1, // height model of v39.11 (set height, nothing added over it)
+    topFill: 'none', // none | strip | ant — nothing is added over the product unless chosen
     antH: 450,
     antOpen: 'hinge', // hinge | lift
     gL: 5,
@@ -69605,8 +69606,6 @@ function cwChecks(e, G = cwGeom(e)) {
       'bad',
       `Корпус не поднять после сборки лёжа: диагональ боковины ${Math.round(diag)} мм ≥ высоты помещения ${G.ceil} мм — увеличьте зазор до потолка до ${cwLiftGap(c)} мм (закроет фальшпланка), сделайте антресоль отдельным модулем или собирайте стоя.`
     );
-  if (c.topFill === 'none' && G.ceil - G.zt > 60)
-    W('info', `До потолка ${Math.round(G.ceil - G.zt)} мм открыто — можно закрыть фальшпланкой или антресолью.`);
   if (c.handle === 'milled' && !cwFT(c).mdf) W('warn', 'Фрезерованная ручка делается только в фасадах МДФ.');
   const long = cwUnits(e, G)
     .flatMap(u => u.parts)
@@ -69655,26 +69654,16 @@ function cwApply(e, product) {
       ft: 'mill',
       handle: 'long',
       hSize: 640,
-      topFill: 'strip',
       base: 'plinth'
     },
-    coupe: { open: 'slide', build: 'single', D: 640, ft: 'ldsp', topFill: 'strip', base: 'plinth' },
-    niche: { open: 'slide', build: 'built', D: 620, ft: 'ldsp', topFill: 'strip', base: 'plinth', gL: 3, gR: 3 },
-    hall: { open: 'hinge', build: 'modules', D: 450, ft: 'shaker', handle: 'knob', topFill: 'ant', base: 'plinth' },
-    walkin: { open: 'none', build: 'modules', D: 560, topFill: 'none', base: 'plinth' },
-    library: { open: 'none', build: 'modules', D: 360, topFill: 'strip', base: 'plinth' }
+    coupe: { open: 'slide', build: 'single', D: 640, ft: 'ldsp', base: 'plinth' },
+    niche: { open: 'slide', build: 'built', D: 620, ft: 'ldsp', base: 'plinth', gL: 3, gR: 3 },
+    hall: { open: 'hinge', build: 'modules', D: 450, ft: 'shaker', handle: 'knob', base: 'plinth' },
+    walkin: { open: 'none', build: 'modules', D: 560, base: 'plinth' },
+    library: { open: 'none', build: 'modules', D: 360, base: 'plinth' }
   }[product];
-  Object.assign(c, T || {});
+  Object.assign(c, { topFill: 'none' }, T || {}); // a template adds nothing over the product
   c.gTop = cwLiftGap(c);
-  if (c.open === 'hinge') {
-    // hinged doors above ~2400 mm warp: the top goes to an antresol with its own fronts
-    const ceil = S.ceil || 2700;
-    const hDoor = ceil - c.gTop - (c.base === 'floor' ? 0 : +c.plH) - 2 * c.t;
-    if (hDoor > 2400 && c.topFill !== 'ant') {
-      c.topFill = 'ant';
-      c.antH = Math.max(300, Math.round((hDoor - 2250) / 10) * 10);
-    }
-  }
   const pat = {
     wardrobe: ['long', 'drawers', 'short2', 'shelves', 'lift'],
     coupe: ['long', 'drawers', 'short2', 'shelves'],
@@ -70182,7 +70171,17 @@ function cwPanelForm(e) {
       c.H > 0 ? `${Math.round(G.zt)} мм` : `до потолка · ${Math.round(G.zt)} мм`,
       [
         ['Высота изделия, мм (0 — до потолка)', 'cfg.H', 'n', '10'],
-        ['Зазор до потолка, мм', 'cfg.gTop', 'n', '1'],
+        [
+          'Над шкафом',
+          'cfg.topFill',
+          's',
+          [
+            ['none', 'ничего (открыто)'],
+            ['strip', 'фальшпланка до потолка'],
+            ['ant', 'антресоль']
+          ]
+        ],
+        ...(c.H > 0 ? [] : [['Зазор до потолка, мм', 'cfg.gTop', 'n', '1']]),
         ['Глубина, мм', 'cfg.D', 'n', '10']
       ]
     ],
@@ -70389,7 +70388,7 @@ function mkCasework() {
   const pts = [];
   let ask = false;
   // the height of the product: 0 — up to the ceiling (minus the gap), or a set height (remembered)
-  const H = () => mkCasework.H || 0;
+  const H = () => (mkCasework.H == null ? 2400 : mkCasework.H);
   const setH = v => {
     mkCasework.H = Math.max(0, Math.round(v) || 0);
     log('Высота шкафа: ' + (mkCasework.H ? mkCasework.H + ' мм' : 'до потолка'));
@@ -70448,7 +70447,7 @@ function mkCasework() {
         for (let i = 1; i < pts.length; i++) runs.push({ a: pts[i - 1], b: pts[i], n: kitNormal(pts[i - 1], pts[i]) });
       else return 'end';
       const e = cwCreate(runs, runs.length === 1 && pts.length === 1 ? 'niche' : 'wardrobe');
-      if (H()) e.cfg.H = H();
+      e.cfg.H = H();
       changed();
       setTimeout(() => openCasework(e.id), 50);
       return 'end';
@@ -76085,9 +76084,9 @@ function renderCasework() {
         'topFill',
         c.topFill,
         [
+          ['none', 'ничего (открыто)'],
           ['strip', 'фальшпланка до потолка'],
-          ['ant', 'антресоль (свои фасады)'],
-          ['none', 'открыто (только зазор)']
+          ['ant', 'антресоль (свои фасады)']
         ]
       )}${
         c.topFill === 'ant'
@@ -89236,6 +89235,13 @@ function xMigrate() {
   for (const k of Object.keys(dx)) if (S.x[k] == null) S.x[k] = dx[k];
 
   for (const e of S.ents) {
+    // v39.11: furniture keeps the height it was given; the old automatic filler strip to the ceiling is dropped
+    if (e.type === 'casework' && e.cfg && !e.cfg.hv) {
+      const c = e.cfg;
+      if (!(+c.H > 0)) c.H = Math.round((S.ceil || 2700) - (+c.gTop || 0));
+      if (c.topFill === 'strip') c.topFill = 'none';
+      c.hv = 1;
+    }
     if (e.type === 'door' && e.cfg && !e.cfg.entry) e.cfg.entry = defEntry();
     if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
   }
