@@ -5537,7 +5537,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '38';
+const APP_VER = '38.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -74828,17 +74828,35 @@ function renderFurnDraw() {
   $('#fdView').innerHTML =
     `<div style="background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25);width:min(100%,1300px);aspect-ratio:420/297">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
 }
+/** Extensions the claude.ai downloads capability accepts; anything else (DWG, DXF, IFC) is handed over in a ZIP. */
+const DL_OK = /\.(gif|png|jpe?g|webp|mp4|webm|mov|txt|json|md|docx|pptx|epub|csv|ttf|html|svg|pdf|xlsx|zip)$/i;
 async function fdBlobSave(name, blob) {
   if (typeof filesState.downloads !== 'undefined' && filesState.downloads) {
+    let fname = name,
+      data = blob;
+    const zipped = !DL_OK.test(name);
+    if (zipped) {
+      data = zipStore([[name, new Uint8Array(await blob.arrayBuffer())]]);
+      fname = name.replace(/\.[^.]+$/, '') + '.zip';
+    }
     try {
-      await filesState.downloads.save({ filename: name, data: blob });
-      log('Файл передан на сохранение: ' + name);
+      await filesState.downloads.save({ filename: fname, data });
+      log(
+        zipped
+          ? `Файл ${name} сохранён в архиве ${fname} — в окне Claude файлы ${name.split('.').pop().toUpperCase()} отдаются только архивом, распакуйте его`
+          : 'Файл передан на сохранение: ' + fname
+      );
       return;
     } catch (e) {
       if (e && e.code === 'declined') {
         log('Сохранение отменено');
         return;
       }
+      if (e && e.code === 'rate_limited') {
+        log('Окно сохранения уже открыто — ответьте на него и повторите', true);
+        return;
+      }
+      log(`Не удалось сохранить ${fname}${e && e.code ? ` (${e.code})` : ''}, пробую обычную загрузку браузера`, true);
     }
   }
   try {
