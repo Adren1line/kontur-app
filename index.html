@@ -5831,7 +5831,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.9';
+const APP_VER = '39.10';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -20420,7 +20420,7 @@ function fieldSet(e, k, raw) {
   if (['th', 'h', 'w', 'r', 'flow'].includes(k) && v <= 0) return;
   e[k] = v;
 }
-const openGroups = new Set(['Общее', 'Профиль и стеклопакет', 'Створки']);
+const openGroups = new Set(['Общее', 'Высоты', 'Корпус', 'Профиль и стеклопакет', 'Створки']);
 const cS = (path, opts, v) =>
   `<select data-c="${path}">${opts.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
 const cN = (path, v, step = 'any') =>
@@ -67922,7 +67922,20 @@ function kitChecks(e) {
 function kitchenPanelForm(e) {
   const L = kitLayout(e);
   const hw = kitHardware(e);
+  const c = e.cfg;
   return xGroups(e, [
+    [
+      'Высоты',
+      `низ ${c.legs + c.baseH + c.top} · верх ${c.wallZ + c.wallH} мм`,
+      [
+        ['Цоколь / опоры, мм', 'cfg.legs', 'n', '10'],
+        ['Нижние корпуса, мм', 'cfg.baseH', 'n', '10'],
+        ['Столешница, мм', 'cfg.top', 'n', '1'],
+        ['Низ навесных от пола, мм', 'cfg.wallZ', 'n', '10'],
+        ['Высота навесных, мм', 'cfg.wallH', 'n', '10'],
+        ['Глубина навесных, мм', 'cfg.wallD', 'n', '10']
+      ]
+    ],
     [
       'Кухня',
       `${e.runs.length} ${e.runs.length === 1 ? 'стена' : 'стены'} · ${e.mods.length} мод.`,
@@ -70164,6 +70177,15 @@ function cwPanelForm(e) {
   const c = e.cfg;
   const FT = cwFT(c);
   return xGroups(e, [
+    [
+      'Высоты',
+      c.H > 0 ? `${Math.round(G.zt)} мм` : `до потолка · ${Math.round(G.zt)} мм`,
+      [
+        ['Высота изделия, мм (0 — до потолка)', 'cfg.H', 'n', '10'],
+        ['Зазор до потолка, мм', 'cfg.gTop', 'n', '1'],
+        ['Глубина, мм', 'cfg.D', 'n', '10']
+      ]
+    ],
     [
       CW_PR[c.product] || 'Корпусная мебель',
       `${G.secs.length} секц. · ${Math.round(G.zt)} мм`,
