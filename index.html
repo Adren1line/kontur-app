@@ -5831,7 +5831,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.11';
+const APP_VER = '39.12';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -29646,6 +29646,9 @@ XT.pipe = {
             ...(e.lay === 'screed' && pkind(e) !== 'sewer'
               ? [['Ось трубы', `плита ${fmt(lvCur().top)} + ${fmt(e.d / 2 + insTh(e))} мм`, 'r']]
               : [['Отметка оси в начале', 'z', 'n']]),
+            ...(e.lay === 'screed' && e.pts.some(p => pipeInWallZone(p, e.d / 2 + insTh(e) + 10))
+              ? [['В стене / ГКЛ', 'штроба или короб — толщина стяжки здесь не проверяется, уровень по месту', 'r']]
+              : []),
             ...(k === 'sewer' ? [['Уклон (доля, 0,02 = 2 см/м)', 'slope', 'n', '0.001']] : []),
             ...(k !== 'sewer'
               ? [
@@ -55795,6 +55798,7 @@ function coverChecks(z) {
 
 
 
+
 /* ---------- drains (трапы): Viega Advantix Vario / Cleviva, MCH CH, квадратные точечные ---------- */
 var DRN = {
   vario: {
@@ -56143,6 +56147,22 @@ function pipeScreedZ(e, p) {
   const F = floorAt(p);
   return F.slabTop + e.d / 2 + insTh(e) + 1;
 }
+/**
+ * A point of a pipe inside a wall (chase) or a plasterboard box / lining (r — outer radius of the pipe as a margin):
+ * there the pipe is chased or boxed in and its level is set on site, the screed thickness does not matter.
+ */
+function pipeInWallZone(p, r = 0) {
+  for (const o of S.ents) {
+    let poly = null;
+    if (o.type === 'wall') {
+      const I = wallInfo(o);
+      poly = I && I.poly;
+    } else if (o.type === 'gbody') poly = o.pts;
+    if (!poly || poly.length < 3) continue;
+    if (inPoly(p, poly) || (r > 0 && distToPoly(p, poly) <= r)) return o;
+  }
+  return null;
+}
 function screedIssues(add_) {
   for (const e of S.ents) {
     if (e.type === 'floorz') {
@@ -56154,7 +56174,7 @@ function screedIssues(add_) {
       for (let i = 0; i < e.pts.length; i++) {
         const F = floorAt(e.pts[i]);
         const need = od + 15;
-        if (F.scr < need) {
+        if (F.scr < need && !pipeInWallZone(e.pts[i], od / 2 + 10)) {
           add_(
             e,
             'bad',
@@ -71995,6 +72015,7 @@ function unKeyWire(l) {
 
 
 
+
 /* ---------- pipe × pipe crossings: обвод (PPR / медь) или обход изгибом (PEX, м/пласт) ---------- */
 const PXC = { v: -1, list: [] };
 function pipeAxisZ(e, zs, i, t) {
@@ -72123,7 +72144,7 @@ function pipeCrossIssues(add_) {
       `Пересечение с трубой №${c.ot} (Ø${o.d}): ${c.flex ? 'обход изгибом' : 'обвод'} ${c.dz > 0 ? 'над' : 'под'} ней, Δ${Math.round(Math.abs(c.dz))} мм.`,
       c.p
     );
-    if (c.screed) {
+    if (c.screed && !pipeInWallZone(c.p, e.d / 2 + 10)) {
       const top = lvCur().top + (typeof scrMinAll === 'function' ? scrMinAll() : 0);
       if (c.zTop > top - 15)
         add_(
