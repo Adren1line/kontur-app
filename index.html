@@ -5831,7 +5831,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.8';
+const APP_VER = '39.9';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -10348,6 +10348,7 @@ function wallNiches(w) {
 
 
 
+
 function instHull(e) {
   const a = ASSETS.get(e.asset);
   const r = e.rot || 0;
@@ -10508,6 +10509,19 @@ function primNear(q, p) {
   const e0 = polar(q.c, q.a0, q.r),
     e1 = polar(q.c, q.a1, q.r);
   return dist(p, e0) < dist(p, e1) ? e0 : e1;
+}
+/**
+ * Picking distance of a large area element (a floor zone, a heated floor, a light calculation zone): its edge is
+ * picked like a line; inside it answers at the very edge of the pick radius, so anything else under the cursor —
+ * furniture, a dimension, a molding, a text — wins, and the area is taken only when nothing else is there.
+ */
+function areaPickDist(pts, p) {
+  if (!pts || pts.length < 3) return null;
+  const de = distToPoly(p, pts);
+  const k = (INPUT && INPUT.k) || 1;
+  if (de * view.k < 4 * k) return de;
+  // just inside the pick radius (7 px × input scale)
+  return inPoly(p, pts) ? (6.9 * k) / view.k : null;
 }
 function entDist(e, p) {
   {
@@ -53964,7 +53978,7 @@ function floorChecks(z) {
 XT.floorz = {
   layer: 'Полы',
   prims: e => closedSegs(e.pts),
-  dist: (e, p) => (inPoly(p, e.pts) ? -0.1 : null),
+  dist: (e, p) => areaPickDist(e.pts, p),
   inside: (e, p) => inPoly(p, e.pts),
   keys: e => [...e.pts.map(p => ({ p, k: 'end' })), ...closedSegs(e.pts).map(s => ({ p: mid(s.a, s.b), k: 'mid' }))],
   sample: e => e.pts,
@@ -59907,7 +59921,7 @@ XT.ufh = {
   layer: 'Тёплый пол',
   net: e => ufhK(e).net,
   prims: e => closedSegs(e.pts),
-  dist: (e, p) => (inPoly(p, e.pts) ? -0.05 : null),
+  dist: (e, p) => areaPickDist(e.pts, p),
   inside: (e, p) => inPoly(p, e.pts),
   keys: e => [...e.pts.map(p => ({ p, k: 'end' })), ...closedSegs(e.pts).map(s => ({ p: mid(s.a, s.b), k: 'mid' }))],
   sample: e => e.pts,
@@ -90847,7 +90861,7 @@ XT.lcalc = {
   layer: 'Светорасчёт',
   anno: true,
   prims: e => closedSegs(e.pts),
-  dist: (e, p) => (inPoly(p, e.pts) ? -0.2 : null),
+  dist: (e, p) => areaPickDist(e.pts, p),
   keys: e => e.pts.map(p => ({ p, k: 'end' })),
   sample: e => e.pts,
   map: (n, e, f) => {
