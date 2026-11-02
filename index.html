@@ -503,7 +503,8 @@ select {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 3;
+  /* above the view cube (4): the drop-down lists open over it */
+  z-index: 6;
   display: flex;
   gap: 2px;
   background: rgba(30, 34, 39, 0.92);
@@ -531,7 +532,7 @@ select {
   position: absolute;
   top: 52px;
   right: 10px;
-  z-index: 4;
+  z-index: 6;
   width: min(340px, calc(100% - 20px));
   max-height: calc(100% - 70px);
   overflow: auto;
@@ -569,6 +570,13 @@ select {
 #v3bar .v3menu button {
   text-align: left;
   padding: 6px 10px;
+}
+.v3cats-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12.5px;
 }
 #v3bar .sp {
   width: 1px;
@@ -5810,7 +5818,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39';
+const APP_VER = '39.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -16101,10 +16109,14 @@ function renderCats3() {
   S.x.cats3 = S.x.cats3 || {};
   const e = S.x.clip != null ? byId(S.x.clip) : null;
   p.innerHTML =
+    `<div class="v3cats-h"><b>Состав в 3D</b><button class="x" data-close aria-label="Закрыть">×</button></div>` +
     catsUI({ cats: S.x.cats3 }) +
     (e
       ? `<p class="hint" style="margin:6px 0 0">Включена подрезка по разрезу «${esc(e.name || '')}» — к этим настройкам добавляются настройки состава этого разреза из «Проектных видов».</p>`
       : '<p class="hint" style="margin:6px 0 0">Стены при фильтре показываются послойно: листы, каркас, утеплитель.</p>');
+  p.querySelector('[data-close]').onclick = () => {
+    p.hidden = true;
+  };
   bindCats(p, { cats: S.x.cats3 }, () => {
     save();
     req3();
@@ -17154,10 +17166,21 @@ function initBuild() {
       document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.remove('open'));
     }
   });
-  document.addEventListener('pointerdown', e => {
-    if (e.target.closest && e.target.closest('#v3bar')) return;
+  // closed by any press outside — caught before the view cube and the orbit control swallow the event — and by Esc
+  const closeV3Menus = () => {
     document.querySelectorAll('#v3bar .v3menu').forEach(x => (x.hidden = true));
     document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.remove('open'));
+  };
+  document.addEventListener(
+    'pointerdown',
+    e => {
+      if (e.target.closest && e.target.closest('#v3bar')) return;
+      closeV3Menus();
+    },
+    true
+  );
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeV3Menus();
   });
   $('#v3bar').addEventListener('click', e => {
     const cb = e.target.closest('button[data-a="cut"],button[data-a="cuth"]');
@@ -54803,6 +54826,90 @@ const areaA = p => {
   return a / 2;
 };
 
+/**
+ * A simple polygon ([x, y]…) as convex parts (triangulation, then neighbouring triangles merged while the result
+ * stays convex — Hertel–Mehlhorn). Sutherland–Hodgman is exact only against convex polygons: clipped by a room with
+ * an inner corner, a board kept zero-width «bridges» along the room edges, and its 3D fan crossed into the
+ * neighbouring zone.
+ */
+function convexParts(poly) {
+  const P_ = areaA(poly) < 0 ? poly.slice().reverse() : poly.slice();
+  if (P_.length <= 3) return [P_];
+  const convex = q => {
+    for (let i = 0; i < q.length; i++) {
+      const a = P_[q[i]],
+        b = P_[q[(i + 1) % q.length]],
+        c = P_[q[(i + 2) % q.length]];
+      if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) < -1e-6) return false;
+    }
+    return true;
+  };
+  if (convex(P_.map((_, i) => i))) return [P_];
+  let parts = triPolyXY(P_).map(t => (areaA(t.map(i => P_[i])) < 0 ? t.slice().reverse() : t.slice()));
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < parts.length && !merged; i++)
+      for (let j = i + 1; j < parts.length && !merged; j++) {
+        const A = parts[i],
+          B = parts[j];
+        // a shared edge: A has u→v, B has v→u
+        for (let a = 0; a < A.length && !merged; a++) {
+          const u = A[a],
+            v = A[(a + 1) % A.length];
+          const b = B.findIndex((x, k) => x === v && B[(k + 1) % B.length] === u);
+          if (b < 0) continue;
+          const q = [];
+          for (let k = 0; k < A.length; k++) {
+            q.push(A[(a + 1 + k) % A.length]);
+            if (k === A.length - 1) break;
+          }
+          // q runs v … u around A; continue around B from u (skipping u, v)
+          for (let k = 2; k < B.length; k++) q.push(B[(b + k) % B.length]);
+          if (convex(q)) {
+            parts[i] = q;
+            parts.splice(j, 1);
+            merged = true;
+          }
+        }
+      }
+  }
+  return parts.map(q => q.map(i => P_[i]));
+}
+/** Fragments of one piece (convex, CCW) that share an edge are joined back into one outline. */
+function mergeFrags(frags) {
+  const eq = (p, q) => Math.abs(p[0] - q[0]) < 0.05 && Math.abs(p[1] - q[1]) < 0.05;
+  let F = frags.map(f => f.slice());
+  let again = true;
+  while (again && F.length > 1) {
+    again = false;
+    for (let i = 0; i < F.length && !again; i++)
+      for (let j = i + 1; j < F.length && !again; j++) {
+        const A = F[i],
+          B = F[j];
+        for (let a = 0; a < A.length && !again; a++) {
+          const u = A[a],
+            v = A[(a + 1) % A.length];
+          const b = B.findIndex((x, k) => eq(x, v) && eq(B[(k + 1) % B.length], u));
+          if (b < 0) continue;
+          const q = [];
+          for (let k = 0; k < A.length; k++) q.push(A[(a + 1 + k) % A.length]);
+          for (let k = 2; k < B.length; k++) q.push(B[(b + k) % B.length]);
+          // drop collinear points left on the old seam
+          const r = q.filter((p, k) => {
+            const o = q[(k - 1 + q.length) % q.length],
+              n = q[(k + 1) % q.length];
+            return Math.abs((p[0] - o[0]) * (n[1] - p[1]) - (p[1] - o[1]) * (n[0] - p[0])) > 1e-3;
+          });
+          F[i] = r.length >= 3 ? r : q;
+          F.splice(j, 1);
+          again = true;
+        }
+      }
+  }
+  return F;
+}
+
 /* ---------- door transitions: the covering runs into the opening ---------- */
 /** Openings next to the zone: [{ o (door / opening), rect (world, CCW), side, depth, pos, kind, len }]. */
 function coverTrans(z, c = coverCfg(z)) {
@@ -54837,15 +54944,38 @@ const COVC = new Map();
 let COVV = -1;
 /** Layout of the covering: pieces in world coordinates with counts. */
 function coverLayout(z) {
+  // the layout depends only on the zone, its covering, the doors next to it and the cutters in it: an edit
+  // elsewhere (moving a sofa, drawing a wall far away) keeps it — it used to be rebuilt on every change
+  let key = null;
   if (COVV !== documentState.docVer) {
-    COVC.clear();
     COVV = documentState.docVer;
+    for (const [id, v] of COVC) v.fresh = false;
   }
-  if (COVC.has(z.id)) return COVC.get(z.id);
+  const hit = COVC.get(z.id);
+  if (hit && hit.fresh) return hit.R;
+  try {
+    const cc = coverCfg(z);
+    key = JSON.stringify([
+      z.pts,
+      cc,
+      cc.on && cc.mat !== 'carpet' ? coverTrans(z, cc).map(t => [t.o.id, t.rect, t.depth]) : 0,
+      cuttersIn(z.pts, 'floor').map(k => k.q)
+    ]);
+  } catch (err) {
+    key = null;
+  }
+  if (hit && key && hit.key === key) {
+    hit.fresh = true;
+    return hit.R;
+  }
+  const R0 = coverLayout0(z);
+  COVC.set(z.id, { R: R0, key, fresh: true });
+  return R0;
+}
+function coverLayout0(z) {
   const c = coverCfg(z);
   const R = { c, pieces: [], full: 0, cut: 0, area: 0, used: 0, trans: [], ang: 0, O: null };
   if (!c.on || c.mat === 'carpet' || !z.pts || z.pts.length < 3) {
-    COVC.set(z.id, R);
     return R;
   }
   const poly = z.pts;
@@ -54895,10 +55025,33 @@ function coverLayout(z) {
   const { w, l } = coverSize(c);
   if (((x1 - x0) * (y1 - y0)) / (w * l) > 60000) {
     R.tooMany = true;
-    COVC.set(z.id, R);
     return R;
   }
   const PC = coverPieces(c, { x0, x1, y0, y1 });
+  // convex parts of the zone and of the door extensions, each with its box
+  const parts = regions.flatMap(rg =>
+    convexParts(rg).map(q => {
+      let a = 1e18,
+        b = 1e18,
+        cx = -1e18,
+        d = -1e18;
+      for (const [x, y] of q) {
+        a = Math.min(a, x);
+        b = Math.min(b, y);
+        cx = Math.max(cx, x);
+        d = Math.max(d, y);
+      }
+      return { q, x0: a, y0: b, x1: cx, y1: d };
+    })
+  );
+  const insideP = (q, p) => {
+    for (let i = 0; i < q.length; i++) {
+      const a = q[i],
+        b = q[(i + 1) % q.length];
+      if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) < -1e-7) return false;
+    }
+    return true;
+  };
   const toW = ([x, y]) => P(O.x + x * ca - y * sa, O.y + x * sa + y * ca);
   for (const pc of PC) {
     const A0 = areaA(pc.p);
@@ -54914,10 +55067,26 @@ function coverLayout(z) {
       by1 = Math.max(by1, y);
     }
     if (bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1) continue;
+    // fast path: the whole piece lies in one convex part
+    let whole = false;
+    for (const pt of parts)
+      if (bx0 >= pt.x0 && bx1 <= pt.x1 && by0 >= pt.y0 && by1 <= pt.y1 && pc.p.every(v => insideP(pt.q, v))) {
+        whole = true;
+        break;
+      }
+    let frags;
+    if (whole) frags = [pc.p];
+    else {
+      frags = [];
+      for (const pt of parts) {
+        if (bx1 < pt.x0 || bx0 > pt.x1 || by1 < pt.y0 || by0 > pt.y1) continue;
+        const q = clipConvex(pt.q, pc.p);
+        if (q.length >= 3 && Math.abs(areaA(q)) >= 1) frags.push(areaA(q) < 0 ? q.reverse() : q);
+      }
+      if (frags.length > 1) frags = mergeFrags(frags);
+    }
     let used = false;
-    for (const rg of regions) {
-      const q = clipConvex(rg, pc.p);
-      if (q.length < 3) continue;
+    for (const q of frags) {
       const A = Math.abs(areaA(q));
       if (A < 50) continue;
       const full = A > A0 * 0.995;
@@ -54958,7 +55127,6 @@ function coverLayout(z) {
   }
   R.ang = ang;
   R.O = O;
-  COVC.set(z.id, R);
   return R;
 }
 /** Summary: areas, waste, packs, glue / grout, plywood. */
@@ -55006,7 +55174,48 @@ function drawCover(z, ghost) {
   }
   ctx.fillStyle = hexA(c.col, 0.16);
   ctx.fill();
-  if (px > 2.5) {
+  if (px > 2.5 && typeof Path2D !== 'undefined' && ctx.transform) {
+    // all pieces as world-space paths built once per layout: one stroke and a few fills per frame instead of a path
+    // per board (a herringbone room is thousands of boards)
+    if (!R.p2d) {
+      const all = new Path2D(),
+        fills = new Map();
+      const add2 = (path, pts) => {
+        pts.forEach((p, k) => (k ? path.lineTo(p.x, p.y) : path.moveTo(p.x, p.y)));
+        path.closePath();
+      };
+      let i = 0;
+      for (const pc of R.pieces) {
+        i++;
+        add2(all, pc.pts);
+        let fs = null;
+        if (pc.sh || c.pat === 'checker') fs = 'sh' + (pc.sh === 2 ? 2 : 1);
+        else if (M.wood) fs = 'w' + (i % 8);
+        if (fs) {
+          if (!fills.has(fs)) fills.set(fs, new Path2D());
+          add2(fills.get(fs), pc.pts);
+        }
+      }
+      R.p2d = { all, fills };
+    }
+    const o = w2s(P(0, 0));
+    ctx.save();
+    ctx.transform(view.k, 0, 0, -view.k, o.x, o.y);
+    for (const [k, path] of R.p2d.fills) {
+      if (k[0] === 'w' && px <= 6) continue;
+      ctx.fillStyle =
+        k === 'sh2'
+          ? hexA(fcShade(c.col, 0.55), 0.28)
+          : k === 'sh1'
+            ? hexA(c.col2, 0.28)
+            : hexA(colVar(c.col, +k.slice(1) + 1, 0.12), 0.12);
+      ctx.fill(path);
+    }
+    ctx.lineWidth = 0.6 / view.k;
+    ctx.strokeStyle = hexA(M.wood ? '#6b4f33' : '#8b8f94', (px > 8 ? 0.55 : 0.32) * (CANV_LIGHT ? 0.55 : 1));
+    ctx.stroke(R.p2d.all);
+    ctx.restore();
+  } else if (px > 2.5) {
     ctx.lineWidth = 0.6;
     ctx.strokeStyle = hexA(M.wood ? '#6b4f33' : '#8b8f94', (px > 8 ? 0.55 : 0.32) * (CANV_LIGHT ? 0.55 : 1));
     let i = 0;
@@ -55090,13 +55299,23 @@ function coverMesh(z, mb, f) {
         : pc.sh === 1 && (c.pat === 'checker' || c.pat === 'rhomb' || pc.ins)
           ? c.col2
           : M.wood
-            ? colVar(c.col, i, 0.09)
-            : colVar(c.col, i, 0.025);
+            ? colVar(c.col, i % 12, 0.09)
+            : colVar(c.col, i % 6, 0.025);
     const z0 = (x, y) => f(x, y);
-    for (let k = 1; k + 1 < q.length; k++) {
-      const a = q[0],
-        b = q[k],
-        d = q[k + 1];
+    // a cut piece can be non-convex (an inner corner of the room): real triangulation, not a fan
+    const tris =
+      q.length === 3
+        ? [[0, 1, 2]]
+        : q.length === 4 && pc.full
+          ? [
+              [0, 1, 2],
+              [0, 2, 3]
+            ]
+          : triPolyXY(q);
+    for (const [ia, ib, id] of tris) {
+      const a = q[ia],
+        b = q[ib],
+        d = q[id];
       mb.tri3(col, [a[0], a[1], z0(a[0], a[1])], [b[0], b[1], z0(b[0], b[1])], [d[0], d[1], z0(d[0], d[1])]);
     }
   }
@@ -92466,12 +92685,16 @@ function xBoot() {
       $('#bModes').classList.remove('open');
       setTimeout(sync, 0);
     });
-    document.addEventListener('pointerdown', ev => {
-      if (!pop.hidden && !(ev.target.closest && (ev.target.closest('#hModes') || pop.contains(ev.target)))) {
-        pop.hidden = true;
-        $('#bModes').classList.remove('open');
-      }
-    });
+    document.addEventListener(
+      'pointerdown',
+      ev => {
+        if (!pop.hidden && !(ev.target.closest && (ev.target.closest('#hModes') || pop.contains(ev.target)))) {
+          pop.hidden = true;
+          $('#bModes').classList.remove('open');
+        }
+      },
+      true
+    );
     new MutationObserver(sync).observe(pop, { subtree: true, attributes: true, attributeFilter: ['class'] });
   }
   $('#bIss').onclick = () => showTab('iss');
