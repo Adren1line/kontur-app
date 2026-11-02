@@ -5818,7 +5818,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.1';
+const APP_VER = '39.2';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -11585,6 +11585,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -12552,29 +12553,61 @@ function mkOpening(kind) {
     }
   };
 }
-function mkSlab() {
+function mkSlab(top) {
   const pts = [];
   let picking = false,
-    room = false;
+    room = !!top;
   const mk = pp => {
-    // the slab of the level: its top at the level's slab top, its thickness from the level settings
+    // the slab of the level: its top at the level's slab top, its thickness from the level settings;
+    // a ceiling slab (top): over the level, its bottom where the floor slab of the level above would be
     const lv = typeof lvCur === 'function' ? lvCur() : null;
     const th = (lv && lv.slab) || 200;
-    const e = addEnt({ type: 'slab', pts: pp, th, z: lv ? lv.top : 0, layer: ensureLayer('Перекрытия') });
+    let z = lv ? lv.top : 0;
+    if (top) {
+      const t = ceilSlabTop(pp);
+      if (t.dup) {
+        log(
+          `Над этим местом уже есть плита этажа «${t.dup.n}». В 3D её видно, когда показаны этажи выше: меню этажа → «3D: все этажи»`,
+          true
+        );
+        return 'end';
+      }
+      z = t.z;
+    }
+    const e = addEnt({
+      type: 'slab',
+      pts: pp,
+      th,
+      z,
+      ...(top ? { role: 'ceil', name: 'Плита потолка' } : {}),
+      layer: ensureLayer('Перекрытия')
+    });
     const o = slabOutline(e);
-    if (o !== e.pts) log('Перекрытие доведено до наружных граней стен — опирается на стены по их толщине');
+    if (top) log(`Плита потолка: низ на отметке ${Math.round(z - th)} мм от пола этажа, толщина ${th} мм`);
+    else if (o !== e.pts) log('Перекрытие доведено до наружных граней стен — опирается на стены по их толщине');
     return 'end';
   };
+  // over / under the whole level: along the outer faces of its walls
+  const levelSlab = () => {
+    const fp = wallsFootprint();
+    if (!fp || fp.length < 3) {
+      log('Не нашёл замкнутого контура стен этажа — обведите плиту точками', true);
+      return 'end';
+    }
+    return mk(fp.map(p => P(Math.round(p.x), Math.round(p.y))));
+  };
   return {
-    name: 'slab',
+    name: top ? 'ceilslab' : 'slab',
     base: () => pts[pts.length - 1],
     prompt: () =>
       picking
         ? 'Выберите замкнутую полилинию:'
         : room
-          ? 'Щелчок внутри помещения — перекрытие по его контуру, до наружных граней стен:'
+          ? top
+            ? 'Плита потолка: щелчок в помещении — над ним, Enter — над всем этажом, или [Контур/Объект]:'
+            : 'Щелчок внутри помещения — перекрытие по его контуру, до наружных граней стен:'
           : !pts.length
-            ? 'Первая точка контура перекрытия или [Объект/Помещение]:'
+            ? `Первая точка контура ${top ? 'плиты потолка' : 'перекрытия'} или [Объект/Помещение${top ? '/Этаж' : ''}]:`
             : pts.length < 3
               ? 'Следующая точка:'
               : 'Следующая точка или Enter — замкнуть:',
@@ -12596,16 +12629,23 @@ function mkSlab() {
     onInput(s) {
       if (!pts.length && kw(s, 'о', 'объект', 'o')) {
         picking = true;
+        room = false;
         return true;
       }
       if (!pts.length && kw(s, 'п', 'помещение', 'r')) {
         room = true;
         return true;
       }
+      if (!pts.length && kw(s, 'к', 'контур', 'c')) {
+        room = false;
+        return true;
+      }
+      if (!pts.length && kw(s, 'э', 'этаж', 'l')) return levelSlab();
       return false;
     },
     onEnter() {
       if (pts.length >= 3) return mk(pts.slice());
+      if (top && !pts.length) return levelSlab();
       return 'end';
     },
     preview(cur) {
@@ -12692,7 +12732,12 @@ const CMDS = {
   door: { t: 'ДВЕРЬ', m: () => mkOpening('door'), a: ['dr', 'door', 'дв', 'дверь'] },
   window: { t: 'ОКНО', m: () => mkOpening('window'), a: ['win', 'window', 'ок', 'окно'] },
   vitrage: { t: 'ВИТРАЖ', m: () => mkOpening('vitrage'), a: ['vitrage', 'curtainwall', 'витраж'] },
-  slab: { t: 'ПЕРЕКРЫТИЕ', m: mkSlab, a: ['sl', 'slab', 'перекр', 'перекрытие', 'плита'] },
+  slab: { t: 'ПЕРЕКРЫТИЕ', m: () => mkSlab(false), a: ['sl', 'slab', 'перекр', 'перекрытие', 'плита'] },
+  ceilslab: {
+    t: 'ПЛИТАПОТОЛКА',
+    m: () => mkSlab(true),
+    a: ['ceilslab', 'плитапотолка', 'плита потолка', 'перекрытие сверху', 'потолочная плита']
+  },
   catalog: {
     t: 'КАТАЛОГ',
     m: () => {
@@ -15797,6 +15842,7 @@ function cutPlan() {
   dx /= l || 1;
   dy /= l || 1;
   const sd = p => (p.x - T.x) * dx + (p.y - T.y) * dy;
+  const lvz = S.x.lv ? lvCur().z || 0 : 0;
   for (const e of S.ents) {
     if (e.type === 'wall' || e.type === 'col') {
       const h = e.h || S.ceil || 2700;
@@ -15826,8 +15872,12 @@ function cutPlan() {
         } else cut = sd(e.p) < -150;
       }
       if (cut) res.set(e.id, C.h / h);
-    } else if (e.type === 'ceil') res.set(e.id, 'hide');
-    else if (e.type === 'slab' && (+e.z || 0) >= (S.ceil || 2700) - 60) res.set(e.id, 'hide');
+    } else if (e.type === 'ceil') {
+      // ceilings and ceiling slabs hide only while the camera looks from above them; from inside a room they stay
+      if (cam.z > lvz + (+e.z || 0)) res.set(e.id, 'hide');
+    } else if (e.type === 'slab' && (+e.z || 0) >= (S.ceil || 2700) - 60) {
+      if (cam.z > lvz + (+e.z || 0) - (+e.th || 200)) res.set(e.id, 'hide');
+    }
   }
   for (const e of S.ents)
     if (
@@ -19243,6 +19293,7 @@ const TOOL_SVG = {
   window:
     '<path d="M1.5 6.5h4.5M14 6.5h4.5M1.5 13.5h4.5M14 13.5h4.5M6 6.5v7M14 6.5v7"/><path class="t" d="M6 9.3h8M6 10.7h8"/>',
   slab: '<path d="M2 11l8-5 8 5-8 5z"/><path d="M2 11v2.4l8 5 8-5V11"/>',
+  ceilslab: '<path d="M2 6l8-4 8 4-8 4z"/><path d="M2 6v2.2l8 4 8-4V6"/><path d="M6 15h8M10 12.5v5" class="t"/>',
   socket: '<path d="M4.5 13.5a5.5 5.5 0 0 1 11 0"/><path d="M2.5 13.5h15M10 8V3.5M7 3.5h6"/>',
   switch: '<circle cx="8" cy="12.5" r="2.2"/><path d="M9.6 10.9l5-5M14.6 5.9l2 2"/><path d="M2.5 17h15"/>',
   light: '<circle cx="10" cy="10" r="6"/><path d="M5.8 5.8l8.4 8.4M14.2 5.8l-8.4 8.4"/>',
@@ -19269,6 +19320,7 @@ const TOOLS = [
   ['door', 'Дверь · ДВЕРЬ / DR'],
   ['window', 'Окно · ОКНО / WIN'],
   ['slab', 'Перекрытие · ПЕРЕКР / SL'],
+  ['ceilslab', 'Плита потолка над этажом · ПЛИТАПОТОЛКА'],
   ['catalog', 'Вставить из каталога · I'],
   'ИНЖ',
   ['socket', 'Розетка · РОЗ'],
@@ -23179,6 +23231,7 @@ const WS = [
       'vitrage',
       'portal',
       'slab',
+      'ceilslab',
       'ceil',
       'gbody',
       '|',
@@ -23239,6 +23292,7 @@ const WS = [
       'molding',
       'curtain',
       'ceil',
+      'ceilslab',
       'fix',
       'towel',
       'washer',
@@ -23302,6 +23356,8 @@ const CMDHELP = {
   door: 'Дверь: щёлкните по стене. Тип (обычная/скрытая/входная) — в свойствах.',
   window: 'Окно: щёлкните по стене.',
   slab: 'Перекрытие: контур точками или [Объект] — замкнутая полилиния.',
+  ceilslab:
+    'Плита потолка над этажом: щелчок в помещении — над ним, Enter — над всем этажом по наружным граням стен. Низ плиты — там, где была бы плита этажа выше; наружные стены доходят до неё.',
   ceil: 'Потолок: контур точками или [Объект]; [Гкл]/[Натяжной]/[Плита] — тип. Высота низа — в свойствах.',
   col: 'Колонна: точка центра. [Размер] — ширина×глубина или Ø, [Поворот].',
   beam: 'Ригель: две точки по оси, сечение и отметка — в свойствах.',
@@ -83173,23 +83229,37 @@ function odAxis(e) {
 
 
 
+
+
 /* ---------- commands for the new elements ---------- */
 function polyCmd(name, label, mk, opts = {}) {
   const pts = [];
-  let picking = false;
+  let picking = false,
+    room = false;
   return {
     name,
     base: () => pts[pts.length - 1],
     prompt: () =>
       picking
         ? 'Выберите замкнутую полилинию:'
-        : (opts.prompt ? opts.prompt(pts) : '') ||
-          (!pts.length
-            ? `Первая точка контура (${label}) или [Объект${opts.kw ? '/' + opts.kw : ''}]:`
-            : pts.length < 3
-              ? 'Следующая точка:'
-              : 'Следующая точка или Enter — замкнуть:'),
+        : room
+          ? `Щелчок внутри помещения — ${label} по его контуру:`
+          : (opts.prompt ? opts.prompt(pts) : '') ||
+            (!pts.length
+              ? `Первая точка контура (${label}) или [Объект${opts.kw ? '/' + opts.kw : ''}]:`
+              : pts.length < 3
+                ? 'Следующая точка:'
+                : 'Следующая точка или Enter — замкнуть:'),
     onPoint(p) {
+      if (room) {
+        const poly = roomPolyAt(p);
+        if (poly && poly.length > 2) {
+          mk(poly.map(q => P(q.x, q.y)));
+          return 'end';
+        }
+        log('Здесь нет замкнутого помещения', true);
+        return;
+      }
       if (picking) {
         const e = pickAt(p, x => x.type === 'pline' && x.closed);
         if (e) {
@@ -83204,6 +83274,10 @@ function polyCmd(name, label, mk, opts = {}) {
     onInput(s) {
       if (!pts.length && kw(s, 'о', 'объект', 'o')) {
         picking = true;
+        return true;
+      }
+      if (!pts.length && kw(s, 'к', 'комната', 'помещение', 'room')) {
+        room = true;
         return true;
       }
       if (opts.onInput) return opts.onInput(s);
@@ -83225,7 +83299,30 @@ function polyCmd(name, label, mk, opts = {}) {
 }
 function mkCeil() {
   let kind = mkCeil.k || 'gkl';
-  const mk = pp =>
+  const mk = pp => {
+    // a ceiling «по плите» needs the slab itself: when there is none over the room (top level), it is added
+    if (kind === 'slab') {
+      const t = ceilSlabTop(pp);
+      const lv = lvCur();
+      if (!t.dup && !S.ents.some(x => x.type === 'slab' && x.role === 'ceil' && inPoly(polyCentroid(pp), x.pts))) {
+        addEnt({
+          type: 'slab',
+          pts: pp.map(p => P(p.x, p.y)),
+          th: lv.slab || 200,
+          z: t.z,
+          role: 'ceil',
+          name: 'Плита потолка',
+          layer: ensureLayer('Перекрытия')
+        });
+        log('Над потолком не было плиты — добавлена плита перекрытия (её контур доведён до наружных граней стен)');
+      }
+    }
+    const c = addCeil(pp);
+    // painted ceiling: on the bottom of the slab (it was left at the room height, under the slab)
+    if (kind === 'slab') c.z = Math.round(ceilSlabTop(pp).bot);
+    return c;
+  };
+  const addCeil = pp =>
     addEnt({
       type: 'ceil',
       kind,
@@ -83244,7 +83341,7 @@ function mkCeil() {
     });
   const c = polyCmd('ceil', 'потолок', mk, {
     kw: 'Гкл/Натяжной/Плита',
-    prompt: p => (!p.length ? `Контур потолка · ${CEILK[kind]} · точка или [Объект/Гкл/Натяжной/Плита]:` : ''),
+    prompt: p => (!p.length ? `Контур потолка · ${CEILK[kind]} · точка или [Комната/Объект/Гкл/Натяжной/Плита]:` : ''),
     onInput(s) {
       if (kw(s, 'г', 'гкл', 'gkl')) {
         kind = mkCeil.k = 'gkl';
@@ -90018,6 +90115,23 @@ function secondLight(ws) {
   );
 }
 
+/**
+ * Where a ceiling slab over the current level goes: its top (relative to the level floor) at the floor slab top
+ * of the level above (or the level's own floor build-up, if it is the top level). dup — the level above already
+ * has a slab over that place.
+ */
+function ceilSlabTop(pts) {
+  const lv = lvCur(),
+    up = lvAbove(lv);
+  const z = (lv.h || 3000) + (up ? up.top || 0 : lv.top || 0);
+  if (up && pts && pts.length > 2) {
+    const c = polyCentroid(pts);
+    const s = lvArr(up.id).find(e => e.type === 'slab' && e.pts && e.pts.length > 2 && inPoly(c, e.pts));
+    if (s) return { dup: up, z: up.z - lv.z + (+s.z || 0), bot: up.z - lv.z + (+s.z || 0) - (+s.th || 200) };
+  }
+  return { z, bot: z - (lv.slab || 200) };
+}
+
 // ===== mep/electrical/photometry.js =====
 /**
  * mep/electrical/photometry.js
@@ -94619,8 +94733,14 @@ function wallTie(e) {
       .sort((a, b) => a.z - b.z);
     const i = s.findIndex(l => l.id === lv.id);
     const up = i >= 0 ? s[i + 1] : null;
-    if (up) {
-      const slabBot = up.z - lv.z + (up.top || 0) - (up.slab || 200);
+    // the slab over the wall: the floor slab of the level above, or a ceiling slab of this level
+    let slabBot = null;
+    if (up) slabBot = up.z - lv.z + (up.top || 0) - (up.slab || 200);
+    else {
+      const cs = S.ents.find(x => x.type === 'slab' && x.role === 'ceil' && x.pts && x.pts.length > 2);
+      if (cs) slabBot = (+cs.z || 0) - (+cs.th || 200);
+    }
+    if (slabBot != null) {
       const top = z + e.h;
       if (top < slabBot && slabBot - top < 600) above = slabBot - top;
     }
