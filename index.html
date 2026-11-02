@@ -5818,7 +5818,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.3';
+const APP_VER = '39.4';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -10845,6 +10845,8 @@ function changed() {
     structGuard(documentState.undoS[documentState.undoS.length - 1]);
     log(clash, true);
   }
+  // fix-ups after an edit (free wall ends joined to the walls they touch, …)
+  if (uiHooks.afterEdit) uiHooks.afterEdit();
   if (uiHooks.onChanged) uiHooks.onChanged();
   documentState.docVer++;
   save();
@@ -94481,6 +94483,35 @@ function autoJoinWalls(ws) {
     }
   return n;
 }
+/**
+ * After every edit: free ends of the walls of the level that stop at another wall (drawn separately, moved by a
+ * grip, imported) are joined. Ends already on an axis end and ends far from walls are left as they are.
+ */
+function autoJoinAfterEdit() {
+  const ws = S.ents.filter(e => e.type === 'wall');
+  if (ws.length < 2 || ws.length > 1500) return;
+  for (const w of ws)
+    for (const k of ['a', 'b']) {
+      // quick reject: no other wall within reach of this end
+      const p = w[k];
+      let near = false;
+      for (const o of ws) {
+        if (o === w) continue;
+        const r = (w.th + o.th) / 2 + 80;
+        if (
+          p.x >= Math.min(o.a.x, o.b.x) - r &&
+          p.x <= Math.max(o.a.x, o.b.x) + r &&
+          p.y >= Math.min(o.a.y, o.b.y) - r &&
+          p.y <= Math.max(o.a.y, o.b.y) + r
+        ) {
+          near = true;
+          break;
+        }
+      }
+      if (near) autoJoinEnd(w, k);
+    }
+}
+uiHooks.afterEdit = autoJoinAfterEdit;
 /** Command «Состыковать стены»: the selected walls, or all walls of the level. */
 function joinWallsCmd() {
   const sel = S.ents.filter(e => S.sel.has(e.id) && e.type === 'wall');
