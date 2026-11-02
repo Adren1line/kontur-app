@@ -3436,6 +3436,19 @@ label.ck {
   }
 }
 
+/* modes of the running command over the plan (fill / contour …) */
+#cmdBar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+#cmdBar[hidden] {
+  display: none;
+}
+
 /*
  * Скин «Калька». Интерфейс как чертёжный лист на кульмане: холодная калька, синие чернила, две толщины линий по
  * ГОСТ 2.303 — основная (2 px, чернила) для рамок и активного состояния, тонкая (1 px) для деления на ячейки.
@@ -5818,7 +5831,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.6';
+const APP_VER = '39.7';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12654,6 +12667,17 @@ function mkSlab(top) {
   };
   return {
     name: top ? 'ceilslab' : 'slab',
+    bar: () =>
+      pts.length
+        ? null
+        : [
+            { n: 'Помещение', on: room, a: () => ((room = true), (picking = false)), t: 'Щелчок внутри помещения' },
+            { n: 'Контур', on: !room && !picking, a: () => ((room = false), (picking = false)), t: 'По точкам' },
+            { n: 'Полилиния', on: picking, a: () => ((picking = true), (room = false)), t: 'Замкнутая полилиния' },
+            ...(top
+              ? [{ n: 'Весь этаж', on: false, a: () => finishIf(levelSlab()), t: 'По наружным граням стен этажа' }]
+              : [])
+          ],
     base: () => pts[pts.length - 1],
     prompt: () =>
       picking
@@ -13037,7 +13061,40 @@ function promptText() {
     return commandsState.tmp.pts.length ? 'Вторая точка для середины:' : 'Первая точка для середины:';
   return commandsState.cmd.prompt();
 }
+/** Buttons of the running command (cmd.bar(): [{n, on, a, t}]) over the drawing — modes like fill / contour. */
+function renderCmdBar() {
+  if (typeof document === 'undefined' || !document.createElement || typeof document.getElementById !== 'function')
+    return;
+  let bar = document.getElementById('cmdBar');
+  const items = commandsState.cmd && commandsState.cmd.bar ? commandsState.cmd.bar() : null;
+  if (!items || !items.length) {
+    if (bar) bar.hidden = true;
+    return;
+  }
+  if (!bar) {
+    const host = document.getElementById('pw') || document.body;
+    if (!host || !host.appendChild) return;
+    bar = document.createElement('div');
+    bar.id = 'cmdBar';
+    bar.className = 'seg';
+    host.appendChild(bar);
+    bar.addEventListener('click', ev => {
+      const b = ev.target.closest('button');
+      const its = commandsState.cmd && commandsState.cmd.bar ? commandsState.cmd.bar() : [];
+      if (b && its[+b.dataset.i]) {
+        its[+b.dataset.i].a();
+        refreshPrompt();
+        cin.focus({ preventScroll: true });
+      }
+    });
+  }
+  bar.hidden = false;
+  bar.innerHTML = items
+    .map((x, i) => `<button data-i="${i}" class="${x.on ? 'on' : ''}" title="${esc(x.t || '')}">${esc(x.n)}</button>`)
+    .join('');
+}
 function refreshPrompt() {
+  renderCmdBar();
   const t = promptText();
   $('#prompt').innerHTML =
     (commandsState.ovr ? `<span class="ovr">[${OSN[commandsState.ovr]}]</span> ` : '') +
@@ -54199,14 +54256,48 @@ XT.floorz = {
 function mkFloorZ() {
   const pts = [];
   let pre = mkFloorZ.pre || 'tile';
+  // fill: a click inside a room takes its outline; contour: every click is a point of the outline
+  const mode = () => mkFloorZ.mode || 'fill';
+  const setMode = m => {
+    mkFloorZ.mode = m;
+    log(
+      m === 'contour'
+        ? 'Пол: контур по точкам — щёлкайте углы, Enter — замкнуть'
+        : 'Пол: заполнение — щелчок внутри помещения'
+    );
+  };
   return {
     name: 'floorz',
+    bar: () => [
+      {
+        n: 'Заполнение',
+        on: mode() === 'fill' && !pts.length,
+        a: () => setMode('fill'),
+        t: 'Щелчок внутри помещения — пол по его контуру'
+      },
+      {
+        n: 'Контур',
+        on: mode() === 'contour' || pts.length > 0,
+        a: () => setMode('contour'),
+        t: 'Пол по точкам: углы контура, Enter — замкнуть'
+      }
+    ],
     base: () => pts[pts.length - 1] || null,
     prompt: () =>
       pts.length
-        ? `Контур пола: следующая точка или Enter`
-        : `Пол (${FLPRE[pre][0]}, проёмы: ${(uiHooks.zoneOps || {})[mkFloorZ.op || 'wall'] || 'по грани стены'}): щёлкните внутри помещения или первая точка контура [Плитка/Мокрая/Ламинат/Доска/Винил/Плавающая/Тёплый/Проёмы]:`,
+        ? `Контур пола: следующая точка или Enter — замкнуть`
+        : mode() === 'contour'
+          ? `Пол (${FLPRE[pre][0]}) контуром: первая точка [Заполнение/Плитка/Мокрая/Ламинат/Доска/Винил/Плавающая/Тёплый]:`
+          : `Пол (${FLPRE[pre][0]}, проёмы: ${(uiHooks.zoneOps || {})[mkFloorZ.op || 'wall'] || 'по грани стены'}): щёлкните внутри помещения [Контур/Плитка/Мокрая/Ламинат/Доска/Винил/Плавающая/Тёплый/Проёмы]:`,
     onInput(s) {
+      if (/^(контур|к|contour)$/i.test(s.trim())) {
+        setMode('contour');
+        return true;
+      }
+      if (/^(заполнение|з|fill)$/i.test(s.trim())) {
+        setMode('fill');
+        return true;
+      }
       if (/^(проёмы|проемы|пр|op)$/i.test(s.trim())) {
         const ks = Object.keys(uiHooks.zoneOps || { wall: 1 });
         mkFloorZ.op = ks[(ks.indexOf(mkFloorZ.op || 'wall') + 1) % ks.length];
@@ -54230,7 +54321,7 @@ function mkFloorZ() {
       return false;
     },
     onPoint(p) {
-      if (!pts.length) {
+      if (!pts.length && mode() === 'fill') {
         let poly =
           mkFloorZ.op && mkFloorZ.op !== 'wall' && uiHooks.zoneOutlineAt
             ? uiHooks.zoneOutlineAt(p, mkFloorZ.op)
@@ -54244,6 +54335,7 @@ function mkFloorZ() {
           addFloorZ(poly, pre, p);
           return 'end';
         }
+        log('Здесь нет замкнутого помещения — рисую контур по точкам (или выберите «Контур»)');
       }
       pts.push(p);
     },
@@ -83372,6 +83464,14 @@ function polyCmd(name, label, mk, opts = {}) {
     room = false;
   return {
     name,
+    bar: () =>
+      pts.length
+        ? null
+        : [
+            { n: 'Контур', on: !room && !picking, a: () => ((room = false), (picking = false)), t: 'По точкам' },
+            { n: 'Комната', on: room, a: () => ((room = true), (picking = false)), t: 'Щелчок внутри помещения' },
+            { n: 'Полилиния', on: picking, a: () => ((picking = true), (room = false)), t: 'Замкнутая полилиния' }
+          ],
     base: () => pts[pts.length - 1],
     prompt: () =>
       picking
