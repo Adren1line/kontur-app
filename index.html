@@ -194,6 +194,46 @@ select {
   background: var(--panel2);
   color: var(--fg);
 }
+.hgrp {
+  position: relative;
+  display: flex;
+}
+.hgrp .hpop,
+.hgrp-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+.hgrp-pop[hidden],
+.hgrp .hpop[hidden] {
+  display: none;
+}
+.hgrp-pop button {
+  padding: 7px 12px;
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  justify-content: flex-start;
+}
+.hgrp-pop button:hover {
+  background: var(--panel2);
+}
+.hgrp-pop button.on {
+  color: var(--accent);
+}
+#bModes.on::after {
+  content: ' ●';
+  color: var(--accent);
+}
 .hmenu .pri {
   color: var(--accent);
 }
@@ -499,6 +539,36 @@ select {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
+}
+#v3bar .v3grp {
+  position: relative;
+  display: flex;
+}
+#v3bar .v3g.open {
+  color: var(--fg);
+  background: var(--panel2);
+}
+#v3bar .v3menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 170px;
+  padding: 4px;
+  background: rgba(30, 34, 39, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+#v3bar .v3menu[hidden] {
+  display: none;
+}
+#v3bar .v3menu button {
+  text-align: left;
+  padding: 6px 10px;
 }
 #v3bar .sp {
   width: 1px;
@@ -3192,6 +3262,172 @@ label.ck {
   touch-action: none;
 }
 
+/* molding layout editor */
+.dlg.mle {
+  width: min(1320px, 100%);
+  height: min(820px, 100%);
+}
+.mle-sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+.mle-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  min-height: 0;
+}
+.mle-view {
+  position: relative;
+  min-height: 0;
+  background: #e4e1da;
+}
+.mle-view svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+}
+.mle-tip {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.mle-side {
+  box-sizing: border-box;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  overflow: auto;
+  padding: 12px 14px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.mle-side h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.mle-side section {
+  display: grid;
+  gap: 8px;
+}
+.mle-side input,
+.mle-side select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.mle-side label {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mle-side .two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+.mle-side label.chk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mle-wall {
+  fill: #f6f4ef;
+  stroke: #9a958c;
+  stroke-width: 1.2;
+}
+.mle-grid {
+  stroke: #000;
+  stroke-opacity: 0.05;
+  stroke-width: 1;
+  fill: none;
+}
+.mle-op {
+  fill: #dfe6ec;
+  stroke: #7d8a96;
+  stroke-width: 1;
+}
+.mle-opt {
+  fill: #5e6b77;
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.mle-pb {
+  fill: none;
+  stroke: #d9d3c6;
+  stroke-linejoin: miter;
+  cursor: move;
+}
+.mle-pb.on {
+  stroke: #f3d9a4;
+}
+.mle-ax {
+  fill: none;
+  stroke: #6b645a;
+  stroke-width: 1.1;
+  pointer-events: none;
+}
+.mle-ax.on {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+.mle-h {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  cursor: nwse-resize;
+}
+.mle-ghost {
+  fill: rgba(233, 171, 69, 0.12);
+  stroke: var(--accent);
+  stroke-dasharray: 5 3;
+  stroke-width: 1.4;
+}
+.mle-gt {
+  fill: var(--accent);
+  font-size: 12px;
+}
+.mle-dim path {
+  stroke: #4a5560;
+  stroke-width: 0.8;
+  fill: none;
+}
+.mle-dim text {
+  fill: #2f3a44;
+  font-size: 11px;
+  text-anchor: middle;
+}
+.mle-dim.faint path {
+  stroke: #9aa3ab;
+}
+.mle-dim.faint text {
+  fill: #7b858f;
+}
+@media (max-width: 760px) {
+  .mle-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(260px, 1fr) auto;
+  }
+  .mle-side {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    max-height: 42vh;
+  }
+}
+
 /*
  * Скин «Калька». Интерфейс как чертёжный лист на кульмане: холодная калька, синие чернила, две толщины линий по
  * ГОСТ 2.303 — основная (2 px, чернила) для рамок и активного состояния, тонкая (1 px) для деления на ячейки.
@@ -4018,6 +4254,18 @@ label.ck {
 }
 [data-skin='kalka'] .card .cn {
   color: var(--ink);
+}
+[data-skin='kalka'] #v3bar .v3menu {
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  gap: 0;
+}
+[data-skin='kalka'] #v3bar .v3menu button {
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
 }
 
 /*
@@ -4858,6 +5106,30 @@ label.ck {
   box-shadow: none !important;
   background: transparent !important;
 }
+[data-skin='mac'] #v3bar .v3menu {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px);
+  border: 0;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.16);
+}
+[data-skin='mac'] #v3bar .v3g.open {
+  background: rgba(0, 0, 0, 0.06);
+}
+[data-skin='mac'] .hgrp-pop {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  border: 0;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.16);
+}
+[data-skin='mac'] .hgrp-pop button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
 
 /* ===== phones, tablets, touch (ui/responsive.js sets html[data-form][data-touch][data-orient]) ===== */
 #bMenu,
@@ -5334,9 +5606,11 @@ html[data-form='phone'].sheetopen #sheetShade {
     <div class="seg" id="lvseg" role="group" aria-label="Этажи" title="Этажи: PgUp / PgDn — соседний этаж"><button id="lvDn" title="Этаж ниже (PgDn)">▼</button><button id="lvName" title="Список этажей, добавить этаж">Этаж 1</button><button id="lvUp" title="Этаж выше (PgUp)">▲</button></div>
     <nav class="hmenu">
       <button id="bWT" hidden>Типы стен</button><button id="bMEP" hidden>Инженерия</button>
+      <div class="hgrp" id="hModes"><button id="bModes" class="wide" title="Сети, светорасчёт, проверки, AR">Режимы ▾</button><div class="hpop" hidden>
       <button id="bNV" class="wide" title="Вид инженерных сетей · СЕТИ">Сети</button>
       <button id="bLC" class="wide" title="Светорасчёт: зоны, нормы освещённости, тепловая карта, IES">☀ Светорасчёт</button>
       <button id="bIss" class="wide" title="Проверки проекта">Проверки <span id="issN" class="cnt" style="color:var(--danger)"></span></button>
+      </div></div>
       <button id="bCat" class="pri">Каталог</button>
       <button id="bFile">Файл ▾</button>
       <button id="bUndo" title="Отменить (Ctrl+Z)" aria-label="Отменить">↶</button>
@@ -5355,12 +5629,11 @@ html[data-form='phone'].sheetopen #sheetShade {
     </div>
     <div id="v3">
       <div id="v3bar">
-        <button data-a="iso">Изометрия</button><button data-a="top">Сверху</button><button data-a="front" title="Вид спереди (с юга)">Спереди</button><button data-a="right" title="Вид справа (с востока)">Справа</button><button data-a="left" title="Вид слева (с запада)">Слева</button><button data-a="back" title="Вид сзади (с севера)">Сзади</button><button data-a="sel" title="Приблизить выделенное (двойной щелчок по объекту — центр вращения)">К выделенному</button><button data-a="fit">Показать всё</button>
+        <div class="v3grp"><button class="v3g" title="Направление взгляда">Вид ▾</button><div class="v3menu" hidden><button data-a="iso">Изометрия</button><button data-a="top">Сверху</button><button data-a="front" title="Вид спереди (с юга)">Спереди</button><button data-a="right" title="Вид справа (с востока)">Справа</button><button data-a="left" title="Вид слева (с запада)">Слева</button><button data-a="back" title="Вид сзади (с севера)">Сзади</button><button data-a="sel" title="Приблизить выделенное (двойной щелчок по объекту — центр вращения)">К выделенному</button></div></div><button data-a="fit" title="Показать всё">Всё</button>
         <span class="sp"></span>
-        <button data-a="move" title="Перетаскивание выбранного объекта">Переместить</button><button data-a="rot" title="Поворот выбранного объекта">Повернуть</button>
+        <button data-a="cut" id="v3cut" title="Стены перед камерой срезаются, потолок скрыт. Щелчок — полные / срез / низкие">Стены: полные</button><button data-a="cuth" id="v3cuth" title="Высота среза стен" hidden>Срез: 400</button>
         <span class="sp"></span>
-        <button data-a="cut" id="v3cut" title="Стены перед камерой срезаются, потолок скрыт. Щелчок — полные / срез / низкие">Стены: полные</button><button data-a="cuth" id="v3cuth" title="Высота среза стен" hidden>Срез: 400</button><span class="sp"></span><button data-a="shadow" class="on">Тени</button><button data-a="edges" class="on">Рёбра</button>
-        <span class="sp"></span><button data-a="pipe3" title="Нарисовать трубу прямо в 3D: щелчок по точке подключения прибора или по поверхности; Shift — вертикальный участок (подъём/опуск)">Труба</button><button data-a="tq" id="v3tq">Гладкость: авто</button><button data-a="wp" id="v3wp" title="Рабочая плоскость для рисования в 3D, когда курсор не над объектом">Плоскость: пол</button><button data-a="cats" id="v3catsBtn">Состав…</button>
+        <div class="v3grp"><button class="v3g" title="Тени, рёбра, гладкость, фазы, состав по категориям">Показ ▾</button><div class="v3menu" hidden id="v3gShow"><button data-a="shadow" class="on">Тени</button><button data-a="edges" class="on">Рёбра</button><button data-a="tq" id="v3tq">Гладкость: авто</button><button data-a="cats" id="v3catsBtn">Состав…</button></div></div><div class="v3grp"><button class="v3g" title="Перемещение и поворот объекта, труба в 3D, рабочая плоскость">Правка ▾</button><div class="v3menu" hidden><button data-a="move" title="Перетаскивание выбранного объекта">Переместить</button><button data-a="rot" title="Поворот выбранного объекта">Повернуть</button><button data-a="pipe3" title="Нарисовать трубу прямо в 3D: щелчок по точке подключения прибора или по поверхности; Shift — вертикальный участок (подъём/опуск)">Труба</button><button data-a="wp" id="v3wp" title="Рабочая плоскость для рисования в 3D, когда курсор не над объектом">Плоскость: пол</button></div></div>
       </div>
       <div id="v3cats" hidden></div>
       <div id="v3msg">Ctrl+ЛКМ — вращать · Ctrl+ПКМ / ПКМ — сдвиг · колесо — масштаб к курсору · щелчок — выбрать</div>
@@ -5537,7 +5810,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '38.1';
+const APP_VER = '39';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15479,6 +15752,7 @@ function cats3() {
 
 
 
+
 /* ---------- Sims-like cutaway: walls between camera and view centre drop to a low stub ---------- */
 const CUTM = { off: 'полные', cut: 'срез', low: 'низкие' },
   CUTH = [150, 400, 900, 1200];
@@ -15584,7 +15858,9 @@ function applyCut(X) {
       if (R.get(g.userData.eid) === 'hide') g.visible = false;
     }
   V3.cutIds = ids;
-  V3.cutH = cutCfg().h;
+  // the cut height is counted from the floor of the current level (the 3D of that level is lifted by its elevation)
+  V3.cutH = cutCfg().h + (S.x.lv ? lvCur().z || 0 : 0);
+  V3.cutLv = S.x.lv ? lvCur().z || 0 : 0;
   V3.cutN = [...R.values()].filter(v => typeof v === 'number').length;
   if (V3.cutLbl !== cutCfg().mode + cutCfg().h) {
     V3.cutLbl = cutCfg().mode + cutCfg().h;
@@ -15669,7 +15945,9 @@ function renderCut(extra) {
     for (const it of list) it.o.visible = it.c && it.v;
     V3.grid.visible = false;
     V3.tc.visible = false;
-    caps = cutCaps(ids, h);
+    caps = cutCaps(ids, h - (V3.cutLv || 0));
+    caps.position.z = V3.cutLv || 0;
+    caps.updateMatrixWorld && caps.updateMatrixWorld(true);
     V3.scene.add(caps);
     V3.scene.background = null;
     r.autoClear = false;
@@ -15728,6 +16006,8 @@ function cutLabels() {
  *
  * Builds three.js objects for entities and keeps the 3D scene in sync with the model.
  */
+
+
 
 
 
@@ -15892,6 +16172,7 @@ function key3Base(e) {
       } catch (err) {}
       return JSON.stringify([
         typeof stairSig === 'function' ? stairSig(e) : 0,
+        wallTie(e),
         nk,
         e.zones || 0,
         e.fa,
@@ -15932,7 +16213,13 @@ function key3Base(e) {
       return JSON.stringify([e.type, e.t, e.w, e.h, e.sill, e.flip, e.hand, w.a, w.b, w.th, w.z, c, pr, w.fa, w.fb]);
     }
     case 'slab':
-      return JSON.stringify([slabOutline(e), e.th, e.z, typeof slabHoles === 'function' ? slabHoles(e) : 0]);
+      return JSON.stringify([
+        slabOutline(e),
+        e.th,
+        e.z,
+        typeof slabHoles === 'function' ? slabHoles(e) : 0,
+        slabPierce(e)
+      ]);
     case 'inst':
       return JSON.stringify([e.asset, ASSETS.has(e.asset), e.p, e.rot, e.z]);
     case 'dev':
@@ -16018,11 +16305,15 @@ function build3(e) {
         zp: coreCol
       };
       const nich = wallNiches(e);
+      const tie = wallTie(e);
       return withZones(
         e,
         boxesGroup(
           typeof stairClampXF === 'function' ? stairClampXF(e, xf) : xf,
           mb => {
+            // an outer wall down to its slab and up to the slab above (the band of the floor build-up)
+            if (tie.below > 0.5) prismL(mb, wi.lp, -tie.below, 0, C6);
+            if (tie.above > 0.5) prismL(mb, wi.lp, e.h, e.h + tie.above, C6);
             // parts of opening bounding boxes that are wall again (arches, rounded corners, sloped tops)
             for (const op of wi.ops)
               for (const poly of openingFills(op.o, op.s0 + (op.s1 - op.s0) / 2))
@@ -16064,6 +16355,13 @@ function build3(e) {
       return buildWin3(e);
     case 'slab': {
       if (e.pts.length < 3) return null;
+      // walls of the level below rising through the slab (second light): cut by CSG
+      const cuts = slabPierce(e);
+      if (cuts.length) {
+        const g = meshGroup(slabCsgMeshes(e, slabOutline(e), slabHoles(e), cuts, MATC.slab), { edges: true });
+        g.position.z = (e.z || 0) - e.th;
+        return g;
+      }
       const sh = new THREE.Shape(slabOutline(e).map(p => new THREE.Vector2(p.x, p.y)));
       try {
         for (const h of slabHoles(e)) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p.x, p.y))));
@@ -16839,6 +17137,28 @@ function key3(e) {
 
 /** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
 function initBuild() {
+  // grouped menus of the 3D bar: a group button opens its list; picking an item closes it
+  $('#v3bar').addEventListener('click', e => {
+    const g = e.target.closest('.v3g');
+    const menus = [...document.querySelectorAll('#v3bar .v3menu')];
+    if (g) {
+      const m = g.nextElementSibling;
+      const open = m.hidden;
+      menus.forEach(x => (x.hidden = true));
+      m.hidden = !open;
+      document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.toggle('open', x === g && open));
+      return;
+    }
+    if (e.target.closest('.v3menu button')) {
+      menus.forEach(x => (x.hidden = true));
+      document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.remove('open'));
+    }
+  });
+  document.addEventListener('pointerdown', e => {
+    if (e.target.closest && e.target.closest('#v3bar')) return;
+    document.querySelectorAll('#v3bar .v3menu').forEach(x => (x.hidden = true));
+    document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.remove('open'));
+  });
   $('#v3bar').addEventListener('click', e => {
     const cb = e.target.closest('button[data-a="cut"],button[data-a="cuth"]');
     if (cb) {
@@ -18067,6 +18387,7 @@ function wheelModeMenu() {
 
 
 
+
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -18300,7 +18621,13 @@ const MENUS = [
       { n: 'Размерная цепь', k: 'DCO', a: () => run('dimcont') },
       { n: 'Базовые размеры', k: 'DBA', a: () => run('dimbase') },
       '-',
-      { n: 'Стены по линиям', k: 'из DWG', a: () => wallsFromSelection(), d: () => !S.sel.size }
+      { n: 'Стены по линиям', k: 'из DWG', a: () => wallsFromSelection(), d: () => !S.sel.size },
+      {
+        n: 'Второй свет',
+        k: 'стены на два этажа',
+        a: () => secondLight(S.ents.filter(e => S.sel.has(e.id))),
+        d: () => !S.sel.size
+      }
     ]
   },
   {
@@ -19467,6 +19794,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -19548,6 +19876,15 @@ function fieldsFor(e) {
       { l: 'Отметка низа', k: 'z', num: true },
       { l: 'Длина', k: 'len', num: true },
       { l: 'Несущая', k: 'bearing', bool: true },
+      {
+        l: 'Опирание',
+        k: 'base',
+        sel: [
+          ['auto', 'Авто: наружная — на плиту, перегородка — на пол'],
+          ['slab', 'На плиту, до плиты сверху'],
+          ['screed', 'На чистый пол (стяжку)']
+        ]
+      },
       { l: 'Линия привязки', k: 'loc', sel: Object.entries(WLOC) },
       { l: 'Стык в начале', k: 'ja', sel: Object.entries(JMODES) },
       { l: 'Стык в конце', k: 'jb', sel: Object.entries(JMODES) }
@@ -19669,6 +20006,8 @@ function fieldGet(e, k) {
     }
     case 'loc':
       return WLOC[e.loc] ? e.loc : 'c';
+    case 'base':
+      return e.base || 'auto';
     case 'ja':
       return e.ja || 'auto';
     case 'jb':
@@ -20373,6 +20712,7 @@ function updateProps() {
     for (const f of F) h += propRow(f, es);
     if (allWalls) {
       const ct = computeType(typeOf(e));
+      h += `<div class="btnrow"><button class="btn" id="bSecondLight" title="Стены поднимаются до верха стен этажа выше, стены над ними там убираются; перекрытие режется по стенам и окнам">Второй свет — стены на два этажа</button></div>`;
       h +=
         `<div class="hd">Отделка · А — слева по ходу стены</div>` +
         finRow('fa', 'А', es) +
@@ -20558,6 +20898,8 @@ function updateProps() {
         changed();
       })
   );
+  const bsl2 = $('#bSecondLight');
+  if (bsl2) bsl2.onclick = () => secondLight(es);
   if (es.length === 1 && es[0].type === 'wall') {
     bindZones(el, es[0]);
     const bf = $('#bFinTool');
@@ -49958,19 +50300,17 @@ function allEnts() {
 }
 /* ---------- 3D: other levels, offsets, visibility ---------- */
 var LVM = {
-  auto: 'авто (этажи выше скрыты, когда скрыты или приглушены слои)',
+  auto: 'до текущего (этажи выше скрыты)',
   all: 'все этажи',
-  upto: 'до текущего',
   cur: 'только текущий'
 };
-/** Some layer is switched off or dimmed: the user looks inside the current level. */
-function lvFocus() {
-  return S.layers.some(L => !L.on || L.dim);
-}
 function lvShow3(lv) {
   let m = (V3 && V3.lvMode) || 'auto';
   const c = lvCur();
-  if (m === 'auto') m = lvFocus() ? 'upto' : 'all';
+  // auto: the levels above the current one are hidden — you work on this level and look into it from above
+  if (m === 'auto') m = 'upto';
+  // a wall cutaway looks inside the current level: nothing above it
+  if (m === 'all' && S.x.cut && S.x.cut.mode && S.x.cut.mode !== 'off') m = 'upto';
   return m === 'all' || (m === 'cur' ? lv.id === c.id : lv.z <= c.z + 1);
 }
 /** An element of another level by id (for the 3D of other levels). */
@@ -82058,7 +82398,8 @@ function v3PhaseBtn() {
       setPhaseMode(ks[(ks.indexOf(phaseMode()) + 1) % ks.length]);
       v3PhaseBtn();
     };
-    bar.appendChild(b);
+    const grp = document.getElementById('v3gShow');
+    (grp || bar).appendChild(b);
   }
   const m = phaseMode();
   b.textContent = m === 'model' ? 'Фазы: модель' : m === 'demo' ? 'Демонтаж' : m === 'new' ? 'Монтаж' : 'Фазы: все';
@@ -85359,6 +85700,7 @@ defineTools({
 
 
 
+
 /** Molding sections added to the project's profiles when missing (X — off the wall, Y — across). */
 const ML_PROFILES = [
   {
@@ -85451,7 +85793,8 @@ const mlProf = id => {
 var ML_MODE = {
   frames: 'Рамки',
   rail: 'Горизонтальный молдинг (поясок)',
-  two: 'Рамки снизу, поясок, рамки сверху'
+  two: 'Рамки снизу, поясок, рамки сверху',
+  custom: 'Своя раскладка (редактор)'
 };
 var ML_CORNER = {
   miter: 'Прямые углы (запил 45°)',
@@ -85577,6 +85920,22 @@ function mlLayout(e) {
         rail: true
       });
   };
+  if (e.mode === 'custom') {
+    for (const it of e.items || []) {
+      if (it.k === 'f') {
+        if (!(it.s1 - it.s0 > 20 && it.z1 - it.z0 > 20)) continue;
+        const path = mlFramePath(it.s0, it.z0, it.s1, it.z1, it.c || 'miter', it.R ?? 60);
+        let len = 0;
+        for (let k = 1; k < path.length; k++)
+          len += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1]);
+        out.push({ path, closed: true, len, corners: it.c === 'miter' ? 4 : it.c === 'arch' ? 2 : 0, frame: true });
+      } else if (it.k === 'l') {
+        const len = Math.hypot(it.b[0] - it.a[0], it.b[1] - it.a[1]);
+        if (len > 10) out.push({ path: [it.a.slice(), it.b.slice()], closed: false, len, corners: 0, rail: true });
+      }
+    }
+    return out;
+  }
   const z0 = +e.z0 || 150,
     z1 = +e.z1 || S.ceil - 150,
     zr = +e.railZ || 900;
@@ -85645,7 +86004,7 @@ XT.molding = {
       ctx.fillStyle = col;
       const L = mlLayout(e);
       ctx.fillText(
-        `Молдинги: ${L.filter(x => x.frame).length} рамок${L.some(x => x.rail) ? ' + поясок' : ''} · ${pr.name}`,
+        `Молдинги: ${L.filter(x => x.frame).length} рамок${L.some(x => x.rail) ? (e.mode === 'custom' ? ` + ${L.filter(x => x.rail).length} лин.` : ' + поясок') : ''} · ${pr.name}`,
         0,
         0
       );
@@ -85686,6 +86045,7 @@ XT.molding = {
         ML_MODE[e.mode] || '',
         [
           ['Раскладка', 'mode', 's', Object.entries(ML_MODE)],
+          ['', '<button class="btn" data-mled>Редактор раскладки на стене…</button>', 'r'],
           ['Сечение', 'prof', 's', (mlEnsureProfiles(), profOpts('trim'))],
           ['Углы рамок', 'corner', 's', Object.entries(ML_CORNER)],
           ['Радиус угла', 'R', 'n'],
@@ -85712,6 +86072,11 @@ XT.molding = {
     ]),
   onSet(e, p, v) {
     if (p === 'prof') e.col = mlProf(v).color;
+    if (p === 'mode' && v === 'custom' && !(e.items && e.items.length)) setTimeout(() => openMoldingEditor(e), 0);
+  },
+  bind(el, e) {
+    const b = el.querySelector('[data-mled]');
+    if (b) b.onclick = () => openMoldingEditor(e);
   },
   spec(e, put) {
     const pr = mlProf(e.prof);
@@ -85762,6 +86127,7 @@ function moldingAt(p, mode = 'two') {
     s1: Math.round(wi.L),
     mode,
     prof: mode === 'rail' ? 'ml_rail' : 'ml_40',
+    items: mode === 'custom' ? [] : undefined,
     corner: 'miter',
     R: 60,
     n: 0,
@@ -85786,11 +86152,16 @@ function mkMolding() {
         ? first
           ? 'Конец участка на той же стене:'
           : 'Начало участка на грани стены:'
-        : `${ML_MODE[mode]}: щелчок у грани стены — на всю стену, или [Участок/Вид]:`,
+        : `${ML_MODE[mode]}: щелчок у грани стены — на всю стену, или [Участок/Вид/Редактор]:`,
     onInput(s) {
       const t = s.trim().toLowerCase();
       if (t === 'у' || t === 'участок' || t === 'p') {
         part = true;
+        return true;
+      }
+      if (t === 'р' || t === 'редактор' || t === 'e') {
+        mode = mkMolding.m = 'custom';
+        log('Молдинги: щёлкните у грани стены — откроется редактор раскладки');
         return true;
       }
       if (t === 'в' || t === 'вид' || t === 'k') {
@@ -85822,6 +86193,11 @@ function mkMolding() {
         first = null;
       }
       const e = addEnt({ ...m, layer: ensureLayer('Отделка') });
+      if (mode === 'custom') {
+        e.items = [];
+        openMoldingEditor(e);
+        return;
+      }
       const L = mlLayout(e);
       log(
         `Молдинги: ${L.filter(x => x.frame).length} рамок, ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(1)} м — размеры и сечение в свойствах`
@@ -87820,7 +88196,9 @@ if (typeof document !== 'undefined' && document.getElementById)
     b.textContent = 'AR';
     b.title = 'Дополненная реальность: модель поверх камеры телефона';
     b.onclick = () => arStart();
-    hm.insertBefore(b, hm.firstChild);
+    const pop = document.querySelector('.hgrp-pop') || document.querySelector('#hModes .hpop');
+    if (pop) pop.appendChild(b);
+    else hm.insertBefore(b, hm.firstChild);
   }, 0);
 
 // ===== ar/ar-notes.js =====
@@ -89205,6 +89583,221 @@ defineTools({
     help: 'Проём: щёлкните на стене. Форма (арки, скошенный верх, трапеция, произвольный контур) и скругление углов — в свойствах.'
   }
 });
+
+// ===== elements/second-light.js =====
+/**
+ * elements/second-light.js
+ *
+ * «Второй свет» (a double-height room). Walls of a lower level can rise through the slab of the level above; the
+ * slab is then cut where such a wall passes (its footprint), and where a window or door of it reaches above the slab
+ * bottom the slab is cut across the wall and in front of both faces — so a tall window is never crossed by the slab
+ * edge. The command lifts the selected walls to the top of the walls of the level above and trims the walls of
+ * that level that stood on them.
+ */
+
+
+
+
+
+
+
+
+/** Level above lv (by elevation) or null. */
+function lvAbove(lv) {
+  const s = LV()
+    .list.slice()
+    .sort((a, b) => a.z - b.z);
+  const i = s.findIndex(l => l.id === lv.id);
+  return i >= 0 && i + 1 < s.length ? s[i + 1] : null;
+}
+/** Entities of a level (the swapped-in level keeps the current ones in WLVKEEP). */
+function lvArr(id) {
+  const L = LV();
+  if (id === L.cur) return WLV != null && WLV !== L.cur ? WLVKEEP || S.ents : S.ents;
+  if (id === WLV) return S.ents;
+  return L.ents[id] || [];
+}
+/** Rectangle of a wall (axis a–b, thickness th), extended by `ext` at both ends. */
+function wallRect(w, ext = 0) {
+  const L = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
+  const u = P((w.b.x - w.a.x) / L, (w.b.y - w.a.y) / L),
+    n = P(-u.y, u.x);
+  const a = add(w.a, mul(u, -ext)),
+    b = add(w.b, mul(u, ext)),
+    h = w.th / 2;
+  return [add(a, mul(n, h)), add(b, mul(n, h)), sub(b, mul(n, h)), sub(a, mul(n, h))];
+}
+/**
+ * Cuts of a slab by the level below: [{pts (plan), why}] — footprints of walls reaching the slab top, and across
+ * each opening of such walls whose top is above the slab bottom (1 m out of both faces).
+ */
+function slabPierce(e) {
+  try {
+    if (!S.x.lv || !e.pts || e.pts.length < 3) return [];
+    const L = LV();
+    const id = WLV != null ? WLV : L.cur;
+    const lv = lvById(id);
+    const b = lv && lvBelow(lv);
+    if (!b) return [];
+    const arr = lvArr(b.id);
+    const top = lv.z + (e.z || 0),
+      bot = top - (e.th || 200);
+    const out = [];
+    const inside = pts => pts.some(p => inPoly(p, e.pts)) || e.pts.some(p => inPoly(p, pts));
+    for (const w of arr) {
+      if (w.type !== 'wall' || !(w.h > 0)) continue;
+      const wTop = b.z + (w.z || 0) + w.h;
+      if (wTop < bot + 5) continue;
+      if (wTop >= top - 5) {
+        const r = wallRect(w, w.th / 2);
+        if (inside(r)) out.push({ pts: r, why: 'wall' });
+      }
+      const Lw = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
+      const u = P((w.b.x - w.a.x) / Lw, (w.b.y - w.a.y) / Lw),
+        n = P(-u.y, u.x);
+      for (const o of arr) {
+        if (o.host !== w.id || !(o.type === 'window' || o.type === 'door' || o.type === 'opening')) continue;
+        const oTop = b.z + (w.z || 0) + (+o.sill || 0) + (+o.h || 0);
+        if (oTop < bot + 5) continue;
+        const t = Math.max(o.w / 2, Math.min(Lw - o.w / 2, o.t));
+        const c = add(w.a, mul(u, t));
+        const d = w.th / 2 + 1000,
+          hw = o.w / 2;
+        const r = [
+          add(add(c, mul(u, -hw)), mul(n, d)),
+          add(add(c, mul(u, hw)), mul(n, d)),
+          sub(add(c, mul(u, hw)), mul(n, d)),
+          sub(add(c, mul(u, -hw)), mul(n, d))
+        ];
+        if (inside(r)) out.push({ pts: r, why: 'opening' });
+      }
+    }
+    return out.map(c => ({ ...c, pts: c.pts.map(p => P(Math.round(p.x), Math.round(p.y))) }));
+  } catch (err) {
+    return [];
+  }
+}
+/** Slab mesh with holes and level-below cuts by CSG (z: 0…th, like the extruded slab). */
+function slabCsgMeshes(e, outline, holes, cuts, col) {
+  const F = { o: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0], n: [0, 0, 1] };
+  const th = e.th || 200;
+  let solid = prismSolid(
+    F,
+    outline.map(p => [p.x, p.y]),
+    0,
+    th,
+    's'
+  );
+  for (const h of holes)
+    solid = csgSubtract(
+      solid,
+      prismSolid(
+        F,
+        h.map(p => [p.x, p.y]),
+        -1,
+        th + 1,
+        'h'
+      )
+    );
+  for (const c of cuts)
+    solid = csgSubtract(
+      solid,
+      prismSolid(
+        F,
+        c.pts.map(p => [p.x, p.y]),
+        -1,
+        th + 1,
+        'c'
+      )
+    );
+  const mb = MB();
+  const arr = [];
+  for (const q of solid) for (let i = 1; i + 1 < q.v.length; i++) arr.push(...q.v[0], ...q.v[i], ...q.v[i + 1]);
+  mb.raw(col, 1, arr);
+  return mb.meshes();
+}
+
+/** Height of the walls of a level (the most common one), or its floor-to-floor height less 300. */
+function lvWallH(id, lv) {
+  const c = new Map();
+  for (const w of lvArr(id)) if (w.type === 'wall') c.set(w.h, (c.get(w.h) || 0) + 1);
+  let best = 0,
+    n = 0;
+  for (const [h, k] of c) if (k > n) [best, n] = [h, k];
+  return best || (lv.h || 3000) - 300;
+}
+/**
+ * Command «Второй свет» on the selected walls of the current level: they rise to the top of the walls of the level
+ * above, and the walls of that level standing on them are removed or trimmed (with the doors / windows hosted in
+ * the removed parts). The slab is cut by the 3D model automatically; the void over the room is a slab opening.
+ */
+function secondLight(ws) {
+  ws = ws.filter(w => w.type === 'wall');
+  if (!ws.length) return log('Выделите стены помещения со вторым светом', true);
+  const lv = lvCur(),
+    up = lvAbove(lv);
+  if (!up) return log('Над этим этажом нет этажа — второй свет ведёт стены до верха этажа выше', true);
+  const topAbs = up.z + lvWallH(up.id, up);
+  pushUndo();
+  let trimmed = 0,
+    removed = 0;
+  for (const w of ws) w.h = Math.round(topAbs - lv.z - (w.z || 0));
+  withLevel(up.id, () => {
+    for (const w of ws) {
+      const Lw = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
+      const u = P((w.b.x - w.a.x) / Lw, (w.b.y - w.a.y) / Lw),
+        n = P(-u.y, u.x);
+      for (const x of S.ents.slice()) {
+        if (x.type !== 'wall') continue;
+        const Lx = Math.hypot(x.b.x - x.a.x, x.b.y - x.a.y) || 1;
+        const ux = P((x.b.x - x.a.x) / Lx, (x.b.y - x.a.y) / Lx);
+        if (Math.abs(ux.x * u.y - ux.y * u.x) > 0.02) continue;
+        if (Math.abs(dot(sub(x.a, w.a), n)) > Math.max(40, (w.th + x.th) / 4)) continue;
+        const t0 = dot(sub(x.a, w.a), u),
+          t1 = dot(sub(x.b, w.a), u);
+        const lo = Math.min(t0, t1),
+          hi = Math.max(t0, t1);
+        if (hi <= 10 || lo >= Lw - 10) continue;
+        const at = t => add(w.a, add(mul(u, t), mul(n, dot(sub(x.a, w.a), n))));
+        const keep = [];
+        if (lo < -10) keep.push([lo, 0]);
+        if (hi > Lw + 10) keep.push([Lw, hi]);
+        const ops = S.ents.filter(o => o.host === x.id);
+        if (!keep.length) {
+          for (const o of [x, ...ops]) S.ents.splice(S.ents.indexOf(o), 1);
+          removed++;
+          continue;
+        }
+        // keep the first outside part on this wall, a copy for the second
+        const dir = t0 <= t1 ? 1 : -1;
+        const seg = ([p, q]) => (dir > 0 ? [at(p), at(q)] : [at(q), at(p)]);
+        const [a0, b0] = seg(keep[0]);
+        const old = { a: x.a, Lx, ux };
+        x.a = a0;
+        x.b = b0;
+        // hosted openings: keep those still on the remaining part
+        for (const o of ops) {
+          const c = add(old.a, mul(old.ux, o.t));
+          const nt = dot(sub(c, x.a), ux);
+          const nl = Math.hypot(x.b.x - x.a.x, x.b.y - x.a.y);
+          if (nt - o.w / 2 < -1 || nt + o.w / 2 > nl + 1) S.ents.splice(S.ents.indexOf(o), 1);
+          else o.t = nt;
+        }
+        if (keep[1]) {
+          const [a1, b1] = seg(keep[1]);
+          S.ents.push({ ...JSON.parse(JSON.stringify(x)), id: S.nextId++, a: a1, b: b1 });
+        }
+        trimmed++;
+      }
+    }
+  });
+  changed();
+  log(
+    `Второй свет: стен ${ws.length} до отметки ${Math.round(topAbs)} (высота ${Math.round(ws[0].h)} мм)` +
+      (removed || trimmed ? `; на этаже «${up.n}» убрано ${removed}, укорочено ${trimmed} стен` : '') +
+      '. Перекрытие над комнатой — «Отверстие в плите», окна теперь можно делать выше перекрытия.'
+  );
+}
 
 // ===== mep/electrical/photometry.js =====
 /**
@@ -91850,6 +92443,37 @@ function xBoot() {
     if (b) setWS(b.dataset.ws);
   };
   $('#bNV').onclick = () => setNV(!NV.on);
+  // header modes menu: Сети, Светорасчёт, Проверки, AR in one drop-down
+  const hm = $('#hModes');
+  const pop0 = hm && hm.querySelector ? hm.querySelector('.hpop') : null;
+  if (pop0 && document.body && document.body.appendChild) {
+    const pop = pop0;
+    // the header clips its children (overflow, filters): the list lives on the page
+    pop.classList.add('hgrp-pop');
+    document.body.appendChild(pop);
+    const sync = () => $('#bModes').classList.toggle('on', !!pop.querySelector('.on'));
+    $('#bModes').onclick = ev => {
+      ev.stopPropagation();
+      pop.hidden = !pop.hidden;
+      // the header clips overflow: the list is placed on the page under the button
+      const r = $('#bModes').getBoundingClientRect();
+      pop.style.top = r.bottom + 6 + 'px';
+      pop.style.left = Math.max(8, r.right - Math.max(180, pop.offsetWidth)) + 'px';
+      $('#bModes').classList.toggle('open', !pop.hidden);
+    };
+    pop.addEventListener('click', () => {
+      pop.hidden = true;
+      $('#bModes').classList.remove('open');
+      setTimeout(sync, 0);
+    });
+    document.addEventListener('pointerdown', ev => {
+      if (!pop.hidden && !(ev.target.closest && (ev.target.closest('#hModes') || pop.contains(ev.target)))) {
+        pop.hidden = true;
+        $('#bModes').classList.remove('open');
+      }
+    });
+    new MutationObserver(sync).observe(pop, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  }
   $('#bIss').onclick = () => showTab('iss');
   $('#odClose').onclick = () => {
     $('#objdlg').hidden = true;
@@ -93696,6 +94320,796 @@ function cornerFinishQty(w, J, knauf, outerFinTh, sheetLayers) {
     }
   }
   return r;
+}
+
+// ===== elements/wall-tie.js =====
+/**
+ * elements/wall-tie.js
+ *
+ * How a wall meets the slabs. Walls are drawn from the finished floor (z = 0 of the level); the floor build-up
+ * between the slab and the finished floor fills the rooms, but outside the building that band stayed open and grew
+ * with every thicker floor. An outer wall now stands on the slab of its level and reaches the bottom of the slab
+ * above, so the facade is continuous whatever the floors are; a partition stands on the finished floor (screed),
+ * unless set otherwise (wall property «Опирание»: auto / slab / screed).
+ */
+
+
+
+
+const TIE = { ver: -1, lv: null, ext: new Map() };
+/** Does a ray from p along d hit any other wall axis (thickness-aware) within maxD? */
+function rayHitsWall(p, d, walls, self, maxD = 60000) {
+  for (const w of walls) {
+    if (w === self) continue;
+    const ex = w.b.x - w.a.x,
+      ey = w.b.y - w.a.y;
+    const den = d.x * ey - d.y * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const qx = w.a.x - p.x,
+      qy = w.a.y - p.y;
+    const t = (qx * ey - qy * ex) / den,
+      s = (qx * d.y - qy * d.x) / den;
+    if (t > 1 && t < maxD && s >= -0.02 && s <= 1.02) return true;
+  }
+  return false;
+}
+/** Is the wall on the outer contour of its level (one face sees no other wall)? Cached per document version. */
+function wallIsOuter(w) {
+  const key = documentState.docVer + '|' + (WLV != null ? WLV : LV().cur);
+  if (TIE.ver !== key) {
+    TIE.ver = key;
+    TIE.ext = new Map();
+  }
+  if (TIE.ext.has(w.id)) return TIE.ext.get(w.id);
+  const walls = S.ents.filter(x => x.type === 'wall');
+  const L = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+  let r = false;
+  if (L > 1) {
+    const u = P((w.b.x - w.a.x) / L, (w.b.y - w.a.y) / L),
+      n = P(-u.y, u.x);
+    // three probes along the wall; outer when most of them see nothing on one side
+    let open = 0;
+    for (const f of [0.25, 0.5, 0.75])
+      for (const sd of [1, -1]) {
+        const p = add(add(w.a, mul(u, L * f)), mul(n, sd * (w.th / 2 + 5)));
+        if (!rayHitsWall(p, mul(n, sd), walls, w)) open++;
+      }
+    r = open >= 2;
+  }
+  TIE.ext.set(w.id, r);
+  return r;
+}
+/**
+ * Extra wall height below the finished floor and above the wall top in the 3D model: {below, above} (mm, ≥ 0).
+ * Only for walls standing on the floor of their level (z ≈ 0) and reaching close to the slab above.
+ */
+function wallTie(e) {
+  try {
+    const mode = e.base || 'auto';
+    if (mode === 'screed' || (mode === 'auto' && !wallIsOuter(e))) return { below: 0, above: 0 };
+    const lv = lvCur();
+    const z = +e.z || 0;
+    const below = z <= 1 && z > -500 && lv.top < 0 ? -lv.top + z : 0;
+    let above = 0;
+    const s = LV()
+      .list.slice()
+      .sort((a, b) => a.z - b.z);
+    const i = s.findIndex(l => l.id === lv.id);
+    const up = i >= 0 ? s[i + 1] : null;
+    if (up) {
+      const slabBot = up.z - lv.z + (up.top || 0) - (up.slab || 200);
+      const top = z + e.h;
+      if (top < slabBot && slabBot - top < 600) above = slabBot - top;
+    }
+    return { below: Math.max(0, below), above: Math.max(0, above) };
+  } catch (err) {
+    return { below: 0, above: 0 };
+  }
+}
+
+// ===== interior/molding-editor.js =====
+/**
+ * interior/molding-editor.js
+ *
+ * The molding layout editor: an elevation of the wall face with its openings, where frames and lines are drawn,
+ * moved and resized by hand (snapping to each other, to the openings and to the wall ends), and a generator that
+ * fills the face with an arbitrary, also asymmetric, grid: column widths per zone («600 * 300 *»), rails between
+ * zones at any heights, openings skipped, split around or framed. The result is the molding's own item list
+ * (mode «custom»), still editable by hand afterwards.
+ */
+
+
+
+
+
+
+
+/* ---------- geometry of the face ---------- */
+/** Elevation frame of a molding: wall length, height, openings, and s ↔ x (x — left to right as seen from the face). */
+function mleFace(e) {
+  const w = byId(e.host);
+  if (!w || w.type !== 'wall') return null;
+  const wi = wallInfo(w);
+  const L = wi.L,
+    H = +w.h || S.ceil || 2700;
+  const side = e.side || 1;
+  // looking at side A (normal +n) the wall's u runs to the left
+  const X = s => (side > 0 ? L - s : s);
+  const ops = wi.ops.map(o => {
+    const z0 = o.o.type === 'door' ? 0 : +o.o.sill || 0;
+    const a = X(o.s0),
+      b = X(o.s1);
+    return { x0: Math.min(a, b), x1: Math.max(a, b), z0, z1: z0 + (+o.o.h || 2100), door: o.o.type === 'door', o: o.o };
+  });
+  return { w, wi, L, H, side, X, ops };
+}
+/** Items of a molding in face coordinates (x, z); generated layouts are converted on the first edit. */
+function mleItems(e, F) {
+  if (e.mode === 'custom' && Array.isArray(e.items)) return e.items.map(it => mleToX(it, F));
+  // the current generated layout as editable items
+  const out = [];
+  for (const it of mlLayout(e)) {
+    const xs = it.path.map(p => F.X(p[0])),
+      zs = it.path.map(p => p[1]);
+    if (it.frame)
+      out.push({
+        k: 'f',
+        x0: Math.min(...xs),
+        x1: Math.max(...xs),
+        z0: Math.min(...zs),
+        z1: Math.max(...zs),
+        c: e.corner || 'miter',
+        R: +e.R || 60
+      });
+    else out.push({ k: 'l', a: [xs[0], zs[0]], b: [xs[xs.length - 1], zs[zs.length - 1]] });
+  }
+  return out;
+}
+/** Stored item (s along the wall) → face item (x), and back. */
+function mleToX(it, F) {
+  if (it.k === 'f') {
+    const a = F.X(it.s0),
+      b = F.X(it.s1);
+    return { k: 'f', x0: Math.min(a, b), x1: Math.max(a, b), z0: it.z0, z1: it.z1, c: it.c || 'miter', R: it.R ?? 60 };
+  }
+  return { k: 'l', a: [F.X(it.a[0]), it.a[1]], b: [F.X(it.b[0]), it.b[1]] };
+}
+function mleToS(it, F) {
+  const r = v => Math.round(v * 10) / 10;
+  if (it.k === 'f') {
+    const a = F.X(it.x0),
+      b = F.X(it.x1);
+    return { k: 'f', s0: r(Math.min(a, b)), s1: r(Math.max(a, b)), z0: r(it.z0), z1: r(it.z1), c: it.c, R: it.R };
+  }
+  return { k: 'l', a: [r(F.X(it.a[0])), r(it.a[1])], b: [r(F.X(it.b[0])), r(it.b[1])] };
+}
+
+/* ---------- generator ---------- */
+/**
+ * Column widths of a zone from a spec: numbers are millimetres, «*» shares what is left equally, «2*» takes two
+ * shares; an empty spec or «авто» gives frames about `auto` wide.
+ */
+function mleCols(spec, W, gap, auto = 800) {
+  const t = String(spec || '')
+    .trim()
+    .toLowerCase()
+    .replace(/,/g, ' ');
+  if (!t || t === 'авто' || t === 'auto') {
+    const n = Math.max(1, Math.round((W + gap) / (auto + gap)));
+    return Array(n).fill((W - (n - 1) * gap) / n);
+  }
+  const toks = t.split(/\s+/).filter(Boolean);
+  let fixed = 0,
+    shares = 0;
+  const parsed = toks.map(k => {
+    const m = /^(\d*(?:\.\d+)?)\*$/.exec(k);
+    if (m) {
+      const s = m[1] ? +m[1] : 1;
+      shares += s;
+      return { s };
+    }
+    const v = Math.max(0, parseFloat(k) || 0);
+    fixed += v;
+    return { v };
+  });
+  const free = W - fixed - (parsed.length - 1) * gap;
+  return parsed.map(p => (p.s ? (shares ? (Math.max(0, free) * p.s) / shares : 0) : p.v));
+}
+/**
+ * Generates face items. g: {x0, x1, z0, z1, rails: [z…], cols: ['spec' per zone, the last repeats], gap, vgap,
+ * ops: 'skip' | 'split' | 'keep', wrap: frame the openings, wrapOff, c, R}.
+ */
+function mleGenerate(F, g, pw) {
+  const out = [];
+  const rails = (g.rails || []).filter(z => z > g.z0 + 50 && z < g.z1 - 50).sort((a, b) => a - b);
+  const bounds = [g.z0, ...rails, g.z1];
+  // with the openings framed, the other frames keep clear of that frame too
+  const og = g.wrap ? Math.max(g.opGap, g.wrapOff + pw + g.gap) : g.opGap;
+  const ops = F.ops.map(o => ({ ...o, X0: o.x0 - og, X1: o.x1 + og, Z0: o.z0 - og, Z1: o.z1 + og }));
+  const MIN = 120;
+  const frame = (x0, z0, x1, z1) => {
+    if (x1 - x0 >= MIN && z1 - z0 >= MIN) out.push({ k: 'f', x0, x1, z0, z1, c: g.c, R: g.R });
+  };
+  // a cell, possibly cut around the openings that cross it
+  const cell = (x0, z0, x1, z1) => {
+    const hit = ops.filter(o => o.X0 < x1 && o.X1 > x0 && o.Z0 < z1 && o.Z1 > z0);
+    if (!hit.length || g.ops === 'keep') return frame(x0, z0, x1, z1);
+    if (g.ops === 'skip') return;
+    // split: the parts of the cell left / right of the openings at full height, and above / below each one
+    const xs = [x0, ...hit.flatMap(o => [Math.max(x0, o.X0), Math.min(x1, o.X1)]), x1].sort((a, b) => a - b);
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const a = xs[i],
+        b = xs[i + 1];
+      if (b - a < MIN) continue;
+      const inside = hit.filter(o => o.X0 < b - 1 && o.X1 > a + 1);
+      if (!inside.length) {
+        frame(a, z0, b, z1);
+        continue;
+      }
+      const lo = Math.max(...inside.map(o => o.Z1)),
+        hi = Math.min(...inside.map(o => o.Z0));
+      if (z1 - lo >= MIN) frame(a, Math.max(z0, lo), b, z1);
+      if (hi - z0 >= MIN) frame(a, z0, b, Math.min(z1, hi));
+    }
+  };
+  for (let zi = 0; zi + 1 < bounds.length; zi++) {
+    const zA = bounds[zi] + (zi > 0 ? pw / 2 + g.vgap : 0),
+      zB = bounds[zi + 1] - (zi + 1 < bounds.length - 1 ? pw / 2 + g.vgap : 0);
+    if (zB - zA < MIN) continue;
+    const spec = g.cols[Math.min(zi, g.cols.length - 1)];
+    const ws = mleCols(spec, g.x1 - g.x0, g.gap, g.auto || 800);
+    let x = g.x0;
+    for (const w of ws) {
+      if (w > 1) cell(x, zA, x + w, zB);
+      x += w + g.gap;
+    }
+  }
+  // rails, cut at the openings
+  for (const z of rails) {
+    let segs = [[g.x0 - g.railExt, g.x1 + g.railExt]];
+    for (const o of ops)
+      if (z > o.Z0 && z < o.Z1)
+        segs = segs.flatMap(([a, b]) =>
+          o.X1 <= a || o.X0 >= b
+            ? [[a, b]]
+            : [
+                [a, o.X0],
+                [o.X1, b]
+              ].filter(([p, q]) => q - p > 60)
+        );
+    for (const [a, b] of segs) out.push({ k: 'l', a: [Math.max(0, a), z], b: [Math.min(F.L, b), z] });
+  }
+  // frames around the openings (a door's frame is open at the floor: three lines)
+  if (g.wrap)
+    for (const o of F.ops) {
+      const d = g.wrapOff + pw / 2;
+      const x0 = o.x0 - d,
+        x1 = o.x1 + d,
+        z1 = o.z1 + d;
+      if (o.door || o.z0 - d < 20)
+        out.push(
+          { k: 'l', a: [x0, 0], b: [x0, z1] },
+          { k: 'l', a: [x0, z1], b: [x1, z1] },
+          { k: 'l', a: [x1, z1], b: [x1, 0] }
+        );
+      else out.push({ k: 'f', x0, x1, z0: o.z0 - d, z1, c: 'miter', R: 0 });
+    }
+  return out;
+}
+
+/* ---------- the dialog ---------- */
+const MLE = { e: null, F: null, items: [], sel: -1, tool: 'sel', drag: null, k: 1, gen: null };
+const MLE_TOOLS = { sel: 'Выбор', f: 'Рамка', l: 'Линия' };
+
+function openMoldingEditor(e) {
+  const F = mleFace(e);
+  if (!F) return log('Молдинг не на стене', true);
+  MLE.e = e;
+  MLE.F = F;
+  MLE.items = mleItems(e, F);
+  MLE.sel = -1;
+  MLE.tool = 'sel';
+  const pr = mlProf(e.prof);
+  MLE.pw = Math.max(...pr.pts.map(p => p[1]));
+  MLE.gen = Object.assign(
+    {
+      x0: 150,
+      x1: Math.round(F.L - 150),
+      z0: 160,
+      z1: Math.round(F.H - 200),
+      rails: e.mode === 'frames' ? '' : String(+e.railZ || 900),
+      cols: 'авто',
+      gap: 100,
+      vgap: 100,
+      ops: 'split',
+      opGap: 100,
+      wrap: false,
+      wrapOff: 60,
+      c: e.corner || 'miter',
+      R: +e.R || 60,
+      railExt: 0
+    },
+    e.gen || {}
+  );
+  let m = $('#mledlg');
+  if (m) m.remove();
+  m = document.createElement('div');
+  m.id = 'mledlg';
+  m.className = 'modal';
+  m.innerHTML = `<div class="dlg mle" role="dialog" aria-label="Раскладка молдингов">
+  <div class="dlgh"><h3>Раскладка молдингов</h3><span class="mle-sub">${esc(pr.name)} · стена ${Math.round(F.L)} × ${Math.round(F.H)} мм, сторона ${F.side > 0 ? 'А' : 'Б'}</span>
+   <div class="seg" id="mleTools">${Object.entries(MLE_TOOLS)
+     .map(([k, n]) => `<button data-t="${k}">${n}</button>`)
+     .join('')}</div>
+   <button class="btn" id="mleDup" title="Копия выбранного правее">Копия</button>
+   <button class="btn" id="mleMir" title="Отразить всю раскладку по ширине стены">Отразить</button>
+   <button class="btn" id="mleDel" title="Удалить выбранное (Delete)">Удалить</button>
+   <button class="btn" id="mleClr">Очистить</button>
+   <span style="flex:1"></span>
+   <button class="btn pri" id="mleOk">Готово</button><button class="x" id="mleX" aria-label="Закрыть">×</button></div>
+  <div class="mle-body">
+   <div class="mle-view"><svg id="mleSvg"></svg><div class="mle-tip" id="mleTip"></div></div>
+   <div class="mle-side">
+    <section><h4>Выбранное</h4><div id="mleSel"></div></section>
+    <section><h4>Генератор</h4>
+     <label>Колонки по зонам <input type="text" id="mgCols" placeholder="авто"></label>
+     <p class="hint">Ширины в мм через пробел, «*» — остаток поровну, «2*» — две доли. Зоны снизу вверх через «|»: <code>* 400 *&nbsp;|&nbsp;600 * 600</code>.</p>
+     <label>Пояски, высоты <input type="text" id="mgRails" placeholder="900, 2100"></label>
+     <div class="two"><label>Слева <input type="number" id="mgX0"></label><label>Справа до <input type="number" id="mgX1"></label></div>
+     <div class="two"><label>Низ <input type="number" id="mgZ0"></label><label>Верх <input type="number" id="mgZ1"></label></div>
+     <div class="two"><label>Между рамками <input type="number" id="mgGap"></label><label>Зазор у пояска <input type="number" id="mgVgap"></label></div>
+     <label>Проёмы <select id="mgOps"><option value="split">рамки обходят проём</option><option value="skip">рамку на проёме убрать</option><option value="keep">не учитывать</option></select></label>
+     <div class="two"><label>Отступ от проёма <input type="number" id="mgOpGap"></label><label>Углы <select id="mgC">${Object.entries(
+       ML_CORNER
+     )
+       .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
+       .join('')}</select></label></div>
+     <div class="two"><label>Радиус <input type="number" id="mgR"></label><label class="chk"><input type="checkbox" id="mgWrap"> обрамить проёмы</label></div>
+     <button class="btn" id="mgGo">Заполнить стену</button>
+     <p class="hint">Генератор заменяет раскладку; дальше её можно править руками: тянуть рамки и углы, дорисовывать, удалять.</p>
+    </section>
+   </div>
+  </div></div>`;
+  document.body.appendChild(m);
+  const G = MLE.gen;
+  const bindG = (id, key, num) => {
+    const el = m.querySelector('#' + id);
+    if (el.type === 'checkbox') el.checked = !!G[key];
+    else el.value = G[key];
+    el.onchange = () => {
+      G[key] = el.type === 'checkbox' ? el.checked : num ? +el.value || 0 : el.value;
+    };
+  };
+  bindG('mgCols', 'cols');
+  bindG('mgRails', 'rails');
+  bindG('mgX0', 'x0', 1);
+  bindG('mgX1', 'x1', 1);
+  bindG('mgZ0', 'z0', 1);
+  bindG('mgZ1', 'z1', 1);
+  bindG('mgGap', 'gap', 1);
+  bindG('mgVgap', 'vgap', 1);
+  bindG('mgOps', 'ops');
+  bindG('mgOpGap', 'opGap', 1);
+  bindG('mgC', 'c');
+  bindG('mgR', 'R', 1);
+  bindG('mgWrap', 'wrap');
+  m.querySelector('#mgGo').onclick = () => {
+    MLE.items = mleGenerate(
+      F,
+      {
+        ...G,
+        rails: String(G.rails || '')
+          .split(/[,;\s]+/)
+          .map(Number)
+          .filter(v => v > 0),
+        cols: String(G.cols || '')
+          .split('|')
+          .map(s => s.trim())
+      },
+      MLE.pw
+    );
+    MLE.sel = -1;
+    mleRender();
+  };
+  m.querySelector('#mleTools').onclick = ev => {
+    const b = ev.target.closest('button');
+    if (b) {
+      MLE.tool = b.dataset.t;
+      mleRender();
+    }
+  };
+  m.querySelector('#mleDel').onclick = () => mleDelete();
+  m.querySelector('#mleClr').onclick = () => {
+    MLE.items = [];
+    MLE.sel = -1;
+    mleRender();
+  };
+  m.querySelector('#mleDup').onclick = () => {
+    const it = MLE.items[MLE.sel];
+    if (!it) return;
+    const c = JSON.parse(JSON.stringify(it));
+    const w = it.k === 'f' ? it.x1 - it.x0 + 100 : Math.abs(it.b[0] - it.a[0]) + 100 || 300;
+    if (c.k === 'f') {
+      c.x0 += w;
+      c.x1 += w;
+    } else {
+      c.a[0] += w;
+      c.b[0] += w;
+    }
+    MLE.items.push(c);
+    MLE.sel = MLE.items.length - 1;
+    mleRender();
+  };
+  m.querySelector('#mleMir').onclick = () => {
+    const L = F.L;
+    for (const it of MLE.items)
+      if (it.k === 'f') [it.x0, it.x1] = [L - it.x1, L - it.x0];
+      else {
+        it.a[0] = L - it.a[0];
+        it.b[0] = L - it.b[0];
+      }
+    mleRender();
+  };
+  const close = () => {
+    m.remove();
+    document.removeEventListener('keydown', key, true);
+  };
+  const key = ev => {
+    if (!document.body.contains(m)) return;
+    if (ev.target.closest && ev.target.closest('input,select,textarea')) return;
+    if (ev.key === 'Delete' || ev.key === 'Backspace') {
+      mleDelete();
+      ev.preventDefault();
+      ev.stopPropagation();
+    } else if (ev.key === 'Escape') {
+      if (MLE.tool !== 'sel' || MLE.sel >= 0) {
+        MLE.tool = 'sel';
+        MLE.sel = -1;
+        mleRender();
+      } else close();
+      ev.stopPropagation();
+    }
+  };
+  document.addEventListener('keydown', key, true);
+  m.querySelector('#mleX').onclick = close;
+  m.querySelector('#mleOk').onclick = () => {
+    mleApply();
+    close();
+  };
+  mleBindSvg(m.querySelector('#mleSvg'));
+  mleRender();
+}
+function mleDelete() {
+  if (MLE.sel < 0) return;
+  MLE.items.splice(MLE.sel, 1);
+  MLE.sel = -1;
+  mleRender();
+}
+/** Writes the items into the molding (mode «custom»), with its range on the wall for the plan. */
+function mleApply() {
+  const e = MLE.e,
+    F = MLE.F;
+  pushUndo();
+  e.mode = 'custom';
+  e.items = MLE.items.map(it => mleToS(it, F));
+  e.gen = { ...MLE.gen };
+  const ss = e.items.flatMap(it => (it.k === 'f' ? [it.s0, it.s1] : [it.a[0], it.b[0]]));
+  if (ss.length) {
+    e.s0 = Math.max(0, Math.floor(Math.min(...ss)));
+    e.s1 = Math.min(Math.round(F.L), Math.ceil(Math.max(...ss)));
+  }
+  changed();
+  const L = mlLayout(e);
+  log(
+    `Молдинги: ${L.filter(x => x.frame).length} рамок, ${L.filter(x => !x.frame).length} линий, ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(2)} м`
+  );
+}
+
+/* ---------- drawing and interaction ---------- */
+const MLE_PAD = 60;
+function mleView() {
+  const svg = $('#mleSvg');
+  const r = svg.getBoundingClientRect();
+  const F = MLE.F;
+  const W = Math.max(200, r.width),
+    H = Math.max(200, r.height);
+  const k = Math.min((W - 2 * MLE_PAD) / F.L, (H - 2 * MLE_PAD) / F.H);
+  const ox = (W - F.L * k) / 2,
+    oy = (H + F.H * k) / 2;
+  return { W, H, k, sx: x => ox + x * k, sy: z => oy - z * k, wx: px => (px - ox) / k, wz: py => (oy - py) / k };
+}
+function mleRender() {
+  const svg = $('#mleSvg');
+  if (!svg) return;
+  const V = mleView(),
+    F = MLE.F;
+  MLE.V = V;
+  document.querySelectorAll('#mleTools button').forEach(b => b.classList.toggle('on', b.dataset.t === MLE.tool));
+  svg.setAttribute('viewBox', `0 0 ${V.W} ${V.H}`);
+  const { sx, sy, k } = V;
+  let s = '';
+  // wall, floor and ceiling
+  s += `<rect x="${sx(0)}" y="${sy(F.H)}" width="${F.L * k}" height="${F.H * k}" class="mle-wall"/>`;
+  // grid every 100 mm when it is wide enough to read
+  if (k * 100 > 9) {
+    let g = '';
+    for (let x = 100; x < F.L; x += 100) g += `M${sx(x).toFixed(1)} ${sy(0)}V${sy(F.H)}`;
+    for (let z = 100; z < F.H; z += 100) g += `M${sx(0)} ${sy(z).toFixed(1)}H${sx(F.L)}`;
+    s += `<path d="${g}" class="mle-grid"/>`;
+  }
+  for (const o of F.ops)
+    s += `<rect x="${sx(o.x0)}" y="${sy(o.z1)}" width="${(o.x1 - o.x0) * k}" height="${(o.z1 - o.z0) * k}" class="mle-op"/><text x="${sx((o.x0 + o.x1) / 2)}" y="${sy((o.z0 + o.z1) / 2)}" class="mle-opt">${o.door ? 'дверь' : 'окно'} ${Math.round(o.x1 - o.x0)}×${Math.round(o.z1 - o.z0)}</text>`;
+  const pwk = Math.max(2, MLE.pw * k);
+  MLE.items.forEach((it, i) => {
+    const on = i === MLE.sel;
+    let d;
+    if (it.k === 'f') {
+      const path = mlFramePath(it.x0, it.z0, it.x1, it.z1, it.c, it.R);
+      d = path.map((p, j) => `${j ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join('') + 'Z';
+    } else d = `M${sx(it.a[0])} ${sy(it.a[1])}L${sx(it.b[0])} ${sy(it.b[1])}`;
+    s += `<path d="${d}" class="mle-pb${on ? ' on' : ''}" stroke-width="${pwk.toFixed(1)}" data-i="${i}"/><path d="${d}" class="mle-ax${on ? ' on' : ''}" data-i="${i}"/>`;
+  });
+  // handles and dimensions of the selection
+  const it = MLE.items[MLE.sel];
+  if (it) {
+    const hs = mleHandles(it);
+    for (const [hk, x, z] of hs)
+      s += `<rect x="${sx(x) - 5}" y="${sy(z) - 5}" width="10" height="10" class="mle-h" data-h="${hk}"/>`;
+    if (it.k === 'f') {
+      s += mleDimSvg(V, it.x0, it.z0, it.x1, it.z0, -22, Math.round(it.x1 - it.x0));
+      s += mleDimSvg(V, it.x1, it.z0, it.x1, it.z1, -22, Math.round(it.z1 - it.z0));
+      // distances to the neighbours: wall ends / floor
+      s += mleDimSvg(V, 0, it.z0, it.x0, it.z0, 40, Math.round(it.x0), true);
+      s += mleDimSvg(V, it.x1, it.z1, F.L, it.z1, -40, Math.round(F.L - it.x1), true);
+      s += mleDimSvg(V, it.x0, 0, it.x0, it.z0, -40, Math.round(it.z0), true);
+    } else
+      s += mleDimSvg(
+        V,
+        it.a[0],
+        it.a[1],
+        it.b[0],
+        it.b[1],
+        18,
+        Math.round(Math.hypot(it.b[0] - it.a[0], it.b[1] - it.a[1]))
+      );
+  }
+  if (MLE.drag && MLE.drag.ghost) s += MLE.drag.ghost;
+  // overall dimensions
+  s += mleDimSvg(V, 0, 0, F.L, 0, -30, Math.round(F.L), true);
+  s += mleDimSvg(V, 0, F.H, 0, 0, -30, Math.round(F.H), true);
+  svg.innerHTML = s;
+  mleSelPanel();
+  const L = MLE.items;
+  $('#mleTip').textContent =
+    MLE.tool === 'f'
+      ? 'Рамка: протяните прямоугольник. Привязка к рамкам, проёмам и краям стены.'
+      : MLE.tool === 'l'
+        ? 'Линия: протяните от точки до точки; почти горизонтальная или вертикальная выпрямляется.'
+        : `Рамок ${L.filter(x => x.k === 'f').length}, линий ${L.filter(x => x.k === 'l').length}. Тяните рамку или её углы; Delete — удалить; Esc — снять выбор.`;
+}
+function mleDimSvg(V, x0, z0, x1, z1, off, txt, faint) {
+  const a = [V.sx(x0), V.sy(z0)],
+    b = [V.sx(x1), V.sy(z1)];
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (L < 14) return '';
+  const ux = (b[0] - a[0]) / L,
+    uy = (b[1] - a[1]) / L,
+    nx = uy,
+    ny = -ux;
+  const A = [a[0] + nx * off, a[1] + ny * off],
+    B = [b[0] + nx * off, b[1] + ny * off];
+  const ang = (Math.atan2(uy, ux) * 180) / Math.PI;
+  const rot = ang > 90 || ang < -90 ? ang + 180 : ang;
+  const mx = (A[0] + B[0]) / 2 + nx * 4 * Math.sign(off),
+    my = (A[1] + B[1]) / 2 + ny * 4 * Math.sign(off);
+  return `<g class="mle-dim${faint ? ' faint' : ''}"><path d="M${a[0]} ${a[1]}L${A[0]} ${A[1]}M${b[0]} ${b[1]}L${B[0]} ${B[1]}M${A[0]} ${A[1]}L${B[0]} ${B[1]}"/><text x="${mx}" y="${my}" transform="rotate(${rot} ${mx} ${my})" dominant-baseline="${off > 0 ? 'text-before-edge' : 'text-after-edge'}">${txt}</text></g>`;
+}
+function mleHandles(it) {
+  if (it.k === 'f')
+    return [
+      ['x0z0', it.x0, it.z0],
+      ['x1z0', it.x1, it.z0],
+      ['x1z1', it.x1, it.z1],
+      ['x0z1', it.x0, it.z1],
+      ['x0', it.x0, (it.z0 + it.z1) / 2],
+      ['x1', it.x1, (it.z0 + it.z1) / 2],
+      ['z0', (it.x0 + it.x1) / 2, it.z0],
+      ['z1', (it.x0 + it.x1) / 2, it.z1]
+    ];
+  return [
+    ['a', it.a[0], it.a[1]],
+    ['b', it.b[0], it.b[1]]
+  ];
+}
+/** Snap values: wall ends, floor / top, openings, other items (and the profile width off them). */
+function mleSnapLines(skip) {
+  const F = MLE.F;
+  const xs = [0, F.L],
+    zs = [0, F.H];
+  for (const o of F.ops) {
+    xs.push(o.x0, o.x1);
+    zs.push(o.z0, o.z1);
+  }
+  MLE.items.forEach((it, i) => {
+    if (i === skip) return;
+    if (it.k === 'f') {
+      xs.push(it.x0, it.x1);
+      zs.push(it.z0, it.z1);
+    } else {
+      xs.push(it.a[0], it.b[0]);
+      zs.push(it.a[1], it.b[1]);
+    }
+  });
+  return { xs, zs };
+}
+function mleSnap(v, list, tol) {
+  let best = null,
+    bd = tol;
+  for (const c of list) {
+    const d = Math.abs(c - v);
+    if (d < bd) {
+      bd = d;
+      best = c;
+    }
+  }
+  return best != null ? best : Math.round(v / 10) * 10;
+}
+function mleBindSvg(svg) {
+  // points are kept on the wall face
+  const pt = ev => {
+    const r = svg.getBoundingClientRect();
+    const V = MLE.V;
+    const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+    return [cl(V.wx(ev.clientX - r.left), 0, MLE.F.L), cl(V.wz(ev.clientY - r.top), 0, MLE.F.H)];
+  };
+  svg.onpointerdown = ev => {
+    const V = MLE.V;
+    const tol = 8 / V.k;
+    const [x, z] = pt(ev);
+    svg.setPointerCapture(ev.pointerId);
+    const h = ev.target.dataset && ev.target.dataset.h;
+    if (h && MLE.sel >= 0) {
+      MLE.drag = { kind: 'h', h, it0: JSON.parse(JSON.stringify(MLE.items[MLE.sel])) };
+      return;
+    }
+    if (MLE.tool === 'f' || MLE.tool === 'l') {
+      const S_ = mleSnapLines(-1);
+      MLE.drag = { kind: MLE.tool, p0: [mleSnap(x, S_.xs, tol), mleSnap(z, S_.zs, tol)] };
+      return;
+    }
+    const i = ev.target.dataset && ev.target.dataset.i != null ? +ev.target.dataset.i : -1;
+    MLE.sel = i;
+    if (i >= 0) MLE.drag = { kind: 'move', p0: [x, z], it0: JSON.parse(JSON.stringify(MLE.items[i])) };
+    mleRender();
+  };
+  svg.onpointermove = ev => {
+    const D = MLE.drag;
+    if (!D) return;
+    const V = MLE.V;
+    const tol = 8 / V.k;
+    let [x, z] = pt(ev);
+    const S_ = mleSnapLines(D.kind === 'f' || D.kind === 'l' ? -1 : MLE.sel);
+    if (D.kind === 'f' || D.kind === 'l') {
+      x = mleSnap(x, S_.xs, tol);
+      z = mleSnap(z, S_.zs, tol);
+      if (D.kind === 'l') {
+        // nearly horizontal / vertical lines straighten
+        if (Math.abs(z - D.p0[1]) < Math.abs(x - D.p0[0]) * 0.18) z = D.p0[1];
+        else if (Math.abs(x - D.p0[0]) < Math.abs(z - D.p0[1]) * 0.18) x = D.p0[0];
+        D.cur = { k: 'l', a: D.p0.slice(), b: [x, z] };
+        D.ghost = `<path d="M${V.sx(D.p0[0])} ${V.sy(D.p0[1])}L${V.sx(x)} ${V.sy(z)}" class="mle-ghost"/>`;
+      } else {
+        D.cur = {
+          k: 'f',
+          x0: Math.min(D.p0[0], x),
+          x1: Math.max(D.p0[0], x),
+          z0: Math.min(D.p0[1], z),
+          z1: Math.max(D.p0[1], z),
+          c: MLE.gen.c,
+          R: MLE.gen.R
+        };
+        const c = D.cur;
+        D.ghost = `<rect x="${V.sx(c.x0)}" y="${V.sy(c.z1)}" width="${(c.x1 - c.x0) * V.k}" height="${(c.z1 - c.z0) * V.k}" class="mle-ghost"/><text x="${V.sx(c.x1) + 6}" y="${V.sy(c.z1) - 6}" class="mle-gt">${Math.round(c.x1 - c.x0)} × ${Math.round(c.z1 - c.z0)}</text>`;
+      }
+      mleRender();
+      return;
+    }
+    const it = MLE.items[MLE.sel];
+    if (!it) return;
+    if (D.kind === 'move') {
+      let dx = x - D.p0[0],
+        dz = z - D.p0[1];
+      const o = D.it0;
+      // snap the moved item's edges
+      const ex = o.k === 'f' ? [o.x0, o.x1] : [o.a[0], o.b[0]],
+        ez = o.k === 'f' ? [o.z0, o.z1] : [o.a[1], o.b[1]];
+      const sdx = ex
+        .map(v => mleSnap(v + dx, S_.xs, tol) - (v + dx))
+        .find(d => Math.abs(d) > 1e-9 && Math.abs(d) < tol);
+      const sdz = ez
+        .map(v => mleSnap(v + dz, S_.zs, tol) - (v + dz))
+        .find(d => Math.abs(d) > 1e-9 && Math.abs(d) < tol);
+      dx = sdx != null ? dx + sdx : Math.round(dx / 10) * 10;
+      dz = sdz != null ? dz + sdz : Math.round(dz / 10) * 10;
+      if (o.k === 'f') Object.assign(it, { x0: o.x0 + dx, x1: o.x1 + dx, z0: o.z0 + dz, z1: o.z1 + dz });
+      else {
+        it.a = [o.a[0] + dx, o.a[1] + dz];
+        it.b = [o.b[0] + dx, o.b[1] + dz];
+      }
+    } else if (D.kind === 'h') {
+      x = mleSnap(x, S_.xs, tol);
+      z = mleSnap(z, S_.zs, tol);
+      const h = D.h;
+      if (it.k === 'f') {
+        if (h.includes('x0')) it.x0 = Math.min(x, it.x1 - 60);
+        if (h.includes('x1')) it.x1 = Math.max(x, it.x0 + 60);
+        if (h.includes('z0')) it.z0 = Math.min(z, it.z1 - 60);
+        if (h.includes('z1')) it.z1 = Math.max(z, it.z0 + 60);
+      } else it[h] = [x, z];
+    }
+    mleRender();
+  };
+  svg.onpointerup = () => {
+    const D = MLE.drag;
+    MLE.drag = null;
+    if (D && (D.kind === 'f' || D.kind === 'l') && D.cur) {
+      const c = D.cur;
+      const big =
+        c.k === 'f' ? c.x1 - c.x0 >= 60 && c.z1 - c.z0 >= 60 : Math.hypot(c.b[0] - c.a[0], c.b[1] - c.a[1]) >= 40;
+      if (big) {
+        MLE.items.push(c);
+        MLE.sel = MLE.items.length - 1;
+      }
+    }
+    mleRender();
+  };
+  new ResizeObserver(() => mleRender()).observe(svg);
+}
+/** Numeric fields of the selected item (from the left end of the face, from the floor). */
+function mleSelPanel() {
+  const el = $('#mleSel');
+  if (!el) return;
+  const it = MLE.items[MLE.sel];
+  if (!it) {
+    el.innerHTML = '<p class="hint">Щёлкните рамку или линию на стене, чтобы задать её размеры числами.</p>';
+    return;
+  }
+  const num = (id, l, v) => `<label>${l}<input type="number" id="${id}" value="${Math.round(v)}"></label>`;
+  if (it.k === 'f')
+    el.innerHTML = `<div class="two">${num('msX', 'От левого края', it.x0)}${num('msZ', 'От пола', it.z0)}</div>
+    <div class="two">${num('msW', 'Ширина', it.x1 - it.x0)}${num('msH', 'Высота', it.z1 - it.z0)}</div>
+    <div class="two"><label>Углы<select id="msC">${Object.entries(ML_CORNER)
+      .map(([k, n]) => `<option value="${k}" ${k === it.c ? 'selected' : ''}>${esc(n)}</option>`)
+      .join('')}</select></label>${num('msR', 'Радиус', it.R || 0)}</div>`;
+  else
+    el.innerHTML = `<div class="two">${num('msAx', 'Начало: от края', it.a[0])}${num('msAz', 'от пола', it.a[1])}</div>
+    <div class="two">${num('msBx', 'Конец: от края', it.b[0])}${num('msBz', 'от пола', it.b[1])}</div>`;
+  const on = (id, f) => {
+    const i = el.querySelector('#' + id);
+    if (i)
+      i.onchange = () => {
+        f(i.tagName === 'SELECT' ? i.value : +i.value || 0);
+        mleRender();
+      };
+  };
+  on('msX', v => {
+    const w = it.x1 - it.x0;
+    it.x0 = v;
+    it.x1 = v + w;
+  });
+  on('msZ', v => {
+    const h = it.z1 - it.z0;
+    it.z0 = v;
+    it.z1 = v + h;
+  });
+  on('msW', v => (it.x1 = it.x0 + Math.max(60, v)));
+  on('msH', v => (it.z1 = it.z0 + Math.max(60, v)));
+  on('msC', v => (it.c = v));
+  on('msR', v => (it.R = Math.max(0, v)));
+  on('msAx', v => (it.a[0] = v));
+  on('msAz', v => (it.a[1] = v));
+  on('msBx', v => (it.b[0] = v));
+  on('msBz', v => (it.b[1] = v));
 }
 
 // ===== io/cad-doc.js =====
@@ -99848,6 +101262,9 @@ function ifcToProject(els, opts, shift, mkInst) {
           const r = V.xy.length >= 4 ? minRect(V.xy) : null;
           if (r && r.fill > 0.82 && r.W >= 30 && r.W <= 1500 && r.L >= r.W * 0.9 && V.z1 - V.z0 > 100) {
             const th = Math.round(r.W);
+            const kp = (el.psets && el.psets['Контур']) || {};
+            const kH = parseFloat(kp['Высота, мм']),
+              kZ = parseFloat(kp['Отметка низа, мм']) || 0;
             const c = [r.c[0] + sh[0], r.c[1] + sh[1]];
             const a = P(c[0] - (r.u[0] * r.L) / 2, c[1] - (r.u[1] * r.L) / 2),
               b = P(c[0] + (r.u[0] * r.L) / 2, c[1] + (r.u[1] * r.L) / 2);
@@ -99863,8 +101280,9 @@ function ifcToProject(els, opts, shift, mkInst) {
               a,
               b,
               th: computeType(t).total,
-              h: Math.round(V.z1 - V.z0),
-              z: Math.round(V.z0 - lz),
+              // a wall written by Kontur keeps its own height and base (the 3D reaches the slabs)
+              h: kH > 0 ? kH : Math.round(V.z1 - V.z0),
+              z: kH > 0 ? kZ : Math.round(V.z0 - lz),
               wt: t.id,
               loc: 'c',
               ro: 0,
@@ -100458,6 +101876,7 @@ function writeIFC(o = {}) {
           );
           kp['Толщина, мм'] = ct.total;
           kp['Высота, мм'] = +e.h || 0;
+          kp['Отметка низа, мм'] = +e.z || 0;
           kp['Длина, мм'] = Math.round(len);
         } else if (e.type === 'door' || e.type === 'window') {
           pset(
