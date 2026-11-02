@@ -5818,7 +5818,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.2';
+const APP_VER = '39.3';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -11586,6 +11586,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -11963,6 +11964,14 @@ function mkWall() {
         w.b = c[(i + 1) % c.length];
       }
     });
+    // the free ends of the chain join the walls they touch (a corner on a face corner, a T on a face)
+    if (!closed && made.length) {
+      const skip = new Set(made);
+      const w0 = byId(made[0]),
+        w1 = byId(made[made.length - 1]);
+      if (w0) autoJoinEnd(w0, 'a', skip);
+      if (w1) autoJoinEnd(w1, 'b', skip);
+    }
     changed();
   };
   const mk = () => {
@@ -18461,6 +18470,7 @@ function wheelModeMenu() {
 
 
 
+
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -18695,6 +18705,7 @@ const MENUS = [
       { n: 'Базовые размеры', k: 'DBA', a: () => run('dimbase') },
       '-',
       { n: 'Стены по линиям', k: 'из DWG', a: () => wallsFromSelection(), d: () => !S.sel.size },
+      { n: 'Состыковать стены', k: 'углы и примыкания', a: () => joinWallsCmd() },
       {
         n: 'Второй свет',
         k: 'стены на два этажа',
@@ -94380,6 +94391,118 @@ function structGuard(undoTop) {
 function structClashIssues(add_) {
   for (const c of structClashes()) add_(c.a, 'bad', c.msg + '. Сместите элемент.', c.a.p || c.a.a);
 }
+
+// ===== elements/wall-autojoin.js =====
+/**
+ * elements/wall-autojoin.js
+ *
+ * Walls join (L mitre / butt, T, X) only where their axis ends meet exactly. Drawn in one go the chain shares its
+ * points, but a wall drawn on its own usually starts at a face corner of another wall, a few millimetres short of
+ * it, or on its face — the axes miss each other and the corner stayed open or overlapped. Here the free ends of a
+ * wall are brought onto the axes of the walls they touch: near another wall's end both ends move to the crossing
+ * of the axes (a corner); against the side of a wall the end goes to its axis (a T, trimmed at the face by the
+ * joint code). Used by the wall command and by «Состыковать стены» for walls drawn earlier.
+ */
+
+
+
+
+
+
+const AJ_EPS = 2;
+/** Crossing of the axis lines of two walls (null for parallel ones). */
+function axisCross(w, o) {
+  const u = sub(w.b, w.a),
+    v = sub(o.b, o.a);
+  const den = u.x * v.y - u.y * v.x;
+  const lu = Math.hypot(u.x, u.y),
+    lv = Math.hypot(v.x, v.y);
+  if (lu < 1 || lv < 1 || Math.abs(den) / (lu * lv) < 0.17) return null; // closer than ~10° — not a corner
+  const t = ((o.a.x - w.a.x) * v.y - (o.a.y - w.a.y) * v.x) / den;
+  return P(w.a.x + u.x * t, w.a.y + u.y * t);
+}
+/**
+ * Moves the end `k` ('a' | 'b') of wall w onto the wall it touches. skip — ids not to join with (the rest of the
+ * chain being drawn). Returns a description of what was done, or null.
+ */
+function autoJoinEnd(w, k, skip) {
+  const p = w[k],
+    q0 = k === 'a' ? w.b : w.a;
+  const Lw = dist(w.a, w.b);
+  if (Lw < 10) return null;
+  const others = S.ents.filter(o => o.type === 'wall' && o !== w && !(skip && skip.has(o.id)) && dist(o.a, o.b) > 10);
+  // already on another axis end or inside another wall's band: the joint code handles it
+  for (const o of others) if (dist(o.a, p) <= AJ_EPS || dist(o.b, p) <= AJ_EPS) return null;
+  let best = null;
+  for (const o of others) {
+    const x = axisCross(w, o);
+    if (!x) continue;
+    // the crossing must lie on the line of w beyond / near its far end, not behind it
+    const ux = sub(p, q0);
+    if (dot(sub(x, q0), ux) <= 0) continue;
+    const reach = (w.th + o.th) / 2 + 60;
+    const dW = dist(x, p);
+    if (dW > reach) continue;
+    // a corner: x near an end of o
+    for (const ek of ['a', 'b']) {
+      const dO = dist(x, o[ek]);
+      const of = ek === 'a' ? o.b : o.a;
+      if (dO <= reach && dot(sub(x, of), sub(o[ek], of)) > 0) {
+        const sc = dW + dO;
+        if (!best || sc < best.sc) best = { kind: 'L', o, ek, x, sc };
+      }
+    }
+    // a T: x on o's axis between its ends (the end of w against o's side)
+    const Lo = dist(o.a, o.b);
+    const t = dot(sub(x, o.a), mul(sub(o.b, o.a), 1 / Lo));
+    if (t > o.th / 2 && t < Lo - o.th / 2) {
+      const sc = dW + 1000; // corners first
+      if (!best || sc < best.sc) best = { kind: 'T', o, x, sc };
+    }
+  }
+  if (!best) return null;
+  const x = P(Math.round(best.x.x * 10) / 10, Math.round(best.x.y * 10) / 10);
+  w[k] = x;
+  if (best.kind === 'L') {
+    const oe = best.o[best.ek];
+    // move the other wall's end only when nothing else is joined there
+    const shared = others.some(z => z !== best.o && (dist(z.a, oe) <= AJ_EPS || dist(z.b, oe) <= AJ_EPS));
+    if (!shared) best.o[best.ek] = x;
+  }
+  return best.kind;
+}
+/** Free ends of the given walls (or all walls) joined to their neighbours; returns the count. */
+function autoJoinWalls(ws) {
+  let n = 0;
+  for (const w of ws)
+    for (const k of ['a', 'b']) {
+      const r = autoJoinEnd(w, k);
+      if (r) n++;
+    }
+  return n;
+}
+/** Command «Состыковать стены»: the selected walls, or all walls of the level. */
+function joinWallsCmd() {
+  const sel = S.ents.filter(e => S.sel.has(e.id) && e.type === 'wall');
+  const ws = sel.length ? sel : S.ents.filter(e => e.type === 'wall');
+  if (!ws.length) return log('Нет стен', true);
+  pushUndo();
+  const n = autoJoinWalls(ws);
+  changed();
+  log(n ? `Состыковано концов стен: ${n} — углы и примыкания пересчитаны` : 'Все концы стен уже состыкованы');
+}
+defineTools({
+  joinwalls: {
+    command: {
+      t: 'СОСТЫКОВАТЬ',
+      m: () => {
+        joinWallsCmd();
+        return null;
+      },
+      a: ['joinwalls', 'состыковать', 'стыковка', 'соединить стены']
+    }
+  }
+});
 
 // ===== elements/wall-corners.js =====
 /**
