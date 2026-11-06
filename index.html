@@ -5190,6 +5190,119 @@ label.ck {
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* ---------- toolbar: groups with captions, buttons with names (v40.3) ---------- */
+#tools .tl,
+#tools .tcap {
+  display: none;
+}
+/* icons-only: captions become thin rules, as before */
+html:not([data-form='phone'])[data-tlab='icons'] #tools .tcap {
+  display: none;
+}
+
+/* names next to the icons (default on computers and tablets) */
+html:not([data-form='phone'])[data-tlab='labels'] #app {
+  --toolsW: calc(var(--toolS, 34px) + 142px);
+  grid-template-columns: var(--toolsW) minmax(0, 1fr) var(--sideW);
+}
+html[data-form='tablet'][data-orient='port'][data-tlab='labels'] #app {
+  grid-template-columns: var(--toolsW) minmax(0, 1fr);
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tgrid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  justify-content: stretch;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tool {
+  width: 100%;
+  height: calc(var(--toolS, 34px) - 4px);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 8px 0 6px;
+  text-align: left;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tool svg {
+  flex: none;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tl {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: inherit;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tool.grp::after {
+  right: 4px;
+  bottom: 4px;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tcap {
+  display: block;
+  grid-column: 1/-1;
+  margin: 2px 6px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tgrid .tsep {
+  margin: 6px 4px 5px;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .wsbtn {
+  width: 100%;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix .tlab {
+  text-align: left;
+  padding-left: 6px;
+}
+[data-skin='mac'] #tools .tool.on .tl {
+  color: #fff;
+}
+
+/* the section switch is in the header: the copy above the tools is only for narrow windows */
+@media (min-width: 1241px) {
+  html:not([data-form='phone']) #tools .ttop {
+    display: none;
+  }
+}
+/* «Файл» lives in the main menu; the header button stays only where there is no menu bar */
+html:not([data-form='phone']) #bFile {
+  display: none;
+}
+
+/* long menus scroll inside the window */
+#mbmenu {
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+#mbmenu .mh {
+  pointer-events: none;
+}
+
+/* the common tools (move, copy, rotate, erase, pan, zoom) — one row of icons under the section tools */
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix .tool {
+  justify-content: center;
+  padding: 0;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix .tl {
+  display: none;
+}
+html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix .tlab {
+  grid-column: 1/-1;
+}
+
 /* ===== phones, tablets, touch (ui/responsive.js sets html[data-form][data-touch][data-orient]) ===== */
 #bMenu,
 #mquick,
@@ -5954,7 +6067,7 @@ html[data-form='phone'] #v3cats {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '40.2';
+const APP_VER = '40.3';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -11070,7 +11183,7 @@ function changed() {
     updateProps();
     if (sceneState.viewMode === 'spec') renderSpec();
     renderIssues();
-    if (curWS === 'ann') renderWS();
+    if (curWS === 'draft') renderWS();
     if (OD.id != null && !$('#objdlg').hidden) odRefresh();
   }, 30);
   sync3DSoon();
@@ -18496,7 +18609,17 @@ function initContextMenu() {
 
 /* menu bar (Файл / Правка / Вид / Вставка / Сервис / Настройки / Справка)
          interface settings (theme, drawing background, grid, accent, icons, font, crosshair) */
-const UI_DEF = { theme: 'mac', canvas: '', grid: '', accent: '', icon: 'm', font: 13, cross: 60, sel: '' };
+const UI_DEF = {
+  theme: 'mac',
+  canvas: '',
+  grid: '',
+  accent: '',
+  icon: 'm',
+  tlab: 'labels',
+  font: 13,
+  cross: 60,
+  sel: ''
+};
 /** Mutable state of this module that other modules read or change. */
 const themeState = {
   UI: { ...UI_DEF }
@@ -18602,6 +18725,7 @@ function applyUI() {
   const ic = ICONS[themeState.UI.icon] || ICONS.m;
   rs.setProperty('--toolS', ic.t + 'px');
   rs.setProperty('--toolI', ic.i + 'px');
+  if (DE.dataset) DE.dataset.tlab = themeState.UI.tlab === 'icons' ? 'icons' : 'labels';
   if (document.body && document.body.style) document.body.style.fontSize = (themeState.UI.font || 13) + 'px';
   C.canvas = canvas;
   CANV_LIGHT = lumOf(canvas) > 0.45;
@@ -18989,6 +19113,7 @@ function wheelModeMenu() {
 
 
 
+
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -19002,6 +19127,7 @@ const MENUS = [
   {
     n: 'Файл',
     it: [
+      { h: 'Проект' },
       { n: 'Новый чертёж', a: () => fileAct('new') },
       { n: 'Открыть проект…', k: '.kontur', a: () => pickFile('.kontur,.txt,.json') },
       { n: 'Пример: дом со вторым светом', a: () => fileAct('sample') },
@@ -19017,10 +19143,11 @@ const MENUS = [
       },
       { n: 'Сохранить проект…', k: '.kontur', a: () => saveKontur() },
       { n: 'Экспорт проекта в JSON…', k: '.json', a: () => exportProject() },
+      { h: 'Библиотека моделей' },
       { n: 'Выгрузить всю библиотеку…', k: 'каталог + конвертор', a: () => exportLibrary() },
       { n: 'Загрузить библиотеку…', k: 'добавить', a: () => pickLibrary(false) },
       { n: 'Заменить библиотеку…', a: () => pickLibrary(true) },
-      '-',
+      { h: 'Импорт и экспорт' },
       { n: 'Импорт модели…', k: 'IFC, GLB, OBJ', a: () => pickFile('.ifc,.glb,.gltf,.obj') },
       { n: 'Импорт чертежа…', k: 'DWG, DXF', a: () => pickFile('.dwg,.dxf') },
       { n: 'Экспорт в DWG / DXF…', k: 'план, листы, 3D', a: () => openCadExport() },
@@ -19033,7 +19160,6 @@ const MENUS = [
           else log('Импорт DXF недоступен', true);
         }
       },
-      '-',
       { n: 'Печать текущего вида…', k: 'Ctrl+P', a: () => window.print() }
     ]
   },
@@ -19065,13 +19191,7 @@ const MENUS = [
           S.sel.clear();
           selChanged();
         }
-      },
-      '-',
-      { n: 'Переместить', k: 'ПЕРЕНЕСТИ', a: () => run('move') },
-      { n: 'Копировать с базовой точкой', k: 'КОПИРОВАТЬ', a: () => run('copy') },
-      { n: 'Повернуть', k: 'ПОВЕРНУТЬ', a: () => run('rotate') },
-      { n: 'Массив', k: 'МАССИВ', a: () => run('array') },
-      { n: 'Подобие', k: 'O', a: () => run('offset') }
+      }
     ]
   },
   {
@@ -19087,11 +19207,12 @@ const MENUS = [
       { n: 'Вид инженерных сетей', a: () => setNV(!NV.on), c: () => NV.on },
       { n: 'Правая панель', a: () => clickId('sideTog'), c: () => !$('#app').classList.contains('sidehide') },
       '-',
+      { h: 'Виды и объект' },
       { n: 'Проектные виды…', a: () => openViews() },
       { n: 'Дополненная реальность (AR)', k: 'AR', a: () => run('ar') },
       { n: 'Заметки с объекта…', a: () => uiHooks.openArNotes && uiHooks.openArNotes() },
       { n: 'Проверка датчиков телефона…', a: () => uiHooks.arSensorCheck && uiHooks.arSensorCheck() },
-      '-',
+      { h: 'Фазы' },
       {
         n: 'План демонтажа',
         a: () => uiHooks.phaseOpen && uiHooks.phaseOpen('demo'),
@@ -19111,104 +19232,15 @@ const MENUS = [
   },
   {
     n: 'Вставка',
-    it: [
-      { n: 'Стена', k: 'СТ', a: () => run('wall') },
-      { n: 'Дверь', k: 'ДВ', a: () => run('door') },
-      { n: 'Окно', k: 'ОК', a: () => run('window') },
-      { n: 'Витраж алюминиевый', k: 'ВИТРАЖ', a: () => run('vitrage') },
-      { n: 'Перекрытие', a: () => run('slab') },
-      { n: 'Крыша (визуальная)', a: () => run('roof') },
-      { n: 'Отделка стен (покраска, зоны, панели)', k: 'ОТД', a: () => run('finish') },
-      { n: 'Потолок', a: () => run('ceil') },
-      { n: 'Колонна', a: () => run('col') },
-      { n: 'Ригель', a: () => run('beam') },
-      '-',
-      { n: 'Лестница', k: 'ЛЕСТНИЦА', a: () => run('stair') },
-      { n: 'Ограждение', k: 'ОГР', a: () => run('rail') },
-      { n: 'Этажи…', k: 'ЭТАЖ', a: () => openLevels() },
-      { n: 'Пол: пирог и уклоны', k: 'ПОЛ', a: () => run('floorz') },
-      { n: 'Трап', k: 'ТРАП', a: () => run('drain') },
-      { n: 'Ревизионный люк', k: 'ЛЮК', a: () => run('rhatch') },
-      { n: 'Отверстие в плите (проходка)', k: 'ПРОХОДКА', a: () => run('shole') },
-      { n: 'Вентканал / шахта', k: 'ВЕНТКАНАЛ', a: () => run('vshaft') },
-      { n: 'Кондиционер', k: 'КОНДИЦИОНЕР', a: () => run('ac') },
-      { n: 'Трасса фреона', k: 'ФРЕОН', a: () => run('acfreon') },
-      { n: 'Дренаж кондиционера с уклоном', k: 'ДРЕНАЖ', a: () => run('acdrain') },
-      { n: 'Радиатор / конвектор', k: 'РАДИАТОР', a: () => run('rad') },
-      { n: 'Тёплый пол', k: 'ТП', a: () => run('ufh') },
-      '-',
-      { n: 'Трековое освещение', k: 'ТРЕК', a: () => run('track') },
-      { n: 'Модуль трека', k: 'МОДУЛЬ', a: () => run('tmod') },
-      { n: 'Кухня (конструктор)', k: 'КУХНЯ', a: () => run('kitchen') },
-      { n: 'Кухонный остров / полуостров', k: 'ОСТРОВ', a: () => run('island') },
-      { n: 'Барная стойка', k: 'СТОЙКА', a: () => run('barcounter') },
-      { n: 'Корпусная мебель по стенам (генератор)', k: 'МЕБЕЛЬ', a: () => run('casework') },
-      { n: 'Корпус (отдельный шкаф)', k: 'ШКАФ', a: () => run('cab') },
-      { n: 'Телевизор', k: 'ТВ', a: () => run('tv') },
-      { n: 'Зеркало (предмет)', k: 'ЗЕРКАЛО-ПРЕДМЕТ', a: () => run('mirrorobj') },
-      '-',
-      { n: 'Розетка', a: () => run('socket') },
-      { n: 'Напольная розетка / лючок / вывод', k: 'НАПОЛЬНАЯ', a: () => run('fout') },
-      { n: 'Выключатель', a: () => run('switch') },
-      { n: 'Светильник', a: () => run('light') },
-      { n: 'Щит / коробка', a: () => run('eq') },
-      { n: 'Провод', a: () => run('wire') },
-      { n: 'Труба…', a: () => run('pipe') },
-      { n: 'Развести канализацию (авто)', k: 'КАНАЛИЗАЦИЯ', a: () => run('sewergen') },
-      { n: 'Сантехприбор', a: () => run('fix') },
-      {
-        n: 'Смеситель для раковины',
-        a: () => {
-          mkFix.k = 'mixer';
-          run('fix');
-        }
-      },
-      {
-        n: 'Модуль TECEprofil (раковина / тумба / смеситель)',
-        a: () => {
-          mkFix.k = 'tecemod';
-          run('fix');
-        }
-      },
-      {
-        n: 'Душевая система',
-        a: () => {
-          mkFix.k = 'shsys';
-          run('fix');
-        }
-      },
-      {
-        n: 'Гигиенический душ',
-        a: () => {
-          mkFix.k = 'hyg';
-          run('fix');
-        }
-      },
-      {
-        n: 'Коллекторный узел',
-        a: () => {
-          mkFix.k = 'manifold';
-          run('fix');
-        }
-      },
-      {
-        n: 'Гидрозатвор Viega для техники',
-        a: () => {
-          mkFix.k = 'vtrap';
-          run('fix');
-        }
-      },
-      '-',
-      { n: 'Текст', k: 'Т', a: () => run('text') },
-      { n: 'Размер', a: () => run('dim') },
-      { n: 'Выноска', a: () => run('note') },
-      { n: 'Из каталога…', a: () => openCatalog() },
-      { n: 'Конвертор моделей…', a: () => openConverter() }
-    ]
+    /** Built from the workspaces: the same groups and names as the toolbar. */
+    get it() {
+      return insertMenu();
+    }
   },
   {
     n: 'Рисование',
     it: [
+      { h: 'Линии и фигуры' },
       { n: 'Отрезок', k: 'L', a: () => run('line') },
       { n: 'Полилиния', k: 'PL', a: () => run('pline') },
       { n: 'Прямоугольник', k: 'REC', a: () => run('rect') },
@@ -19220,33 +19252,25 @@ const MENUS = [
       { n: 'Прямая', k: 'XL', a: () => run('xline') },
       { n: 'Луч', k: 'RAY', a: () => run('ray') },
       { n: 'Точка', k: 'PO', a: () => run('point') },
-      '-',
+      { h: 'Штриховка и разметка' },
       { n: 'Штриховка', k: 'H', a: () => run('hatch') },
       { n: 'Облако изменений', a: () => run('revcloud') },
       { n: 'Поделить', k: 'DIV', a: () => run('divide') },
       { n: 'Разметить', k: 'ME', a: () => run('measure') },
-      '-',
+      { h: 'Размеры' },
       { n: 'Размер линейный', k: 'DIM', a: () => run('dim') },
       { n: 'Размер параллельный', k: 'DAL', a: () => run('dimal') },
       { n: 'Размер угловой', k: 'DAN', a: () => run('dimang') },
       { n: 'Радиус', k: 'DRA', a: () => run('dimrad') },
       { n: 'Диаметр', k: 'DDI', a: () => run('dimdia') },
       { n: 'Размерная цепь', k: 'DCO', a: () => run('dimcont') },
-      { n: 'Базовые размеры', k: 'DBA', a: () => run('dimbase') },
-      '-',
-      { n: 'Стены по линиям', k: 'из DWG', a: () => wallsFromSelection(), d: () => !S.sel.size },
-      { n: 'Состыковать стены', k: 'углы и примыкания', a: () => joinWallsCmd() },
-      {
-        n: 'Второй свет',
-        k: 'стены на два этажа',
-        a: () => secondLight(S.ents.filter(e => S.sel.has(e.id))),
-        d: () => !S.sel.size
-      }
+      { n: 'Базовые размеры', k: 'DBA', a: () => run('dimbase') }
     ]
   },
   {
     n: 'Редакт.',
     it: [
+      { h: 'Положение и форма' },
       { n: 'Перенести', k: 'M', a: () => run('move') },
       { n: 'Копировать', k: 'CO', a: () => run('copy') },
       { n: 'Повернуть', k: 'RO', a: () => run('rotate') },
@@ -19256,7 +19280,7 @@ const MENUS = [
       { n: 'Увеличить', k: 'LEN', a: () => run('lengthen') },
       { n: 'Подобие', k: 'O', a: () => run('offset') },
       { n: 'Массив', a: () => run('array') },
-      '-',
+      { h: 'Обрезка и соединение' },
       { n: 'Обрезать', k: 'TR', a: () => run('trimx') },
       { n: 'Удлинить', k: 'EX', a: () => run('extend') },
       { n: 'Сопряжение', k: 'F', a: () => run('fillet') },
@@ -19264,8 +19288,17 @@ const MENUS = [
       { n: 'Разорвать', k: 'BR', a: () => run('break') },
       { n: 'Соединить', k: 'J', a: () => run('join') },
       { n: 'Расчленить', k: 'X', a: () => run('explode') },
-      '-',
       { n: 'Копировать свойства', k: 'MA', a: () => run('matchprop') },
+      { h: 'Стены' },
+      { n: 'Стены по линиям', k: 'из DWG', a: () => wallsFromSelection(), d: () => !S.sel.size },
+      { n: 'Состыковать стены', k: 'углы и примыкания', a: () => joinWallsCmd() },
+      {
+        n: 'Второй свет',
+        k: 'стены на два этажа',
+        a: () => secondLight(S.ents.filter(e => S.sel.has(e.id))),
+        d: () => !S.sel.size
+      },
+      { h: 'Измерения' },
       { n: 'Расстояние', k: 'DI', a: () => run('dist') },
       { n: 'Площадь', k: 'AA', a: () => run('area') },
       { n: 'Координаты точки', k: 'ID', a: () => run('idpt') }
@@ -19274,18 +19307,20 @@ const MENUS = [
   {
     n: 'Сервис',
     it: [
+      { h: 'Типы и библиотеки' },
       { n: 'Типы стен…', a: () => openWT(S.curWt) },
-      { n: 'Профили…', a: () => openProfiles() },
-      { n: 'Инженерные системы…', a: () => openMEP('el') },
+      { n: 'Сечения профилей…', a: () => openProfiles() },
+      { n: 'Каталог моделей…', a: () => openCatalog() },
+      { n: 'Каталог моделей сантехники…', a: () => openSanLib() },
+      { n: 'Контур Конвертор…', k: 'модели → каталог', a: () => openConverter() },
+      { h: 'Инженерные системы' },
+      { n: 'Группы и системы…', a: () => openMEP('el') },
       { n: 'Щит…', a: () => openMEP('panel') },
       { n: 'Коллектор…', a: () => openMEP('coll') },
-      { n: 'Каталог моделей сантехники…', a: () => openSanLib() },
-      { n: 'Контур Конвертор (модели → каталог)…', a: () => openConverter() },
-      '-',
       { n: 'Оптимизировать проводку', a: () => optimizeWiring() },
       { n: 'Дотянуть устройства до щита', a: () => autoWirePanel() },
       { n: 'Перетрассировать все провода', a: () => rerouteAll() },
-      '-',
+      { h: 'Проект' },
       { n: 'Проверки проекта', a: () => clickId('bIss') },
       { n: 'Спецификация', a: () => setView('spec') }
     ]
@@ -19297,7 +19332,7 @@ const MENUS = [
       { n: 'Объектная привязка…', k: 'F3', a: () => setTimeout(() => clickId('bOs'), 0) },
       '-',
       ...wheelModeMenu(),
-      '-',
+      { h: 'Оформление' },
       {
         n: 'Студия',
         a: () => {
@@ -19348,6 +19383,53 @@ const MENUS = [
     ]
   }
 ];
+/** «Вставка»: the workspaces' tools in the same groups and with the same names as the toolbar. */
+const INS_SKIP = { draft: 1, views: 1, proj: 1 };
+/** Not «things to insert»: operations and calculations (they stay in their menus and the toolbar). */
+const INS_NOT = { joinwalls: 1, lcalc: 1, zmerge: 1, ztrans: 1 };
+const INS_EXTRA = {
+  plumb: [
+    ['Смеситель для раковины', 'mixer'],
+    ['Модуль TECEprofil (раковина, тумба, смеситель)', 'tecemod'],
+    ['Душевая система', 'shsys'],
+    ['Гигиенический душ', 'hyg'],
+    ['Коллекторный узел', 'manifold'],
+    ['Гидрозатвор Viega для техники', 'vtrap']
+  ]
+};
+function insertMenu() {
+  const out = [];
+  for (const w of WS) {
+    if (INS_SKIP[w.id]) continue;
+    out.push({ h: w.n });
+    for (const [, list] of w.g)
+      for (const t of list) {
+        if (INS_NOT[t]) continue;
+        const n = TLBL[t] || (CMDS[t] && CMDS[t].t) || t;
+        const k = CMDS[t] ? CMDS[t].t : '';
+        out.push({
+          n,
+          k: k.toUpperCase() === n.toUpperCase() ? '' : k,
+          a: () => (t === 'level' ? openLevels() : t === 'catalog' ? openCatalog() : run(t))
+        });
+      }
+    for (const [n, k] of INS_EXTRA[w.id] || [])
+      out.push({
+        n,
+        a: () => {
+          mkFix.k = k;
+          run('fix');
+        }
+      });
+  }
+  out.push(
+    { h: 'Оформление' },
+    { n: 'Текст', a: () => run('text') },
+    { n: 'Размер', k: 'РЗМЛИНЕЙНЫЙ', a: () => run('dim') },
+    { n: 'Выноска', a: () => run('note') }
+  );
+  return out;
+}
 function fileAct(f) {
   const b = document.querySelector(`#filemenu [data-f="${f}"]`);
   if (b) b.click();
@@ -19376,7 +19458,9 @@ function openMenu(i) {
     .map((x, j) =>
       x === '-'
         ? '<hr>'
-        : `<button data-mj="${j}" ${x.d && x.d() ? 'disabled' : ''}><span>${x.c ? (x.c() ? '✓ ' : '<i style="display:inline-block;width:1em"></i>') : ''}${esc(x.n)}</span>${x.k ? `<kbd>${esc(x.k)}</kbd>` : ''}</button>`
+        : x.h
+          ? `${j ? '<hr>' : ''}<div class="mh">${esc(x.h)}</div>`
+          : `<button data-mj="${j}" ${x.d && x.d() ? 'disabled' : ''}><span>${x.c ? (x.c() ? '✓ ' : '<i style="display:inline-block;width:1em"></i>') : ''}${esc(x.n)}</span>${x.k ? `<kbd>${esc(x.k)}</kbd>` : ''}</button>`
     )
     .join('');
   p.hidden = false;
@@ -19430,6 +19514,14 @@ function openUI() {
       Object.entries(ICONS).map(([k, t]) => [k, `${t.n} · ${t.t} пикс`]),
       themeState.UI.icon
     )}</label>
+    <label>Панель инструментов${sel(
+      'uiTlab',
+      [
+        ['labels', 'значки с подписями'],
+        ['icons', 'только значки (компактно)']
+      ],
+      themeState.UI.tlab || 'labels'
+    )}</label>
     ${col('uiCanvas', themeState.UI.canvas, th.canvas, 'Фон чертежа')}${col('uiGrid', themeState.UI.grid, CANV_LIGHT ? '#465060' : '#96a5b9', 'Цвет сетки')}
     ${col('uiAccent', themeState.UI.accent, '#e9ab45', 'Акцентный цвет')}${col('uiSel', themeState.UI.sel, '#5b8def', 'Цвет выделения')}
     <label>Размер шрифта интерфейса${sel(
@@ -19473,6 +19565,11 @@ function openUI() {
     openUI();
   };
   q('#uiIcon').onchange = e => set('icon', e.target.value);
+  q('#uiTlab').onchange = e => {
+    set('tlab', e.target.value);
+    applyUI();
+    window.dispatchEvent(new Event('resize'));
+  };
   q('#uiFont').onchange = e => set('font', +e.target.value);
   q('#uiCross').onchange = e => set('cross', +e.target.value);
   for (const [id, k] of [
@@ -23778,155 +23875,227 @@ function defineTools(defs) {
 
 /* ---------- workspaces: tools only when needed ---------- */
 const TT = Object.fromEntries(TOOLS.filter(t => Array.isArray(t)));
-const WS = [
+/**
+ * Workspaces. Every tool lives in exactly one workspace (its «home»), inside a named group; other workspaces reach it
+ * through the menus and the command line. The groups are shown as captions in the toolbar.
+ */
+const WSDEF = [
   {
     id: 'draft',
     n: 'Черчение',
     ab: 'Черч.',
-    tools: [
-      'stage',
-      '|',
-      'line',
-      'pline',
-      'rect',
-      'circle',
-      'arc',
-      'xline',
-      'point',
-      '|',
-      'hatch',
-      'text',
-      'dim',
-      '|',
-      'offset',
-      'mirror',
-      'array',
-      'scale',
-      'trimx',
-      'fillet',
-      '|',
-      'break',
-      'matchprop',
-      'divide',
-      'inquiry'
+    g: [
+      ['Рисование', ['line', 'pline', 'rect', 'circle', 'arc', 'xline', 'point', 'hatch']],
+      ['Изменение', ['offset', 'mirror', 'array', 'scale', 'trimx', 'fillet', 'break', 'matchprop', 'divide']],
+      ['Оформление', ['dim', 'text', 'note', 'inquiry']]
     ]
   },
   {
     id: 'arch',
     n: 'Архитектура',
     ab: 'Арх.',
-    tools: [
-      'wall',
-      'door',
-      'window',
-      'vitrage',
-      'portal',
-      'slab',
-      'ceilslab',
-      'roof',
-      'ceil',
-      'gbody',
-      '|',
-      'col',
-      'beam',
-      '|',
-      'stair',
-      'rail',
-      'level'
+    g: [
+      ['Стены и проёмы', ['wall', 'joinwalls', 'portal', 'door', 'window', 'vitrage']],
+      ['Этажи и плиты', ['level', 'slab', 'ceilslab', 'shole', 'roof']],
+      ['Лестницы', ['stair', 'rail']]
     ]
   },
-  { id: 'gkl', n: 'ГКЛ и нагрузки', ab: 'ГКЛ', tools: ['wall', 'gbody', '|', 'reinf', 'load'] },
   {
-    id: 'mep',
-    n: 'Инженерия',
-    ab: 'Инж.',
-    tools: [
-      'socket',
-      'switch',
-      'light',
-      'track',
-      'tmod',
-      'lcalc',
-      'eout',
-      'fout',
-      'eq',
-      'wire',
-      '|',
-      'pipe',
-      'sewergen',
-      'fix',
-      'boiler',
-      'wheater',
-      'drain',
-      'shole',
-      'rhatch',
-      '|',
-      'duct',
-      'vterm',
-      'vshaft',
-      'ac',
-      'acfreon',
-      'acdrain',
-      '|',
-      'rad',
-      'ufh'
+    id: 'gkl',
+    n: 'Конструкции',
+    ab: 'Констр.',
+    g: [
+      ['Несущие', ['col', 'beam']],
+      ['ГКЛ и тела', ['gbody', 'rhatch']],
+      ['Усиления', ['reinf', 'load']]
     ]
   },
   {
     id: 'int',
     n: 'Интерьер',
     ab: 'Инт.',
-    tools: [
-      'roomfill',
-      'floorz',
-      'ztrans',
-      'zmerge',
-      'trim',
-      'molding',
-      'curtain',
-      'ceil',
-      'ceilslab',
-      'fix',
-      'towel',
-      'washer',
-      'catalog',
-      '|',
-      'kitchen',
-      'island',
-      'barcounter',
-      'casework',
-      'cab',
-      'tv',
-      'mirrorobj',
-      '|',
-      'rhatch'
+    g: [
+      ['Помещение', ['roomfill', 'floorz', 'ceil', 'ztrans', 'zmerge']],
+      ['Отделка', ['finish', 'trim', 'molding', 'curtain', 'mirrorobj']],
+      ['Мебель', ['catalog', 'casework', 'cab', 'kitchen', 'island', 'barcounter', 'tv']]
     ]
   },
-  { id: 'ann', n: 'Аннотации', ab: 'Анн.', tools: ['note', 'dim', 'text', '|', 'arpt', 'ar'] },
   {
-    id: 'proj',
-    n: 'Проект: листы',
-    ab: 'Листы',
-    tools: ['shvp', 'sh3d', 'dim3', '|', 'dim', 'text', 'note', 'line', 'pline', 'rect', 'circle']
+    id: 'elec',
+    n: 'Электрика',
+    ab: 'Эл.',
+    g: [
+      ['Устройства', ['socket', 'switch', 'fout', 'eout']],
+      ['Свет', ['light', 'track', 'tmod', 'lcalc']],
+      ['Щит и кабели', ['eq', 'wire']]
+    ]
+  },
+  {
+    id: 'plumb',
+    n: 'Сантехника',
+    ab: 'Сант.',
+    g: [
+      ['Трубы', ['pipe', 'sewergen']],
+      ['Приборы', ['fix', 'washer', 'towel', 'boiler', 'wheater', 'drain']]
+    ]
+  },
+  {
+    id: 'hvac',
+    n: 'Климат',
+    ab: 'Клим.',
+    g: [
+      ['Отопление', ['rad', 'ufh']],
+      ['Вентиляция', ['duct', 'vterm', 'vshaft']],
+      ['Кондиционеры', ['ac', 'acfreon', 'acdrain']]
+    ]
   },
   {
     id: 'views',
-    n: 'Проектные виды',
+    n: 'Виды',
     ab: 'Виды',
-    tools: ['sect', 'elev', 'node', '|', 'hsect', 'csect', 'vbox', 'sbox', '|', 'views']
+    g: [
+      ['Разрезы и узлы', ['sect', 'elev', 'node']],
+      ['3D и инженерные', ['sbox', 'hsect', 'csect', 'vbox']],
+      ['Объект (AR)', ['arpt']],
+      ['Все виды', ['views']]
+    ]
+  },
+  {
+    id: 'proj',
+    n: 'Листы',
+    ab: 'Листы',
+    g: [
+      ['На лист', ['shvp', 'sh3d', 'dim3']],
+      ['Черчение на листе', ['sheetdraw']]
+    ]
   }
 ];
+/** Workspaces with the flat tool list (`|` between groups) kept for older callers. */
+const WS = WSDEF.map(w => ({
+  ...w,
+  tools: w.g.flatMap((x, i) => (i ? ['|', ...x[1]] : x[1]))
+}));
+/** Workspaces of earlier versions → current ones (saved choice). */
+const WS_OLD = { mep: 'elec', ann: 'draft' };
+/** Short names of the toolbar buttons (shown next to the icons). */
+const TLBL = {
+  line: 'Отрезок',
+  pline: 'Полилиния',
+  rect: 'Прямоугольник',
+  circle: 'Круг',
+  arc: 'Дуга',
+  xline: 'Прямая',
+  point: 'Точка',
+  hatch: 'Штриховка',
+  offset: 'Подобие',
+  mirror: 'Зеркало',
+  array: 'Массив',
+  scale: 'Масштаб',
+  trimx: 'Обрезать',
+  fillet: 'Сопряжение',
+  break: 'Разорвать',
+  matchprop: 'Копир. свойства',
+  divide: 'Поделить',
+  dim: 'Размер',
+  text: 'Текст',
+  note: 'Выноска',
+  inquiry: 'Измерить',
+  stage: 'Новая стадия',
+  wall: 'Стена',
+  joinwalls: 'Состыковать',
+  portal: 'Проём',
+  door: 'Дверь',
+  window: 'Окно',
+  vitrage: 'Витраж',
+  level: 'Этажи',
+  slab: 'Перекрытие',
+  ceilslab: 'Плита потолка',
+  shole: 'Отверстие в плите',
+  roof: 'Крыша',
+  stair: 'Лестница',
+  rail: 'Ограждение',
+  col: 'Колонна',
+  beam: 'Ригель',
+  gbody: 'Тело (короб, ниша)',
+  rhatch: 'Ревизионный люк',
+  reinf: 'Усиление',
+  load: 'Нагрузка',
+  roomfill: 'Отделка помещения',
+  floorz: 'Пол',
+  ceil: 'Потолок',
+  ztrans: 'Переход',
+  zmerge: 'Объединить зоны',
+  finish: 'Отделка стен',
+  trim: 'Плинтус, профиль',
+  molding: 'Молдинги',
+  curtain: 'Карниз',
+  mirrorobj: 'Зеркало',
+  catalog: 'Из каталога',
+  casework: 'Шкафы по стенам',
+  cab: 'Шкаф, тумба',
+  kitchen: 'Кухня',
+  island: 'Остров',
+  barcounter: 'Барная стойка',
+  tv: 'Телевизор',
+  socket: 'Розетка',
+  switch: 'Выключатель',
+  fout: 'Напольная',
+  eout: 'Электровывод',
+  light: 'Светильник',
+  track: 'Трек',
+  tmod: 'Модуль трека',
+  lcalc: 'Светорасчёт',
+  eq: 'Щит, коробка',
+  wire: 'Провод',
+  pipe: 'Труба',
+  sewergen: 'Канализация (авто)',
+  fix: 'Сантехприбор',
+  washer: 'Стиральная машина',
+  towel: 'Полотенцесушитель',
+  boiler: 'Бойлер',
+  wheater: 'Проточный',
+  drain: 'Трап',
+  rad: 'Радиатор',
+  ufh: 'Тёплый пол',
+  duct: 'Воздуховод',
+  vterm: 'Решётка, диффузор',
+  vshaft: 'Вентканал',
+  ac: 'Кондиционер',
+  acfreon: 'Фреон',
+  acdrain: 'Дренаж',
+  sect: 'Разрез',
+  elev: 'Развёртка',
+  node: 'Узел',
+  sbox: '3D-вид',
+  hsect: 'Гор. разрез',
+  csect: 'Сложный разрез',
+  vbox: '3D-куб',
+  arpt: 'AR-точки',
+  views: 'Все виды…',
+  shvp: 'План на лист',
+  sh3d: '3D-вид на лист',
+  dim3: 'Размер 3D',
+  sheetdraw: 'Черчение',
+  move: 'Перенести',
+  copy: 'Копировать',
+  rotate: 'Повернуть',
+  erase: 'Стереть',
+  pan: 'Панорама',
+  zoomext: 'Показать всё'
+};
 const HELP = {
   draft:
-    'Черчение: отрезки, полилинии, дуги, размеры и текст. Привязки и отслеживание работают во всех разделах. BIM-инструменты собраны в других разделах.',
-  arch: 'Архитектура: стены (тип — «Типы стен»), двери и окна — щелчком по стене, перекрытия, потолки, колонны и ригели. Несущую стену отметьте в свойствах — проверки начнут её учитывать.',
-  gkl: 'ГКЛ и нагрузки: перегородку Кнауф можно разложить на листы и профили — «Параметры объекта» у стены. Тела из ГКЛ — короба, ниши, подвесной камин. Усиления — труба или ОСП/фанера в каркасе. Нагрузка: точка на стене, масса и характер — вердикт сразу.',
-  mep: 'Инженерия: розетки и выключатели — модульные блоки (рамка, механизмы, подрозетники); трубы ХВС/ГВС/канализации начинаются от точек подключения приборов; «Сети» приглушают архитектуру. Щит и коллектор собираются сами.',
-  int: 'Интерьер: плинтусы, теневые профили, карнизы и молдинги — по точкам или вдоль стены (опция «Стена»), потолки, сантехника, мебель из каталога.',
-  ann: 'Аннотации: выноски берут текст из заметки элемента, размеры и тексты. Заметки, поля и файлы есть у любого элемента — в свойствах.',
-  proj: 'Проект: листы с рамкой и штампом по шаблону. Планы этажей, разрезы и 3D-виды на листе в масштабе; двойной щелчок по плану — размеры и правки через вид (привязки как на плане), по 3D — размеры в своих плоскостях. Чертежи мебели, щит, коллектор, однолинейная схема и спецификация — кнопками в панели. Печать / PDF, PNG.',
+    'Черчение: линии, дуги, штриховки, правка, размеры, тексты и выноски. Привязки и отслеживание работают во всех разделах. Стадии — отдельные чертежи той же модели (свои слои, размеры, тексты).',
+  arch: 'Архитектура: стены (тип — «Типы стен…» в панели или правой кнопкой при рисовании; [Дуга] — криволинейный участок), проёмы, двери и окна — щелчком по прямой стене, этажи, перекрытия, крыша, лестницы. Несущую стену отметьте в свойствах — проверки начнут её учитывать.',
+  gkl: 'Конструкции: колонны и ригели (ж/б, сталь, брус); тела — короба, ниши, подиумы, камин из ГКЛ или другого материала; ревизионные люки. Усиления — труба, TECEprofil, ОСП/фанера в каркасе. Нагрузка: точка на стене, масса и характер — вердикт сразу.',
+  int: 'Интерьер: помещение одним щелчком (пол, потолок, покраска, плинтус), полы и потолки по комнате или контуром, отделка стен, плинтусы и молдинги вдоль стены, карнизы, мебель — из каталога или генераторами.',
+  elec: 'Электрика: розетки и выключатели — модульные блоки (рамка, механизмы, подрозетники), светильники и треки, щит. Провода к светильникам — назначением клавиши в свойствах; «Оптимизировать проводку» пересобирает всё. «Вид сетей» приглушает архитектуру.',
+  plumb:
+    'Сантехника: трубы ХВС/ГВС/канализации от точек подключения приборов (привязка «Подключение»), «Канализация (авто)» разводит стоки к стояку. Коллектор собирается в «Коллектор…».',
+  hvac: 'Климат: радиаторы (подбор по теплопотерям помещения), тёплый пол, воздуховоды и решётки, вентканалы, кондиционеры с отдельными трассами фреона и дренажа.',
+  proj: 'Листы: рамка и штамп по шаблону. Планы этажей, разрезы и 3D-виды на листе в масштабе; двойной щелчок по плану — размеры и правки через вид, по 3D — размеры в своих плоскостях. Чертежи мебели, щит, коллектор, однолинейная схема и спецификация — кнопками в панели. Печать / PDF, PNG.',
   views:
-    'Проектные виды: разрезы, развёртки стен, узлы и инженерный раздел — горизонтальный разрез (ГР), сложный разрез по ломаной (СР: вертикальный развёрнутый или горизонтальный ступенчатый) и 3D-куб сечения (КУБ) с раскладкой объекта на составные части. Стены в видах — послойно, с каркасом. Каждому виду — масштаб, глубина, лист и свои видимые слои; превью разреза строится из 3D-модели в ортогональной проекции.'
+    'Виды: разрезы, развёртки стен, узлы, 3D-вид с секущим кубом и инженерные виды — горизонтальный разрез, сложный разрез по ломаной, 3D-куб с раскладкой объекта. У каждого вида — масштаб, глубина, стадия и свои слои. AR-точки — три точки на полу для совмещения модели с объектом через камеру.'
 };
 const CMDHELP = {
   offset: 'Подобие: введите расстояние (или [Через]), выберите объект, затем сторону. Повторяется до Enter.',
@@ -23974,7 +24143,10 @@ let curWS = 'arch';
 try {
   curWS = localStorage.getItem('kontur-ws') || 'arch';
 } catch (_) {}
+curWS = WS_OLD[curWS] || curWS;
+if (!WS.some(w => w.id === curWS)) curWS = 'arch';
 function setWS(id) {
+  id = WS_OLD[id] || id;
   if (!WS.some(w => w.id === id)) return;
   curWS = id;
   try {
@@ -23994,7 +24166,7 @@ function toolBtn(name) {
   const t = TT[name] || name;
   b.title = t;
   b.setAttribute('aria-label', t);
-  b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[name] || ''}</svg>`;
+  b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[name] || ''}</svg><span class="tl">${esc(TLBL[name] || String(t).split('·')[0].trim())}</span>`;
   b.onclick = ev => {
     if (FLY[name]) {
       ev.stopPropagation();
@@ -24043,6 +24215,14 @@ function flyMenu(btn, name) {
 
 /* ---------- flyouts and help of core drawing tools (their commands are in commands/commands.js) ---------- */
 defineTools({
+  finish: {
+    title: 'Отделка стен: покраска, плитка, панели — на сторону стены или зоной · ОТДЕЛКА',
+    icon: '<rect x="3" y="3" width="11" height="5" rx="1"/><path d="M14 5.5h3v4.5h-7.5v2.5"/><path class="t" d="M8.5 12.5h2v5h-2z"/>'
+  },
+  joinwalls: {
+    title: 'Состыковать стены: свободные концы — в углы и примыкания (выделенные или все на этаже) · СОСТЫКОВАТЬ',
+    icon: '<path d="M3 4h13v13"/><path d="M3 9h8v8"/><path class="t" d="M11 4v5M11 9h5"/>'
+  },
   pline: {
     title: 'Полилиния: отрезки, дуги, скругление · PL'
   },
@@ -50736,8 +50916,11 @@ const GRP = {
   fillet: { n: 'Сопряжение и фаска', m: ['fillet', 'chamfer'] },
   break: { n: 'Разрыв, соединение, расчленение', m: ['break', 'join', 'explode'] },
   divide: { n: 'Разметка', m: ['divide', 'measure'] },
-  inquiry: { n: 'Сведения', m: ['dist', 'area', 'idpt'] }
+  inquiry: { n: 'Измерения', m: ['dist', 'area', 'idpt'] },
+  sheetdraw: { n: 'Черчение на листе', m: ['line', 'pline', 'rect', 'circle', 'text', 'dim', 'note'] }
 };
+/** Groups whose button keeps the group name (the variants are kinds of one thing). */
+const GRP_FIXED = { arc: 1, array: 1, inquiry: 1, divide: 1 };
 let GRPLAST = {};
 try {
   GRPLAST = JSON.parse(localStorage.getItem('kontur.grp') || '{}') || {};
@@ -50762,7 +50945,7 @@ function grpLabel(k) {
   if (GRPL[k]) return { n: GRPL[k][0], al: GRPL[k][1] };
   const t = TT[k] || (CMDS[k] && CMDS[k].t) || k;
   const [a, b] = String(t).split('·');
-  return { n: a.trim().replace(/^./, c => c.toUpperCase()), al: (b || '').trim() };
+  return { n: TLBL[k] || a.trim().replace(/^./, c => c.toUpperCase()), al: (b || '').trim() };
 }
 function grpItems(gid) {
   const G = GRP[gid];
@@ -50787,7 +50970,8 @@ function grpPaint(b) {
   const t = `${it.n}${it.al ? ' · ' + it.al : ''} — ПКМ, удержание или ◢: ${GRP[gid].n.toLowerCase()}`;
   b.title = t;
   b.setAttribute('aria-label', t);
-  b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[it.ic] || ''}</svg>`;
+  const lb = gid === 'dim' ? 'Размер: ' + it.n.toLowerCase() : GRP_FIXED[gid] ? TLBL[gid] || GRP[gid].n : it.n;
+  b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[it.ic] || ''}</svg><span class="tl">${esc(lb)}</span>`;
 }
 function grpSet(gid, k) {
   if (!gid || GRPLAST[gid] === k) return;
@@ -77622,7 +77806,7 @@ function renderTools() {
   wb.id = 'wsBtn';
   wb.title = 'Раздел: ' + ws.n;
   wb.setAttribute('aria-label', 'Раздел: ' + ws.n);
-  wb.textContent = ws.ab + ' ▾';
+  wb.textContent = ws.n + ' ▾';
   wb.onclick = ev => {
     ev.stopPropagation();
     const m = $('#wsmenu');
@@ -77640,13 +77824,19 @@ function renderTools() {
     s_.className = 'tsep';
     g.appendChild(s_);
   };
-  for (const t of ws.tools) {
-    if (t === '|') sep(grid);
-    else grid.appendChild(toolBtn(t));
-  }
+  (ws.g || [['', ws.tools.filter(t => t !== '|')]]).forEach(([cap, list], i) => {
+    if (i) sep(grid);
+    if (cap) {
+      const c = document.createElement('div');
+      c.className = 'tcap';
+      c.textContent = cap;
+      grid.appendChild(c);
+    }
+    for (const t of list) grid.appendChild(toolBtn(t));
+  });
   const lab = document.createElement('div');
   lab.className = 'tlab';
-  lab.textContent = 'Правка';
+  lab.textContent = 'Общие';
   fix.appendChild(lab);
   for (const t of ['move', 'copy', 'rotate', 'erase', 'pan', 'zoomext']) fix.appendChild(toolBtn(t));
   tb.appendChild(top);
@@ -77731,31 +77921,39 @@ function renderWS() {
   if (uiHooks.stageBtn) uiHooks.stageBtn();
   if (ws.id === 'proj' && uiHooks.wsPanel) return uiHooks.wsPanel(el);
   let a = '';
-  if (ws.id === 'arch')
-    a = `<button class="btn" data-wa="wt">Типы стен…</button><button class="btn" data-wa="prof">Профили…</button>`;
+  if (ws.id === 'arch') a = `<button class="btn" data-wa="wt">Типы стен…</button>`;
   if (ws.id === 'gkl')
     a = `<button class="btn" data-wa="wt">Типы стен…</button><button class="btn" data-wa="iss">Проверить нагрузки</button>`;
-  if (ws.id === 'mep')
-    a = `<button class="btn ${NV.on ? 'pri' : ''}" data-wa="nv">${NV.on ? 'Сети: вкл' : 'Вид сетей'}</button><button class="btn" data-wa="el">Группы…</button><button class="btn" data-wa="panel">Щит…</button><button class="btn" data-wa="coll">Коллектор…</button><button class="btn" data-wa="vt">Вентиляция…</button>`;
-  if (ws.id === 'views') a = `<button class="btn pri" data-wa="views">Менеджер видов…</button>`;
-  if (ws.id === 'int')
-    a = `<button class="btn" data-wa="cat">Каталог…</button><button class="btn" data-wa="prof">Сечения профилей…</button>`;
-  let h = `<div class="sech">${esc(ws.n)}<span class="cnt">${ws.ab}</span></div>${a ? `<div class="btnrow" style="margin-top:0">${a}</div>` : ''}`;
+  const MEPW = ws.id === 'elec' || ws.id === 'plumb' || ws.id === 'hvac';
+  if (MEPW) {
+    const nvb = `<button class="btn ${NV.on ? 'pri' : ''}" data-wa="nv">${NV.on ? 'Вид сетей: вкл' : 'Вид сетей'}</button>`;
+    a =
+      nvb +
+      (ws.id === 'elec'
+        ? `<button class="btn" data-wa="el">Группы…</button><button class="btn" data-wa="panel">Щит…</button>`
+        : ws.id === 'plumb'
+          ? `<button class="btn" data-wa="coll">Коллектор…</button>`
+          : `<button class="btn" data-wa="vt">Вентиляция…</button>`);
+  }
+  if (ws.id === 'views') a = `<button class="btn pri" data-wa="views">Все виды…</button>`;
+  if (ws.id === 'int') a = `<button class="btn" data-wa="prof">Сечения профилей…</button>`;
+  let h = `<div class="sech">${esc(ws.n)}</div>${a ? `<div class="btnrow" style="margin-top:0">${a}</div>` : ''}`;
   if (ws.id === 'draft' && uiHooks.stageHtml) h = uiHooks.stageHtml() + h;
-  if (NV.on || ws.id === 'mep') {
-    h += `<div class="chips">${Object.entries(NVN)
+  if (NV.on || MEPW) {
+    if (NV.on)
+      h += `<div class="hint" style="margin:2px 0 4px">Системы в «Виде сетей»:</div><div class="chips">${Object.entries(NVN)
       .map(
         ([k, [n, c]]) =>
           `<button class="chipb ${NV.f[k] ? 'on' : ''}" data-nv="${k}" style="--c:${c}" ${NV.on ? '' : 'disabled title="Включите «Вид сетей»"'}>${n}</button>`
       )
       .join('')}</div>`;
-    if (ws.id === 'mep')
-      h += `<label class="fl">Соединения проводов<select id="wsJoints" style="background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:4px 6px;color:var(--fg)">${Object.entries(
+    if (ws.id === 'elec')
+      h += `<div class="btnrow"><button class="btn pri" id="wsOptW" title="Пересоздаёт проводку: щит → выключатель → светильники шлейфом по клавишам; розетки — отдельными линиями. Ctrl+Z — вернуть.">Оптимизировать проводку</button><button class="btn" id="wsAutoW">Дотянуть до щита</button><button class="btn" id="wsReroute" title="Трассы зафиксированы: скрытие слоёв и правка архитектуры их не меняют. Пересчитать все по текущей архитектуре.">Перетрассировать все</button></div><details class="wsset"><summary class="sech" style="cursor:pointer">Настройки проводки</summary><label class="fl">Соединения проводов<select id="wsJoints" style="background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:4px 6px;color:var(--fg)">${Object.entries(
         JOINTS
       )
         .map(([k, v]) => `<option value="${k}" ${(S.elec.joints || 'fixture') === k ? 'selected' : ''}>${v}</option>`)
         .join('')}</select></label>`;
-    if (ws.id === 'mep') {
+    if (ws.id === 'elec') {
       const sel_ = (id, opts, v) =>
         `<select id="${id}" style="background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:4px 6px;color:var(--fg)">${opts.map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
       h += `<label class="fl">Цвет проводов${sel_(
@@ -77779,12 +77977,12 @@ function renderWS() {
         Object.entries(METHODS).map(([k, m]) => [k, m.n]),
         S.elec.sockMethod || 'floor'
       )}</label>`;
-      h += `<div class="btnrow"><button class="btn pri" id="wsOptW" title="Пересоздаёт проводку: щит → выключатель → светильники шлейфом по клавишам; розетки — отдельными линиями. Ctrl+Z — вернуть.">Оптимизировать проводку</button><button class="btn" id="wsAutoW">Дотянуть до щита</button><button class="btn" id="wsReroute" title="Трассы зафиксированы: скрытие слоёв и правка архитектуры их не меняют. Пересчитать все по текущей архитектуре.">Перетрассировать все</button></div><p class="hint" style="margin:2px 0">В «Виде сетей» провода показываются по монтажной трассе: гофра, опуски в стене, штробы, подрозетники, проходы через стены; конфликты — во вкладке «Проверки».</p>`;
+      h += `<p class="hint" style="margin:2px 0">В «Виде сетей» провода показываются по монтажной трассе: гофра, опуски в стене, штробы, подрозетники, проходы через стены; конфликты — во вкладке «Проверки».</p></details>`;
     }
-    if (ws.id === 'mep')
+    if (ws.id === 'plumb')
       h += `<label class="fl" style="flex-direction:row;align-items:center;gap:8px">Стяжка пола над плитой, мм <input type="number" id="wsScreed" value="${fmt(S.x.screed || 0)}" style="width:70px;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:3px 6px"></label>`;
   }
-  if (ws.id === 'draft' || ws.id === 'ann' || ws.id === 'views') {
+  if (ws.id === 'draft' || ws.id === 'views') {
     h += `<label class="fl" style="flex-direction:row;align-items:center;gap:8px">Масштаб аннотаций<select id="wsScale" style="background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:3px 6px;color:var(--fg)">${SCALES.map(x => `<option value="${x}" ${(S.x.ascale || 50) === x ? 'selected' : ''}>1:${x}</option>`).join('')}</select></label>`;
     h += `<div class="btnrow" style="margin-top:0"><button class="btn" data-wa="dimst">Стиль размеров…</button></div>`;
   }
@@ -77792,12 +77990,13 @@ function renderWS() {
     const L = viewsList();
     h += `<div class="alist">${L.map(v => `<button data-vw="${v.id}"><span>${esc(v.name)} · 1:${vwOf(v).scale}</span></button>`).join('')}</div>`;
   }
-  if (ws.id === 'ann') {
+  if (ws.id === 'draft') {
     const L = S.ents.filter(
       e =>
         ['note', 'sect', 'node'].includes(e.type) ||
         (e.meta && (e.meta.note || (e.meta.data || []).length || (e.meta.files || []).length))
     );
+    h += `<details class="wsnotes"><summary class="sech" style="cursor:pointer">Выноски, узлы и заметки (${L.length})</summary>`;
     h += L.length
       ? `<div class="alist">${L.slice(0, 40)
           .map(
@@ -77806,6 +78005,7 @@ function renderWS() {
           )
           .join('')}</div>`
       : '<div class="hint">Заметок и узлов пока нет.</div>';
+    h += '</details>';
   }
   el.innerHTML = h;
   if (ws.id === 'draft' && uiHooks.stageBind) uiHooks.stageBind(el);
@@ -94616,7 +94816,7 @@ initLibrary();
   xBoot();
   log('Контур: план и 3D, единицы в миллиметрах');
   log(
-    'Разделы — в шапке или кнопкой над инструментами. Новое: ПОТОЛОК, КОЛ, РИГ, ТРУБА, САНТ, ПРОФ, ГКЛТ, УСИЛ, НАГР, ВЫН, РАЗРЕЗ, УЗЕЛ'
+    'Разделы — в шапке. Инструменты раздела — слева, по группам; любую команду можно ввести здесь (Справка → Горячие клавиши и команды)'
   );
   document.fonts && document.fonts.ready.then(dirty);
   cin.focus({ preventScroll: true });
