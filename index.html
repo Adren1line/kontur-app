@@ -5505,7 +5505,7 @@ html[data-form='phone'] #v3bar {
 html[data-form='phone'] #v3 canvas.vcube3 {
   width: 88px !important;
   height: 88px !important;
-  top: 50px;
+  top: 112px;
   right: 6px;
 }
 /* dialogs: full screen */
@@ -5612,6 +5612,74 @@ html[data-form='phone'].sheetopen #sheetShade {
   inset: 0;
   z-index: 49;
   background: rgba(0, 0, 0, 0.18);
+}
+
+/* v40.1: menus on a phone never open under the drawer or past the edge of the screen */
+html[data-form='phone'] #mbmenu {
+  position: fixed;
+  left: 8px !important;
+  right: 8px;
+  top: 54px !important;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+  z-index: 80;
+  box-sizing: border-box;
+  border-radius: 14px;
+}
+html[data-form='phone'] #mbmenu button {
+  padding: 10px 12px;
+  font-size: 15px;
+}
+html[data-form='phone'] #mbmenu kbd {
+  display: none;
+}
+/* the 3D bar wraps instead of scrolling sideways (a scrolling bar cut its drop-down lists) */
+html[data-form='phone'] #v3bar {
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  max-width: none;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+html[data-form='phone'] #v3bar .v3grp {
+  position: static;
+}
+html[data-form='phone'] #v3bar .v3menu {
+  left: 4px;
+  right: 4px;
+  top: calc(100% + 6px);
+  min-width: 0;
+  max-height: 60dvh;
+  overflow-y: auto;
+  z-index: 8;
+}
+html[data-form='phone'] #v3bar .v3menu button {
+  padding: 10px 12px;
+  font-size: 15px;
+}
+html[data-form='phone'] #v3bar button {
+  min-height: 34px;
+}
+html[data-form='phone'] #lswPop {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  top: 56px;
+  max-height: calc(100% - 70px);
+}
+html[data-form='phone'] #stage.v-3d #lswPop {
+  top: 120px;
+  max-height: calc(100% - 134px);
+}
+html[data-form='phone'] #v3cats {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  top: 120px;
 }
 </style>
 
@@ -5798,28 +5866,42 @@ html[data-form='phone'].sheetopen #sheetShade {
 <div id="busy" class="modal" hidden><div class="busybox"><div class="spin"></div><div id="busytxt">Обработка…</div></div></div>
 <input type="file" id="fileIn" hidden accept=".ifc,.glb,.gltf,.obj,.json">
 
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <script>
-/* 3D libraries: from the browser's own store when there is no network, otherwise from the CDN (and stored) */
+/* 3D libraries: a library that did not come from the CDN is taken from the browser's store */
 (function () {
   var L = ["https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js","https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js","https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js","https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js","https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"];
+  var has = function (u) {
+    if (typeof THREE === 'undefined') return false;
+    var n = u.split('/').pop().replace('.js', '');
+    if (n === 'three.min') return true;
+    return !!THREE[n];
+  };
   var key = function (u) { return 'kontur.lib.' + u.split('/npm/')[1]; };
   var get = function (u) { try { return localStorage.getItem(key(u)); } catch (e) { return null; } };
-  var all = L.every(function (u) { return !!get(u); });
-  if (all && (!navigator.onLine || localStorage.getItem('kontur.lib.prefer') === 'local')) {
-    L.forEach(function (u) { document.write('<scr' + 'ipt>' + get(u).replace(/<\/script/gi, '<\\/script') + '\n</scr' + 'ipt>'); });
-  } else {
-    L.forEach(function (u) { document.write('<scr' + 'ipt src="' + u + '"></scr' + 'ipt>'); });
-    window.addEventListener('load', function () {
-      L.forEach(function (u) {
-        if (get(u)) return;
-        fetch(u).then(function (r) { return r.ok ? r.text() : null; }).then(function (t) {
-          if (t) try { localStorage.setItem(key(u), t); } catch (e) {}
-        }).catch(function () {});
-      });
+  L.forEach(function (u) {
+    if (has(u)) return;
+    var t = get(u);
+    if (!t) return;
+    var s = document.createElement('script');
+    s.text = t;
+    (document.head || document.documentElement).appendChild(s);
+  });
+  window.addEventListener('load', function () {
+    L.forEach(function (u) {
+      if (get(u) || !window.fetch) return;
+      fetch(u).then(function (r) { return r.ok ? r.text() : null; }).then(function (t) {
+        if (t) try { localStorage.setItem(key(u), t); } catch (e) {}
+      }).catch(function () {});
     });
-  }
+  });
 })();
 </script>
+
 <script>
 (()=>{
 'use strict';
@@ -5831,7 +5913,7 @@ html[data-form='phone'].sheetopen #sheetShade {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.12';
+const APP_VER = '39.13';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15733,9 +15815,23 @@ function init3D() {
     return false;
   }
   const host = $('#v3');
-  const r = new THREE.WebGLRenderer({ antialias: true });
-  r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-  r.shadowMap.enabled = true;
+  // phones: less memory for the GPU (a lost WebGL context showed a blank 3D), no soft shadows by default
+  const phone = document.documentElement && document.documentElement.dataset.form === 'phone';
+  let r;
+  try {
+    r = new THREE.WebGLRenderer({ antialias: !phone, powerPreference: phone ? 'low-power' : 'default' });
+  } catch (err) {
+    try {
+      r = new THREE.WebGLRenderer({ antialias: false });
+    } catch (err2) {
+      $('#v3msg').textContent =
+        '3D недоступно: браузер не дал WebGL. Закройте лишние вкладки или перезапустите браузер.';
+      return false;
+    }
+  }
+  r.setPixelRatio(Math.min(phone ? 1.5 : 2, window.devicePixelRatio || 1));
+  if (phone && V3.shadows && !V3.shadowsSet) V3.shadows = false;
+  r.shadowMap.enabled = V3.shadows;
   r.shadowMap.type = THREE.PCFSoftShadowMap;
   r.outputEncoding = THREE.sRGBEncoding;
   host.insertBefore(r.domElement, host.firstChild);
@@ -15759,7 +15855,7 @@ function init3D() {
   scene.add(amb);
   const sun = new THREE.DirectionalLight(0xfff4e6, 0.95);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(phone ? 1024 : 2048, phone ? 1024 : 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 8;
   scene.add(sun);
@@ -15796,6 +15892,20 @@ function init3D() {
   });
   scene.add(tc);
   Object.assign(V3, { inited: true, r, scene, cam, ctl, sun, root, tc, grid, host });
+  if (phone && $('#v3msg')) $('#v3msg').textContent = 'Один палец — вращать · два пальца — сдвиг · касание — выбрать';
+  // a phone may drop the WebGL context (memory, app switch): wait for it back and redraw instead of a blank view
+  r.domElement.addEventListener('webglcontextlost', ev => {
+    ev.preventDefault();
+    V3.lost = true;
+    const m = $('#v3msg');
+    if (m) m.textContent = '3D: видеопамять сброшена браузером — восстанавливаю…';
+  });
+  r.domElement.addEventListener('webglcontextrestored', () => {
+    V3.lost = false;
+    const m = $('#v3msg');
+    if (m) m.textContent = '';
+    req3();
+  });
   if (uiHooks.v3Init) uiHooks.v3Init();
   // camera: Ctrl+LMB orbit, Ctrl+RMB (or RMB / MMB) pan; OrbitControls swaps rotate/pan when Ctrl is held, hence the inverted map
   host.addEventListener(
@@ -15903,7 +16013,13 @@ function req3() {
   V3.need = true;
   requestAnimationFrame(() => {
     V3.need = false;
-    if (V3.inited && is3D()) render3Main();
+    if (V3.inited && is3D() && !V3.lost) {
+      try {
+        render3Main();
+      } catch (err) {
+        console.error(err);
+      }
+    }
   });
 }
 function cats3() {
@@ -17290,6 +17406,8 @@ function setView(v) {
   document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (is3D()) {
     if (init3D()) {
+      const sb = document.querySelector('#v3bar [data-a="shadow"]');
+      if (sb) sb.classList.toggle('on', !!V3.shadows);
       const first = !V3.fitted;
       sync3D();
       if (first) {
@@ -17421,6 +17539,7 @@ function initBuild() {
     }
     if (a === 'shadow') {
       V3.shadows = !V3.shadows;
+      V3.shadowsSet = true;
       b.classList.toggle('on', V3.shadows);
       V3.r.shadowMap.enabled = V3.shadows;
       V3.mats.forEach(m => (m.needsUpdate = true));
@@ -18395,9 +18514,9 @@ function initResponsive() {
     ['bLC', 'Светорасчёт'],
     ['bAR', 'AR'],
     ['bFile', 'Файл'],
-    ['#views [data-v=plan]', 'План'],
-    ['#views [data-v=3d]', '3D'],
-    ['#views [data-v=spec]', 'Спецификация'],
+    ["#views [data-v='plan']", 'План'],
+    ["#views [data-v='3d']", '3D'],
+    ["#views [data-v='spec']", 'Спецификация'],
     ['sb', 'Привязки и режимы']
   ]
     .map(([id, n]) => `<button data-q="${id}">${n}</button>`)
@@ -18417,7 +18536,10 @@ function initResponsive() {
       document.documentElement.classList.toggle('stopen');
       return;
     }
-    const t = q.startsWith('#') ? document.querySelector(q) : document.getElementById(q);
+    let t = null;
+    try {
+      t = q.startsWith('#') ? document.querySelector(q) : document.getElementById(q);
+    } catch (_) {}
     if (t) setTimeout(() => t.click(), 0);
   };
   document.addEventListener('pointerdown', ev => {
@@ -87612,6 +87734,7 @@ function clearMarks3() {
 
 
 
+
 /* ---------- settings and anchors ---------- */
 function arCfg() {
   if (!S.x.ar) S.x.ar = { eye: 1.45, fov: 63, stride: 0.7, steps: true, layerOp: {}, geo: null };
@@ -87860,6 +87983,14 @@ async function arStart() {
   const A = arAnchors();
   if (A.length < 3) {
     log('AR: сначала поставьте на плане три точки привязки по полу — команда AR-ТОЧКИ (раздел «Аннотации»)', true);
+    // on a phone the command line is easy to miss: say it in a window and offer to place the points
+    if (typeof window !== 'undefined' && window.confirm) {
+      const ok = window.confirm(
+        `Для AR нужны три точки привязки на полу (A, B, C), сейчас ${A.length} из 3.\n\n` +
+          'Поставьте их на плане в местах, которые легко найти в комнате (углы, дверной проём). Поставить сейчас?'
+      );
+      if (ok) startCmd('arpt');
+    }
     return;
   }
   const C = arCfg();
@@ -88057,6 +88188,9 @@ function startSensor() {
 function status() {
   const el_ = AR.el && AR.el.querySelector('.arstat');
   if (!el_) return;
+  // under the button bar, however many rows it wrapped into on a narrow screen
+  const bar = AR.el.querySelector('.arbar');
+  if (bar && bar.offsetHeight) el_.style.top = bar.offsetHeight + 4 + 'px';
   const gy = AR.ori || AR.sensorQ;
   const inFrame = window.top !== window.self;
   const t = [
