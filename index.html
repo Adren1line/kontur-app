@@ -5913,7 +5913,7 @@ html[data-form='phone'] #v3cats {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '39.13';
+const APP_VER = '40';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -18884,11 +18884,19 @@ const MENUS = [
       { n: 'Щит / коробка', a: () => run('eq') },
       { n: 'Провод', a: () => run('wire') },
       { n: 'Труба…', a: () => run('pipe') },
+      { n: 'Развести канализацию (авто)', k: 'КАНАЛИЗАЦИЯ', a: () => run('sewergen') },
       { n: 'Сантехприбор', a: () => run('fix') },
       {
         n: 'Смеситель для раковины',
         a: () => {
           mkFix.k = 'mixer';
+          run('fix');
+        }
+      },
+      {
+        n: 'Модуль TECEprofil (раковина / тумба / смеситель)',
+        a: () => {
+          mkFix.k = 'tecemod';
           run('fix');
         }
       },
@@ -23534,6 +23542,7 @@ const WS = [
       'wire',
       '|',
       'pipe',
+      'sewergen',
       'fix',
       'boiler',
       'wheater',
@@ -28140,14 +28149,35 @@ function gbodyLoad(e) {
 
 
 
+
 /* ---------- reinforcements inside walls: steel tubes, OSB / plywood ---------- */
-const TUBES = ['40x20x2', '40x40x2', '50x25x2', '50x50x2', '60x30x2', '60x40x2', '60x40x3', '80x40x3', '100x50x3'];
+const TUBES = [
+  '40x20x2',
+  '40x40x2',
+  '50x25x2',
+  '50x50x2',
+  '60x30x2',
+  '60x40x2',
+  '60x40x3',
+  '80x40x3',
+  '100x50x3',
+  'TECE'
+];
+/* TECEprofil: the TECE mounting system — galvanised 50×50 profile with slots, joined by its own connectors and fixed
+   to the wall / floor by its brackets, no welding. Calculated as a 50×50×1.5 tube. */
+const TECE_SEC = '50x50x1.5';
+const isTece = s => String(s).startsWith('TECE');
+/** Display name of a tube size. */
+function tubeName(s) {
+  return isTece(s) ? 'TECEprofil 50×50' : String(s).replace(/x/g, '×');
+}
 const PANEL_M = {
   osb: { n: 'ОСП-3', caps: { 12: [350, 700], 15: [450, 850], 18: [600, 1000], 22: [700, 1150] } },
   ply: { n: 'Фанера ФСФ', caps: { 12: [450, 850], 15: [600, 1000], 18: [800, 1200], 21: [900, 1350] } },
   bar: { n: 'Брус сухой 50×40', caps: { 40: [700, 1000] } }
 };
 function tubeSec(s) {
+  if (isTece(s)) s = TECE_SEC;
   const m = String(s).match(/(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/);
   if (!m) return { h: 40, b: 20, t: 2 };
   return { h: +m[1], b: +m[2], t: +m[3] };
@@ -28314,7 +28344,7 @@ XT.reinf = {
       ctx.font = `10.5px ${TFONT}`;
       ctx.fillText(
         e.kind === 'tube'
-          ? `${isCons(e) ? 'Консоль' : 'Труба'} ${e.size.replace(/x/g, '×')}${isCons(e) ? `, вылет ${fmt(e.out)}` : ''}`
+          ? `${isCons(e) ? 'Консоль' : 'Труба'} ${tubeName(e.size)}${isCons(e) ? `, вылет ${fmt(e.out)}` : ''}`
           : `${PANEL_M[e.kind].n} ${e.th} мм`,
         s.x + 8,
         s.y - 8
@@ -28332,27 +28362,20 @@ XT.reinf = {
     const mb = MB(F.xf);
     if (e.kind === 'tube') {
       const ts = tubeSec(e.size);
-      const nm = e.size.replace(/x/g, '×');
+      const nm = tubeName(e.size);
+      const tcol = isTece(e.size) ? '#b9c0c7' : '#5e6670';
       if (e.orient === 'v') {
-        mb.tag('Труба профильная ' + nm);
-        mb.box(e.t - ts.b / 2, -ts.h / 2, e.z0, e.t + ts.b / 2, ts.h / 2, e.z1, '#5e6670');
+        mb.tag((isTece(e.size) ? 'Профиль ' : 'Труба профильная ') + nm);
+        mb.box(e.t - ts.b / 2, -ts.h / 2, e.z0, e.t + ts.b / 2, ts.h / 2, e.z1, tcol);
       } else if (e.orient === 'c') {
         const f = (e.side * H.w.th) / 2,
           y0 = e.fix === 'post' ? 0 : f,
           y1 = f + e.side * e.out;
         mb.tag('Консоль ' + nm);
-        mb.box(e.t - ts.b / 2, Math.min(y0, y1), e.z - ts.h, e.t + ts.b / 2, Math.max(y0, y1), e.z, '#5e6670');
+        mb.box(e.t - ts.b / 2, Math.min(y0, y1), e.z - ts.h, e.t + ts.b / 2, Math.max(y0, y1), e.z, tcol);
         if (e.fix === 'post') {
           mb.tag('Стойка в стене ' + nm);
-          mb.box(
-            e.t - ts.b / 2,
-            -ts.h / 2,
-            Math.min(e.z0, e.z1),
-            e.t + ts.b / 2,
-            ts.h / 2,
-            Math.max(e.z0, e.z1),
-            '#5e6670'
-          );
+          mb.box(e.t - ts.b / 2, -ts.h / 2, Math.min(e.z0, e.z1), e.t + ts.b / 2, ts.h / 2, Math.max(e.z0, e.z1), tcol);
         } else {
           mb.tag('Пластина с анкерами');
           mb.box(
@@ -28381,7 +28404,7 @@ XT.reinf = {
           );
         }
       } else {
-        mb.tag('Труба профильная ' + nm);
+        mb.tag((isTece(e.size) ? 'Профиль ' : 'Труба профильная ') + nm);
         mb.box(
           Math.min(e.t0, e.t1),
           -ts.h / 2,
@@ -28412,8 +28435,8 @@ XT.reinf = {
   group: e =>
     e.kind === 'tube'
       ? isCons(e)
-        ? `Консоль ${e.size.replace(/x/g, '×')}, вылет ${fmt(e.out)}`
-        : `Усиление: труба ${e.size.replace(/x/g, '×')}`
+        ? `Консоль ${tubeName(e.size)}, вылет ${fmt(e.out)}`
+        : `Усиление: труба ${tubeName(e.size)}`
       : `Усиление: ${PANEL_M[e.kind].n} ${e.th} мм`,
   panel(e) {
     const H = hostPt(e);
@@ -28438,7 +28461,12 @@ XT.reinf = {
           ],
           ...(e.kind === 'tube'
             ? [
-                ['Сечение (высота×ширина×стенка)', 'size', 's', TUBES.map(t => [t, t.replace(/x/g, '×')])],
+                [
+                  'Сечение (высота×ширина×стенка)',
+                  'size',
+                  's',
+                  TUBES.map(t => [t, isTece(t) ? 'TECEprofil 50×50 (система TECE, без сварки)' : t.replace(/x/g, '×')])
+                ],
                 [
                   'Ориентация',
                   'orient',
@@ -28635,19 +28663,34 @@ XT.reinf = {
             ? e.out + (e.fix === 'post' ? Math.abs(e.z1 - e.z0) : (byId(e.host) || { th: 0 }).th / 2)
             : Math.abs(e.t1 - e.t0);
       const tp = tubeProps(e.size);
-      put(
-        S_,
-        'tb' + e.size,
-        { name: `Труба профильная ${e.size.replace(/x/g, '×')} (≈${tp.kg.toFixed(2)} кг/м)`, u: 'м' },
-        r => {
+      if (isTece(e.size)) {
+        put(S_, 'tece-p', { name: 'Профиль TECEprofil 50×50 оцинкованный (система TECE), м', u: 'м' }, r => {
           r.q += L / 1000;
           r.ids.push(e.id);
-        }
-      );
-      put(S_, 'ta', { name: 'Анкер для крепления труб/консолей', u: 'шт' }, r => {
-        r.q += isCons(e) && e.fix === 'anchor' ? 4 : isCons(e) ? 2 : 4;
-        r.ids.push(e.id);
-      });
+        });
+        put(S_, 'tece-c', { name: 'Соединитель TECEprofil (угловой / Т-образный) с винтами', u: 'шт' }, r => {
+          r.q += isCons(e) ? 2 : 1;
+          r.ids.push(e.id);
+        });
+        put(S_, 'tece-f', { name: 'Крепление TECEprofil к стене / полу (уголок с анкером)', u: 'шт' }, r => {
+          r.q += 2;
+          r.ids.push(e.id);
+        });
+      } else {
+        put(
+          S_,
+          'tb' + e.size,
+          { name: `Труба профильная ${tubeName(e.size)} (≈${tp.kg.toFixed(2)} кг/м)`, u: 'м' },
+          r => {
+            r.q += L / 1000;
+            r.ids.push(e.id);
+          }
+        );
+        put(S_, 'ta', { name: 'Анкер для крепления труб/консолей', u: 'шт' }, r => {
+          r.q += isCons(e) && e.fix === 'anchor' ? 4 : isCons(e) ? 2 : 4;
+          r.ids.push(e.id);
+        });
+      }
       if (isCons(e) && e.fix === 'anchor')
         put(S_, 'tp', { name: 'Пластина опорная 120×300×6 (сварка с консолью)', u: 'шт' }, r => {
           r.q++;
@@ -28809,12 +28852,23 @@ function loadCheck(L) {
       `${lab}: ${v.toFixed(0)} / ${cap.toFixed(0)} — ${Math.round(u * 100)}%`
     ]);
   };
-  if (sup && sup.kind === 'cons') {
+  // a TECEprofil installation module behind the point carries the load on its own frame (floor + wall)
+  if (!sup) {
+    const tm = teceModuleAt(L);
+    if (tm) sup = { kind: 'tece', tm };
+  }
+  if (sup && sup.kind === 'tece') {
+    const g = sup.tm.g;
+    out.lines = out.lines.filter(l => !/^Момент от выноса/.test(l[1]));
+    out.support = `Модуль TECEprofil ${g.T.n} — рама на полу и стене, усиление стены не нужно`;
+    chk('Нагрузка на раму модуля, Н (по паспорту, ориентир.)', F, Math.max(300, g.T.kg * 9.81));
+    chk('Вырыв крепежа из траверсы модуля, Н', T1, ANCH.steel.t);
+  } else if (sup && sup.kind === 'cons') {
     out.lines = out.lines.filter(l => !/^Момент от выноса|^На один крепёж/.test(l[1]));
     const r = sup.r,
       tp = tubeProps(r.size),
       nc = sup.n;
-    out.support = `Консоль ${r.size.replace(/x/g, '×')}${nc > 1 ? ` ×${nc} (нагрузка делится)` : ''}, ${r.fix === 'post' ? 'стойка в стене' : 'анкеры'}`;
+    out.support = `Консоль ${tubeName(r.size)}${nc > 1 ? ` ×${nc} (нагрузка делится)` : ''}, ${r.fix === 'post' ? 'стойка в стене' : 'анкеры'}`;
     const Fv1 = Fv / nc,
       Fh1 = Fh / nc;
     const a = clamp(ec || r.out / 2, 0, r.out);
@@ -28858,7 +28912,7 @@ function loadCheck(L) {
   } else if (sup && sup.kind === 'tube') {
     const r = sup.r,
       tp = tubeProps(r.size);
-    out.support = `Труба ${r.size.replace(/x/g, '×')}`;
+    out.support = `Труба ${tubeName(r.size)}`;
     chk('Срез на крепёж в трубу, Н', V1, ANCH.steel.v);
     chk('Вырыв крепежа из трубы, Н', T1, ANCH.steel.t);
     const Lt = r.orient === 'v' ? Math.abs(r.z1 - r.z0) : Math.abs(r.t1 - r.t0);
@@ -29247,11 +29301,23 @@ function pipeModules(e) {
       verts.push({ ...base, flex: true, R, occ: z });
     } else {
       let dc = decompose(lib, t);
-      if (vi && lib.ang.includes(87.5) && Math.abs(t - 90) < 3) dc = { c: [87.5], s: 87.5, err: Math.abs(t - 87.5) };
+      // a right-angle turn is made of two 45° bends with a short insert (smoother flow, less clogging); a single
+      // 87.5° bend only where there is no room for them — the last resort, flagged in the checks
+      let f90 = false;
+      if (Math.abs(t - 90) < 3 && lib.ang.includes(45) && lib.ang.includes(87.5)) {
+        const z45 = elbowZ(lib, d, 45);
+        const need = z45 * 1.6;
+        const room = Math.min(V3l(s1), V3l(s2)) - 20;
+        if (need <= room) dc = { c: [45, 45], s: 90, err: Math.abs(t - 90) };
+        else {
+          dc = { c: [87.5], s: 87.5, err: Math.abs(t - 87.5) };
+          f90 = true;
+        }
+      }
       const zz = dc.c.map(a => elbowZ(lib, d, a));
       const z = Math.max(...zz) + (dc.c.length - 1) * Math.max(...zz) * 0.6;
       occ[i] = z;
-      verts.push({ ...base, els: dc.c, err: dc.err, bad: dc.err > (vi ? 3 : 1.5), occ: z });
+      verts.push({ ...base, els: dc.c, err: dc.err, bad: dc.err > (f90 ? 3 : vi ? 3 : 1.5), f90, occ: z });
     }
   }
   for (let k = 0; k < n - 1; k++) {
@@ -31499,7 +31565,8 @@ function instGeo(e) {
   };
   g.sup = instSupport(e, g);
   g.reinf = (c.reinf || 'auto') === 'on' || ((c.reinf || 'auto') === 'auto' && g.sup.need);
-  g.ps = +c.pipe || 50;
+  g.tece = c.pipe === 'tece';
+  g.ps = g.tece ? 50 : +c.pipe || 50;
   g.join = c.join || 'screw';
   return g;
 }
@@ -31727,9 +31794,9 @@ function buildInst(mb, e) {
 function buildInstReinf(mb, g) {
   const d = instReinfDims(g),
     s = d.s,
-    PC = '#4f5862',
+    PC = g.tece ? '#b9c0c7' : '#4f5862',
     W = g.M.W;
-  mb.tag(`Усиление: труба профильная ${s}×${s}×${d.t}`);
+  mb.tag(g.tece ? 'Усиление: профиль TECEprofil 50×50' : `Усиление: труба профильная ${s}×${s}×${d.t}`);
   for (const k of [-1, 1]) mb.box(k * d.px - s / 2, d.py - s / 2, 6, k * d.px + s / 2, d.py + s / 2, d.top - 6, PC);
   mb.box(-d.px - s / 2, d.py - s / 2, d.zb - s / 2, d.px + s / 2, d.py + s / 2, d.zb + s / 2, PC);
   mb.tag('Пластины опорные с анкерами (пол / потолок)');
@@ -31739,7 +31806,7 @@ function buildInstReinf(mb, g) {
       for (const a of [-40, 40])
         mb.cyl(k * d.px + a, d.py + (a > 0 ? 40 : -40), z + (z ? -4 : 6), z + (z ? 0 : 10), 7, '#c9a640', 8);
     }
-  if (g.join === 'weld') {
+  if (g.join === 'weld' && !g.tece) {
     mb.tag('Сварные узлы');
     for (const k of [-1, 1]) {
       for (const z of [300, g.M.H - 150])
@@ -31941,22 +32008,29 @@ function instPanel(e) {
             's',
             [
               [50, '50×50×2'],
-              [60, '60×60×3']
+              [60, '60×60×3'],
+              ['tece', 'TECEprofil 50×50 (система TECE, без сварки)']
             ]
           ],
-          [
-            'Соединение',
-            'cfg.join',
-            's',
-            [
-              ['screw', 'стяжные винты М8'],
-              ['weld', 'сварка']
-            ]
-          ],
+          ...(g.tece
+            ? []
+            : [
+                [
+                  'Соединение',
+                  'cfg.join',
+                  's',
+                  [
+                    ['screw', 'стяжные винты М8'],
+                    ['weld', 'сварка']
+                  ]
+                ]
+              ]),
           [
             'Состав усиления',
             esc(
-              `2 стойки ${g.ps}×${g.ps} пол–потолок (${fmt(instReinfDims(g).top)} мм) + перемычка над рамой ${fmt(instReinfDims(g).cross)} мм, ${g.join === 'weld' ? 'сварка' : 'стяжные винты'}`
+              g.tece
+                ? `2 стойки TECEprofil 50×50 пол–потолок (${fmt(instReinfDims(g).top)} мм) + ригель над рамой ${fmt(instReinfDims(g).cross)} мм на соединителях TECE`
+                : `2 стойки ${g.ps}×${g.ps} пол–потолок (${fmt(instReinfDims(g).top)} мм) + перемычка над рамой ${fmt(instReinfDims(g).cross)} мм, ${g.join === 'weld' ? 'сварка' : 'стяжные винты'}`
             ),
             'r'
           ]
@@ -32036,7 +32110,20 @@ function instSpec(e) {
       ['ss:' + P.series, `Сиденье с крышкой soft-close (${P.brand} ${P.series})`],
       ['sn', 'Звукоизоляционная прокладка под подвесной унитаз']
     );
-  if (g.reinf) {
+  if (g.reinf && g.tece) {
+    const d = instReinfDims(g);
+    r.push(
+      [
+        'tece-p',
+        'Профиль TECEprofil 50×50 оцинкованный — усиление инсталляции, м',
+        Math.round((2 * (d.top - 12) + d.cross) / 100) / 10,
+        'м'
+      ],
+      ['tece-c', 'Соединитель TECEprofil (угловой / Т-образный) с винтами', 4],
+      ['tece-f', 'Крепление TECEprofil к полу / потолку (опорный уголок)', 4],
+      ['ran', 'Анкер М10 для креплений', 8]
+    );
+  } else if (g.reinf) {
     const d = instReinfDims(g);
     r.push(
       [
@@ -38720,6 +38807,13 @@ function sewerChecks(e) {
         p: en.p
       });
   }
+  for (const v of pipeModules(e).verts)
+    if (v.f90)
+      out.push({
+        lvl: 'warn',
+        msg: `Поворот 90° одним отводом 87,5° — для двух отводов по 45° со вставкой не хватает длины участков (нужно ≈${Math.round(2 * v.occ + 60)} мм). Где можно, отведите угол двумя по 45°.`,
+        p: v.p
+      });
   return out;
 }
 function pipeTeesOf(e) {
@@ -47310,6 +47404,7 @@ XT.node = {
 
 
 
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -47508,6 +47603,7 @@ function validate() {
           }
       }
       for (const c of sewerChecks(e)) add_(e, c.lvl, c.msg, c.p);
+      for (const c of pipeFloorHits(e)) add_(e, c.lvl, c.msg, c.p);
       {
         const H = pipeHyd(e);
         if (H && H.v > VMAX)
@@ -47571,14 +47667,16 @@ function validate() {
           add_(
             e,
             'bad',
-            `Инсталляция: ${g.sup.txt}. Нужно усиление — 2 трубы ≥50×50 пол–потолок и перемычка над рамой, на стяжных винтах или сварке.`,
+            `Инсталляция: ${g.sup.txt}. Нужно усиление — 2 трубы ≥50×50 пол–потолок и перемычка над рамой (стяжные винты / сварка) или профиль TECEprofil 50×50 на соединителях.`,
             e.p
           );
         else if (g.reinf)
           add_(
             e,
             'info',
-            `Инсталляция усилена: 2 стойки ${g.ps}×${g.ps} пол–потолок + перемычка, ${g.join === 'weld' ? 'сварка' : 'стяжные винты М8'} (${g.sup.txt}).`,
+            g.tece
+              ? `Инсталляция усилена профилем TECEprofil 50×50: 2 стойки пол–потолок + ригель на соединителях TECE (${g.sup.txt}).`
+              : `Инсталляция усилена: 2 стойки ${g.ps}×${g.ps} пол–потолок + перемычка, ${g.join === 'weld' ? 'сварка' : 'стяжные винты М8'} (${g.sup.txt}).`,
             e.p
           );
         if (g.wantIn && g.mode !== 'in')
@@ -56358,6 +56456,7 @@ CUTK['fix:fdrain'] = (e, where) => {
 
 
 
+
 /* baths: встраиваемые (экран / обстройка с плиткой / на ножках) и отдельностоящие (овал / прямоугольная)
    local: x along the length (centre), y from the wall (0) to the front (d), z up from the floor */
 var BATHM = {
@@ -56367,6 +56466,7 @@ var BATHM = {
   stone: { n: 'из литьевого камня / кварила', col: '#f4f3ef' }
 };
 var BATHI = {
+  gkl: 'Щит ГКЛ на каркасе + плитка',
   screen: 'Экран (фронтальная панель)',
   podium: 'Обстройка: блок 75 мм + плитка',
   legs: 'На ножках, без экрана'
@@ -56487,8 +56587,23 @@ function bathOutline(c, inset, inner) {
     if (m < 0) r = r.map(p => [-p[0], p[1]]).reverse();
     return resample(r, BN);
   }
-  // rectangular: rounded corners (inner bowl more rounded)
-  return inner ? se(free ? 4 : 6) : se(free ? 4.5 : 9);
+  // rectangular: a built-in bath has a straight rim with sharp corners (the wall tiles stand on it, the screen
+  // comes under its front edge); the bowl opening is a rounded rectangle
+  if (!free && !inner) {
+    // the same angles as the bowl ring (seRing), projected onto the rectangle: corners fall on the ring (BN / 8)
+    const a = w / 2 - i,
+      b = d / 2 - i;
+    const out = [];
+    for (let k = 0; k < BN; k++) {
+      const t = (k / BN) * 2 * Math.PI,
+        cs = Math.cos(t),
+        sn = Math.sin(t),
+        m = Math.max(Math.abs(cs), Math.abs(sn));
+      out.push([(a * cs) / m, d / 2 + (b * sn) / m]);
+    }
+    return out;
+  }
+  return inner ? se(free ? 4 : 6) : se(4.5);
 }
 /** Rim height at a point: raised head of slipper / clawfoot baths. */
 function rimZ(c, x) {
@@ -56611,7 +56726,7 @@ function bathBuild(mb, e) {
   const col = (BATHM[c.mat] || BATHM.acryl).col;
   const R = bathShell(mb, c, col, free);
   if (!free) {
-    if (c.inst === 'legs' || c.inst === 'screen') {
+    if (c.inst === 'legs' || c.inst === 'screen' || c.inst === 'gkl') {
       mb.tag('Ножки / каркас');
       for (const [x, y] of [
         [-w * 0.32, d * 0.28],
@@ -56630,6 +56745,7 @@ function bathBuild(mb, e) {
         mb.box(-w / 2 + 5, d - 14 - t, 0, w / 2 - 5, d - 14, t, '#d6d3cc');
       }
     }
+    if (c.inst === 'gkl') bathGklScreen(mb, c);
     if (c.inst === 'podium') {
       const T = 75,
         tc = c.tileCol || '#e9e6df',
@@ -56691,6 +56807,101 @@ function bathBuild(mb, e) {
   }
   mb.smooth(false);
 }
+/** Depth of the bowl (rim to bottom). */
+function bathDep(c) {
+  return Math.min(c.h - 80, c.depth || (c.type === 'free' ? 470 : 430));
+}
+/** Height of the drain outlet axis of a built-in bath: under the bowl bottom (the siphon), not lower than 60. */
+function bathOutZ(c) {
+  return Math.max(60, Math.round(c.h - bathDep(c) - 70));
+}
+/* the screen of a built-in bath as it is made on site: a light frame (floor and top runners ПН 28×27, studs ПП 60×27
+   every 600 mm), one moisture-resistant board 12.5 mm and tiles; the tiles end under the front edge of the rim */
+const BATH_STEP = 600,
+  BATH_TILE = 12,
+  BATH_GKL = 12.5,
+  BATH_PROF = 27,
+  BATH_GKL_T = BATH_TILE + BATH_GKL + BATH_PROF;
+const BATH_TOE = { h: 100, d: 70 };
+/** Faces of the screen: [{x0, x1, y (the tile face), dir: 1 front / along y, side: 'front'|'L'|'R'}]. */
+function bathScreenRuns(c) {
+  const w = c.w,
+    d = c.d,
+    yF = d - 3;
+  const r = [{ side: 'front', a: -w / 2, b: w / 2, f: yF }];
+  if (!c.endL) r.push({ side: 'L', a: 0, b: yF, f: -w / 2 + 3 });
+  if (!c.endR) r.push({ side: 'R', a: 0, b: yF, f: w / 2 - 3 });
+  return r;
+}
+function bathGklScreen(mb, c) {
+  const h = c.h,
+    zTop = h - 40,
+    tc = c.tileCol || '#e9e6df';
+  const toe = c.toe ? BATH_TOE : null;
+  // a box in run coordinates: s along the run (a…b), n into the bath from the tile face (0 — face), z
+  const box = (R, s0, s1, n0, n1, z0, z1, col) => {
+    if (R.side === 'front') mb.box(s0, R.f - n1, z0, s1, R.f - n0, z1, col);
+    else if (R.side === 'L') mb.box(R.f + n0, s0, z0, R.f + n1, s1, z1, col);
+    else mb.box(R.f - n1, s0, z0, R.f - n0, s1, z1, col);
+  };
+  for (const R of bathScreenRuns(c)) {
+    const t = toe && R.side === 'front' ? toe : null;
+    const z0 = t ? t.h : 0,
+      back = t ? t.d : 0;
+    mb.tag('Щит ванны: плитка');
+    box(R, R.a, R.b, 0, BATH_TILE, z0, zTop, tc);
+    mb.tag('Щит ванны: ГКЛВ 12,5');
+    box(R, R.a + 1, R.b - 1, BATH_TILE, BATH_TILE + BATH_GKL, z0, zTop, '#b9c9b4');
+    if (t) {
+      mb.tag('Ниша для ног');
+      box(R, R.a, R.b, 0, back + BATH_TILE, z0 - BATH_TILE, z0, tc);
+      box(R, R.a, R.b, back, back + BATH_TILE + BATH_GKL, 0, z0 - BATH_TILE, tc);
+    }
+    mb.tag('Каркас щита: ПН 28×27');
+    const n0 = BATH_TILE + BATH_GKL;
+    box(R, R.a + 2, R.b - 2, n0 + back, n0 + back + 28, 0, BATH_PROF, '#a9b0b8');
+    box(R, R.a + 2, R.b - 2, n0, n0 + 28, zTop - BATH_PROF, zTop, '#a9b0b8');
+    if (t) box(R, R.a + 2, R.b - 2, n0, n0 + back + 28, z0 - BATH_TILE - BATH_PROF, z0 - BATH_TILE, '#a9b0b8');
+    mb.tag('Каркас щита: стойки ПП 60×27');
+    const L = R.b - R.a,
+      n = Math.max(1, Math.ceil(L / BATH_STEP));
+    for (let k = 0; k <= n; k++) {
+      const sc = Math.min(R.b - 32, Math.max(R.a + 32, R.a + (L * k) / n));
+      // with a toe recess: the stud stands behind the recess below and under the face above it
+      if (t) {
+        box(R, sc - 30, sc + 30, n0 + back, n0 + back + BATH_PROF, BATH_PROF, z0 - BATH_TILE - BATH_PROF, '#a9b0b8');
+        box(R, sc - 30, sc + 30, n0, n0 + BATH_PROF, z0 - BATH_TILE, zTop - BATH_PROF, '#a9b0b8');
+      } else box(R, sc - 30, sc + 30, n0, n0 + BATH_PROF, BATH_PROF, zTop - BATH_PROF, '#a9b0b8');
+    }
+  }
+}
+/** Materials of the screen (one layer of boards, tiles on both sides of nothing — only the outside). */
+function bathGklSpec(c) {
+  const H = c.h - 40;
+  let L = 0,
+    st = 0;
+  for (const R of bathScreenRuns(c)) {
+    L += R.b - R.a;
+    st += Math.max(1, Math.ceil((R.b - R.a) / BATH_STEP)) + 1;
+  }
+  const A = (L * H + (c.toe ? c.w * BATH_TOE.d : 0)) / 1e6;
+  const r2 = x => Math.round(x * 100) / 100;
+  return [
+    ['bgu', 'Профиль ПН 28×27 (по полу и под бортом ванны), м', r2((2 * L) / 1000), 'м'],
+    ['bgc', 'Профиль ПП 60×27 (стойки щита), м', r2((st * (H - 2 * BATH_PROF)) / 1000), 'м'],
+    ['bgb', 'ГКЛВ 12,5 мм (щит ванны), м²', r2(A * 1.15), 'м²'],
+    ['bgw', 'Гидроизоляция обмазочная по ГКЛВ щита, м²', r2(A), 'м²'],
+    ['bpt', 'Плитка на щит ванны (+10%), м²', r2(A * 1.1), 'м²'],
+    ['bpg', 'Клей плиточный для щита, кг', Math.round(A * 5), 'кг'],
+    ['bgf', 'Крепёж щита: дюбель-гвозди 6×40, саморезы LN 9 и TN 25', 1, 'компл'],
+    [
+      'bph',
+      'Лента гидроизоляционная бортовая (примыкание ванны), м',
+      Math.round((c.w + (c.endL ? c.d : 0) + (c.endR ? c.d : 0)) / 100) / 10,
+      'м'
+    ]
+  ];
+}
 FIXK.bath = {
   /** «+ Люк к сифону» button: adds a revision hatch in the screen / podium at the drain */
   action(e, a) {
@@ -56702,10 +56913,10 @@ FIXK.bath = {
         plane: 'fix',
         host: e.id,
         lx: -c.w / 2 + 260,
-        kind: c.inst === 'podium' ? 'tile' : 'magnet',
+        kind: c.inst === 'podium' || c.inst === 'gkl' ? 'tile' : 'magnet',
         w: 300,
         h: Math.min(300, c.h - 140),
-        z: c.toe && c.inst === 'podium' ? 110 : 60,
+        z: c.toe && (c.inst === 'podium' || c.inst === 'gkl') ? 110 : 60,
         open: 'push',
         hinge: 'left',
         tileTh: 12
@@ -56720,7 +56931,7 @@ FIXK.bath = {
     h: 600,
     type: 'built',
     mat: 'acryl',
-    inst: 'screen',
+    inst: 'gkl',
     shape: 'rect',
     sh0: 'rect',
     mixer: 'wall',
@@ -56745,7 +56956,7 @@ FIXK.bath = {
         d: free ? 50 : 40,
         x: bathDrain(c).x,
         y: bathDrain(c).y,
-        z: free ? -40 : 40,
+        z: free ? -40 : bathOutZ(c),
         n: free ? 'выпуск в пол Ø50' : 'слив-перелив Ø40/50'
       },
       { s: 'hvs', d: 16, ...mx, x: mx.x - 60, n: 'ХВС' },
@@ -56763,6 +56974,15 @@ FIXK.bath = {
     const r = [{ poly: O }, { poly: I }];
     const D = bathDrain(c);
     r.push({ circ: [D.x, D.y, 25] });
+    if (!free && c.inst === 'gkl')
+      r.push({
+        poly: [
+          [-w / 2, d - BATH_GKL_T],
+          [w / 2, d - BATH_GKL_T]
+        ],
+        open: true,
+        dash: true
+      });
     if (!free && c.inst === 'podium')
       r.push({
         poly: [
@@ -56811,11 +57031,22 @@ FIXK.bath = {
         : [
             ['Установка', 'cfg.inst', 's', Object.entries(BATHI)],
             ...(c.inst !== 'legs' ? [['Ниша для ног', 'cfg.toe', 'b']] : []),
-            ...(c.inst === 'podium'
+            ...(c.inst === 'podium' || c.inst === 'gkl'
               ? [
                   ['Слева стена (без торца)', 'cfg.endL', 'b'],
                   ['Справа стена (без торца)', 'cfg.endR', 'b'],
                   ['Цвет плитки', 'cfg.tileCol', 'c']
+                ]
+              : []),
+            ...(c.inst === 'gkl'
+              ? [
+                  [
+                    'Каркас щита',
+                    esc(
+                      `ПН 28×27 по полу и под бортом, стойки ПП 60×27 через ${BATH_STEP} мм, ГКЛВ 12,5 + плитка — щит ${Math.round(BATH_GKL_T)} мм`
+                    ),
+                    'r'
+                  ]
                 ]
               : [])
           ]),
@@ -56844,7 +57075,7 @@ FIXK.bath = {
       hs.length ? `люк ${hs.map(h => h.w + '×' + h.h).join(', ')}` : 'нет люка',
       hs.length
         ? cR('Люк', '✓')
-        : `<dt></dt><dd class="warn" style="text-align:left">Сифон закрыт ${c.inst === 'podium' ? 'обстройкой' : 'экраном'} — добавьте ревизионный люк у слива.</dd><dt></dt><dd><button class="btn" data-xa="bathHatch">+ Люк к сифону</button></dd>`
+        : `<dt></dt><dd class="warn" style="text-align:left">Сифон закрыт ${c.inst === 'podium' ? 'обстройкой' : c.inst === 'gkl' ? 'щитом' : 'экраном'} — добавьте ревизионный люк у слива.</dd><dt></dt><dd><button class="btn" data-xa="bathHatch">+ Люк к сифону</button></dd>`
     ];
   },
   spec: e => {
@@ -56868,6 +57099,7 @@ FIXK.bath = {
     ];
     if (!free && (c.inst === 'legs' || c.inst === 'screen')) r.push(['bleg' + c.mat, 'Каркас / ножки для ванны']);
     if (!free && c.inst === 'screen') r.push(['bsc' + c.w, `Экран под ванну ${c.w}`]);
+    if (!free && c.inst === 'gkl') for (const x of bathGklSpec(c)) r.push(x);
     if (!free && c.inst === 'podium') {
       const A = (c.w * (c.h - 40) + (c.endL ? 0 : c.d * (c.h - 40)) + (c.endR ? 0 : c.d * (c.h - 40))) / 1e6;
       r.push(
@@ -84791,6 +85023,9 @@ function mkFix(kind0) {
         гигиенический: 'hyg',
         коллектор: 'manifold',
         гидрозатвор: 'vtrap',
+        тесе: 'tecemod',
+        тесемодуль: 'tecemod',
+        модуль: 'tecemod',
         сифон: 'vtrap',
         виега: 'vtrap',
         гребенка: 'manifold',
@@ -93338,6 +93573,8 @@ const solidEditorState = ED;
 
 
 
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -93540,7 +93777,10 @@ function xBoot() {
     cwGeom,
     switchLevel,
     LV,
-    zoomExtents
+    zoomExtents,
+    V3,
+    FIXK,
+    req3
   };
 }
 
@@ -104495,6 +104735,795 @@ defineTools({
     help: 'Электровывод: точка у стены или на потолке. Напряжение 230 / 24 / 48 В, мощность, назначение и блок питания — в свойствах. Для 24/48 В блоки питания подбираются автоматически (в щите, в щитке БП или рядом с потребителем).'
   }
 });
+
+// ===== mep/plumbing/sewer-gen.js =====
+/**
+ * mep/plumbing/sewer-gen.js
+ *
+ * Sewer generator: lays the drain pipes from the fixtures of the level to the sewer riser.
+ * - The route is searched on a 50 mm grid (A*) around walls, baths, shower trays, floor WCs, washers, risers and
+ *   furniture; it keeps to the walls and never crosses a bath or another floor-standing fixture.
+ * - Turns are made of 45° steps with an insert long enough for two bends; a 90° turn in one bend is allowed only
+ *   where nothing else fits (a large extra cost), branches join the main line with 45° tees in the flow direction.
+ * - The biggest outlets (WC Ø110) are laid first, the others join that line or the riser.
+ * - Heights: each line falls with the slope toward the riser; at a fixture whose outlet is higher the pipe drops
+ *   vertically first; the riser tee is lowered when a low fixture (bath, tray) needs it.
+ * Generated pipes carry gen: 'sewer' — running the command again replaces them.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const SG_CELL = 50;
+const SG_DIRS = [
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+  [0, -1],
+  [1, -1]
+];
+// fixtures standing on the floor: a drain pipe at floor level cannot pass under / through them
+const SG_FLOOR = new Set(['bath', 'shower', 'wcfloor', 'riserK', 'riserW', 'manifold']);
+// standing off the wall: pipes run behind them, but not under them in the open
+const SG_BEHIND = new Set(['washer']);
+// furniture types: passing behind / under a cabinet is possible but avoided
+const SG_SOFT = new Set(['casework', 'cab', 'kitchen']);
+
+/** Obstacles of the level as polygons: {poly, cls: 'wall' | 'hard' | 'soft', e}. */
+function sewObstacles() {
+  const out = [];
+  for (const e of S.ents) {
+    try {
+      if (e.type === 'wall') {
+        const I = wallInfo(e);
+        if (I && I.poly && I.poly.length > 2) out.push({ poly: I.poly, cls: 'wall', e });
+      } else if (e.type === 'fix' && SG_FLOOR.has(e.kind)) {
+        // a walk-in shower (channel / point drain in the screed) is only avoided, a tray is an obstacle
+        const soft = e.kind === 'shower' && e.cfg && e.cfg.base !== 'tray';
+        const h = fixHull(e);
+        if (h.length > 2) out.push({ poly: h, cls: soft ? 'soft' : 'hard', e });
+      } else if (e.type === 'fix' && SG_BEHIND.has(e.kind)) {
+        // a washer stands ~100 mm off the wall: the gap behind it is free, the rest is an obstacle
+        const h = fixHull(e);
+        if (h.length > 2) out.push({ poly: h, cls: 'hard', e, back: { p: e.p, f: devF(e), gap: 130 } });
+      } else if (e.type === 'col' && XT.col && XT.col.sample) {
+        const h = XT.col.sample(e);
+        if (h && h.length > 2) out.push({ poly: h, cls: 'hard', e });
+      } else if (SG_SOFT.has(e.type) && XT[e.type] && XT[e.type].sample) {
+        const h = XT[e.type].sample(e);
+        if (h && h.length > 2) out.push({ poly: h, cls: 'soft', e });
+      }
+    } catch (err) {}
+  }
+  return out;
+}
+function bboxOf(pts) {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p.x);
+    y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x);
+    y1 = Math.max(y1, p.y);
+  }
+  return { x0, y0, x1, y1 };
+}
+/**
+ * The grid of one search: cost class of each cell (0 free, 1 soft, 2 wall, 3 blocked, 4 pipe) and «along a wall».
+ * The origin is put on the start point, so the route leaves the outlet exactly along a grid line.
+ */
+function sewGrid(obs, start, ends, r, keep, clearAt) {
+  const all = [start, ...ends];
+  const b = bboxOf(all);
+  const m = 1500;
+  const ox = start.x - Math.ceil((start.x - (b.x0 - m)) / SG_CELL) * SG_CELL,
+    oy = start.y - Math.ceil((start.y - (b.y0 - m)) / SG_CELL) * SG_CELL;
+  const nx = Math.ceil((b.x1 + m - ox) / SG_CELL) + 1,
+    ny = Math.ceil((b.y1 + m - oy) / SG_CELL) + 1;
+  const N = nx * ny;
+  const cls = new Uint8Array(N),
+    near = new Uint8Array(N);
+  const cx = i => ox + i * SG_CELL,
+    cy = j => oy + j * SG_CELL;
+  for (const o of obs) {
+    const bb = bboxOf(o.poly);
+    const pad = r + 260;
+    const i0 = Math.max(0, Math.floor((bb.x0 - pad - ox) / SG_CELL)),
+      i1 = Math.min(nx - 1, Math.ceil((bb.x1 + pad - ox) / SG_CELL)),
+      j0 = Math.max(0, Math.floor((bb.y0 - pad - oy) / SG_CELL)),
+      j1 = Math.min(ny - 1, Math.ceil((bb.y1 + pad - oy) / SG_CELL));
+    const c = o.cls === 'wall' ? 2 : o.cls === 'hard' ? 3 : 1;
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const p = P(cx(i), cy(j));
+        if (o.back && dot(sub(p, o.back.p), o.back.f) < o.back.gap) continue;
+        const ins = inPoly(p, o.poly);
+        const d = ins ? 0 : distToPoly(p, o.poly);
+        const k = j * nx + i;
+        if (ins || d < r + 10) {
+          if (c > cls[k] && cls[k] !== 4) cls[k] = c;
+        } else if (d < r + 250 && o.cls === 'wall') near[k] = 1;
+      }
+  }
+  // pipes laid before: not run along them (only join them)
+  for (const s of keep) {
+    const L = dist(s.a, s.b);
+    const n = Math.max(1, Math.ceil(L / (SG_CELL / 2)));
+    for (let t = 0; t <= n; t++) {
+      const x = s.a.x + ((s.b.x - s.a.x) * t) / n,
+        y = s.a.y + ((s.b.y - s.a.y) * t) / n;
+      const i = Math.round((x - ox) / SG_CELL),
+        j = Math.round((y - oy) / SG_CELL);
+      if (i >= 0 && j >= 0 && i < nx && j < ny && cls[j * nx + i] < 3) cls[j * nx + i] = 4;
+    }
+  }
+  // the outlets themselves stand in a wall / inside their fixture: free around the start and the ends
+  const clear = (p, R) => {
+    const i0 = Math.max(0, Math.floor((p.x - R - ox) / SG_CELL)),
+      i1 = Math.min(nx - 1, Math.ceil((p.x + R - ox) / SG_CELL));
+    const j0 = Math.max(0, Math.floor((p.y - R - oy) / SG_CELL)),
+      j1 = Math.min(ny - 1, Math.ceil((p.y + R - oy) / SG_CELL));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) if (Math.hypot(cx(i) - p.x, cy(j) - p.y) <= R) cls[j * nx + i] = 0;
+  };
+  clear(start, Math.max(160, r * 2 + 60));
+  for (const p of clearAt) clear(p, Math.max(160, r * 2 + 60));
+  return { ox, oy, nx, ny, cls, near, cx, cy };
+}
+/** Binary heap of [f, state]. */
+function heapPush(H, f, s) {
+  H.push([f, s]);
+  let i = H.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (H[p][0] <= H[i][0]) break;
+    [H[p], H[i]] = [H[i], H[p]];
+    i = p;
+  }
+}
+function heapPop(H) {
+  const top = H[0],
+    last = H.pop();
+  if (H.length) {
+    H[0] = last;
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1,
+        r = l + 1;
+      let m = i;
+      if (l < H.length && H[l][0] < H[m][0]) m = l;
+      if (r < H.length && H[r][0] < H[m][0]) m = r;
+      if (m === i) break;
+      [H[m], H[i]] = [H[i], H[m]];
+      i = m;
+    }
+  }
+  return top;
+}
+/**
+ * A* from start to any goal cell. goals: Map cell → {dir (flow direction index of the line joined, -1 any), g}.
+ * kMin: straight cells needed between turns (room for the bends and an insert).
+ */
+function sewSearch(G, start, goals, kMin) {
+  const { nx, ny, cls, near } = G;
+  const K = kMin + 1;
+  const NS = nx * ny * 8 * K;
+  if (NS > 6e6) return null;
+  const gS = new Float32Array(NS).fill(Infinity);
+  const from = new Int32Array(NS).fill(-1);
+  const si = Math.round((start.x - G.ox) / SG_CELL),
+    sj = Math.round((start.y - G.oy) / SG_CELL);
+  if (si < 0 || sj < 0 || si >= nx || sj >= ny) return null;
+  const gl = [...goals.values()].map(v => v.cell);
+  const hx = c => {
+    const i = c % nx,
+      j = (c / nx) | 0;
+    let b = Infinity;
+    for (const g of gl) {
+      const di = Math.abs((g % nx) - i),
+        dj = Math.abs(((g / nx) | 0) - j);
+      b = Math.min(b, (Math.max(di, dj) + 0.414 * Math.min(di, dj)) * SG_CELL);
+    }
+    return b;
+  };
+  const H = [];
+  const c0 = sj * nx + si;
+  for (let d = 0; d < 8; d++) {
+    const s = (c0 * 8 + d) * K + kMin;
+    gS[s] = 0;
+    heapPush(H, hx(c0), s);
+  }
+  let best = null,
+    it = 0;
+  while (H.length && it++ < 4e6) {
+    const [f, s] = heapPop(H);
+    const g = gS[s];
+    if (f - hx(Math.floor(s / K / 8)) > g + 1e-3) continue;
+    const c = Math.floor(s / K / 8),
+      d = Math.floor(s / K) % 8,
+      run = s % K;
+    if (best && g >= best.g) break;
+    const i = c % nx,
+      j = (c / nx) | 0;
+    for (let t = -2; t <= 2; t++) {
+      const nd = (d + t + 8) % 8;
+      if (t !== 0 && run < kMin) continue;
+      const [dx, dy] = SG_DIRS[nd];
+      const ni = i + dx,
+        nj = j + dy;
+      if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+      const nc = nj * nx + ni;
+      const goal = goals.get(nc);
+      const k = cls[nc];
+      if (k === 3 && !goal) continue;
+      // no cutting a blocked corner diagonally
+      if (dx && dy && cls[j * nx + ni] === 3 && cls[nj * nx + i] === 3) continue;
+      const step = dx && dy ? SG_CELL * 1.4142 : SG_CELL;
+      let mult = near[nc] ? 1 : 2.6;
+      if (k === 1) mult = 2.5;
+      if (k === 2) mult = 40;
+      if (k === 4 && !goal) mult = 25;
+      let cost = step * mult + (t === 0 ? 0 : Math.abs(t) === 1 ? 140 : 3200) + (goal && goal.pen ? goal.pen : 0);
+      if (goal && goal.dir >= 0) {
+        // join a line with a 45° tee in its flow direction; at 90° only if nothing else
+        const a = Math.min((nd - goal.dir + 8) % 8, (goal.dir - nd + 8) % 8);
+        const down = (nd - goal.dir + 8) % 8 <= 2 || (goal.dir - nd + 8) % 8 <= 2;
+        if (a === 0 || a === 4) continue;
+        if (a === 1 && down) cost += 0;
+        else if (a === 2) cost += 2600;
+        else continue;
+      }
+      const nrun = t === 0 ? Math.min(kMin, run + 1) : 1;
+      const ns = (nc * 8 + nd) * K + nrun;
+      const ng = g + cost;
+      if (ng < gS[ns]) {
+        gS[ns] = ng;
+        from[ns] = s;
+        if (goal) {
+          if (!best || ng < best.g) best = { g: ng, s: ns, goal };
+        } else heapPush(H, ng + hx(nc), ns);
+      }
+    }
+  }
+  if (!best) return null;
+  const cells = [];
+  for (let s = best.s; s >= 0; s = from[s]) cells.push({ c: Math.floor(s / K / 8), d: Math.floor(s / K) % 8 });
+  cells.reverse();
+  return { cells, goal: best.goal, g: best.g };
+}
+/** Grid path → plan vertices (only where the direction changes). */
+function sewVerts(G, res, start, end) {
+  const pt = c => P(G.cx(c % G.nx), G.cy((c / G.nx) | 0));
+  const cs = res.cells;
+  const v = [P(start.x, start.y)];
+  for (let k = 1; k < cs.length - 1; k++) if (cs[k + 1].d !== cs[k].d) v.push(pt(cs[k].c));
+  // the last straight is turned onto the exact end point: move the previous corner along its own line
+  if (v.length >= 2) {
+    const dl = SG_DIRS[cs[cs.length - 1].d];
+    const a = v[v.length - 2],
+      b = v[v.length - 1];
+    const u = P(b.x - a.x, b.y - a.y);
+    const den = u.x * dl[1] - u.y * dl[0];
+    if (Math.abs(den) > 1e-6) {
+      const tt = ((end.x - a.x) * dl[1] - (end.y - a.y) * dl[0]) / den;
+      if (tt > 0.05) v[v.length - 1] = P(a.x + u.x * tt, a.y + u.y * tt);
+    }
+  } else if (v.length === 1) {
+    // one straight from the outlet: make it hit the end exactly by sliding the start corner
+  }
+  v.push(P(end.x, end.y));
+  // drop zero-length pieces
+  return v.filter((p, i) => i === 0 || dist(p, v[i - 1]) > 1);
+}
+const planLen = v => v.reduce((s, p, i) => (i ? s + dist(v[i - 1], p) : 0), 0);
+/** Distance along a polyline to its point nearest p. */
+function posOn(v, p) {
+  let best = { d: Infinity, s: 0 },
+    acc = 0;
+  for (let i = 0; i + 1 < v.length; i++) {
+    const q = segPt(v[i], v[i + 1], p);
+    const d = dist(q, p);
+    if (d < best.d) best = { d, s: acc + dist(v[i], q), i, q };
+    acc += dist(v[i], v[i + 1]);
+  }
+  return best;
+}
+/** Outlets of the fixtures to connect: [{q (port), fix}]; ports already met by a sewer pipe end are skipped. */
+function sewOutlets(fixes) {
+  const ends = [];
+  for (const e of S.ents)
+    if (e.type === 'pipe' && (PSYS[e.sys] || {}).kind === 'sewer' && !e.gen)
+      ends.push(e.pts[0], e.pts[e.pts.length - 1]);
+  const out = [];
+  for (const f of fixes) {
+    if (f.kind === 'riserK' || f.kind === 'riserW' || !FIXK[f.kind]) continue;
+    for (const q of portsOf(f)) {
+      if (q.s !== 'k') continue;
+      if (ends.some(p => dist(p, q.p) < 40)) continue;
+      // one outlet per spot: a washbasin on a TECE module drains into the module's bend
+      const dup = out.find(o => dist(o.q.p, q.p) < 200 && Math.abs(o.q.z - q.z) < 400);
+      if (dup) {
+        if (q.d > dup.q.d || (q.d === dup.q.d && f.kind === 'tecemod')) Object.assign(dup, { q, fix: f });
+        continue;
+      }
+      out.push({ q, fix: f });
+    }
+  }
+  return out;
+}
+/**
+ * Lays the sewer of the level. Returns {pipes, warn[], err} — used by the command and by the tests.
+ * opts.fixes: fixtures to connect (default: all of the level), opts.riser: the riser fixture.
+ */
+function sewerGenerate(opts = {}) {
+  const fixes = opts.fixes || S.ents.filter(e => e.type === 'fix');
+  const risers = S.ents.filter(e => e.type === 'fix' && e.kind === 'riserK');
+  const outs = sewOutlets(fixes);
+  if (!outs.length) return { err: 'Нет приборов с неподключённым выпуском в канализацию' };
+  const c0 = outs.reduce((a, o) => P(a.x + o.q.p.x / outs.length, a.y + o.q.p.y / outs.length), P(0, 0));
+  const riser = opts.riser || risers.slice().sort((a, b) => dist(a.p, c0) - dist(b.p, c0))[0];
+  if (!riser) return { err: 'На этаже нет стояка канализации — поставьте его (Сантехприбор → Стояк канализации)' };
+  const rq = portsOf(riser).filter(q => q.s === 'k');
+  if (!rq.length) return { err: 'У стояка нет тройника' };
+  // the riser's lowest tee takes the main line
+  const tee = rq.slice().sort((a, b) => a.z - b.z)[0];
+  const warn = [];
+  pushUndo();
+  // previous generated pipes of the level are replaced
+  for (let i = S.ents.length - 1; i >= 0; i--)
+    if (S.ents[i].type === 'pipe' && S.ents[i].gen === 'sewer') S.ents.splice(i, 1);
+  const obs = sewObstacles();
+  // biggest outlets first, then the farthest from the riser
+  outs.sort((a, b) => b.q.d - a.q.d || dist(b.q.p, tee.p) - dist(a.q.p, tee.p));
+  const routes = [];
+  const segs = () => routes.flatMap(r => r.v.slice(1).map((p, i) => ({ a: r.v[i], b: p, r })));
+  for (const o of outs) {
+    const d = Math.max(50, o.q.d >= 75 ? 110 : 50);
+    const r = d / 2 + 10;
+    // goals: the riser (a second line into it costs a tee of its own — joining a line is preferred) and the
+    // lines laid before with a diameter ≥ own
+    const toRiser = true;
+    const pen = routes.some(x => !x.parent) ? 900 : 0;
+    const ss = segs().filter(s => s.r.d >= d);
+    // the pipe leaves its own fixture (a bath drain is under the bath) — that hull is not an obstacle for it
+    const G0 = sewGrid(
+      obs.filter(x => x.e !== o.fix),
+      o.q.p,
+      [tee.p, ...ss.flatMap(s => [s.a, s.b])],
+      r,
+      segs(),
+      toRiser ? [tee.p] : []
+    );
+    const goals = new Map();
+    const add = (cell, v) => {
+      if (!goals.has(cell)) goals.set(cell, { ...v, cell });
+    };
+    if (toRiser) {
+      const i = Math.round((tee.p.x - G0.ox) / SG_CELL),
+        j = Math.round((tee.p.y - G0.oy) / SG_CELL);
+      // only the nearest cell: the last straight is then moved onto the tee by less than half a cell
+      if (i >= 0 && j >= 0 && i < G0.nx && j < G0.ny) add(j * G0.nx + i, { dir: -1, riser: true, pen });
+    }
+    for (const s of ss) {
+      const L = dist(s.a, s.b);
+      if (L < 1) continue;
+      const ux = (s.b.x - s.a.x) / L,
+        uy = (s.b.y - s.a.y) / L;
+      let dir = -1;
+      for (let k = 0; k < 8; k++) {
+        const [dx, dy] = SG_DIRS[k];
+        const l = Math.hypot(dx, dy);
+        if (Math.abs((dx / l) * ux + (dy / l) * uy - 1) < 0.01) dir = k;
+      }
+      if (dir < 0) continue;
+      // not right at the ends of a line (no room for the tee)
+      // cells of this grid along the line (its own grid is aligned to another outlet): the joint point is the
+      // projection of the cell onto the line; not right at the ends of a line (no room for the tee)
+      const n = Math.floor(L / (SG_CELL / 2));
+      for (let t = 0; t <= n; t++) {
+        const x = s.a.x + (ux * t * SG_CELL) / 2,
+          y = s.a.y + (uy * t * SG_CELL) / 2;
+        const i = Math.round((x - G0.ox) / SG_CELL),
+          j = Math.round((y - G0.oy) / SG_CELL);
+        if (i < 0 || j < 0 || i >= G0.nx || j >= G0.ny) continue;
+        const q = segPt(s.a, s.b, P(G0.cx(i), G0.cy(j)));
+        if (dist(q, P(G0.cx(i), G0.cy(j))) > SG_CELL * 0.75) continue;
+        if (dist(q, s.a) < 150 || dist(q, s.b) < 150) continue;
+        add(j * G0.nx + i, { dir, seg: s, p: q });
+      }
+    }
+    if (!goals.size) {
+      warn.push({
+        lvl: 'bad',
+        msg: `${FIXK[o.fix.kind].n}: некуда подключить — нет линии подходящего диаметра`,
+        p: o.q.p
+      });
+      continue;
+    }
+    const kMin = Math.max(2, Math.ceil((d >= 110 ? 150 : 110) / SG_CELL));
+    const res = sewSearch(G0, o.q.p, goals, kMin);
+    if (!res) {
+      warn.push({
+        lvl: 'bad',
+        msg: `${FIXK[o.fix.kind].n}: трасса не найдена — путь к стояку закрыт стенами или приборами`,
+        p: o.q.p
+      });
+      continue;
+    }
+    const end = res.goal.riser ? tee.p : res.goal.p;
+    const v = sewVerts(G0, res, o.q.p, end);
+    const crossesWall = res.cells.some(x => G0.cls[x.c] === 2);
+    if (crossesWall)
+      warn.push({
+        lvl: 'warn',
+        msg: `${FIXK[o.fix.kind].n}: трасса проходит сквозь стену — нужна гильза / штроба`,
+        p: o.q.p
+      });
+    if (res.cells.some(x => G0.cls[x.c] === 1))
+      warn.push({
+        lvl: 'info',
+        msg: `${FIXK[o.fix.kind].n}: труба проходит за мебелью — оставьте зазор за задней стенкой`,
+        p: o.q.p
+      });
+    routes.push({
+      o,
+      d,
+      v,
+      L: planLen(v),
+      parent: res.goal.riser ? null : res.goal.seg.r,
+      joinAt: res.goal.riser ? null : res.goal.p,
+      slope: SEW_MIN[d] || 0.02
+    });
+  }
+  if (!routes.length) return { err: warn.length ? warn[0].msg : 'Трасса не найдена', warn };
+  // heights: highest possible start of every line (outlet, then the lines joining it)
+  const kids = r => routes.filter(x => x.parent === r);
+  const zMax = new Map(),
+    zBy = new Map();
+  const zmax = r => {
+    if (zMax.has(r)) return zMax.get(r);
+    let z = r.o.q.z,
+      by = r;
+    for (const b of kids(r)) {
+      const s = posOn(r.v, b.joinAt).s;
+      const zb = zmax(b) - b.slope * b.L + r.slope * s;
+      if (zb < z) [z, by] = [zb, zBy.get(b)];
+    }
+    zMax.set(r, z);
+    zBy.set(r, by);
+    return z;
+  };
+  const sgn = z => (z >= 0 ? '+' : '−') + Math.abs(Math.round(z));
+  const lv = lvCur();
+  const roots = routes.filter(r => !r.parent);
+  const zStart = new Map();
+  const place = (r, zEnd) => {
+    const zs = zEnd + r.slope * r.L;
+    zStart.set(r, zs);
+    for (const b of kids(r)) {
+      const s = posOn(r.v, b.joinAt).s;
+      place(b, zs - r.slope * s);
+    }
+  };
+  // every line into the riser gets a tee at its height: the lowest existing one takes the first line
+  if (!riser.cfg.tees) riser.cfg.tees = [{ z: tee.z, dn: 110, ang: 45, dir: 'front' }];
+  const T0 = riser.cfg.tees.slice().sort((a, b) => a.z - b.z)[0];
+  let teeZ = null;
+  roots.forEach((root, k) => {
+    const zFloor = (lv.top || 0) + root.d / 2 + 10;
+    let z = Math.min(tee.z, zmax(root) - root.slope * root.L);
+    if (z < zFloor) {
+      warn.push({
+        lvl: 'warn',
+        msg: `Не хватает высоты на уклон: из-за «${FIXK[zBy.get(root).o.fix.kind].n}» (выпуск на ${sgn(zBy.get(root).o.q.z)}) тройник стояка нужен на ${sgn(z)} — это в плите. Поднимите прибор (ванну, поддон) или сократите трассу.`,
+        p: tee.p
+      });
+      z = zFloor;
+    }
+    z = Math.round(z);
+    if (k === 0) {
+      if (Math.abs(T0.z - z) > 1 || (T0.dn || 50) < root.d) {
+        T0.z = z;
+        T0.dn = Math.max(T0.dn || 50, root.d);
+        warn.push({ lvl: 'info', msg: `Тройник стояка на ${sgn(z)} (Ø110×${T0.dn})`, p: tee.p });
+      }
+      teeZ = z;
+    } else {
+      riser.cfg.tees.push({ z, dn: root.d, ang: 45, dir: 'front' });
+      warn.push({ lvl: 'info', msg: `Добавлен тройник стояка на ${sgn(z)} (Ø110×${root.d})`, p: tee.p });
+    }
+    place(root, z);
+  });
+  const pipes = [];
+  for (const r of routes) {
+    const zs = zStart.get(r);
+    if (zs == null) continue;
+    const q = r.o.q;
+    const pts = [];
+    if (q.z > zs + 40) {
+      const a = P(r.v[0].x, r.v[0].y);
+      a.z = q.z;
+      const b = P(r.v[0].x, r.v[0].y);
+      b.z = Math.round(zs * 10) / 10;
+      pts.push(a, b);
+    } else {
+      if (q.z < zs - 2)
+        warn.push({
+          lvl: 'warn',
+          msg: `${FIXK[r.o.fix.kind].n}: выпуск ниже, чем нужно для уклона, на ${Math.round(zs - q.z)} мм`,
+          p: q.p
+        });
+      const a = P(r.v[0].x, r.v[0].y);
+      a.z = Math.min(q.z, zs);
+      pts.push(a);
+    }
+    for (const p of r.v.slice(1)) pts.push(P(Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10));
+    const e = {
+      type: 'pipe',
+      sys: 'k',
+      mat: 'ПП серый (внутренняя)',
+      d: r.d,
+      pts,
+      z: pts[0].z,
+      slope: r.slope,
+      ins: 0,
+      gen: 'sewer',
+      layer: 'Сантехника',
+      id: S.nextId++
+    };
+    S.ents.push(e);
+    pipes.push(e);
+  }
+  changed();
+  return { pipes, warn, riser, teeZ };
+}
+/**
+ * Pipes at floor level crossing a bath / shower tray / floor WC / washer in plan (checked for every sewer pipe).
+ */
+function pipeFloorHits(e) {
+  const out = [];
+  if (!e.pts || e.pts.length < 2 || (PSYS[e.sys] || {}).kind !== 'sewer') return out;
+  const zs = pipeZ(e);
+  for (const o of S.ents) {
+    if (o.type !== 'fix' || !SG_FLOOR.has(o.kind) || o.kind === 'riserK' || o.kind === 'riserW') continue;
+    const h = fixHull(o);
+    if (h.length < 3) continue;
+    const top = (o.z || 0) + ((o.cfg && (o.cfg.h || o.cfg.H)) || 400);
+    // its own outlet is inside the hull
+    const own = portsOf(o).some(q => e.pts.some(p => dist(p, q.p) < 60));
+    for (let i = 0; i + 1 < e.pts.length; i++) {
+      const a = e.pts[i],
+        b = e.pts[i + 1];
+      if (Math.min(zs[i], zs[i + 1]) > top) continue;
+      let hit = false;
+      const m = P((a.x + b.x) / 2, (a.y + b.y) / 2);
+      if (inPoly(m, h) && !own) hit = true;
+      for (let k = 0; !hit && k < h.length; k++) {
+        const c = h[k],
+          d = h[(k + 1) % h.length];
+        if (segSeg(a, b, c, d) && !own) hit = true;
+      }
+      if (hit) {
+        out.push({
+          lvl: 'bad',
+          msg: `Труба проходит под / через «${FIXK[o.kind].n}» — так не смонтировать и не обслужить. Обведите трассу.`,
+          p: m
+        });
+        break;
+      }
+    }
+  }
+  return out;
+}
+function sewerGenCmd() {
+  const sel = selEnts().filter(e => e.type === 'fix');
+  const r = sewerGenerate(sel.length ? { fixes: sel } : {});
+  if (r.err) return log(r.err, true);
+  const bad = r.warn.filter(w => w.lvl === 'bad').length;
+  log(
+    `Канализация: проложено труб ${r.pipes.length} к стояку (повороты 2×45°, обход приборов и мебели)` +
+      (r.warn.length ? ` · замечаний ${r.warn.length}${bad ? `, из них ошибок ${bad}` : ''} — см. «Проверки»` : '') +
+      '. Повторный запуск перекладывает трассу заново.',
+    !!bad
+  );
+  sewerGenCmd.last = r.warn;
+  for (const w of r.warn) if (w.lvl !== 'info') log('· ' + w.msg, w.lvl === 'bad');
+}
+defineTools({
+  sewergen: {
+    command: {
+      t: 'КАНАЛИЗАЦИЯ',
+      m: () => {
+        sewerGenCmd();
+        return null;
+      },
+      a: ['sewergen', 'канализация', 'развести канализацию', 'автоканализация']
+    },
+    title:
+      'Развести канализацию: трассы от приборов к стояку с уклоном, поворотами 2×45° и в обход ванн, поддонов и мебели · КАНАЛИЗАЦИЯ',
+    icon: '<path d="M4 4v6h6l6 6"/><circle cx="16" cy="16" r="1.6"/><path d="M4 4l3 3" class="t"/>'
+  }
+});
+
+// ===== mep/plumbing/tece-modules.js =====
+/**
+ * mep/plumbing/tece-modules.js
+ *
+ * TECEprofil installation modules for wall-hung washbasins / vanity units and for wall mixers. A module is a
+ * self-supporting frame of 50×50 TECEprofil profiles standing on the floor and fixed to the wall: the washbasin,
+ * the vanity unit or the mixer is hung on its plate and studs — the wall itself needs no reinforcement.
+ * Loads («НАГР») over such a module are carried by its frame (see loadCheck in elements/reinforcement.js).
+ */
+
+
+
+
+
+
+
+const TECE_COL = '#b9c0c7',
+  TECE_PLATE = '#8b939c';
+const TECEM = {
+  sink: {
+    n: 'для раковины / подвесной тумбы',
+    H: 1120,
+    W: 500,
+    kg: 150,
+    note: 'шпильки М10 под раковину или тумбу, отвод Ø40/50, два водорозеточных угольника ½″'
+  },
+  vanity: {
+    n: 'для тяжёлой подвесной тумбы / консольной столешницы',
+    H: 1120,
+    W: 1000,
+    kg: 250,
+    note: 'траверса с монтажной пластиной на всю ширину, отвод Ø50, два угольника ½″'
+  },
+  mixer: {
+    n: 'для настенного смесителя (ванна / душ)',
+    H: 1120,
+    W: 500,
+    kg: 0,
+    note: 'монтажная пластина с двумя водорозетками ½″ на 150 мм, высота выводов регулируется'
+  }
+};
+/** Parameters of a module (with the defaults of its type). */
+function teceGeo(e) {
+  const c = e.cfg || {};
+  const T = TECEM[c.type] || TECEM.sink;
+  const W = +c.W || T.W,
+    H = +c.H || T.H;
+  // outlets: sink — drain at +500, water at +560; mixer — at the chosen height, 150 apart
+  const wz = c.type === 'mixer' ? +c.mz || 1000 : 560;
+  return { T, W, H, D: 80, wz, dz: 500 };
+}
+FIXK.tecemod = {
+  n: 'Модуль TECEprofil (раковина / тумба / смеситель)',
+  cfg: () => ({ type: 'sink', W: 0, H: 0, mz: 1000 }),
+  ports: e => {
+    const g = teceGeo(e);
+    const out = [
+      { s: 'hvs', d: 16, x: -75, y: 20, z: g.wz, n: 'ХВС ½″ (водорозетка модуля)' },
+      { s: 'gvs', d: 16, x: 75, y: 20, z: g.wz, n: 'ГВС ½″ (водорозетка модуля)' }
+    ];
+    if (e.cfg.type !== 'mixer') out.push({ s: 'k', d: 50, x: 0, y: 30, z: g.dz, n: 'отвод Ø50 модуля' });
+    return out;
+  },
+  plan: e => {
+    const g = teceGeo(e);
+    return [
+      {
+        poly: [
+          [-g.W / 2, 0],
+          [g.W / 2, 0],
+          [g.W / 2, g.D],
+          [-g.W / 2, g.D]
+        ]
+      },
+      {
+        poly: [
+          [-g.W / 2, g.D],
+          [g.W / 2, 0]
+        ],
+        open: true,
+        dash: true
+      }
+    ];
+  },
+  build(mb, e) {
+    const g = teceGeo(e),
+      W = g.W,
+      H = g.H,
+      s = 50;
+    mb.tag('Модуль TECEprofil: стойки 50×50');
+    for (const k of [-1, 1])
+      mb.box(k * (W / 2 - s / 2) - s / 2, 10, 0, k * (W / 2 - s / 2) + s / 2, 10 + s, H, TECE_COL);
+    mb.tag('Модуль TECEprofil: ригели');
+    for (const z of [0, H - s]) mb.box(-W / 2 + s, 10, z, W / 2 - s, 10 + s, z + s, TECE_COL);
+    mb.tag('Опоры к полу и крепления к стене');
+    for (const k of [-1, 1]) {
+      mb.box(k * (W / 2 - s / 2) - 40, 0, 0, k * (W / 2 - s / 2) + 40, 80, 5, TECE_PLATE);
+      mb.box(k * (W / 2 - s / 2) - 25, 0, H - 120, k * (W / 2 - s / 2) + 25, 10, H - 40, TECE_PLATE);
+    }
+    if (e.cfg.type === 'mixer') {
+      mb.tag('Монтажная пластина смесителя');
+      mb.box(-W / 2 + s, 20, g.wz - 60, W / 2 - s, 26, g.wz + 60, TECE_PLATE);
+    } else {
+      mb.tag(e.cfg.type === 'vanity' ? 'Траверса под тумбу' : 'Траверса под раковину / тумбу');
+      mb.box(-W / 2 + s, 10, 700, W / 2 - s, 10 + s, 750, TECE_COL);
+      mb.tag('Шпильки М10');
+      for (const x of [-180, 180]) mb.tube([x, 60, 725], [x, 110, 725], 5, CHR, 8);
+      mb.tag('Отвод Ø50');
+      mb.tube([0, 30, 380], [0, 30, g.dz], 25, '#8a8f96', 14);
+      mb.tube([0, 30, g.dz], [0, 90, g.dz], 25, '#8a8f96', 14);
+    }
+    mb.tag('Водорозетки ½″');
+    for (const x of [-75, 75]) mb.tube([x, 20, g.wz], [x, 70, g.wz], 12, CHR, 10);
+  },
+  panel: e => {
+    const g = teceGeo(e);
+    return [
+      ['Модуль', 'cfg.type', 's', Object.entries(TECEM).map(([k, v]) => [k, v.n])],
+      ['Ширина рамы (0 — по модели)', 'cfg.W', 'n'],
+      ['Высота рамы (0 — по модели)', 'cfg.H', 'n'],
+      ...(e.cfg.type === 'mixer' ? [['Высота выводов смесителя', 'cfg.mz', 'n']] : []),
+      ['Состав', esc(g.T.note), 'r'],
+      [
+        'Опора',
+        esc(
+          g.T.kg
+            ? `рама стоит на полу и крепится к стене — несёт до ≈${g.T.kg} кг (ориентир., сверяйте с паспортом); закладная / усиление стены не нужны`
+            : 'рама на полу и стене, смеситель на пластине — закладная не нужна'
+        ),
+        'r'
+      ]
+    ];
+  },
+  spec: e => {
+    const g = teceGeo(e);
+    return [
+      ['tecem' + e.cfg.type + g.W, `Модуль TECEprofil ${g.T.n}, ${g.W}×${g.H} мм`],
+      ['tecemf', 'Комплект крепления модуля TECEprofil к стене и полу'],
+      ...(e.cfg.type === 'mixer' ? [] : [['tecems', 'Шпильки М10 с гайками для раковины / тумбы (комплект)']])
+    ];
+  }
+};
+/**
+ * The TECE module behind a point load on a wall (or null): same wall, same face, inside the frame.
+ */
+function teceModuleAt(L) {
+  const w = byId(L.host);
+  if (!w) return null;
+  const wi = wallInfo(w);
+  for (const f of S.ents) {
+    if (f.type !== 'fix' || f.kind !== 'tecemod') continue;
+    // on this wall: its base point lies on a face of the wall
+    const t = dot(sub(f.p, w.a), wi.u),
+      off = dot(sub(f.p, w.a), wi.n);
+    if (Math.abs(Math.abs(off) - w.th / 2) > 60) continue;
+    const side = Math.sign(dot(devF(f), wi.n)) || 1;
+    if (L.side && side !== Math.sign(L.side)) continue;
+    const g = teceGeo(f);
+    if (Math.abs(L.t - t) > g.W / 2 + 40) continue;
+    if (L.z < -20 || L.z > g.H + 60) continue;
+    return { f, g, p: add(w.a, mul(wi.u, t)) };
+  }
+  return null;
+}
 
 })();
 </script>
