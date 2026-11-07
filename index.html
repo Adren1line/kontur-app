@@ -1346,8 +1346,8 @@ details.ps dl {
   gap: 5px;
 }
 .wleg i {
-  width: 16px;
-  height: 4px;
+  width: 22px;
+  height: 5px;
   border-radius: 2px;
   display: inline-block;
 }
@@ -6946,7 +6946,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '51.2';
+const APP_VER = '52';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -20854,7 +20854,12 @@ function insertMenu() {
     for (const [, list] of w.g)
       for (const t of list) {
         if (INS_NOT[t]) continue;
-        const n = TLBL[t] || (CMDS[t] && CMDS[t].t) || t;
+        // the menu has room: the fuller name when it is short enough, else the palette label
+        const tt = String(TT[t] || '')
+          .split('·')[0]
+          .split(':')[0]
+          .trim();
+        const n = (tt && tt.length <= 28 ? tt : TLBL[t]) || (CMDS[t] && CMDS[t].t) || t;
         const k = CMDS[t] ? CMDS[t].t : '';
         out.push({
           n,
@@ -21968,6 +21973,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -22086,6 +22092,7 @@ function fieldsFor(e) {
       );
     else if (e.kind !== 'panel')
       F.push({ l: 'Группа', k: 'group', sel: grpOpts() }, { l: 'Мощность, Вт', k: 'pw', num: true });
+    if (d.f === 'socket' && !d.weak) F.push({ l: 'Назначение', k: 'ded', sel: Object.entries(DEDICATED) });
     if (d.f === 'light')
       F.push({
         l: 'Выключатель (клавиша)',
@@ -22175,6 +22182,8 @@ function fieldGet(e, k) {
   switch (k) {
     case 'manual':
       return e.manual ? '1' : '';
+    case 'ded':
+      return e.ded || '';
     case 'swk': {
       const a = lightKeyOf(e);
       return a ? a.dev + '|' + a.key : '';
@@ -22258,6 +22267,12 @@ function fieldSet(e, k, raw) {
         e.wt = raw;
         setCurWt(raw, true);
       }
+      return;
+    case 'ded':
+      if (raw) {
+        e.ded = raw;
+        if (DEDICATED_PW[raw]) e.pw = DEDICATED_PW[raw];
+      } else delete e.ded;
       return;
     case 'swk':
       if (raw) {
@@ -25760,72 +25775,72 @@ const TLBL = {
   trimx: 'Обрезать',
   fillet: 'Сопряжение',
   break: 'Разорвать',
-  matchprop: 'Копир. свойства',
+  matchprop: 'По образцу',
   divide: 'Поделить',
   dim: 'Размер',
   text: 'Текст',
   note: 'Выноска',
   inquiry: 'Измерить',
-  stage: 'Новая стадия',
+  stage: 'Стадия',
   wall: 'Стена',
-  joinwalls: 'Состыковать',
+  joinwalls: 'Стыковка',
   portal: 'Проём',
   door: 'Дверь',
   window: 'Окно',
   vitrage: 'Витраж',
   level: 'Этажи',
   slab: 'Перекрытие',
-  ceilslab: 'Плита потолка',
-  shole: 'Отверстие в плите',
+  ceilslab: 'Плита',
+  shole: 'Отверстие',
   roof: 'Крыша',
   stair: 'Лестница',
   rail: 'Ограждение',
   col: 'Колонна',
   beam: 'Ригель',
-  gbody: 'Тело (короб, ниша)',
-  rhatch: 'Ревизионный люк',
+  gbody: 'Тело',
+  rhatch: 'Люк',
   reinf: 'Усиление',
   load: 'Нагрузка',
-  roomfill: 'Отделка помещения',
+  roomfill: 'Помещение',
   floorz: 'Пол',
   ceil: 'Потолок',
   ztrans: 'Переход',
-  zmerge: 'Объединить зоны',
-  finish: 'Отделка стен',
-  trim: 'Плинтус, профиль',
+  zmerge: 'Объединить',
+  finish: 'Стены',
+  trim: 'Плинтус',
   molding: 'Молдинги',
   curtain: 'Карниз',
   mirrorobj: 'Зеркало',
-  catalog: 'Из каталога',
-  casework: 'Шкафы по стенам',
-  cab: 'Шкаф, тумба',
+  catalog: 'Каталог',
+  casework: 'Шкафы',
+  cab: 'Шкаф',
   kitchen: 'Кухня',
   island: 'Остров',
-  barcounter: 'Барная стойка',
+  barcounter: 'Бар',
   tv: 'Телевизор',
   socket: 'Розетка',
   switch: 'Выключатель',
   fout: 'Напольная',
-  eout: 'Электровывод',
+  eout: 'Вывод',
   light: 'Светильник',
   track: 'Трек',
-  tmod: 'Модуль трека',
+  tmod: 'Модуль',
   lcalc: 'Светорасчёт',
-  eq: 'Щит, коробка',
+  eq: 'Щит',
   wire: 'Провод',
   pipe: 'Труба',
-  sewergen: 'Канализация (авто)',
-  watergen: 'Водоснабжение (авто)',
-  fix: 'Сантехприбор',
-  washer: 'Стиральная машина',
-  towel: 'Полотенцесушитель',
+  sewergen: 'Стоки авто',
+  watergen: 'Вода авто',
+  fix: 'Прибор',
+  washer: 'Стиральная',
+  towel: 'Сушитель',
   boiler: 'Бойлер',
   wheater: 'Проточный',
   drain: 'Трап',
   rad: 'Радиатор',
   ufh: 'Тёплый пол',
   duct: 'Воздуховод',
-  vterm: 'Решётка, диффузор',
+  vterm: 'Решётка',
   vshaft: 'Вентканал',
   ac: 'Кондиционер',
   acfreon: 'Фреон',
@@ -25835,12 +25850,12 @@ const TLBL = {
   node: 'Узел',
   sbox: '3D-вид',
   hsect: 'Гор. разрез',
-  csect: 'Сложный разрез',
+  csect: 'Ломаный',
   vbox: '3D-куб',
   arpt: 'AR-точки',
-  views: 'Все виды…',
-  shvp: 'План на лист',
-  sh3d: '3D-вид на лист',
+  views: 'Все виды',
+  shvp: 'План',
+  sh3d: '3D-вид',
   dim3: 'Размер 3D',
   sheetdraw: 'Черчение',
   move: 'Перенести',
@@ -25848,7 +25863,7 @@ const TLBL = {
   rotate: 'Повернуть',
   erase: 'Стереть',
   pan: 'Панорама',
-  zoomext: 'Показать всё'
+  zoomext: 'Всё'
 };
 const HELP = {
   draft:
@@ -44549,6 +44564,8 @@ function panelMeshes(e) {
 
 
 
+
+
 /* ---------- cables, corrugation, colours by purpose ---------- */
 const CAB_OD = { '3×1,5': 8.6, '3×2,5': 9.8, '3×4': 11.2, '3×6': 12.5, '5×2,5': 11.6, UTP: 6.2, 'RG-6': 7.0 }; // наружный Ø, мм (ориентир.)
 function cableOD(c) {
@@ -44577,6 +44594,7 @@ const WIRECOL = {
   sockPow: '#9b6cf2',
   rj45: '#62d0a0',
   tv: '#a6d36a',
+  lv: '#c9a6f2',
   feed: '#e86a5a'
 };
 const WKN = {
@@ -44590,6 +44608,7 @@ const WKN = {
   sockPow: 'Силовые розетки (≥4 мм² / 32 А)',
   rj45: 'Интернет UTP',
   tv: 'ТВ коаксиальный',
+  lv: 'Подсветка 12–48 В',
   feed: 'Питание от щита'
 };
 function wireKind(e) {
@@ -44599,6 +44618,8 @@ function wireKind(e) {
   if (/RG/.test(c)) return 'tv';
   const mm = cableMm(c) || 0;
   const ends = [e.from, e.to].map(id => (id != null ? byId(id) : null)).filter(d => d && d.type === 'dev');
+  if (ends.some(d => isLV(d))) return 'lv';
+  if (ends.some(d => hasSock(d) && isDedicated(d))) return 'sockPow';
   if (e.sw) {
     const s = byId(e.sw.dev);
     if (s) {
@@ -44617,6 +44638,14 @@ function wireKind(e) {
   for (const d of ends) {
     const ms = d.blk ? (d.blk.mods || []).slice(0, d.blk.posts || 1) : [d.kind];
     if (ms.includes('sock32') || ms.includes('s32') || mm >= 4) return 'sockPow';
+    if (
+      ms.some(m => modF(m) === 'socket') &&
+      isDedicated(
+        null,
+        S.elec.groups.find(g => g.n === e.group)
+      )
+    )
+      return 'sockPow';
     if (ms.includes('sockIP') || ms.includes('sc')) return 'sockIP';
     if (ms.some(m => m === 'rj45' || m === 'rj' || m === 'rj2') && !ms.some(m => m === 's' || m === 'su'))
       return 'rj45';
@@ -44626,12 +44655,25 @@ function wireKind(e) {
   }
   const gd = S.ents.filter(d => d.type === 'dev' && d.group === e.group);
   if (gd.some(d => (DEVK[d.kind] || {}).f === 'light')) return 'light';
+  if (gd.some(d => isLV(d))) return 'lv';
+  if (
+    e.group != null &&
+    isDedicated(
+      null,
+      S.elec.groups.find(g => g.n === e.group)
+    )
+  )
+    return 'sockPow';
   if (mm >= 4 || gd.some(d => d.kind === 'sock32')) return 'sockPow';
   if (gd.some(d => (DEVK[d.kind] || {}).f === 'socket' || d.blk)) return 'sock';
   return 'feed';
 }
+/** Colour category of a wire: sock / light / pow / weak / lv / feed. */
+const wireCat = e => KIND_CAT[wireKind(e)] || 'feed';
 function wireColor(e) {
-  return (S.elec.colorBy || 'kind') === 'kind' ? WIRECOL[wireKind(e)] : groupOf(e.group).col;
+  if ((S.elec.colorBy || 'kind') !== 'kind') return groupOf(e.group).col;
+  const c = wireCat(e);
+  return WCAT[c].max ? wcatColor(c, wireLoad(e)) : wcatColor(c, 0);
 }
 
 // ===== mep/electrical/routing.js =====
@@ -46201,7 +46243,13 @@ function elecEngSpec(put) {
 
 function wireClass(e) {
   const k = wireKind(e);
-  return k === 'rj45' || k === 'tv' ? 'low' : ['sw', 'swp', 'swx', 'dim', 'light'].includes(k) ? 'light' : 'power';
+  return k === 'rj45' || k === 'tv'
+    ? 'low'
+    : k === 'lv'
+      ? 'lv'
+      : ['sw', 'swp', 'swx', 'dim', 'light'].includes(k)
+        ? 'light'
+        : 'power';
 }
 function lightKeyOf(l) {
   if (l.swk) {
@@ -53873,7 +53921,7 @@ function grpPaint(b) {
   const t = `${it.n}${it.al ? ' · ' + it.al : ''} — ПКМ, удержание или ◢: ${GRP[gid].n.toLowerCase()}`;
   b.title = t;
   b.setAttribute('aria-label', t);
-  const lb = gid === 'dim' ? 'Размер: ' + it.n.toLowerCase() : GRP_FIXED[gid] ? TLBL[gid] || GRP[gid].n : it.n;
+  const lb = gid === 'dim' ? 'Размер' : GRP_FIXED[gid] ? TLBL[gid] || GRP[gid].n : it.n;
   b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[it.ic] || ''}</svg><span class="tl">${esc(lb)}</span>`;
 }
 function grpSet(gid, k) {
@@ -83173,14 +83221,18 @@ function renderWS() {
       h += `<label class="fl">Цвет проводов${sel_(
         'wsWcol',
         [
-          ['kind', 'по назначению (выключатели / розетки / силовые)'],
-          ['group', 'по группам щита']
+          ['kind', 'По назначению'],
+          ['group', 'По группам щита']
         ],
         S.elec.colorBy || 'kind'
       )}</label>`;
-      h += `<div class="wleg">${Object.entries(WKN)
-        .map(([k, n]) => `<span><i style="background:${WIRECOL[k]}"></i>${n}</span>`)
-        .join('')}</div>`;
+      if ((S.elec.colorBy || 'kind') === 'kind')
+        h += `<div class="wleg" title="Оттенок — по нагрузке на провод: чем больше мощность за ним, тем темнее">${Object.entries(
+          WCAT
+        )
+          .filter(([k]) => k !== 'feed')
+          .map(([k, c]) => `<span><i style="background:${catSwatch(k)}"></i>${c.n}</span>`)
+          .join('')}</div><p class="hint" style="margin:2px 0">Светлее — меньше нагрузка, темнее — больше.</p>`;
       h += `<label class="fl">Прокладка автотрасс${sel_(
         'wsDefM',
         Object.entries(METHODS).map(([k, m]) => [k, m.n]),
@@ -83281,6 +83333,7 @@ function renderWS() {
       S.elec.colorBy = wc.value;
       changed();
       if (V3.inited) sync3D(true);
+      renderWS();
     };
   const dm = $('#wsDefM');
   if (dm)
@@ -86538,7 +86591,7 @@ function renderTabs() {
     P_.sheets
       .map(
         (s, i) =>
-          `<button class="${s.id === cur ? 'on' : ''}" data-tab="${s.id}" title="${esc(s.name)}">${i + 1}. ${esc(s.name.length > 22 ? s.name.slice(0, 21) + '…' : s.name)}</button>`
+          `<button class="${s.id === cur ? 'on' : ''}" data-tab="${s.id}" title="${esc(s.name)}">${i + 1}. ${esc(sheetShort(s.name))}</button>`
       )
       .join('') +
     `<button data-tab="new" title="Новый лист">+</button>`;
@@ -88174,6 +88227,34 @@ function openDimStyle() {
   );
 }
 uiHooks.dimStyle = openDimStyle;
+
+/** Short tab label of a sheet: «План расстановки мебели» → «Мебель»; the full name is in the tooltip and the stamp. */
+const SHEET_SHORT = [
+  [/^общие данные/i, 'Общие'],
+  [/мебел/i, 'Мебель'],
+  [/отделк|пол(ов|ы)\b/i, 'Отделка'],
+  [/демонтаж/i, 'Демонтаж'],
+  [/монтаж/i, 'Монтаж'],
+  [/электрик|электроснаб|розет/i, 'Электрика'],
+  [/освещ|светил/i, 'Свет'],
+  [/сантехник|водоснаб|канализ/i, 'Сантехника'],
+  [/отоплен|тёпл|тепл/i, 'Отопление'],
+  [/вентиляц|кондиц/i, 'Климат'],
+  [/аксонометр|3d|изометр/i, '3D'],
+  [/спецификац/i, 'Спецификация'],
+  [/потолк/i, 'Потолки'],
+  [/обмерн|существ/i, 'Обмерный'],
+  [/развёртк|развертк/i, 'Развёртки'],
+  [/разрез/i, 'Разрезы']
+];
+function sheetShort(name) {
+  const n = String(name || '');
+  if (n.length <= 14) return n;
+  for (const [rx, s] of SHEET_SHORT) if (rx.test(n)) return s;
+  const t = n.replace(/^(план|схема|чертёж|чертеж)\s+/i, '');
+  const r = t.charAt(0).toUpperCase() + t.slice(1);
+  return r.length > 14 ? r.slice(0, 13) + '…' : r;
+}
 
 // ===== sheets/sbox-view.js =====
 /**
@@ -99972,6 +100053,181 @@ function palUsed(ents) {
   return M;
 }
 
+// ===== ui/short-labels.js =====
+/**
+ * ui/short-labels.js
+ *
+ * Short labels for the interface. Buttons, tabs and section toggles show a short word; the full wording moves to
+ * the tooltip (title). Names of objects in Properties and in specifications are not touched — they keep their full
+ * names there. One dictionary for the whole program: the code keeps its full texts, the screen shows the short ones.
+ */
+/** Full text → short label. */
+const SHORT = {
+  // electrical
+  'Оптимизировать проводку': 'Собрать проводку',
+  'Дотянуть до щита': 'До щита',
+  'Дотянуть устройства до щита': 'До щита',
+  'Перетрассировать все': 'Перетрассировать',
+  'Перетрассировать все провода': 'Перетрассировать',
+  'Собрать заново по группам': 'Пересобрать',
+  'Нарисовать провод': 'Провод',
+  'Применить к потолочным устройствам и трассам': 'Применить',
+  'Группы электрики…': 'Группы…',
+  'Добавить розетку рядом': '+ Розетка',
+  '+ Модуль в середину': '+ Модуль',
+  'Загрузить IES…': 'IES…',
+  // plumbing
+  'Поставить рядом с тройником': 'К тройнику',
+  'Поставить коллекторный узел': '+ Коллектор',
+  'Собрать выходы по сантехнике': 'Выходы по приборам',
+  '⇋ Отзеркалить узел': '⇋ Зеркально',
+  'Конструктор коллектора…': 'Конструктор…',
+  'Каталог моделей…': 'Каталог…',
+  'Каталог моделей сантехники…': 'Каталог…',
+  'Удалить коллектор': 'Удалить',
+  'Удалить выход': 'Удалить',
+  'Удалить трубу': 'Удалить',
+  'Удалить провод': 'Удалить',
+  'Сбросить положение': 'Сбросить',
+  'Показать в сцене': 'В сцене',
+  'Показать на плане': 'На плане',
+  'Ставить по умолчанию': 'По умолчанию',
+  'Применить к выбранному': 'Применить',
+  'Создать копию для правки': 'Копия',
+  'Экспорт своих…': 'Экспорт…',
+  '+ Люк к сифону': '+ Люк',
+  // climate
+  'Подобрать по теплопотерям помещения': 'Подобрать',
+  'Развести фреон и дренаж отдельно': 'Развести отдельно',
+  'Пересчитать отметки по уклону': 'По уклону',
+  'Системы вентиляции…': 'Системы…',
+  '+ Точка трассы': '+ Точка',
+  // architecture and structure
+  'Отдельный тип для выбранных': 'Свой тип',
+  'Поменять стороны А↔Б': 'А↔Б',
+  'Открыть в конструкторе (копия)': 'В конструктор',
+  'Рисовать этим типом': 'Рисовать',
+  'Рисую этим типом ✓': 'Рисую ✓',
+  'Все типы стен…': 'Все типы…',
+  'Добавить в библиотеку': 'В библиотеку',
+  'Второй свет — стены на два этажа': 'Второй свет',
+  'Инструмент «Отделка»…': 'Отделка…',
+  'Контур из полилинии…': 'Из полилинии…',
+  'Редактировать текст…': 'Текст…',
+  'Профили сечений…': 'Профили…',
+  'Сечения профилей…': 'Профили…',
+  'Открыть редактор тела…': 'Редактор…',
+  '+ Проём (портал камина, ниша)': '+ Проём',
+  'Нагрузка на консоль (стол)': 'Консоль',
+  'Сбросить ступень': 'Сбросить',
+  'Применить ко всем': 'Ко всем',
+  'Создать вид люка': 'Вид люка',
+  'Открыть вид люка (3D + разнос + спецификация)': 'Вид люка',
+  // interior and furniture
+  'Открыть конструктор мебели': 'Конструктор',
+  'Открыть конструктор кухни': 'Конструктор',
+  'Конструктор острова…': 'Конструктор…',
+  'Чертежи: деталировка, раскрой, сборка': 'Чертежи',
+  'Чертежи кухни: деталировка и раскрой': 'Чертежи',
+  'Чертёж, деталировка и раскрой (A3)': 'Чертежи',
+  'Чертёж и раскрой': 'Чертежи',
+  'Чертежи и раскрой': 'Чертежи',
+  'Редактор раскладки на стене…': 'Раскладка…',
+  'Заполнить автоматически': 'Авто',
+  'Собрать по-своему (из модулей)…': 'Из модулей…',
+  'Применить шаблон (перезаполнить секции)': 'Шаблон',
+  'Разобрать на детали': 'На детали',
+  'Вернуть генератор': 'Генератор',
+  'Стандартный модуль': 'Стандарт',
+  'Скачать лист SVG': 'SVG',
+  'Скачать комплект (HTML → PDF)': 'PDF',
+  // catalog and objects
+  'Объединить в один объект каталога': 'Объединить',
+  'Параметры объекта…': 'Параметры…',
+  'Вставить в проект': 'Вставить',
+  'Удалить из каталога': 'Удалить',
+  'Открыть в конверторе': 'Конвертор',
+  'Открыть в каталоге': 'В каталоге',
+  'Добавить в каталог': 'В каталог',
+  'Прикрепить файл…': 'Файл…',
+  'Выноска на плане': 'Выноска',
+  // views and sheets
+  'Открыть в «Проектных видах»': 'Открыть вид',
+  'Домой (изометрия)': 'Домой',
+  'Снять подрезку 3D': 'Без подрезки',
+  'Подрезать 3D': 'Подрезка',
+  'Инженерия в стенах': 'Инженерия',
+  'Рентген обшивки': 'Рентген',
+  'Только каркас': 'Каркас',
+  '+ 3D выделенных объектов': '+ 3D выделенного',
+  'Комплект на листы': 'Комплект',
+  '+ Проектный вид': '+ Вид',
+  'Изолировать выделенное': 'Изолировать',
+  'Вернуть как было': 'Вернуть',
+  'Середина между 2 точками': 'Середина',
+  'От… (смещение)': 'От…',
+  'Разрешить датчики поворота': 'Датчики',
+  'Стадия «План монтажа»': 'Монтаж',
+  'Стадия «План демонтажа»': 'Демонтаж',
+  'Редактор своего штампа…': 'Штамп…',
+  'Применить к выбранным стенам': 'Применить'
+};
+/** Patterns for texts with numbers or names in them: [regexp, short]. */
+const RULES = [
+  [/^Применить к выбранным стенам \(\d+\)$/, t => 'Применить' + t.slice(t.lastIndexOf(' '))],
+  [/^Проверить крепление/, () => 'Проверить крепление'],
+  [/^Начало координат в точку (\w)$/, t => 'Начало → ' + t.slice(-1)],
+  [/^\+ секция на стене \d+$/, () => '+ Секция']
+];
+function shortOf(t) {
+  if (SHORT[t]) return SHORT[t];
+  for (const [rx, f] of RULES) if (rx.test(t)) return f(t);
+  return null;
+}
+
+const SL_SEL = 'button, summary, .pntabs > *, [role="tab"]';
+function apply(el) {
+  const walker = document.createTreeWalker(el, 4);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const full = n.nodeValue.trim();
+    if (!full) continue;
+    const sh = shortOf(full);
+    if (!sh || sh === full) continue;
+    n.nodeValue = n.nodeValue.replace(full, sh);
+    if (!el.title || el.title === el.dataset.full) el.title = full;
+    el.dataset.full = full;
+  }
+}
+function scan(root) {
+  if (!root || root.nodeType !== 1) return;
+  if (root.matches && root.matches(SL_SEL)) apply(root);
+  root.querySelectorAll && root.querySelectorAll(SL_SEL).forEach(apply);
+}
+/** Watches the page and shortens labels as panels are rebuilt. */
+function initShortLabels() {
+  if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+  scan(document.body);
+  const q = new Set();
+  // the observer runs before the next paint: no flash of the long text
+  const flush = () => {
+    for (const n of q) if (n.isConnected) scan(n);
+    q.clear();
+  };
+  new MutationObserver(ms => {
+    for (const m of ms) {
+      if (m.type === 'characterData') {
+        const el = m.target.parentElement;
+        const b = el && el.closest && el.closest(SL_SEL);
+        if (b) q.add(b);
+      } else
+        for (const n of m.addedNodes)
+          if (n.nodeType === 1) q.add(n);
+          else if (n.nodeType === 3 && n.parentElement) q.add(n.parentElement.closest(SL_SEL) || n.parentElement);
+    }
+    if (q.size) flush();
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+}
+
 // ===== ui/solid-editor.js =====
 /**
  * ui/solid-editor.js
@@ -101980,6 +102236,10 @@ const solidEditorState = ED;
 
 
 
+
+
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -102104,6 +102364,7 @@ function xBoot() {
   });
   /** test/debug handle used by tests/browser (not an API) */
   window.__kontur = {
+    meta: () => ({ WSDEF, TT, TLBL, HELP, CMDHELP, CMDS, MENUS, TN, DEVK, FAMS, SHORT, WCAT, XT, GRP, GRPL }),
     CMDS,
     SHT,
     renderHooks,
@@ -102233,6 +102494,7 @@ initSpec();
 initWallTypesDialog();
 initProfilesDialog();
 initPalette();
+initShortLabels();
 initVentTerminals();
 initJunctionBoxes();
 initMepDialog();
@@ -116638,6 +116900,207 @@ defineTools({
     help: 'Электровывод: точка у стены или на потолке. Напряжение 230 / 24 / 48 В, мощность, назначение и блок питания — в свойствах. Для 24/48 В блоки питания подбираются автоматически (в щите, в щитке БП или рядом с потребителем).'
   }
 });
+
+// ===== mep/electrical/wire-colors.js =====
+/**
+ * mep/electrical/wire-colors.js
+ *
+ * Wire colours by purpose, shaded by the load the wire carries:
+ * - sockets (230 V)            — orange, pale → deep as the load grows;
+ * - lighting (230 V)           — yellow, the same way;
+ * - dedicated power lines      — blue (a socket for one appliance: boiler, hob, oven, microwave, washer…);
+ * - low current (UTP, TV)      — green;
+ * - lighting strips 12–48 V    — lilac, lighter for a smaller load.
+ * The load of a wire is the power of everything fed through it (away from the panel); without a panel —
+ * the load of its group.
+ */
+
+
+
+
+
+/** Colour categories: name, the scale (W at the darkest shade), the two ends of the shade. */
+const WCAT = {
+  sock: { n: 'Розетки', lo: [34, 100, 72], hi: [22, 100, 40], max: 3500 },
+  light: { n: 'Освещение', lo: [52, 95, 64], hi: [44, 100, 40], max: 1200 },
+  pow: { n: 'Силовые', lo: [214, 92, 72], hi: [220, 80, 42], max: 7000 },
+  weak: { n: 'Слаботочка', lo: [145, 55, 60], hi: [150, 65, 36], max: 0 },
+  lv: { n: 'Подсветка 12–48 В', lo: [275, 85, 80], hi: [272, 60, 52], max: 240 },
+  feed: { n: 'Ввод', lo: [4, 75, 58], hi: [4, 75, 58], max: 0 }
+};
+/** Fine wire kinds (wireKind) → colour category. */
+const KIND_CAT = {
+  sw: 'light',
+  swp: 'light',
+  swx: 'light',
+  dim: 'light',
+  light: 'light',
+  sock: 'sock',
+  sockIP: 'sock',
+  sockPow: 'pow',
+  rj45: 'weak',
+  tv: 'weak',
+  lv: 'lv',
+  feed: 'feed'
+};
+/** What a dedicated socket feeds (the property «Назначение» of a socket). */
+const DEDICATED = {
+  '': 'Общая',
+  boiler: 'Бойлер',
+  hob: 'Варочная панель',
+  oven: 'Духовой шкаф',
+  mw: 'СВЧ',
+  wash: 'Стиральная машина',
+  dish: 'Посудомоечная машина',
+  dry: 'Сушильная машина',
+  ac: 'Кондиционер',
+  other: 'Другая техника'
+};
+/** Typical power of the appliances, W (set on the socket when chosen). */
+const DEDICATED_PW = {
+  boiler: 2000,
+  hob: 7000,
+  oven: 3500,
+  mw: 1500,
+  wash: 2200,
+  dish: 2000,
+  dry: 2500,
+  ac: 2500,
+  other: 2000
+};
+const DED_RX = /бойлер|водонагрев|варочн|плит|духов|свч|микроволн|стирал|посудомо|сушил|кондиц/i;
+
+/** True when a group or socket is a dedicated line for one appliance. */
+function isDedicated(d, group) {
+  if (d && d.type === 'dev' && d.ded) return true;
+  return !!(group && DED_RX.test(group.name || ''));
+}
+
+/** HSL → #rrggbb (canvas, SVG and three.js all take it). */
+function hsl([h, s, l]) {
+  s /= 100;
+  l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(c * 255)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return '#' + f(0) + f(8) + f(4);
+}
+/** The shade of a category for a load P, W (t 0..1 — pale..deep). */
+function wcatColor(cat, P) {
+  const C = WCAT[cat] || WCAT.feed;
+  const t = C.max ? Math.max(0, Math.min(1, Math.sqrt(Math.max(0, P) / C.max))) : 0.5;
+  return hsl(C.lo.map((v, i) => v + (C.hi[i] - v) * t));
+}
+/** A gradient swatch of the category for legends (CSS background). */
+function catSwatch(cat) {
+  const C = WCAT[cat];
+  return C.max ? `linear-gradient(90deg,${hsl(C.lo)},${hsl(C.hi)})` : hsl(C.lo.map((v, i) => (v + C.hi[i]) / 2));
+}
+
+const wcDevPw = d =>
+  d && d.type === 'dev' ? (d.pw != null && d.pw !== '' && isFinite(+d.pw) ? +d.pw : (DEVK[d.kind] || {}).pw || 0) : 0;
+const wcPk = p => 'p' + Math.round(p.x / 20) + ':' + Math.round(p.y / 20);
+
+const WL = { v: -1, m: new Map() };
+/** Power fed through a wire, W (cached per document version). */
+function wireLoad(w) {
+  if (WL.v !== documentState.docVer) {
+    WL.v = documentState.docVer;
+    WL.m = new Map();
+    try {
+      buildLoads(WL.m);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  return WL.m.get(w.id) || 0;
+}
+function buildLoads(out) {
+  const ws = S.ents.filter(e => e.type === 'wire' && visible(e) && e.pts && e.pts.length >= 2);
+  if (!ws.length) return;
+  const nodeOf = (w, i) => {
+    const id = i ? w.to : w.from;
+    const d = id != null ? byId(id) : null;
+    return d && d.type === 'dev' ? 'd' + d.id : wcPk(i ? w.pts[w.pts.length - 1] : w.pts[0]);
+  };
+  // a cable that another one branches off is split at the branch
+  const splits = new Map();
+  let T = null;
+  try {
+    T = wireTopo();
+  } catch (_) {}
+  for (const b of (T && T.br) || []) {
+    if (!splits.has(b.o.id)) splits.set(b.o.id, []);
+    splits.get(b.o.id).push(b);
+  }
+  const edges = [];
+  for (const w of ws) {
+    const sp = (splits.get(w.id) || []).slice().sort((a, b) => a.s - b.s);
+    let prev = nodeOf(w, 0);
+    for (const b of sp) {
+      const k = wcPk(b.p);
+      edges.push({ w, a: prev, b: k });
+      prev = k;
+    }
+    edges.push({ w, a: prev, b: nodeOf(w, 1) });
+  }
+  const adj = new Map();
+  const link = (n, e) => (adj.get(n) || adj.set(n, []).get(n)).push(e);
+  for (const e of edges) {
+    link(e.a, e);
+    link(e.b, e);
+  }
+  const other = (e, n) => (e.a === n ? e.b : e.a);
+  const nodeDev = n => (n[0] === 'd' ? byId(+n.slice(1)) : null);
+  const panels = S.ents.filter(d => d.type === 'dev' && d.kind === 'panel' && visible(d));
+  const dist = new Map();
+  const q = panels.map(p => 'd' + p.id);
+  for (const n of q) dist.set(n, 0);
+  while (q.length) {
+    const n = q.shift();
+    for (const e of adj.get(n) || []) {
+      const m = other(e, n);
+      if (!dist.has(m)) {
+        dist.set(m, dist.get(n) + 1);
+        q.push(m);
+      }
+    }
+  }
+  const behind = (e, X) => {
+    const seen = new Set([X]);
+    const st = [other(e, X)];
+    const devs = new Set();
+    while (st.length) {
+      const n = st.pop();
+      if (seen.has(n)) continue;
+      seen.add(n);
+      const d = nodeDev(n);
+      if (d && d.kind === 'panel') continue;
+      if (d) devs.add(d);
+      for (const f of adj.get(n) || []) st.push(other(f, n));
+    }
+    let P = 0;
+    for (const d of devs) P += wcDevPw(d);
+    return P;
+  };
+  const grpP = new Map();
+  for (const d of S.ents)
+    if (d.type === 'dev' && d.group != null && visible(d)) grpP.set(d.group, (grpP.get(d.group) || 0) + wcDevPw(d));
+  for (const e of edges) {
+    const da = dist.get(e.a),
+      db = dist.get(e.b);
+    let P;
+    if (da == null && db == null) P = grpP.get(e.w.group) || Math.max(wcDevPw(nodeDev(e.a)), wcDevPw(nodeDev(e.b)));
+    else P = behind(e, da == null ? e.b : db == null ? e.a : da <= db ? e.a : e.b);
+    // a split cable: its heaviest part is its load
+    out.set(e.w.id, Math.max(out.get(e.w.id) || 0, P));
+  }
+}
 
 // ===== mep/plumbing/pipe-bundles.js =====
 /**
