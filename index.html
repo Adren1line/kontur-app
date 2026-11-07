@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '48';
+const APP_VER = '48.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -9727,19 +9727,21 @@ function segQ(seg, r) {
  * A ribbed sweep (corrugated pipe / hose) along a polyline: points every half pitch, the radius alternates between
  * r and r - depth. One mesh strip instead of a ring per rib.
  */
-function ribSweep(mb, pts, r, depth, pitch, col, seg = 8) {
+function ribSweep(mb, pts, r, depth, pitch, col, seg = 8, k = 2) {
+  // k points per pitch: 2 — a zigzag, 4 and more — a rounded wave
+  const rad = j => (k <= 2 ? (j % 2 ? r - depth : r) : r - (depth * (1 - Math.cos((TAU * j) / k))) / 2);
   const Q = [pts[0]],
-    R = [r];
-  let k = 0;
+    R = [rad(0)];
+  let j = 0;
   for (let i = 0; i + 1 < pts.length; i++) {
     const a = pts[i],
       b = pts[i + 1],
       L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
-      n = Math.max(1, Math.round(L / (pitch / 2)));
-    for (let j = 1; j <= n; j++) {
-      const t = j / n;
+      n = Math.max(1, Math.round(L / (pitch / k)));
+    for (let m = 1; m <= n; m++) {
+      const t = m / n;
       Q.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
-      R.push(++k % 2 ? r - depth : r);
+      R.push(rad(++j));
     }
   }
   mb.sweep(Q, R, col, seg);
@@ -17072,6 +17074,7 @@ function lodApply() {
       for (const ch of g.children) if (ch.userData && ch.userData.hasLod) (groups = groups || []).push(ch);
     if (!groups) continue;
     for (const gg of groups) {
+      if (gg.userData.hasLazy) lazyApply(gg, cp);
       let c = lodBox.get(gg);
       if (!c) {
         const b = new THREE.Box3().setFromObject(gg);
@@ -17090,6 +17093,46 @@ function lodApply() {
       }
     }
   }
+}
+/** Lazy near-only parts (ribs of a long conduit): built the first time the camera comes close to their piece. */
+const LAZY_NEAR = 3000;
+function lazyApply(gg, cp) {
+  for (const m of gg.children) {
+    const z = m.userData.lz;
+    if (!z) continue;
+    const near = Math.hypot(cp.x - z.c[0], cp.y - z.c[1], cp.z - z.c[2]) - z.r < LAZY_NEAR;
+    if (near && !z.done) {
+      z.done = true;
+      try {
+        const pos = z.gen();
+        if (pos && pos.length) {
+          m.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+          m.geometry.setAttribute('normal', new THREE.BufferAttribute(smoothNormals(pos), 3));
+          m.geometry.computeBoundingSphere();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    m.visible = near;
+  }
+}
+/**
+ * Adds a lazy part to a group from meshGroup: gen() returns the positions (smooth shading), c / r — the centre and the
+ * radius of the piece. Nothing in the test / export mode (no camera there).
+ */
+function lazyPart(g, gen, c, r, rgb, tag) {
+  if (sceneState.raw || !g || typeof g.add !== 'function' || !THREE.Mesh) return;
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), matFor(rgb, 1));
+  mesh.userData.lz = { gen, c, r };
+  mesh.userData.part = tag;
+  mesh.userData.base = mesh.material;
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.visible = false;
+  g.add(mesh);
+  g.userData.hasLod = true;
+  g.userData.hasLazy = true;
 }
 function meshGroup(meshes, opts = {}) {
   if (sceneState.raw) return rawGroup(meshes);
@@ -44899,8 +44942,6 @@ function wireEng3D(e) {
   const R = wireRoute(e);
   if (!R.pts3.length) return null;
   const mb = MB();
-  const col = wireColor(e);
-  const gcol = rgbHex(hex2rgb(col).map(c => c * 0.55 + 0.6 * 0.45));
   // the path without repeated points; the ends stop at the walls of the boxes
   let pts = R.pts3.filter(
     (p, i) => !i || Math.hypot(p[0] - R.pts3[i - 1][0], p[1] - R.pts3[i - 1][1], p[2] - R.pts3[i - 1][2]) > 0.5
@@ -44959,7 +45000,7 @@ function wireEng3D(e) {
     }
   }
   mb.tag(`Гофра ПВХ Ø${R.gof}`);
-  conduit(mb, pts, R.gof, gcol);
+  const pieces = conduit(mb, pts, R.gof);
   drawConduitClips(mb, e, R);
   for (const d of R.drops) {
     if (d.ch && d.ch.mode !== 'cavity' && d.f) {
@@ -44968,7 +45009,10 @@ function wireEng3D(e) {
       mb.obox([g.x, g.y, d.z0], [g.x, g.y, d.z1], d.ch.width, 1.5, d.ch.lvl === 'bad' ? '#c0392b' : '#6d5f4b');
     }
   }
-  return meshGroup(mb.meshes(), { edges: false });
+  const g = meshGroup(mb.meshes(), { edges: false });
+  const rgb = hex2rgb(GOF_COL);
+  for (const pc of pieces) lazyPart(g, () => conduitRibs(pc, R.gof), pc.c, pc.r, rgb, `Гофра ПВХ Ø${R.gof}`);
+  return g;
 }
 /* ---------- issues, spec, auto-routing to the panel ---------- */
 function wireRouteIssues(add_) {
@@ -76700,7 +76744,6 @@ function crossoverFittings(e) {
 
 
 
-
 /* ---------- cable × cable / cable × pipe: кабель огибает (подныривает под стяжкой нельзя — только над; по потолку — вниз) ---------- */
 function wireHopPass() {
   const ws = S.ents.filter(e => e.type === 'wire' && visible(e));
@@ -76719,12 +76762,14 @@ function wireHopPass() {
   };
   const S_ = new Map(RR.map(([e, R]) => [e.id, hseg(R)]));
   const hops = new Map(RR.map(([e]) => [e.id, []]));
+  // 1) cable × cable crossings; a cable crossing a pack of cables (several side by side) goes over the whole pack,
+  // single crossings — the later cable goes over
+  const raw = [];
   for (let x = 0; x < RR.length; x++)
     for (let y = x + 1; y < RR.length; y++) {
       const [eA, RA] = RR[x],
         [eB, RB] = RR[y];
       if (RA.method !== RB.method) continue;
-      const hopper = eA.id > eB.id ? [eA, RA, eB, RB] : [eB, RB, eA, RA];
       for (const sa of S_.get(eA.id))
         for (const sb of S_.get(eB.id)) {
           const X = segX2(sa.a, sa.b, sb.a, sb.b);
@@ -76739,15 +76784,43 @@ function wireHopPass() {
           )
             continue;
           if (Math.abs(sa.z - sb.z) >= (RA.gof + RB.gof) / 2) continue;
-          const [eh, Rh, eo, Ro] = hopper;
-          const sh = eh === eA ? sa : sb;
-          const dz = ((Rh.gof + Ro.gof) / 2 + 2) * (Rh.method === 'ceil' ? -1 : 1);
-          hops
-            .get(eh.id)
-            .push({ i: sh.i, p: X.p, dz, o: eo.id, kind: 'wire', Lh: Math.max(160, (Rh.gof + Ro.gof) * 3) });
+          raw.push({ eA, RA, sa, eB, RB, sb, X, sA: X.t * La, sB: X.u * Lb });
         }
     }
-  // cables over pipes (screed / floor; ceiling plenum)
+  const onSeg = new Map();
+  const note = (e, sg, s, key) => {
+    const k = e.id + ':' + sg.i;
+    if (!onSeg.has(k)) onSeg.set(k, []);
+    onSeg.get(k).push({ s, key });
+  };
+  raw.forEach((r, n) => {
+    note(r.eA, r.sa, r.sA, n);
+    note(r.eB, r.sb, r.sB, n);
+  });
+  const deg = new Map();
+  for (const [k, list] of onSeg) {
+    list.sort((p, q) => p.s - q.s);
+    let c = [];
+    const flush = () => c.forEach(x => deg.set(k + '#' + x.key, c.length));
+    list.forEach((x, m) => {
+      if (m && x.s - list[m - 1].s > 160) {
+        flush();
+        c = [];
+      }
+      c.push(x);
+    });
+    flush();
+  }
+  raw.forEach((r, n) => {
+    const gA = deg.get(r.eA.id + ':' + r.sa.i + '#' + n),
+      gB = deg.get(r.eB.id + ':' + r.sb.i + '#' + n);
+    const aHops = gA !== gB ? gA > gB : r.eA.id > r.eB.id;
+    const [eh, Rh, sh, Ro, sv] = aHops ? [r.eA, r.RA, r.sa, r.RB, r.sA] : [r.eB, r.RB, r.sb, r.RA, r.sB];
+    const eo = aHops ? r.eB : r.eA;
+    const dz = ((Rh.gof + Ro.gof) / 2 + 2) * (Rh.method === 'ceil' ? -1 : 1);
+    hops.get(eh.id).push({ i: sh.i, s: sv, p: r.X.p, dz, o: eo.id, kind: 'wire', w: Ro.gof });
+  });
+  // 2) cables over pipes (screed / floor; ceiling plenum)
   const ps = S.ents.filter(e => e.type === 'pipe' && visible(e) && e.pts && e.pts.length > 1);
   for (const [e, R] of RR)
     for (const s of S_.get(e.id))
@@ -76762,44 +76835,90 @@ function wireHopPass() {
           const up = zp + rp + R.gof / 2 + 3 - s.z,
             dn = zp - rp - R.gof / 2 - 3 - s.z;
           const dz = R.method === 'ceil' ? (Math.abs(dn) < Math.abs(up) ? dn : up) : up;
-          hops.get(e.id).push({ i: s.i, p: X.p, dz, o: p.id, kind: 'pipe', Lh: Math.max(200, (R.gof + p.d) * 3) });
+          hops.get(e.id).push({ i: s.i, s: X.t * dist(s.a, s.b), p: X.p, dz, o: p.id, kind: 'pipe', w: 2 * rp });
         }
       }
+  // 3) crossings close to each other on one piece of the route — one crossover over all of them:
+  // a ramp, a level run to the last one, a ramp down
   for (const [e, R] of RR) {
     const H = hops.get(e.id);
-    R.hops = H;
-    if (!H.length) continue;
-    const O = R.pts3;
-    const s0f = h => {
-      const a = O[h.i],
-        b = O[h.i + 1];
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-      return ((h.p.x - a[0]) * (b[0] - a[0]) + (h.p.y - a[1]) * (b[1] - a[1])) / L;
-    };
-    H.sort((a, b) => b.i - a.i || s0f(b) - s0f(a));
-    const P3 = R.pts3.slice();
+    const byI = new Map();
     for (const h of H) {
+      if (!byI.has(h.i)) byI.set(h.i, []);
+      byI.get(h.i).push(h);
+    }
+    const CL = [];
+    for (const [i, list] of byI) {
+      list.sort((p, q) => p.s - q.s);
+      let c = null;
+      for (const h of list) {
+        if (c && h.s - c.s1 <= (h.w + R.gof) * 2 + 200) {
+          c.s1 = h.s;
+          c.items.push(h);
+        } else CL.push((c = { i, s0: h.s, s1: h.s, items: [h] }));
+      }
+    }
+    const out = CL.map(c => {
+      const dzs = c.items.map(h => h.dz);
+      const dz =
+        dzs.some(d => d > 0) && !dzs.some(d => d < 0)
+          ? Math.max(...dzs)
+          : dzs.some(d => d < 0) && !dzs.some(d => d > 0)
+            ? Math.min(...dzs)
+            : R.method === 'ceil'
+              ? Math.min(...dzs)
+              : Math.max(...dzs);
+      const ramp = Math.max(80, Math.abs(dz) * 3 + R.gof * 2);
+      const pipe = c.items.some(h => h.kind === 'pipe');
+      const h0 = c.items[0];
+      return {
+        i: c.i,
+        s0: c.s0,
+        s1: c.s1,
+        sm: (c.s0 + c.s1) / 2,
+        ramp,
+        p: c.items[Math.floor(c.items.length / 2)].p,
+        dz,
+        n: c.items.length,
+        o: h0.o,
+        os: c.items.map(h => h.o),
+        kind: pipe ? 'pipe' : 'wire',
+        pipes: c.items.filter(h => h.kind === 'pipe')
+      };
+    });
+    R.hops = out;
+    if (!out.length) continue;
+    const O = R.pts3;
+    out.sort((a, b) => b.i - a.i || b.sm - a.sm);
+    const P3 = R.pts3.slice();
+    for (const h of out) {
       const a = O[h.i],
         b = O[h.i + 1];
       if (!a || !b) continue;
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const dx = (b[0] - a[0]) / L,
         dy = (b[1] - a[1]) / L;
-      const s0 = (h.p.x - a[0]) * dx + (h.p.y - a[1]) * dy;
-      const Lh = Math.min(h.Lh, 2 * s0 - 2, 2 * (L - s0) - 2);
-      if (Lh < 40) continue;
+      // the ramps shrink near the ends of the piece
+      const room = Math.min(h.s0, L - h.s1) - 2;
+      const rp = Math.min(h.ramp, room);
+      if (rp < 20) continue;
+      const half = (h.s1 - h.s0) / 2 + 12;
       const ins = [];
-      const N = 8;
+      const N = 6;
+      const at = (s, z) => [a[0] + dx * s, a[1] + dy * s, a[2] + z];
       for (let k = 0; k <= N; k++) {
         const f = k / N;
-        const s = s0 - Lh / 2 + Lh * f;
-        ins.push([a[0] + dx * s, a[1] + dy * s, a[2] + (h.dz * (1 - Math.cos(f * TAU))) / 2]);
+        ins.push(at(h.sm - half - rp + rp * f, (h.dz * (1 - Math.cos(f * Math.PI))) / 2));
+      }
+      for (let k = 0; k <= N; k++) {
+        const f = k / N;
+        ins.push(at(h.sm + half + rp * f, (h.dz * (1 + Math.cos(f * Math.PI))) / 2));
       }
       P3.splice(h.i + 1, 0, ...ins);
     }
     R.pts3 = P3;
     measureRoute(R);
-    for (const h of H) {
+    for (const h of out) {
       if (h.kind === 'pipe' && R.method === 'floor') {
         const top = (lvCur().top || 0) + (typeof scrMinAll === 'function' ? scrMinAll() : 0);
         const zt = R.zR + h.dz + R.gof / 2;
@@ -88468,6 +88587,7 @@ function odAxis(e) {
 
 
 
+
 /* ---------- commands for the new elements ---------- */
 function polyCmd(name, label, mk, opts = {}) {
   const pts = [];
@@ -89228,7 +89348,16 @@ function mkPipe(cfg) {
       layer: layer()
     });
   const fin = () => {
-    if (pts.length >= 2) make();
+    if (pts.length >= 2) {
+      const e = make();
+      const n = e ? bundleSnap(e) : 0;
+      if (n) {
+        changed();
+        log(
+          `Труба пристроена к соседней в ряд модульных клипс (${n} уч.): рядом — по шагу клипсы, остальная часть — как нарисована.`
+        );
+      }
+    }
     return 'end';
   };
   const vertTo = v => {
@@ -99389,6 +99518,7 @@ const solidEditorState = ED;
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -99548,6 +99678,7 @@ function xBoot() {
     parseIFC,
     pipeCross,
     waterGenerate,
+    bundleSnap,
     S,
     openObj,
     openMEP,
@@ -112769,14 +112900,65 @@ function lbox(mb, at, a0, a1, b0, b1, d0, d1, col) {
   ])
     mb.tri3(col, v[f[0]], v[f[1]], v[f[2]]);
 }
-/** The conduit along a 3D path: a smooth tube from afar, ribs near the camera. */
-function conduit(mb, pts, gof, col) {
+/** Grey of a PVC corrugated conduit. */
+const GOF_COL = '#c4c7c9';
+/**
+ * The conduit along a 3D path: a smooth core always (the stand-in from afar), the ribs — in pieces of about a metre,
+ * built only when the camera comes close (see lazyPart in view3d/scene.js). Returns the pieces: {pts, c, r}.
+ */
+function conduit(mb, pts, gof, col = GOF_COL) {
   const r = gof / 2;
-  mb.lod('f');
-  mb.sweep(pts, r * 0.95, col, 8);
-  mb.lod('n');
-  ribSweep(mb, pts, r, r * 0.13, Math.max(4, r * 0.9), col, 6);
-  mb.lod('');
+  mb.sweep(pts, r * 0.9, col, 12);
+  const out = [];
+  let cur = [pts[0]],
+    acc = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    let a = pts[i];
+    const b = pts[i + 1];
+    let L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    while (acc + L > 1000) {
+      const t = (1000 - acc) / L;
+      const q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+      cur.push(q);
+      out.push(cur);
+      cur = [q];
+      L -= 1000 - acc;
+      a = q;
+      acc = 0;
+    }
+    acc += L;
+    cur.push(b);
+  }
+  if (cur.length > 1) out.push(cur);
+  return out.map(P => {
+    let x0 = Infinity,
+      y0 = Infinity,
+      z0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity,
+      z1 = -Infinity;
+    for (const p of P) {
+      x0 = Math.min(x0, p[0]);
+      y0 = Math.min(y0, p[1]);
+      z0 = Math.min(z0, p[2]);
+      x1 = Math.max(x1, p[0]);
+      y1 = Math.max(y1, p[1]);
+      z1 = Math.max(z1, p[2]);
+    }
+    return {
+      pts: P,
+      c: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2],
+      r: Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + r
+    };
+  });
+}
+/** Positions of the ribs of one piece (smooth rounded corrugation, pitch about a third of the diameter). */
+function conduitRibs(piece, gof, col = GOF_COL) {
+  const r = gof / 2;
+  const mb = MB();
+  ribSweep(mb, piece.pts, r, r * 0.16, Math.max(4.5, gof * 0.28), col, 16, 4);
+  const m = mb.meshes()[0];
+  return m ? m.pos : null;
 }
 /** Moves the end of a path back along its last piece by len (the conduit stops at the wall of a box). */
 function trimEnd(pts, atStart, len) {
@@ -113079,6 +113261,138 @@ function drawModuleClips(mb, e) {
       );
     mb.lod('');
   }
+}
+/**
+ * Snaps a newly drawn pipe to the pipes running next to it, so that they sit in one row of modular clips:
+ * - a piece running along an existing pipe (within 20°) closer than two diameters of the new pipe (surface to surface)
+ *   is moved to the clip pitch from it — beside it, not on top of it; a pipe drawn on top goes beside;
+ * - only the part inside that zone and along the existing pipe moves; the rest stays as drawn, with 45° transitions;
+ * - the row is filled outwards: a taken place goes to the next one.
+ * Returns the number of moved pieces. Supply and heating only, horizontal pieces only.
+ */
+function bundleSnap(e) {
+  if (!e || e.type !== 'pipe' || pkind(e) === 'sewer' || !e.pts || e.pts.length < 2) return 0;
+  const Dn = e.d + 2 * insTh(e);
+  const zs = pipeZ(e);
+  const others = [];
+  for (const o of S.ents) {
+    if (o === e || o.type !== 'pipe' || !visible(o) || pkind(o) === 'sewer' || !o.pts || o.pts.length < 2) continue;
+    const zo = pipeZ(o);
+    for (let i = 0; i + 1 < o.pts.length; i++) {
+      if (Math.abs(zo[i] - zo[i + 1]) > 5) continue;
+      const a = o.pts[i],
+        b = o.pts[i + 1],
+        L = dist(a, b);
+      if (L < 200) continue;
+      const u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+      others.push({ o, a, L, u, n: { x: -u.y, y: u.x }, z: zo[i], D: o.d + 2 * insTh(o) });
+    }
+  }
+  if (!others.length) return 0;
+  const out = [e.pts[0]];
+  let moved = 0;
+  for (let i = 0; i + 1 < e.pts.length; i++) {
+    const a = e.pts[i],
+      b = e.pts[i + 1],
+      L = dist(a, b);
+    const flat = Math.abs(zs[i] - zs[i + 1]) <= 5 && a.z == null && b.z == null;
+    let best = null;
+    if (flat && L >= 300) {
+      const us = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+      for (const E of others) {
+        if (Math.abs(E.z - zs[i]) > 25) continue;
+        const cr = us.x * E.u.y - us.y * E.u.x;
+        if (Math.abs(cr) > 0.34) continue;
+        const off = p => (p.x - E.a.x) * E.n.x + (p.y - E.a.y) * E.n.y,
+          prj = p => (p.x - E.a.x) * E.u.x + (p.y - E.a.y) * E.u.y;
+        const oa = off(a),
+          ob = off(b),
+          pa = prj(a),
+          pb = prj(b);
+        const Z = (Dn + E.D) / 2 + 2 * Dn;
+        // the part of the piece inside the zone and alongside the existing pipe
+        let t0 = 0,
+          t1 = 1;
+        const clip = (f0, f1, lo, hi) => {
+          // keep t where lo < f(t) < hi, f linear from f0 to f1
+          if (Math.abs(f1 - f0) < 1e-9) {
+            if (f0 <= lo || f0 >= hi) t1 = -1;
+            return;
+          }
+          const ta = (lo - f0) / (f1 - f0),
+            tb = (hi - f0) / (f1 - f0);
+          t0 = Math.max(t0, Math.min(ta, tb));
+          t1 = Math.min(t1, Math.max(ta, tb));
+        };
+        clip(oa, ob, -Z, Z);
+        clip(pa, pb, 0, E.L);
+        if (t1 - t0 < 300 / L) continue;
+        // a pipe crossing the existing one at an angle is a crossing, not a run alongside
+        const o0 = oa + (ob - oa) * t0,
+          o1 = oa + (ob - oa) * t1;
+        if (Math.abs(cr) > 0.03 && Math.sign(o0) !== Math.sign(o1)) continue;
+        const len = (t1 - t0) * L;
+        if (!best || len > best.len) best = { E, t0, t1, len, oa, ob, pa, pb, us };
+      }
+    }
+    if (!best) {
+      out.push(b);
+      continue;
+    }
+    const { E, t0, t1, oa, ob, pa, pb } = best;
+    const om = oa + ((ob - oa) * (t0 + t1)) / 2;
+    const sg = om >= 0 ? 1 : -1;
+    // the row: other pipes parallel to E and overlapping this stretch
+    const sm = pa + ((pb - pa) * (t0 + t1)) / 2;
+    const taken = others
+      .filter(F => Math.abs(F.u.x * E.u.y - F.u.y * E.u.x) < 0.03 && Math.abs(F.z - E.z) < 25)
+      .filter(F => {
+        const s0 = (F.a.x - E.a.x) * E.u.x + (F.a.y - E.a.y) * E.u.y,
+          s1 = s0 + F.L * (F.u.x * E.u.x + F.u.y * E.u.y);
+        return sm >= Math.min(s0, s1) && sm <= Math.max(s0, s1);
+      })
+      .map(F => ({ c: (F.a.x - E.a.x) * E.n.x + (F.a.y - E.a.y) * E.n.y, D: F.D }));
+    let tg = 0,
+      prevD = E.D;
+    for (let k = 0; k < 40; k++) {
+      tg += sg * ((Dn + prevD) / 2 + 6);
+      const hit = taken.find(t => Math.abs(t.c - tg) < (Dn + t.D) / 2 + 2 && Math.abs(t.c) > 1);
+      if (!hit) break;
+      tg = hit.c;
+      prevD = hit.D;
+    }
+    const Q = s => P(E.a.x + E.u.x * s + E.n.x * tg, E.a.y + E.u.y * s + E.n.y * tg);
+    const dirS = pb >= pa ? 1 : -1;
+    const at = t => P(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+    const pAt = t => pa + (pb - pa) * t,
+      oAt = t => oa + (ob - oa) * t;
+    let s0 = pAt(t0),
+      s1 = pAt(t1);
+    if (t0 > 1e-6) {
+      const dI = Math.abs(tg - oAt(t0));
+      out.push(at(t0));
+      s0 += dirS * dI;
+    } else out[out.length - 1] = Q(s0);
+    let tail = null;
+    if (t1 < 1 - 1e-6) {
+      const dO = Math.abs(tg - oAt(t1));
+      s1 -= dirS * dO;
+      tail = at(t1);
+    }
+    if ((s1 - s0) * dirS < 50) {
+      // too short to run alongside: leave the piece as drawn
+      if (t0 > 1e-6) out.pop();
+      else out[out.length - 1] = a;
+      out.push(b);
+      continue;
+    }
+    out.push(Q(s0), Q(s1));
+    if (tail) out.push(tail, b);
+    moved++;
+  }
+  if (!moved) return 0;
+  e.pts = out.filter((p, k) => !k || dist(p, out[k - 1]) > 1);
+  return moved;
 }
 
 // ===== mep/plumbing/plumb-parts.js =====
