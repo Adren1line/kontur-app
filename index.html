@@ -6946,7 +6946,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '51.1';
+const APP_VER = '51.2';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -11860,6 +11860,17 @@ function prims(e) {
     default: {
       const X = XT[e.type];
       if (X && X.prims) return X.prims(e);
+      // a pipe, a track, a profile…: its axis is a cutting edge for trim / extend
+      if (
+        Array.isArray(e.pts) &&
+        e.pts.length > 1 &&
+        typeof e.pts[0].x === 'number' &&
+        ['pipe', 'trim', 'rail', 'track', 'acl', 'ufh'].includes(e.type)
+      ) {
+        const r = [];
+        for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
+        return r;
+      }
     }
   }
   return [];
@@ -12125,6 +12136,13 @@ function mapEnt(e, f, dA = 0) {
     default: {
       const X = XT[n.type];
       if (X && X.map) X.map(n, e, f, dA);
+      else if (Array.isArray(e.pts) && e.pts.length && typeof e.pts[0].x === 'number')
+        // anything drawn through points: the points move, their heights stay
+        n.pts = e.pts.map(p => {
+          const q = f(p);
+          if (p.z != null) q.z = p.z;
+          return q;
+        });
     }
   }
   return n;
@@ -12476,6 +12494,7 @@ function gridStep() {
 
 
 
+
 /* drafting toolkit (AutoCAD-like): bulge polylines, offset, arrays,
    trim/extend, fillet/chamfer, break/explode/join, arc variants, text */
 const hasB = e => e.type === 'pline' && Array.isArray(e.b) && e.b.some(x => Math.abs(x || 0) > 1e-9);
@@ -12571,7 +12590,14 @@ function entsOfPrim(src, q) {
   return { type: 'arc', c: q.c, r: q.r, a0: q.a0, a1: q.a1, layer: src.layer };
 }
 function replaceEnt(e, list) {
+  // a stand-in of a wire / pipe / duct…: the results become objects of its kind
+  if (e && e._src) {
+    const src = e._src;
+    list = list.map(x => (x && !PATH_T.has(x.type) ? pathFrom(src, x) : x)).filter(Boolean);
+    e = src;
+  }
   const i = S.ents.indexOf(e);
+  if (i < 0) return;
   S.ents.splice(i, 1);
   S.sel.delete(e.id);
   for (const n of list) {
@@ -46931,6 +46957,7 @@ function mkArcSwitch(k) {
 
 
 
+
 /* ---------- offset ---------- */
 function offsetEnt(e, d, side) {
   // side: +1 left/outer, -1 right/inner
@@ -47003,7 +47030,7 @@ function mkOffset() {
     base: () => null,
     prompt: () =>
       !src
-        ? `Смещение${through ? ' через точку' : ` ${fmt(d)}`}: выберите объект (отрезок, полилиния, дуга, круг) или [Через/Расстояние]:`
+        ? `Смещение${through ? ' через точку' : ` ${fmt(d)}`}: выберите объект (отрезок, полилиния, дуга, круг, провод, труба, воздуховод, профиль) или [Через/Расстояние]:`
         : through
           ? 'Точка, через которую пройдёт копия:'
           : 'Укажите сторону смещения:',
@@ -47028,9 +47055,9 @@ function mkOffset() {
     },
     onPoint(p) {
       if (!src) {
-        const e = pickAt(p, DRAFTABLE);
+        const e = pickDraft(p, DRAFTABLE);
         if (!e) {
-          log('Нужен отрезок, полилиния, дуга или круг', true);
+          log('Нужен отрезок, полилиния, дуга, круг или провод / труба / воздуховод…', true);
           return;
         }
         src = e;
@@ -47043,7 +47070,7 @@ function mkOffset() {
         log('Смещение невозможно', true);
         return;
       }
-      addEnt({ ...o, layer: src.layer });
+      addEnt(src._src ? pathFrom(src._src, o, true) : { ...o, layer: src.layer });
       src = null;
     },
     onEnter: () => 'end',
@@ -47310,7 +47337,15 @@ function drawArrayPreview() {
 function cutPrims(except) {
   const out = [];
   for (const o of S.ents) {
-    if (o === except || !visible(o) || o.type === 'text' || o.type === 'dim' || o.type === 'note') continue;
+    if (
+      o === except ||
+      (except && o === except._src) ||
+      !visible(o) ||
+      o.type === 'text' ||
+      o.type === 'dim' ||
+      o.type === 'note'
+    )
+      continue;
     for (const q of prims(o)) out.push(q);
   }
   return out;
@@ -47491,6 +47526,11 @@ function extendAt(e, p) {
   }
   return null;
 }
+/** Picking for the drafting commands: a wire / pipe / duct… comes as its polyline stand-in. */
+function pickDraft(p, filter) {
+  const e = pickAt(p, x => filter(x) || isPathObj(x));
+  return e && isPathObj(e) ? pathProxy(e) : e;
+}
 /** Mutable state of this module that other modules read or change. */
 const modifyState = {
   lastEv: null
@@ -47503,8 +47543,8 @@ function mkCut(ext0) {
     noSnap: true,
     prompt: () =>
       ext
-        ? 'Удлинить: щёлкните у конца отрезка/дуги/полилинии (Shift — обрезать) или [Обрезать]:'
-        : 'Обрезать: щёлкните по части объекта между пересечениями (Shift — удлинить) или [Удлинить]:',
+        ? 'Удлинить: щёлкните у конца отрезка, дуги, полилинии, провода или трубы (Shift — обрезать) или [Обрезать]:'
+        : 'Обрезать: щёлкните по части отрезка, провода, трубы… между пересечениями (Shift — удлинить) или [Удлинить]:',
     onInput(s) {
       if (kw(s, 'у', 'удлинить', 'e')) {
         ext = true;
@@ -47517,9 +47557,9 @@ function mkCut(ext0) {
       return false;
     },
     onPoint(p) {
-      const e = pickAt(p, DRAFTABLE);
+      const e = pickDraft(p, DRAFTABLE);
       if (!e) {
-        log('Здесь нет отрезка, дуги, круга или полилинии', true);
+        log('Здесь нет отрезка, дуги, круга, полилинии, провода или трубы', true);
         return;
       }
       const doExt = ext !== !!(modifyState.lastEv && modifyState.lastEv.shiftKey);
@@ -47617,6 +47657,7 @@ function mkFillet(cham0) {
       if ((!ok && R > 0) || (!ok && cham)) return log('Радиус/фаска не помещается', true);
       e1.pts = pts;
       if (b.some(x => Math.abs(x) > 1e-9)) e1.b = b;
+      commitProxy(e1);
       changed();
       return true;
     }
@@ -47720,9 +47761,9 @@ function mkFillet(cham0) {
     },
     onPoint(p) {
       if (ask) return;
-      const e = pickAt(p, x => x.type === 'line' || x.type === 'pline');
+      const e = pickDraft(p, x => x.type === 'line' || x.type === 'pline');
       if (!e) {
-        log('Нужен отрезок или полилиния', true);
+        log('Нужен отрезок, полилиния, провод или труба', true);
         return;
       }
       if (allPl && e.type === 'pline') {
@@ -47736,6 +47777,7 @@ function mkFillet(cham0) {
         }
         e.pts = pts;
         if (b.some(x => Math.abs(x) > 1e-9)) e.b = b;
+        commitProxy(e);
         changed();
         log(`Обработано углов: ${n}`);
         allPl = false;
@@ -47784,7 +47826,7 @@ function mkBreak() {
     base: () => null,
     prompt: () => 'Разорвать в точке: укажите точку на отрезке, дуге или полилинии:',
     onPoint(p) {
-      const e = pickAt(p, x => ['line', 'arc', 'pline'].includes(x.type));
+      const e = pickDraft(p, x => ['line', 'arc', 'pline'].includes(x.type));
       if (!e) {
         log('Нужен отрезок, дуга или полилиния', true);
         return;
@@ -47846,7 +47888,10 @@ function explodeEnts(es) {
   let n = 0;
   pushUndo();
   for (const e of es) {
-    if (e.type === 'pline') {
+    if (isPathObj(e) && e.pts.length > 2) {
+      replaceEnt(e, explodePath(e));
+      n++;
+    } else if (e.type === 'pline') {
       replaceEnt(
         e,
         plineSegs(e).map(q => entsOfPrim(e, q))
@@ -47892,6 +47937,14 @@ function asPath(e) {
   return null;
 }
 function joinEnts(es) {
+  // wires, pipes, ducts…: pieces of one kind meeting end to end
+  if (es.some(isPathObj)) {
+    pushUndo();
+    const k = joinPaths(es);
+    changed();
+    log(k ? `Соединено: ${k}` : 'Концы не сходятся (нужно ≤ 5 мм) или объекты разного вида', !k);
+    if (es.every(isPathObj)) return;
+  }
   const pool = es
     .filter(e => ['line', 'arc', 'pline'].includes(e.type) && !(e.type === 'pline' && e.closed))
     .map(e => ({ e, path: asPath(e) }));
@@ -52732,6 +52785,7 @@ defineTools({
 
 
 
+
 /* ---------------- commands: modify ---------------- */
 function reflectFn(a, b) {
   const u = nrm(sub(b, a));
@@ -53126,7 +53180,11 @@ function mkLengthen() {
     val = mkLengthen.v ?? 100,
     ask = null;
   const doIt = p => {
-    const e = pickAt(p, x => x.type === 'line' || x.type === 'arc' || (x.type === 'pline' && !x.closed && !hasB(x)));
+    const e0 = pickAt(
+      p,
+      x => x.type === 'line' || x.type === 'arc' || (x.type === 'pline' && !x.closed && !hasB(x)) || isPathObj(x)
+    );
+    const e = e0 && isPathObj(e0) ? pathProxy(e0) : e0;
     if (!e) {
       log('Укажите отрезок, дугу или открытую полилинию у того конца, который меняем', true);
       return;
@@ -53149,7 +53207,10 @@ function mkLengthen() {
       if (e.type === 'line') {
         if (atEnd) e.b = q;
         else e.a = q;
-      } else e.pts[i] = q;
+      } else {
+        e.pts[i] = q;
+        commitProxy(e);
+      }
     } else {
       const p0 = polar(e.c, e.a0, e.r),
         p1 = polar(e.c, e.a1, e.r);
@@ -102569,6 +102630,165 @@ function csgFrame(n, o) {
   return { o: o.slice(), u, v, n: nn };
 }
 const CSGV = { csgSub, csgDot, csgCross, csgLen };
+
+// ===== drafting/path-objects.js =====
+/**
+ * drafting/path-objects.js
+ *
+ * The drafting tools on objects drawn through points (wires, pipes, ducts, profiles, railings, tracks, AC lines,
+ * underfloor heating loops): trim, extend, break, fillet / chamfer of a corner, lengthen, offset, explode, join.
+ * - For a command the object is a polyline stand-in (pathProxy) that keeps a link to it; what the command makes
+ *   (lines, polylines, arcs) is turned back into objects of the same kind with all their properties (pathFrom):
+ *   a wire stays a wire with its cable and group, a pipe — a pipe with its system, diameter, heights.
+ * - Arcs (fillets) become short straight pieces (no arcs in these objects).
+ * - A cut end loses its connection (a wire end leaves its device, a pipe end its outlet); an offset copy is not
+ *   connected at all.
+ * Whole objects (walls, devices, fixtures, furniture) are not cut or extended: only moved, copied, arrayed, mirrored.
+ */
+
+
+
+
+const PATH_T = new Set(['wire', 'pipe', 'duct', 'trim', 'rail', 'track', 'acl', 'ufh']);
+const isPathObj = e =>
+  !!e && !e._src && PATH_T.has(e.type) && Array.isArray(e.pts) && e.pts.length >= 2 && !e.closed;
+/** A polyline stand-in of a path object for the drafting commands. */
+function pathProxy(e) {
+  return { type: 'pline', pts: e.pts.map(p => P(p.x, p.y)), closed: false, layer: e.layer, _src: e };
+}
+/** Points of a command result (line / polyline with arcs / arc). */
+function ptsOf(r) {
+  if (r.type === 'line') return [r.a, r.b];
+  if (r.type === 'pline') {
+    if (!r.b || !r.b.some(x => Math.abs(x || 0) > 1e-9)) return r.pts;
+    const out = [r.pts[0]];
+    for (const sg of plineSegs(r)) {
+      if (sg.t === 's') out.push(sg.b);
+      else {
+        // an arc of a fillet: pieces of ≤ 15°
+        let d = sg.a1 - sg.a0;
+        if (sg.bu < 0 && d > 0) d -= 2 * Math.PI;
+        if (sg.bu > 0 && d < 0) d += 2 * Math.PI;
+        const n = Math.max(2, Math.ceil(Math.abs(d) / (Math.PI / 12)));
+        for (let k = 1; k <= n; k++)
+          out.push(P(sg.c.x + Math.cos(sg.a0 + (d * k) / n) * sg.r, sg.c.y + Math.sin(sg.a0 + (d * k) / n) * sg.r));
+      }
+    }
+    return out;
+  }
+  if (r.type === 'arc') {
+    let d = r.a1 - r.a0;
+    if (d <= 0) d += 2 * Math.PI;
+    const n = Math.max(2, Math.ceil(d / (Math.PI / 12)));
+    return Array.from({ length: n + 1 }, (_, k) =>
+      P(r.c.x + Math.cos(r.a0 + (d * k) / n) * r.r, r.c.y + Math.sin(r.a0 + (d * k) / n) * r.r)
+    );
+  }
+  return null;
+}
+/** A copy of the path object src along the points of a command result r. copy — not connected at all. */
+function pathFrom(src, r, copy) {
+  const pts = ptsOf(r);
+  if (!pts || pts.length < 2) return null;
+  const n = JSON.parse(JSON.stringify(src));
+  delete n.id;
+  delete n.rt;
+  n.pts = pts.map(q => {
+    const o = P(q.x, q.y);
+    // heights of the points that stayed where they were (risers, drops)
+    const s = src.pts.find(p => p.z != null && dist(p, q) < 1);
+    if (s) o.z = s.z;
+    return o;
+  });
+  const a0 = src.pts[0],
+    a1 = src.pts[src.pts.length - 1];
+  if (copy || dist(n.pts[0], a0) > 1) {
+    if ('from' in n) n.from = null;
+    delete n.fromPort;
+  }
+  if (copy || dist(n.pts[n.pts.length - 1], a1) > 1) {
+    if ('to' in n) n.to = null;
+    delete n.toPort;
+  }
+  return n;
+}
+/** Writes a stand-in changed in place (fillet of a corner, lengthen) back into its object. */
+function commitProxy(e) {
+  if (!e || !e._src) return;
+  const n = pathFrom(e._src, e);
+  if (!n) return;
+  e._src.pts = n.pts;
+  for (const k of ['from', 'to']) if (k in n) e._src[k] = n[k];
+  if (!('fromPort' in n)) delete e._src.fromPort;
+  if (!('toPort' in n)) delete e._src.toPort;
+  delete e._src.rt;
+}
+/** Explode: a path object into its straight pieces (objects of the same kind). */
+function explodePath(e) {
+  const out = [];
+  for (let i = 0; i + 1 < e.pts.length; i++) {
+    const n = pathFrom(e, { type: 'pline', pts: [e.pts[i], e.pts[i + 1]] });
+    if (n) out.push(n);
+  }
+  return out;
+}
+/**
+ * Join: path objects of one kind whose ends meet (≤ 5 mm) become one; the properties are those of the first one.
+ * Returns the number of joins.
+ */
+function joinPaths(es) {
+  let n = 0;
+  const groups = new Map();
+  for (const e of es.filter(isPathObj)) {
+    if (!groups.has(e.type)) groups.set(e.type, []);
+    groups.get(e.type).push(e);
+  }
+  for (const list of groups.values()) {
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < list.length && !merged; i++)
+        for (let j = 0; j < list.length && !merged; j++) {
+          if (i === j) continue;
+          const A = list[i],
+            B = list[j];
+          const a = A.pts,
+            b = B.pts;
+          const near = (p, q) => dist(p, q) <= 5;
+          let pts = null;
+          if (near(a[a.length - 1], b[0])) pts = a.concat(b.slice(1));
+          else if (near(a[a.length - 1], b[b.length - 1])) pts = a.concat(b.slice(0, -1).reverse());
+          else if (near(a[0], b[b.length - 1])) pts = b.concat(a.slice(1));
+          else if (near(a[0], b[0])) pts = b.slice().reverse().concat(a.slice(1));
+          if (!pts) continue;
+          A.pts = pts.map(p => {
+            const o = P(p.x, p.y);
+            if (p.z != null) o.z = p.z;
+            return o;
+          });
+          delete A.rt;
+          // the far ends keep their connections
+          if (near(a[0], b[b.length - 1]) || near(a[0], b[0])) {
+            const fromB = near(a[0], b[0]) ? { id: B.to, port: B.toPort } : { id: B.from, port: B.fromPort };
+            if ('from' in A) A.from = fromB.id ?? null;
+            if (fromB.port != null) A.fromPort = fromB.port;
+            else delete A.fromPort;
+          } else {
+            const toB = near(a[a.length - 1], b[0]) ? { id: B.to, port: B.toPort } : { id: B.from, port: B.fromPort };
+            if ('to' in A) A.to = toB.id ?? null;
+            if (toB.port != null) A.toPort = toB.port;
+            else delete A.toPort;
+          }
+          S.ents.splice(S.ents.indexOf(B), 1);
+          S.sel.delete(B.id);
+          list.splice(j, 1);
+          n++;
+          merged = true;
+        }
+    }
+  }
+  return n;
+}
 
 // ===== elements/ceiling-edges.js =====
 /**
