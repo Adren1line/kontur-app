@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '50.1';
+const APP_VER = '50.2';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -14909,6 +14909,7 @@ function acquire(r, w) {
 
 
 
+
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -14942,6 +14943,57 @@ function pickAt(p, filter) {
   return best;
 }
 function gripsOf(e) {
+  const g = gripsOf0(e);
+  return g.length ? g.concat(segGrips(e, g)) : g;
+}
+/**
+ * Middle grips of the segments of anything drawn through points (pipes, splines, wires, ducts, tracks…), when the
+ * object has only vertex grips: dragging one moves the segment between its two points (snapped by its middle,
+ * pipe heights kept); Ctrl + click adds a vertex there. A spline's grip stands on the curve.
+ */
+function segGrips(e, g) {
+  if (!Array.isArray(e.pts) || e.pts.length < 2 || g.some(x => x.edge) || g.length !== e.pts.length) return [];
+  if (!g.every((x, i) => x.p === e.pts[i])) return [];
+  const pts = e.pts,
+    n = pts.length,
+    closed = isClosedPts(e);
+  const m = closed && n > 2 ? n : n - 1;
+  const out = [];
+  for (let i = 0; i < m; i++) {
+    const j = (i + 1) % n,
+      a = pts[i],
+      b = pts[j];
+    if (dist(a, b) < 1e-6) continue;
+    let M = mid(a, b);
+    if (e.type === 'spline' && n > 2) {
+      // Catmull–Rom at t = ½ between a and b
+      const p0 = pts[i > 0 ? i - 1 : closed ? n - 1 : i],
+        p3 = pts[j + 1 < n ? j + 1 : closed ? (j + 1) % n : j];
+      M = P((-p0.x + 9 * a.x + 9 * b.x - p3.x) / 16, (-p0.y + 9 * a.y + 9 * b.y - p3.y) / 16);
+    }
+    const set = f => (o, p) => {
+      const nn = JSON.parse(JSON.stringify(o));
+      f(nn, p, o);
+      return nn;
+    };
+    out.push({
+      p: M,
+      edge: true,
+      seg: i,
+      apply: set((nn, p, o) => {
+        const d = sub(p, M);
+        for (const k of [i, j]) {
+          const q = P(o.pts[k].x + d.x, o.pts[k].y + d.y);
+          if (o.pts[k].z != null) q.z = o.pts[k].z;
+          nn.pts[k] = q;
+        }
+        if (nn.rt) delete nn.rt;
+      })
+    });
+  }
+  return out;
+}
+function gripsOf0(e) {
   const set = f => (o, p) => {
     const n = JSON.parse(JSON.stringify(o));
     f(n, p, o);
@@ -16642,9 +16694,13 @@ function render() {
       ctx.strokeRect(Math.round(s.x) - 4.5, Math.round(s.y) - 4.5, 10, 10);
     }
     // a hint at a hovered vertex: what can be done with it
-    if (!commandsState.cmd && renderState.hoverGrip && gripVertex(renderState.hoverGrip)) {
+    const hgv = !commandsState.cmd && renderState.hoverGrip && gripVertex(renderState.hoverGrip),
+      hge = !commandsState.cmd && !hgv && renderState.hoverGrip && gripEdge(renderState.hoverGrip);
+    if (hgv || hge) {
       const s = w2s(renderState.hoverGrip.g.p);
-      const t = 'тяните — переместить · Del / Ctrl+щелчок — удалить вершину · ПКМ — меню';
+      const t = hgv
+        ? 'тяните — переместить · Del / Ctrl+щелчок — удалить вершину · ПКМ — меню'
+        : 'тяните — переместить отрезок (привязка по середине) · Ctrl+щелчок — добавить вершину · ПКМ — меню';
       ctx.save();
       ctx.font = '11px ' + TFONT;
       const w = ctx.measureText(t).width + 12;
@@ -19354,6 +19410,14 @@ function primaryDown(e, sx, sy) {
     if (!commandsState.cmd) {
       const g = hitGrip(sx, sy);
       // Ctrl + click on a vertex: remove it
+      // Ctrl + click on the middle of a segment: a vertex there
+      if (g && (e.ctrlKey || e.metaKey) && !gripVertex(g) && gripEdge(g)) {
+        const ge = gripEdge(g);
+        addVertex(ge.e, ge.i, g.g.p);
+        renderState.hoverGrip = null;
+        dirty();
+        return;
+      }
       if (g && (e.ctrlKey || e.metaKey) && gripVertex(g)) {
         const v = gripVertex(g);
         removeVertex(v.e, v.i);
@@ -19465,14 +19529,18 @@ function initPointerRest() {
       updateProps();
     } else if (a.startsWith('opt:')) sendInput(a.slice(4));
     else if (a === 'snap') showSnapMenu(e.clientX, e.clientY);
-    else if (a === 'vdel' || a === 'vadd' || a === 'vmove' || a === 'vadde') {
+    else if (a === 'vdel' || a === 'vadd' || a === 'vmove' || a === 'vadde' || a === 'vsegm') {
       const it = CTX.grip;
       const v = gripVertex(it),
         ge = gripEdge(it);
       if (a === 'vdel' && v) removeVertex(v.e, v.i);
       else if (a === 'vadd' && v) addVertex(v.e, v.i < v.e.pts.length - 1 ? v.i : v.i - 1);
-      else if (a === 'vadde' && ge) addVertex(ge.e, ge.i);
-      else if (a === 'vmove' && it) {
+      else if (a === 'vadde' && ge) addVertex(ge.e, ge.i, it.g.p);
+      else if (a === 'vsegm' && it) {
+        commandsState.cmd = mkGrip(it.e, it.g);
+        refreshPrompt();
+        syncTools();
+      } else if (a === 'vmove' && it) {
         commandsState.cmd = mkGrip(it.e, it.g);
         refreshPrompt();
         syncTools();
@@ -19682,7 +19750,8 @@ function showCtx(x, y, at) {
       HR();
     } else if (ge) {
       H('Отрезок');
-      B('vadde', 'Добавить вершину здесь', '');
+      B('vsegm', 'Переместить отрезок (привязка по середине)', '');
+      B('vadde', 'Добавить вершину здесь', 'Ctrl+щелчок');
       HR();
     }
     const n = S.sel.size;
@@ -50847,6 +50916,7 @@ function edgeGrips(e, set) {
     out.push({
       p: M,
       edge: true,
+      seg: i,
       apply: set((nn, p, o) => {
         const A = o.pts[i],
           B = o.pts[j];
@@ -95387,7 +95457,8 @@ const CLOSED_T = new Set([
   'tiles',
   'sopen'
 ]);
-const isClosed = e => !!e.closed || CLOSED_T.has(e.type);
+const isClosedPts = e => !!e.closed || CLOSED_T.has(e.type);
+const isClosed = isClosedPts;
 /** Arrays kept in step with e.pts (one value per point). */
 const PARALLEL = ['bulge', 'bulges', 'arcs', 'zs', 'ws', 'tags'];
 
@@ -95402,6 +95473,7 @@ function gripVertex(it) {
 /** The segment an edge grip stands on (its middle): {e, i} — between points i and i+1 — or null. */
 function gripEdge(it) {
   if (!it || !it.e || !Array.isArray(it.e.pts)) return null;
+  if (it.g && it.g.seg != null) return { e: it.e, i: it.g.seg };
   const e = it.e,
     n = e.pts.length,
     m = isClosed(e) ? n : n - 1;
