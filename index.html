@@ -3612,6 +3612,16 @@ label.ck {
   width: 100%;
   height: auto;
 }
+.pnterm {
+  fill: rgba(59, 120, 231, 0.18);
+  stroke: #3b78e7;
+  stroke-width: 0.8;
+  cursor: crosshair;
+}
+.pnterm:hover,
+.pnterm.on {
+  fill: #3b78e7;
+}
 
 /*
  * Скин «Калька». Интерфейс как чертёжный лист на кульмане: холодная калька, синие чернила, две толщины линий по
@@ -6936,7 +6946,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '51';
+const APP_VER = '51.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -43538,6 +43548,7 @@ function drawBlkPosts(e, G_) {
 
 
 
+
 /* ---------- electrical panel (simplified, editable module list) ---------- */
 const MODL = {
   main2: { n: 'Вводной автомат 2P', w: 2, r: 'C40' },
@@ -43769,6 +43780,7 @@ function panelSvgMM(selId) {
     for (let x = L.x0 - 10; x < L.x0 + L.per * MOD_W + 10; x += 8)
       s += `<rect x="${x}" y="${y - 13}" width="4.5" height="26" fill="#d8dbde"/>`;
   });
+  s += wiresSvg(L, PW.sel);
   L.rowsL.forEach((R, i) => {
     const x1 = L.x0 - 12,
       x2 = L.x0 + L.per * MOD_W + 12;
@@ -43814,11 +43826,14 @@ function panelSvgMM(selId) {
     }
     flush();
   });
+  if (PW.mode) s += termsSvg(L, PW.pick);
   const sb = 100;
   s += `<g transform="translate(0,${H + 24})"><rect x="0" y="0" width="${sb}" height="4" fill="#5d656f"/><text x="${sb + 6}" y="5" font-size="10" fill="#3a4049">100 мм</text><text x="${W}" y="5" font-size="10" fill="#3a4049" text-anchor="end">${W}×${H}×${L.D} мм${L.fl ? ` · ниша ${L.niche.W}×${L.niche.H}×${L.niche.D}` : ''}</text></g>`;
   return s + '</svg>';
 }
 let PSEL = null;
+/** Drawing wires by hand in the assembly: the mode, the first terminal picked, the colour, the selected wire. */
+const PW = { mode: false, pick: null, c: 'L', sel: null };
 const PPAL = [
   ['Ввод и учёт', ['main2', 'mcb4', 'meter', 'meter3', 'relay', 'vrel', 'surge', 'surge4', 'uzoF']],
   ['Защита групп', ['mcb1', 'mcb1n', 'mcb2', 'mcb3', 'rcbo', 'uzo', 'uzoA', 'uzo4']],
@@ -43865,7 +43880,15 @@ function renderPanelAsm(el) {
        : '<p class="hint">Выберите аппарат на щите. Перетаскивание — изменить место или ряд.</p>'
    }
      <div class="sech" style="margin-top:8px">Вводные аппараты <span class="hint">(пересоберут щит)</span></div>${ck('pnRelay', 'relay', 'Реле напряжения')}${ck('pnUzoF', 'uzoF', 'УЗО 100 мА')}${ck('pnSurge', 'surge', 'УЗИП')}${ck('pnMeter', 'meter', 'Счётчик в щите')}
-     <div class="btnrow"><button class="btn pri" id="pnAuto">Собрать заново по группам</button></div></div></div>`;
+     <div class="btnrow"><button class="btn pri" id="pnAuto">Собрать заново по группам</button></div>
+     <div class="sech" style="margin-top:10px">Провода в щите</div>
+     <label class="fl" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="pnAutoW" ${P_.autoW === false ? '' : 'checked'}>Разводка автоматически (по схеме щита)</label>
+     <label class="fl">Цвет жилы<select id="pnWc">${Object.entries(PWNAME)
+       .map(([k, v]) => `<option value="${k}" ${PW.c === k ? 'selected' : ''}>${v}</option>`)
+       .join('')}</select></label>
+     <div class="btnrow"><button class="btn ${PW.mode ? 'pri' : ''}" id="pnWire">${PW.mode ? 'Готово' : 'Нарисовать провод'}</button>${PW.sel != null ? '<button class="btn" id="pnWDel">Удалить провод</button>' : ''}</div>
+     <p class="hint">${PW.mode ? (PW.pick ? 'Щёлкните второй зажим — провод проложится по кабель-каналу.' : 'Щёлкните зажим аппарата (кружок у винта) или винт шины N / PE. Свой провод — щелчок по нему, затем «Удалить».') : `Своих проводов: ${(P_.wires || []).length}. Автоматические — тонкие, свои — толще.`}</p>
+     <label class="fl" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="pnCover" ${P_.cover === false ? '' : 'checked'}>Лицевая панель в 3D (сними, чтобы видеть провода)</label></div></div>`;
   const re = () => {
     changed();
     renderMEP();
@@ -43904,6 +43927,53 @@ function renderPanelAsm(el) {
     P_.door = ev.target.value;
     re();
   };
+  q('#pnAutoW').onchange = ev => {
+    pushUndo();
+    P_.autoW = ev.target.checked;
+    re();
+  };
+  q('#pnCover').onchange = ev => {
+    pushUndo();
+    P_.cover = ev.target.checked;
+    re();
+  };
+  q('#pnWc').onchange = ev => {
+    PW.c = ev.target.value;
+  };
+  q('#pnWire').onclick = () => {
+    PW.mode = !PW.mode;
+    PW.pick = null;
+    renderMEP();
+  };
+  if (q('#pnWDel'))
+    q('#pnWDel').onclick = () => {
+      pushUndo();
+      P_.wires.splice(PW.sel, 1);
+      PW.sel = null;
+      re();
+    };
+  el.querySelectorAll('[data-term]').forEach(c =>
+    c.addEventListener('pointerdown', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const k = c.dataset.term;
+      if (!PW.pick) PW.pick = k;
+      else if (PW.pick !== k) {
+        pushUndo();
+        (P_.wires = P_.wires || []).push({ a: PW.pick, b: k, c: PW.c });
+        PW.pick = null;
+        changed();
+      }
+      renderMEP();
+    })
+  );
+  el.querySelectorAll('[data-wi]').forEach(pth =>
+    pth.addEventListener('pointerdown', ev => {
+      ev.stopPropagation();
+      PW.sel = +pth.dataset.wi;
+      renderMEP();
+    })
+  );
   el.querySelectorAll('[data-pa]').forEach(
     b =>
       (b.onclick = () => {
@@ -44314,10 +44384,14 @@ function panelMeshes(e) {
   mb.tag(fl ? 'Корпус щита встраиваемый' : 'Корпус щита накладной');
   const C1 = '#e3e6e9';
   box(-W / 2, yB - t, z0, W / 2, yB, z0 + H, C1);
-  box(-W / 2, yF, z0, -W / 2 + t, yB, z0 + H, C1);
-  box(W / 2 - t, yF, z0, W / 2, yB, z0 + H, C1);
-  box(-W / 2, yF, z0, W / 2, yB, z0 + t, C1);
-  box(-W / 2, yF, z0 + H - t, W / 2, yB, z0 + H, C1);
+  mb.smooth(true);
+  mb.rbox(-W / 2, yF, z0, -W / 2 + 3, yB, z0 + H, 1.4, C1, 2);
+  mb.rbox(W / 2 - 3, yF, z0, W / 2, yB, z0 + H, 1.4, C1, 2);
+  mb.rbox(-W / 2, yF, z0, W / 2, yB, z0 + 3, 1.4, C1, 2);
+  mb.rbox(-W / 2, yF, z0 + H - 3, W / 2, yB, z0 + H, 1.4, C1, 2);
+  mb.smooth(false);
+  mb.tag('Монтажная панель');
+  box(-W / 2 + 8, yB - t - 2, z0 + 8, W / 2 - 8, yB - t, z0 + H - 8, '#d4d8dc');
   if (fl) {
     mb.tag('Рамка встраиваемого щита');
     const fw = L.frame.W / 2,
@@ -44384,14 +44458,57 @@ function panelMeshes(e) {
     }
     flush();
   }
-  if (P_.door === 'closed') {
-    mb.tag('Дверца щита');
-    box(-W / 2 + 2, yF - 16, z0 + 2, W / 2 - 2, yF - 14, z0 + H - 2, '#eceef0');
-  } else if (P_.door === 'open') {
-    mb.tag('Дверца щита');
-    box(-W / 2 - 2, yF - 16 - (W - 4), z0 + 2, -W / 2, yF - 16, z0 + H - 2, '#eceef0');
+  // the wires inside
+  wires3D(mb, L, z0, yM, yB - t);
+  // the front cover with slots for the rows; the empty places of a row closed with blank caps
+  if (P_.cover !== false) {
+    mb.tag('Лицевая панель (фальшпанель)');
+    const yc0 = yM + 10.5,
+      yc1 = yM + 12,
+      CV = '#eceef0';
+    const zs = L.rowsL.map(R => z0 + H - R.y).sort((a, b) => b - a);
+    let top = z0 + H - t;
+    for (const zr of zs) {
+      box(-W / 2 + t, yc0, zr + 23, W / 2 - t, yc1, top, CV);
+      box(-W / 2 + t, yc0, zr - 23, xa + 12, yc1, zr + 23, CV);
+      box(xb - 12, yc0, zr - 23, W / 2 - t, yc1, zr + 23, CV);
+      top = zr - 23;
+    }
+    box(-W / 2 + t, yc0, z0 + t, W / 2 - t, yc1, top, CV);
+    mb.tag('Заглушки свободных мест');
+    for (const R of L.rowsL) {
+      const zr = z0 + H - R.y;
+      for (let k = R.used; k < L.per; k++) {
+        const x0 = L.x0 - W / 2 + k * MOD_W;
+        mb.rbox(x0 + 0.3, yM - 0.5, zr - 22.5, x0 + MOD_W - 0.3, yc1, zr + 22.5, 1.5, '#e6e8ea', 1);
+      }
+    }
   }
-  return meshGroup(mb.meshes(), { edges: true });
+  const smoke = '#8f9aa6';
+  const doorAt = open_ => {
+    mb.tag('Дверца щита');
+    if (!open_) {
+      box(-W / 2 + 2, yF - 16, z0 + 2, W / 2 - 2, yF - 13, z0 + 16, '#e3e6e9');
+      box(-W / 2 + 2, yF - 16, z0 + H - 16, W / 2 - 2, yF - 13, z0 + H - 2, '#e3e6e9');
+      box(-W / 2 + 2, yF - 16, z0 + 16, -W / 2 + 16, yF - 13, z0 + H - 16, '#e3e6e9');
+      box(W / 2 - 16, yF - 16, z0 + 16, W / 2 - 2, yF - 13, z0 + H - 16, '#e3e6e9');
+      mb.box(-W / 2 + 16, yF - 15, z0 + 16, W / 2 - 16, yF - 14, z0 + H - 16, smoke, 0.32);
+      mb.tag('Замок дверцы');
+      mb.rbox(W / 2 - 13, yF - 22, z0 + H / 2 - 24, W / 2 - 5, yF - 16, z0 + H / 2 + 24, 3, '#c9ced3', 2);
+    } else {
+      const yd = yF - 16;
+      box(-W / 2 - 3, yd - (W - 4), z0 + 2, -W / 2, yd, z0 + 16, '#e3e6e9');
+      box(-W / 2 - 3, yd - (W - 4), z0 + H - 16, -W / 2, yd, z0 + H - 2, '#e3e6e9');
+      box(-W / 2 - 3, yd - (W - 4), z0 + 16, -W / 2, yd - (W - 4) + 14, z0 + H - 16, '#e3e6e9');
+      box(-W / 2 - 3, yd - 14, z0 + 16, -W / 2, yd, z0 + H - 16, '#e3e6e9');
+      mb.box(-W / 2 - 2, yd - (W - 4) + 14, z0 + 16, -W / 2 - 1, yd - 14, z0 + H - 16, smoke, 0.32);
+    }
+    mb.tag('Петли дверцы');
+    for (const zz of [z0 + 40, z0 + H - 40]) mb.cyl(-W / 2 - 2, yF - 14, zz - 12, zz + 12, 3.5, '#9aa1a9', 12);
+  };
+  if (P_.door === 'closed') doorAt(false);
+  else if (P_.door === 'open') doorAt(true);
+  return meshGroup(mb.meshes(), { edges: false });
 }
 
 // ===== mep/electrical/cables.js =====
@@ -115030,6 +115147,8 @@ function blkSeriesRows(e) {
  * 3D: local panel coordinates — x across, y depth (the front of the modules at yM, the rail at yM + 70), z up.
  * 2D: millimetres, the module's top-left corner at (X, Y), 90 mm high.
  */
+
+
 /** Designations in the documents (ГОСТ 2.710): the letter code by kind. */
 const MODDES = {
   main2: 'QF',
@@ -115115,38 +115234,110 @@ function module3D(mb, k, x0, w, zr, yM, hc, name) {
     return;
   }
   mb.tag('Модуль: ' + (name || k));
-  // body: rear block, shoulders, front neck
-  mb.rbox(x0 + 0.3, yM + 22, zr - 45, x1 - 0.3, yM + 70, zr + 45, 2, BODY, 2);
-  mb.rbox(x0 + 0.3, yM + 10, zr - 36, x1 - 0.3, yM + 22.5, zr + 36, 2, BODY, 2);
-  if (k !== 'term') mb.rbox(x0 + 0.6, yM, zr - 22.5, x1 - 0.6, yM + 10.5, zr + 22.5, 2.5, BODY, 2);
+  // body: the side profile of a modular device (rear block, the terminal shoulders, the sloped front neck)
+  // extruded across its width; the joints between modules stay as thin seams
+  const map = (s_, d, z) => [s_, yM + d, zr + z];
+  if (k === 'term') {
+    const tp = [
+      [45, -30],
+      [45, 30],
+      [12, 30],
+      [9, 27],
+      [9, -27],
+      [12, -30]
+    ];
+    for (let i = 0; i < 3; i++)
+      extrude(mb, map, tp, x0 + 0.4 + i * 5.8, x0 + 5.4 + i * 5.8, i === 2 ? '#b9c22e' : '#aeb3b8');
+    mb.lod('n');
+    for (let i = 0; i < 3; i++)
+      for (const zz of [zr + 20, zr - 20])
+        mb.sweep(
+          [
+            [x0 + 2.9 + i * 5.8, yM + 8.9, zz],
+            [x0 + 2.9 + i * 5.8, yM + 9.8, zz]
+          ],
+          2,
+          SCREW,
+          10
+        );
+    mb.lod('');
+    mb.smooth(false);
+    return;
+  }
+  const prof = [
+    [70, -45],
+    [70, 45],
+    [27, 45],
+    [25, 43.5],
+    [24.5, 37],
+    [14, 37],
+    [12.5, 35.5],
+    [12, 26],
+    [3, 23],
+    [0, 21],
+    [0, -21],
+    [3, -23],
+    [12, -26],
+    [12.5, -35.5],
+    [14, -37],
+    [24.5, -37],
+    [25, -43.5],
+    [27, -45]
+  ];
+  extrude(mb, map, prof, x0 + 0.35, x1 - 0.35, BODY);
   mb.lod('n');
-  // the clamp screws of every pole, top and bottom, in their wells
+  // the clamps of every pole: the screw in its well on the shoulder, the hole for the wire on top / bottom
   for (let i = 0; i < poles; i++) {
     const xc = x0 + pw * (i + 0.5);
-    for (const zz of [zr + 30, zr - 30]) {
+    for (const sg of [1, -1]) {
+      const zz = zr + sg * 30.5;
       mb.sweep(
         [
-          [xc, yM + 10.2, zz],
-          [xc, yM + 13, zz]
+          [xc, yM + 11.9, zz],
+          [xc, yM + 12.8, zz]
         ],
-        3.6,
-        SHADE,
-        12
+        [3.7, 3.1],
+        '#c9cdd1',
+        14
       );
       mb.sweep(
         [
-          [xc, yM + 12, zz],
-          [xc, yM + 13.5, zz]
+          [xc, yM + 12.8, zz],
+          [xc, yM + 13.6, zz]
         ],
-        2.6,
+        2.8,
         SCREW,
-        12
+        14
       );
-      mb.obox([xc - 2, yM + 11.9, zz], [xc + 2, yM + 11.9, zz], 0.5, 0.6, DMK);
+      mb.obox([xc - 2.1, yM + 12.75, zz], [xc + 2.1, yM + 12.75, zz], 0.55, 0.5, DMK);
+      mb.obox([xc, yM + 12.75, zz - 2.1], [xc, yM + 12.75, zz + 2.1], 0.55, 0.5, DMK);
+      mb.box(
+        xc - 3.6,
+        yM + 15.5,
+        zr + sg * 37 - (sg > 0 ? 0.3 : -0.1),
+        xc + 3.6,
+        yM + 22.5,
+        zr + sg * 37 + (sg > 0 ? 0.1 : 0.3),
+        '#3a3f45'
+      );
     }
+    // the seam between the poles of a multi-pole device
+    if (i > 0) mb.box(x0 + pw * i - 0.25, yM - 0.05, zr - 21, x0 + pw * i + 0.25, yM + 0.2, zr + 21, '#c3c7cb');
   }
-  // the label window above the controls
-  if (!/term|blank/.test(k)) mb.rbox(x0 + 2, yM - 0.4, zr + 13, x1 - 2, yM + 0.6, zr + 20, 1, SHADE, 1);
+  // the label window with the printed rating and the brand line
+  if (k !== 'blank') {
+    mb.rbox(x0 + 2, yM - 0.35, zr + 12.5, x1 - 2, yM + 0.4, zr + 19.5, 1, '#e9eae6', 1);
+    mb.box(
+      xm - Math.min(5, w / 2 - 3),
+      yM - 0.45,
+      zr + 15.4,
+      xm + Math.min(5, w / 2 - 3),
+      yM - 0.35,
+      zr + 17.2,
+      '#33373d'
+    );
+    mb.box(x0 + 2.5, yM - 0.25, zr - 21, x1 - 2.5, yM - 0.15, zr - 20.2, '#8b939d');
+  }
   mb.lod('');
   const lever = (xc, wl, col) => {
     mb.rbox(xc - wl / 2 - 1.2, yM - 0.6, zr - 11, xc + wl / 2 + 1.2, yM + 1, zr + 10, 1, '#d5d7d3', 1);
@@ -115328,20 +115519,6 @@ function module3D(mb, k, x0, w, zr, yM, hc, name) {
     ['#7a4a24', '#1e1f22', '#8c9095', '#2f6fd6'].forEach((c, i) =>
       mb.rbox(x0 + 2, yM - 1, zr + 14 - i * 9, x1 - 2, yM + 0.5, zr + 18 - i * 9, 1, c, 1)
     );
-  } else if (k === 'term') {
-    mb.tag('Клеммы на DIN');
-    for (let i = 0; i < 3; i++)
-      mb.rbox(
-        x0 + 0.4 + i * 5.8,
-        yM + 8,
-        zr - 30,
-        x0 + 5.4 + i * 5.8,
-        yM + 10.6,
-        zr + 30,
-        0.8,
-        i === 2 ? '#b9c22e' : '#9aa1a9',
-        1
-      );
   } else if (k === 'blank') {
     mb.tag('Заглушка');
   }
@@ -115444,6 +115621,259 @@ function moduleSvg(m, k, X, Y, w, hc, on, des) {
   if (des)
     s += `<text x="${xm}" y="${Y - 3}" font-size="7" font-weight="600" fill="#1f2328" text-anchor="middle">${esc_(des)}</text>`;
   return s;
+}
+
+// ===== mep/electrical/panel-wiring.js =====
+/**
+ * mep/electrical/panel-wiring.js
+ *
+ * Wires inside the panel, in the assembly drawing (2D, mm of the panel front) and in 3D:
+ * - terminals: the clamps of every pole of a module, top and bottom (the hole for the wire on the shoulder), the screws
+ *   of the N and PE bus bars; the outgoing lines leave through the bottom of the enclosure, the input comes from the top;
+ * - automatic wiring: input → the input device → the next devices of the input chain (a surge arrester in parallel) →
+ *   the RCDs and the breakers (a run of breakers is fed once, the comb bus does the rest) → the outgoing lines: L from
+ *   the breaker, N from the bus (or from the 2nd pole of a 2-pole device), PE from the PE bus;
+ * - wires drawn by hand: from a terminal to a terminal, the colour of the core chosen (L, N, PE, other);
+ * - routing: from the terminal into the gutter / cable duct next to the row, along it, across the side gutter to another
+ *   row, into the terminal; parallel wires take lanes.
+ * Colours: L — brown, N — blue, PE — yellow-green, other — black.
+ */
+
+
+
+
+
+const PWCOL = { L: '#7a4a24', N: '#2b62c4', PE: '#b4c430', X: '#1e1f22' };
+const PWNAME = {
+  L: 'L — фаза (коричневый)',
+  N: 'N — ноль (синий)',
+  PE: 'PE — земля (жёлто-зелёный)',
+  X: 'прочее (чёрный)'
+};
+const PW_MODW = 17.5;
+const HEAD = /^(main2|mcb4|meter|meter3|relay|vrel|uzoF)$/;
+const PW_BRK = /^(mcb1|mcb1n|mcb2|mcb3|mcb4|rcbo)$/;
+
+/** All terminals of the panel: key → {x, y (the hole / the screw), g (gutter side: −1 up, +1 down), row, kind}. */
+function panelTerms(L = panelLayout()) {
+  const T = new Map();
+  L.rowsL.forEach((R, ri) => {
+    for (const it of R.items) {
+      const m = it.m,
+        X = L.x0 + it.x * PW_MODW,
+        w = it.w * PW_MODW;
+      if (m.k === 'nbus' || m.k === 'pebus') {
+        let k = 0;
+        for (let x = X + 5; x < X + w - 2; x += 7)
+          T.set(`${m.id}|${k++}|bus`, { x, y: R.y, g: k % 2 ? -1 : 1, row: ri, bus: m.k, m });
+        continue;
+      }
+      if (m.k === 'blank') continue;
+      const poles = modPoles(m.k, it.w),
+        pw = w / poles;
+      for (let p = 0; p < poles; p++) {
+        T.set(`${m.id}|${p}|t`, { x: X + pw * (p + 0.5), y: R.y - 37, g: -1, row: ri, m });
+        T.set(`${m.id}|${p}|b`, { x: X + pw * (p + 0.5), y: R.y + 37, g: 1, row: ri, m });
+      }
+    }
+  });
+  return T;
+}
+/** Automatic wiring: [{a, b, c}] — keys of terminals, or {exit|input: {x}} for the outgoing lines and the input. */
+function autoWires(L = panelLayout()) {
+  const P_ = S.x.panel,
+    mods = P_.mods || [];
+  const out = [];
+  const T = panelTerms(L);
+  const has = k => T.has(k);
+  const W_ = (a, b, c) => {
+    if ((typeof a !== 'string' || has(a)) && (typeof b !== 'string' || has(b))) out.push({ a, b, c, auto: true });
+  };
+  const busFree = { nbus: [], pebus: [] };
+  for (const [k, t] of T) if (t.bus) busFree[t.bus].push(k);
+  const bus = kind => busFree[kind].shift() || null;
+  const poles = m => modPoles(m.k, (MODL[m.k] || { w: 1 }).w);
+  // the input chain
+  const heads = [];
+  for (const m of mods) {
+    if (HEAD.test(m.k) || /^surge/.test(m.k)) heads.push(m);
+    else if (heads.length) break;
+  }
+  const main = heads.find(m => !/^surge/.test(m.k)) || mods.find(m => PW_BRK.test(m.k));
+  if (!main) return out;
+  const inX = L.x0 + 20;
+  W_({ input: { x: inX } }, `${main.id}|0|t`, 'L');
+  if (poles(main) > 1) W_({ input: { x: inX + 6 } }, `${main.id}|${poles(main) - 1}|t`, 'N');
+  const pe0 = bus('pebus');
+  if (pe0) W_({ input: { x: inX + 12 } }, pe0, 'PE');
+  let F = main;
+  for (const m of heads) {
+    if (m === main) continue;
+    const n = Math.min(poles(F), poles(m));
+    for (let p = 0; p < n; p++)
+      W_(`${F.id}|${p === n - 1 && n > 1 ? poles(F) - 1 : p}|b`, `${m.id}|${p}|t`, p === n - 1 && n > 1 ? 'N' : 'L');
+    if (!/^surge/.test(m.k)) F = m;
+  }
+  const fN = poles(F) > 1 ? `${F.id}|${poles(F) - 1}|b` : null;
+  // RCDs from the feeder; their N to the N bus
+  const rcds = mods.filter(m => /^uzo/.test(m.k) && m.k !== 'uzoF' && !heads.includes(m));
+  for (const r of rcds) {
+    W_(`${F.id}|0|b`, `${r.id}|0|t`, 'L');
+    if (fN) W_(fN, `${r.id}|${poles(r) - 1}|t`, 'N');
+    const nb = bus('nbus');
+    if (nb) W_(`${r.id}|${poles(r) - 1}|b`, nb, 'N');
+  }
+  if (!rcds.length && fN) {
+    const nb = bus('nbus');
+    if (nb) W_(fN, nb, 'N');
+  }
+  // breakers: a run of neighbours with the same source is fed once (the comb bus feeds the rest)
+  const srcOf = m => rcds.find(r => (r.g || []).some(g => (m.g || []).includes(g))) || F;
+  let prev = null;
+  const at = new Map();
+  L.rowsL.forEach((R, ri) => R.items.forEach(it => at.set(it.m, { ri, x: it.x, w: it.w })));
+  for (const m of mods) {
+    if (!PW_BRK.test(m.k) || m === main || heads.includes(m)) continue;
+    const S_ = srcOf(m);
+    const p = at.get(m),
+      q = prev && at.get(prev.m);
+    const combed = prev && prev.src === S_ && q && p && q.ri === p.ri && q.x + q.w === p.x;
+    if (!combed) W_(`${S_.id}|0|b`, `${m.id}|0|t`, 'L');
+    if (poles(m) > 1 && m.k !== 'mcb2' && m.k !== 'mcb3')
+      W_(`${S_.id}|${poles(S_) - 1}|b`, `${m.id}|${poles(m) - 1}|t`, 'N');
+    prev = { m, src: S_ };
+    // the outgoing line of the group
+    if ((m.g || []).length) {
+      const t = at.get(m);
+      const ex = L.x0 + (t ? t.x * PW_MODW + 8 : 0);
+      W_(`${m.id}|0|b`, { exit: { x: ex } }, 'L');
+      if (poles(m) > 1) W_(`${m.id}|${poles(m) - 1}|b`, { exit: { x: ex + 4 } }, 'N');
+      else {
+        const nb = bus('nbus');
+        if (nb) W_(nb, { exit: { x: ex + 4 } }, 'N');
+      }
+      const pb = bus('pebus');
+      if (pb) W_(pb, { exit: { x: ex + 8 } }, 'PE');
+    }
+  }
+  return out;
+}
+/** All wires: the automatic ones (unless switched off) and the ones drawn by hand. */
+function panelWires(L = panelLayout()) {
+  const P_ = S.x.panel;
+  const man = (P_.wires || []).map((w, i) => ({ ...w, man: i }));
+  return (P_.autoW === false ? [] : autoWires(L)).concat(man);
+}
+/** The gutters of the panel: above / between / below the rows (2D y) and the side gutter (2D x). */
+function gutters(L) {
+  const R = L.rowsL;
+  const ys = [R[0].y - 64];
+  for (let i = 0; i + 1 < R.length; i++) ys.push((R[i].y + R[i + 1].y) / 2);
+  ys.push(R[R.length - 1].y + 64);
+  return { ys, xs: Math.max(L.x0 - 26, 18) };
+}
+/** The route of a wire in 2D: [[x, y], …] (first and last — at the terminals / outside the box). */
+function wireRoute2D(L, w, lane = 0) {
+  const T = panelTerms(L),
+    G = gutters(L);
+  const end = e => {
+    if (typeof e === 'string') {
+      const t = T.get(e);
+      if (!t) return null;
+      // the gutter next to the terminal: above the row for a top clamp, below for a bottom one
+      const gi = t.g < 0 ? t.row : t.row + 1;
+      return { p: [t.x, t.y], gi };
+    }
+    if (e.exit) return { p: [e.exit.x, L.H + 12], gi: G.ys.length - 1, out: true };
+    if (e.input) return { p: [e.input.x, -12], gi: 0, out: true };
+    return null;
+  };
+  const A = end(w.a),
+    B = end(w.b);
+  if (!A || !B) return null;
+  const off = ((lane % 9) - 4) * 2.6;
+  const ya = G.ys[A.gi] + off,
+    yb = G.ys[B.gi] + off,
+    xs = G.xs + off;
+  const pts = [A.p, [A.p[0], ya]];
+  if (A.gi !== B.gi) pts.push([xs, ya], [xs, yb]);
+  pts.push([B.p[0], yb], B.p);
+  return pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.1);
+}
+/** The wires in the assembly drawing (SVG fragment). */
+function wiresSvg(L, sel) {
+  let s = '';
+  panelWires(L).forEach((w, i) => {
+    const P = wireRoute2D(L, w, i);
+    if (!P) return;
+    const d = 'M' + P.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
+    const c = PWCOL[w.c] || PWCOL.X;
+    s += `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w.man != null ? 2.2 : 1.5}" stroke-linejoin="round" stroke-linecap="round" opacity="${w.man != null ? 1 : 0.8}" ${w.man != null ? `data-wi="${w.man}" style="cursor:pointer"` : ''}/>`;
+    if (w.man != null && sel === w.man)
+      s += `<path d="${d}" fill="none" stroke="#3b78e7" stroke-width="4" opacity="0.35"/>`;
+  });
+  return s;
+}
+/** Hit circles over the terminals for drawing wires by hand. */
+function termsSvg(L, pick) {
+  let s = '';
+  for (const [k, t] of panelTerms(L))
+    s += `<circle class="pnterm${pick === k ? ' on' : ''}" data-term="${k}" cx="${t.x}" cy="${t.y}" r="4.2"/>`;
+  return s;
+}
+/** The wires in 3D (in the coordinates of panelMeshes). */
+function wires3D(mb, L, z0, yM, yB) {
+  const W = L.W,
+    H = L.H;
+  const yT = yM + 19,
+    yD = yB - 22;
+  const T = panelTerms(L);
+  panelWires(L).forEach((w, i) => {
+    const P = wireRoute2D(L, w, i);
+    if (!P) return;
+    const c = PWCOL[w.c] || PWCOL.X;
+    const end = e => (typeof e === 'string' ? T.get(e) : null);
+    const ta = end(w.a),
+      tb = end(w.b);
+    const dl = ((i % 7) - 3) * 2.2;
+    const pts = P.map((p, k) => {
+      const first = k === 0,
+        last = k === P.length - 1;
+      const t = first ? ta : last ? tb : null;
+      let d = yD + dl;
+      if (t) d = t.bus ? yM + 27 : yT;
+      else if ((first && !ta) || (last && !tb)) d = (yM + yB) / 2;
+      return [p[0] - W / 2, d, z0 + H - p[1]];
+    });
+    // the end at a terminal: straight into the hole for 8 mm before bending
+    const fix = (k, t, k2) => {
+      if (!t) return;
+      const s = t.bus ? -1 : t.g;
+      const q = pts[k];
+      pts.splice(k2, 0, [q[0], q[1], q[2] - s * 10]);
+    };
+    fix(0, ta, 1);
+    fix(pts.length - 1, tb, pts.length - 1);
+    const R = roundPath(pts, 7).pts;
+    mb.tag(`Провод ${w.c || ''}${w.man != null ? ' (свой)' : ''}`);
+    mb.sweep(R, 1.7, c, 8);
+    // the outgoing / incoming cable sheath through the gland
+    if ((!ta || !tb) && w.c === 'L') {
+      // the sheath of the cable through the gland (one per line, round its cores)
+      const q = !ta ? pts[0] : pts[pts.length - 1];
+      const up = q[2] > z0 + H / 2 ? 1 : -1;
+      mb.tag('Кабель (оболочка)');
+      mb.sweep(
+        [
+          [q[0] + 4, q[1], q[2] - up * 4],
+          [q[0] + 4, q[1], q[2] + up * 60]
+        ],
+        5,
+        '#4a5058',
+        12
+      );
+    }
+  });
 }
 
 // ===== mep/electrical/power-supplies.js =====
