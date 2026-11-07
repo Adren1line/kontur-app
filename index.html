@@ -6694,7 +6694,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '41';
+const APP_VER = '41.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -57982,6 +57982,25 @@ function bathDrain(c) {
   const x = -w / 2 + (free ? w * 0.32 : 150) + (free ? 0 : -w * 0.06);
   return { x, y: d / 2, ox: -w / 2 + 55 + 8, oy: d / 2 };
 }
+/** Default place of the mixer: wall and hidden mixers — on the long wall, rim and floor mixers — at the left end. */
+function bathMixDef(c) {
+  return c.mixer === 'wall' || c.mixer === 'hidden' ? 'long' : 'L';
+}
+/** Where the bath mixer stands (local frame: x along the bath, y from the wall): the point on the wall, rim or floor
+   and the direction of the spout (into the bath). c.mixPos: 'long' — the long side, 'L' / 'R' — the short ends;
+   c.mixO — shift along that side from its middle. */
+function bathMix(c) {
+  const w = c.w,
+    d = c.d,
+    o = +c.mixO || 0,
+    p = c.mixPos || bathMixDef(c),
+    s = p === 'R' ? 1 : -1;
+  if (c.mixer === 'floor')
+    return p === 'long' ? { x: o, y: d + 140, ux: 0, uy: -1 } : { x: s * (w / 2 + 140), y: d / 2 + o, ux: -s, uy: 0 };
+  if (c.mixer === 'board')
+    return p === 'long' ? { x: o, y: 40, ux: 0, uy: 1 } : { x: s * (w / 2 - 70), y: d / 2 + o, ux: -s, uy: 0 };
+  return p === 'long' ? { x: o, y: 0, ux: 0, uy: 1 } : { x: s * (w / 2), y: d / 2 + o, ux: -s, uy: 0 };
+}
 function bathBuild(mb, e) {
   const c = e.cfg,
     w = c.w,
@@ -58038,25 +58057,30 @@ function bathBuild(mb, e) {
   // mixers
   mb.smooth(true);
   mb.tag('Смеситель');
-  const mx = c.mixer;
+  const mx = c.mixer,
+    M = bathMix(c),
+    P_ = (a, b) => [M.x + M.ux * a - M.uy * b, M.y + M.uy * a + M.ux * b],
+    BX = (a0, a1, b0, b1, z0, z1, col) => {
+      const p = P_(a0, b0),
+        q = P_(a1, b1);
+      mb.box(Math.min(p[0], q[0]), Math.min(p[1], q[1]), z0, Math.max(p[0], q[0]), Math.max(p[1], q[1]), z1, col);
+    };
   if (mx === 'wall') {
-    mb.box(-90, 0, h + 170, 90, 22, h + 235, CHR);
-    mb.tube([0, 22, h + 200], [0, 170, h + 200], 12, CHR, 14);
+    BX(0, 22, -90, 90, h + 170, h + 235, CHR);
+    mb.tube([...P_(22, 0), h + 200], [...P_(170, 0), h + 200], 12, CHR, 14);
   } else if (mx === 'board') {
-    mb.cyl(-w / 2 + 70, d / 2, h, h + 150, 16, CHR, 16);
-    mb.tube([-w / 2 + 70, d / 2, h + 150], [-w / 2 + 180, d / 2, h + 150], 10, CHR, 14);
+    mb.cyl(M.x, M.y, h, h + 150, 16, CHR, 16);
+    mb.tube([M.x, M.y, h + 150], [...P_(110, 0), h + 150], 10, CHR, 14);
   } else if (mx === 'floor') {
-    const fx = -w / 2 - 140,
-      fy = d / 2;
-    mb.cyl(fx, fy, 0, 6, 60, CHR, 24);
-    mb.cyl(fx, fy, 6, h + 260, 20, CHR, 20);
+    mb.cyl(M.x, M.y, 0, 6, 60, CHR, 24);
+    mb.cyl(M.x, M.y, 6, h + 260, 20, CHR, 20);
     mb.sweep(
       roundPath(
         [
-          [fx, fy, h + 240],
-          [fx, fy, h + 300],
-          [fx + 200, fy, h + 300],
-          [fx + 200, fy, h + 250]
+          [M.x, M.y, h + 240],
+          [M.x, M.y, h + 300],
+          [...P_(200, 0), h + 300],
+          [...P_(200, 0), h + 250]
         ],
         60
       ).pts,
@@ -58065,10 +58089,11 @@ function bathBuild(mb, e) {
       14
     );
     mb.tag('Лейка на держателе');
-    mb.cyl(fx + 30, fy, h - 80, h + 60, 14, CHR, 14);
+    const L_ = P_(0, 45);
+    mb.cyl(L_[0], L_[1], h - 80, h + 60, 14, CHR, 14);
   } else if (mx === 'hidden') {
-    mb.box(-80, 0, h + 250, 80, 8, h + 330, CHR);
-    mb.tube([0, 8, h + 120], [0, 190, h + 120], 14, CHR, 14);
+    BX(0, 8, -80, 80, h + 250, h + 330, CHR);
+    mb.tube([...P_(8, 0), h + 120], [...P_(190, 0), h + 120], 14, CHR, 14);
   }
   mb.smooth(false);
 }
@@ -58209,12 +58234,8 @@ FIXK.bath = {
     bathMigrate(e);
     const c = e.cfg;
     const free = c.type === 'free';
-    const mx =
-      c.mixer === 'wall' || c.mixer === 'hidden'
-        ? { x: 0, y: 0, z: c.h + 200 }
-        : c.mixer === 'board'
-          ? { x: -c.w / 2 + 70, y: c.d / 2, z: c.h }
-          : { x: -c.w / 2 - 140, y: c.d / 2, z: -30 };
+    const M = bathMix(c),
+      mz = c.mixer === 'wall' || c.mixer === 'hidden' ? c.h + 200 : c.mixer === 'board' ? c.h : -30;
     return [
       {
         s: 'k',
@@ -58224,8 +58245,8 @@ FIXK.bath = {
         z: free ? -40 : bathOutZ(c),
         n: free ? 'выпуск в пол Ø50' : 'слив-перелив Ø40/50'
       },
-      { s: 'hvs', d: 16, ...mx, x: mx.x - 60, n: 'ХВС' },
-      { s: 'gvs', d: 16, ...mx, x: mx.x + 60, n: 'ГВС' }
+      { s: 'hvs', d: 16, x: M.x + M.uy * 60, y: M.y - M.ux * 60, z: mz, n: 'ХВС' },
+      { s: 'gvs', d: 16, x: M.x - M.uy * 60, y: M.y + M.ux * 60, z: mz, n: 'ГВС' }
     ];
   },
   plan: e => {
@@ -58257,7 +58278,12 @@ FIXK.bath = {
         open: true,
         dash: true
       });
-    if (c.mixer === 'floor') r.push({ circ: [-w / 2 - 140, d / 2, 30] });
+    const M = bathMix(c);
+    if (c.mixer === 'floor' || c.mixer === 'board') r.push({ circ: [M.x, M.y, c.mixer === 'floor' ? 30 : 18] });
+    else {
+      const P_ = (a, b) => [M.x + M.ux * a - M.uy * b, M.y + M.uy * a + M.ux * b];
+      r.push({ poly: [P_(0, -90), P_(30, -90), P_(30, 90), P_(0, 90)] }, { poly: [P_(30, 0), P_(170, 0)], open: true });
+    }
     return r;
   },
   k3: e => 0,
@@ -58325,7 +58351,43 @@ FIXK.bath = {
           ['floor', 'напольный (стойка)'],
           ['hidden', 'скрытый (в стене)']
         ]
-      ]
+      ],
+      [
+        'Где смеситель',
+        'cfg.mixPos',
+        's',
+        c.mixer === 'floor'
+          ? [
+              ['L', 'у торца слева'],
+              ['R', 'у торца справа'],
+              ['long', 'у длинной стороны (спереди)']
+            ]
+          : c.mixer === 'board'
+            ? [
+                ['L', 'на борту у левого торца'],
+                ['R', 'на борту у правого торца'],
+                ['long', 'на борту у длинной стены']
+              ]
+            : [
+                ['long', 'на длинной стене'],
+                ['L', 'на короткой стене слева'],
+                ['R', 'на короткой стене справа']
+              ]
+      ],
+      ['Смещение смесителя от середины, мм', 'cfg.mixO', 'n'],
+      ...((c.mixer === 'wall' || c.mixer === 'hidden') &&
+      !free &&
+      ((c.mixPos === 'L' && c.endL === false) || (c.mixPos === 'R' && c.endR === false))
+        ? [
+            [
+              '',
+              esc(
+                'С этой стороны у ванны торец, а не стена — смеситель повиснет в воздухе. Поставьте стену с этой стороны или перенесите смеситель.'
+              ),
+              'r'
+            ]
+          ]
+        : [])
     ];
   },
   info: e => {
@@ -58384,6 +58446,7 @@ FIXK.bath = {
 };
 function bathMigrate(e) {
   const c = e.cfg || {};
+  if (c.mixer && c.mixPos == null) c.mixPos = bathMixDef(c);
   if (c.type === 'acryl' || c.type === 'steel') {
     c.mat = c.type;
     c.type = 'built';
