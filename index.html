@@ -1245,12 +1245,19 @@ details.ps dl {
 .pnpal .btn {
   justify-content: flex-start;
   text-align: left;
-  font-size: 11.5px;
-  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 5px 8px;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   white-space: normal;
+  height: auto;
+  min-height: 30px;
+  flex: none;
+}
+.pnpal .sech {
+  margin-top: 6px;
 }
 .pnpal .mw {
   display: inline-block;
@@ -1260,7 +1267,7 @@ details.ps dl {
   border: 1px solid #9aa1a9;
 }
 .pnsvg {
-  background: #20242a;
+  background: #f7f8f9;
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px;
@@ -3485,6 +3492,125 @@ label.ck {
   width: 100%;
   min-height: 0;
   background: #14171c;
+}
+
+/* the panel tab: sections, checks, tables, 3D */
+.pntabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 10px;
+}
+.pntab {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pntab.on {
+  color: var(--fg);
+  border-bottom-color: currentColor;
+  font-weight: 600;
+}
+.pnbadge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: #d68910;
+}
+.pnbadge.bad {
+  background: #d23c3c;
+}
+.pnbody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.pnchk {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pnck {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.pnck .hint {
+  margin-top: 2px;
+}
+.pnci {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #8b939d;
+}
+.pnck.ok .pnci {
+  background: #2e9b5b;
+}
+.pnck.warn .pnci {
+  background: #d68910;
+}
+.pnck.bad .pnci {
+  background: #d23c3c;
+}
+.pntbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.pntbl th,
+.pntbl td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.pntbl th {
+  font-weight: 600;
+  color: var(--muted);
+}
+.pn3d {
+  height: 62vh;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: linear-gradient(#f4f5f6, #e3e6e9);
+  overflow: hidden;
+}
+.pnsch {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  overflow: auto;
+  max-height: 66vh;
+}
+.pnsch svg {
+  width: 100%;
+  height: auto;
 }
 
 /*
@@ -6810,7 +6936,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '50.2';
+const APP_VER = '51';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15198,6 +15324,7 @@ function selChanged() {
 
 
 
+
 /* 2D rendering */
 let needs = true;
 const dirty = () => {
@@ -15766,13 +15893,32 @@ function drawDev(e, color, o = {}) {
       devTag(e, L(0.95 * r, -0.75 * r), r, col);
     }
   } else if (d.f === 'eq') {
-    if (k === 'jbox') {
-      circ(L(0, 0.45 * r), 0.3 * r, true);
-      seg(p, L(0, 0.15 * r));
-    } else if (k === 'jboxc') {
-      const a = 0.42 * r;
-      poly([L(-a, -a), L(a, -a), L(a, a), L(-a, a)]);
-      circ(p, 0.16 * r, true);
+    if (k === 'jbox' || k === 'jboxc') {
+      // the box at its real size and its entries (they are the snap points of the cables)
+      const ser = jbSeries(e);
+      const A = ser.a / 2,
+        Bd = k === 'jbox' ? ser.h : ser.b / 2;
+      ctx.save();
+      ctx.lineWidth = 1.2;
+      if (k === 'jboxc' && ser.round) circ(p, A);
+      else if (k === 'jboxc') poly([L(-A, -Bd), L(A, -Bd), L(A, Bd), L(-A, Bd)]);
+      else poly([L(-A, 0), L(A, 0), L(A, -Bd), L(-A, -Bd)]);
+      const pr = Math.max(3 / view.k, 6);
+      const used = new Set(
+        S.ents
+          .filter(w => w.type === 'wire' && (w.from === e.id || w.to === e.id))
+          .flatMap(w => [w.from === e.id ? w.fromPort : null, w.to === e.id ? w.toPort : null])
+          .filter(x => x != null)
+      );
+      for (const q of jbPorts(e)) {
+        if (!q.out) continue;
+        circ(P(q.p.x, q.p.y), pr, used.has(q.k));
+      }
+      ctx.restore();
+      if (k === 'jbox') {
+        circ(L(0, 0.45 * r), 0.3 * r, true);
+        seg(p, L(0, 0.15 * r));
+      } else circ(p, Math.min(0.16 * r, A * 0.4), true);
     } else if (k === 'panel' && panelDims().W * view.k > 3.6 * r) {
       const Dm = panelDims();
       const hw = Dm.W / 2;
@@ -22745,6 +22891,15 @@ function finRow(side, lab, es) {
 function updateProps() {
   const el = $('#props'),
     es = selEnts();
+  // with something selected the properties go up, above the layers list (no scrolling past the layers)
+  try {
+    const sec = el.closest('section'),
+      lay = $('#layers') && $('#layers').closest('section');
+    if (sec && lay && lay.parentNode === sec.parentNode) {
+      if (es.length && sec.compareDocumentPosition(lay) & 2) lay.parentNode.insertBefore(sec, lay);
+      else if (!es.length && sec.compareDocumentPosition(lay) & 4) lay.parentNode.insertBefore(lay, sec);
+    }
+  } catch (err) {}
   if (!es.length) {
     const n = S.ents.length,
       bim = S.ents.filter(e =>
@@ -43381,6 +43536,8 @@ function drawBlkPosts(e, G_) {
 
 
 
+
+
 /* ---------- electrical panel (simplified, editable module list) ---------- */
 const MODL = {
   main2: { n: 'Вводной автомат 2P', w: 2, r: 'C40' },
@@ -43445,6 +43602,9 @@ function buildPanel() {
     add_('mcb1', 'C6', [], 'Блоки питания 24/48 В');
     for (const m of psu) add_(m.k, m.r, [], m.label);
   }
+  // the N and PE buses for the outgoing lines
+  add_('nbus', '', [], 'Шина N');
+  add_('pebus', '', [], 'Шина PE');
   P_.mods = mods;
   P_.auto = true;
 }
@@ -43473,6 +43633,21 @@ Object.assign(MODL, {
   nbus: { n: 'Шина N на DIN-рейку', w: 4, r: '' },
   pebus: { n: 'Шина PE на DIN-рейку', w: 4, r: '' },
   ind: { n: 'Индикатор наличия фазы', w: 1, r: '' }
+});
+/* more kinds of modules: relays, smart devices, terminals (shapes in din-modules.js) */
+Object.assign(MODL, {
+  uzoA: { n: 'УЗО 2P, тип A', w: 2, r: '40 А / 30 мА' },
+  uzo4: { n: 'УЗО 4P', w: 4, r: '40 А / 30 мА' },
+  surge4: { n: 'УЗИП 3P+N, тип 2', w: 4, r: '' },
+  meter3: { n: 'Счётчик трёхфазный на DIN', w: 7, r: '' },
+  irel: { n: 'Реле промежуточное', w: 1, r: '16 А' },
+  vrel: { n: 'Реле контроля напряжения', w: 2, r: '40 А' },
+  smart: { n: 'Умное реле (Wi-Fi / Zigbee)', w: 2, r: '16 А' },
+  dim: { n: 'Диммер модульный', w: 2, r: '500 Вт' },
+  rgb: { n: 'RGB-контроллер LED на DIN', w: 4, r: '' },
+  gw: { n: 'Шлюз умного дома (Zigbee / KNX)', w: 4, r: '' },
+  term: { n: 'Клеммы на DIN (3 шт)', w: 1, r: '4 мм²' },
+  cont4: { n: 'Контактор модульный 4P', w: 3, r: '40 А' }
 });
 const PBOX = {
   12: [1, 12, 265, 310],
@@ -43542,15 +43717,15 @@ function freezeRows() {
   );
 }
 const MODCOL = k =>
-  /uzo|rcbo/.test(k)
-    ? '#5b8def'
+  /^uzo|rcbo/.test(k)
+    ? '#3a6fd8'
     : k === 'main2' || k === 'mcb4'
       ? '#d0443a'
-      : k === 'relay'
+      : k === 'relay' || k === 'vrel'
         ? '#e9ab45'
-        : k === 'surge'
-          ? '#5cbf8a'
-          : k === 'meter'
+        : /^surge/.test(k)
+          ? '#d84a3a'
+          : /^meter/.test(k)
             ? '#3a3f45'
             : /^psu/.test(k)
               ? '#8d949c'
@@ -43558,54 +43733,101 @@ const MODCOL = k =>
                 ? '#c8a24a'
                 : k === 'blank'
                   ? '#c9ced4'
-                  : '#2b2f35';
+                  : k === 'smart' || k === 'gw' || k === 'rgb'
+                    ? '#2d5fa8'
+                    : '#2b2f35';
+/** Designations of the modules in the order of the panel: QF1, QF2…, QD1…, FV1… */
+function panelDes() {
+  const n = {},
+    out = new Map();
+  for (const m of S.x.panel.mods || []) {
+    const L = MODDES[m.k];
+    if (!L) continue;
+    n[L] = (n[L] || 0) + 1;
+    out.set(m.id, L + n[L]);
+  }
+  return out;
+}
+const BRK_RUN = k => /^(mcb|main2|rcbo)/.test(k);
 function panelSvgMM(selId) {
   const L = panelLayout();
-  const pad = 30,
+  const des = panelDes();
+  const pad = 34,
     W = L.W,
     H = L.H;
-  const vb = [-pad, -pad, W + 2 * pad, H + 2 * pad + 40];
-  let s = `<svg id="pnSvg" viewBox="${vb.join(' ')}" style="width:100%;max-height:62vh;touch-action:none" role="img" aria-label="Сборка щита в масштабе">`;
+  const vb = [-pad, -pad, W + 2 * pad + 40, H + 2 * pad + 40];
+  let s = `<svg id="pnSvg" viewBox="${vb.join(' ')}" style="width:100%;max-height:66vh;touch-action:none;font-family:Inter,Arial,sans-serif" role="img" aria-label="Сборка щита в масштабе">`;
   if (L.fl)
-    s += `<rect x="${(W - L.frame.W) / 2}" y="${(H - L.frame.H) / 2}" width="${L.frame.W}" height="${L.frame.H}" rx="6" fill="#cfd4da" stroke="#8b939d" stroke-width="1"/>`;
-  s += `<rect x="0" y="0" width="${W}" height="${H}" rx="4" fill="#eceef0" stroke="#6d757f" stroke-width="1.2"/><rect x="10" y="10" width="${W - 20}" height="${H - 20}" rx="2" fill="#dde1e5"/>`;
+    s += `<rect x="${(W - L.frame.W) / 2}" y="${(H - L.frame.H) / 2}" width="${L.frame.W}" height="${L.frame.H}" rx="6" fill="#d9dde1" stroke="#8b939d" stroke-width="1"/>`;
+  s += `<rect x="0" y="0" width="${W}" height="${H}" rx="5" fill="#eef0f2" stroke="#5d656f" stroke-width="1.4"/><rect x="9" y="9" width="${W - 18}" height="${H - 18}" rx="2" fill="#e1e4e8"/>`;
+  // cable ducts between the rows
+  L.rowsL.forEach((R, i) => {
+    const nx = L.rowsL[i + 1];
+    if (!nx) return;
+    const y = (R.y + nx.y) / 2;
+    s += `<rect x="${L.x0 - 14}" y="${y - 13}" width="${L.per * MOD_W + 28}" height="26" fill="#c9cdd1"/>`;
+    for (let x = L.x0 - 10; x < L.x0 + L.per * MOD_W + 10; x += 8)
+      s += `<rect x="${x}" y="${y - 13}" width="4.5" height="26" fill="#d8dbde"/>`;
+  });
   L.rowsL.forEach((R, i) => {
     const x1 = L.x0 - 12,
       x2 = L.x0 + L.per * MOD_W + 12;
     s += `<rect x="${x1}" y="${R.y - 17.5}" width="${x2 - x1}" height="35" fill="#a9b0b8"/>`;
     for (let x = x1 + 6; x < x2 - 6; x += 12.5)
-      s += `<rect x="${x}" y="${R.y - 3}" width="6" height="6" fill="#8b939d"/>`;
-    s += `<text x="${W + 6}" y="${R.y + 3}" font-size="9" fill="${R.over ? '#ef5f5f' : '#8b939d'}">${i + 1}: ${R.used}/${L.per}</text>`;
+      s += `<rect x="${x}" y="${R.y - 3}" width="6" height="6" rx="1" fill="#8b939d"/>`;
+    s += `<text x="${W + 8}" y="${R.y + 4}" font-size="10" font-weight="600" fill="${R.over ? '#d23c3c' : '#5d656f'}">ряд ${i + 1}</text><text x="${W + 8}" y="${R.y + 16}" font-size="9" fill="${R.over ? '#d23c3c' : '#5d656f'}">${R.used}/${L.per} мод.</text>`;
     if (R.over)
-      s += `<rect x="${x1 - 3}" y="${R.y - 50}" width="${x2 - x1 + 6}" height="100" fill="none" stroke="#ef5f5f" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+      s += `<rect x="${x1 - 3}" y="${R.y - 50}" width="${x2 - x1 + 6}" height="100" fill="none" stroke="#d23c3c" stroke-width="1.5" stroke-dasharray="4 3"/>`;
     for (const it of R.items) {
       const m = it.m,
         X = L.x0 + it.x * MOD_W,
         Y = R.y - MOD_H / 2,
-        w = it.w * MOD_W - 0.8;
+        w = it.w * MOD_W;
       const on = m.id === selId;
-      const hc = MODCOL(m.k);
+      const grp = m.g && m.g.length ? 'гр. ' + m.g.join(', ') : m.k === 'main2' ? 'ввод' : '';
       s +=
-        `<g data-mi="${m.id}" style="cursor:grab"><rect x="${X + 0.4}" y="${Y}" width="${w}" height="${MOD_H}" rx="2" fill="${m.k === 'blank' ? '#d3d7dc' : '#f6f6f4'}" stroke="${on ? '#5b8def' : '#9aa1a9'}" stroke-width="${on ? 2 : 0.6}"/>` +
-        `<rect x="${X + w / 2 - Math.min(6, w / 2 - 2) + 0.4}" y="${Y + 30}" width="${Math.min(12, w - 4)}" height="22" rx="2" fill="${hc}"/>` +
-        (/uzo|rcbo/.test(m.k) ? `<circle cx="${X + w / 2 + 0.4}" cy="${Y + 64}" r="3" fill="#f2d15e"/>` : '') +
-        `<text x="${X + w / 2}" y="${Y + 12}" font-size="6.5" fill="#2b2f35" text-anchor="middle">${esc(String(m.r || '').split(' ')[0])}</text><text x="${X + w / 2}" y="${Y + MOD_H + 10}" font-size="7" fill="#5d656f" text-anchor="middle">${esc(m.g && m.g.length ? 'гр.' + m.g.join(',') : m.k === 'main2' ? 'ввод' : '')}</text></g>`;
+        `<g data-mi="${m.id}" style="cursor:grab"><title>${esc(((des.get(m.id) || '') + ' ' + ((MODL[m.k] || {}).n || m.k) + ' ' + (m.r || '') + (m.label ? ' — ' + m.label : '')).trim())}</title>` +
+        moduleSvg(m, m.k, X, Y, w, MODCOL(m.k), on, des.get(m.id) || '') +
+        (grp
+          ? `<text x="${X + w / 2}" y="${Y + MOD_H + 9}" font-size="7" fill="#3a4049" text-anchor="middle">${esc(grp)}</text>`
+          : '') +
+        '</g>';
     }
+    // the comb bus over every run of breakers
+    let run = null;
+    const flush = () => {
+      if (run && run.n > 1)
+        s += `<rect x="${run.a + 1}" y="${R.y - 45 + 2}" width="${run.b - run.a - 2}" height="4" rx="1.5" fill="#e8b84a" stroke="#b38a2e" stroke-width="0.4"/>`;
+      run = null;
+    };
+    for (const it of R.items) {
+      const X = L.x0 + it.x * MOD_W;
+      if (BRK_RUN(it.m.k) && it.m.k !== 'main2') {
+        if (run && Math.abs(run.b - X) < 0.5) {
+          run.b = X + it.w * MOD_W;
+          run.n++;
+        } else {
+          flush();
+          run = { a: X, b: X + it.w * MOD_W, n: 1 };
+        }
+      } else flush();
+    }
+    flush();
   });
   const sb = 100;
-  s += `<g transform="translate(0,${H + 22})"><rect x="0" y="0" width="${sb}" height="4" fill="#8b939d"/><text x="${sb + 6}" y="5" font-size="9" fill="#8b939d">100 мм</text><text x="${W}" y="5" font-size="9" fill="#8b939d" text-anchor="end">${W}×${H}×${L.D} мм${L.fl ? ` · ниша ${L.niche.W}×${L.niche.H}×${L.niche.D}` : ''}</text></g>`;
+  s += `<g transform="translate(0,${H + 24})"><rect x="0" y="0" width="${sb}" height="4" fill="#5d656f"/><text x="${sb + 6}" y="5" font-size="10" fill="#3a4049">100 мм</text><text x="${W}" y="5" font-size="10" fill="#3a4049" text-anchor="end">${W}×${H}×${L.D} мм${L.fl ? ` · ниша ${L.niche.W}×${L.niche.H}×${L.niche.D}` : ''}</text></g>`;
   return s + '</svg>';
 }
 let PSEL = null;
 const PPAL = [
-  ['Ввод и защита', ['main2', 'mcb4', 'meter', 'relay', 'surge', 'uzoF']],
-  ['Группы', ['mcb1', 'mcb1n', 'mcb2', 'mcb3', 'rcbo', 'uzo']],
-  ['Управление', ['cont', 'imp', 'timer', 'dinsock', 'ind']],
-  ['Распределение', ['cross', 'nbus', 'pebus', 'blank']]
+  ['Ввод и учёт', ['main2', 'mcb4', 'meter', 'meter3', 'relay', 'vrel', 'surge', 'surge4', 'uzoF']],
+  ['Защита групп', ['mcb1', 'mcb1n', 'mcb2', 'mcb3', 'rcbo', 'uzo', 'uzoA', 'uzo4']],
+  ['Управление', ['cont', 'cont4', 'imp', 'irel', 'timer', 'dim', 'ind', 'dinsock']],
+  ['Умный дом', ['smart', 'gw', 'rgb', 'psu2', 'psu4']],
+  ['Распределение', ['cross', 'nbus', 'pebus', 'term', 'blank']]
 ];
-function renderPanelTab(el) {
+function renderPanelAsm(el) {
   const P_ = S.x.panel;
-  if (!P_.mods.length) buildPanel();
   P_.mount = P_.mount || 'surface';
   P_.door = P_.door || 'open';
   const L = panelLayout();
@@ -43831,6 +44053,241 @@ function renderPanelTab(el) {
     })
   );
 }
+
+/* ---------- the panel tab: assembly, 3D, single-line diagram, checks, list of devices ---------- */
+let PTAB = 'asm';
+const PTABS = [
+  ['asm', 'Сборка'],
+  ['3d', '3D'],
+  ['scheme', 'Однолинейная схема'],
+  ['checks', 'Проверки'],
+  ['list', 'Ведомость аппаратов']
+];
+function renderPanelTab(el) {
+  const P_ = S.x.panel;
+  if (!P_.mods.length) buildPanel();
+  const ck = panelChecks();
+  const nb = ck.filter(c => c.lvl === 'bad').length,
+    nw = ck.filter(c => c.lvl === 'warn').length;
+  el.innerHTML = `<div class="pntabs" role="tablist">${PTABS.map(
+    ([k, n]) =>
+      `<button class="pntab ${PTAB === k ? 'on' : ''}" data-ptab="${k}" role="tab">${n}${k === 'checks' && nb + nw ? ` <span class="pnbadge ${nb ? 'bad' : 'warn'}">${nb + nw}</span>` : ''}</button>`
+  ).join('')}</div><div class="pnbody"></div>`;
+  el.querySelectorAll('[data-ptab]').forEach(
+    b =>
+      (b.onclick = () => {
+        PTAB = b.dataset.ptab;
+        renderPanelTab(el);
+      })
+  );
+  const body = el.querySelector('.pnbody');
+  if (PTAB === 'asm') renderPanelAsm(body);
+  else if (PTAB === '3d') renderPanel3D(body);
+  else if (PTAB === 'scheme')
+    body.innerHTML = `<p class="hint">Однолинейная схема по группам проекта — та же, что ставится на лист «Схемы». Номиналы и кабели берутся из групп (Электрика → Группы) и сборки щита.</p><div class="pnsch">${elecSchemeSvg().svg}</div>`;
+  else if (PTAB === 'checks') body.innerHTML = checksHTML(ck);
+  else body.innerHTML = listHTML();
+}
+/** The checks of the panel: what is wrong, why and what to do (with the rule it comes from). */
+function panelChecks() {
+  const P_ = S.x.panel,
+    L = panelLayout(),
+    sz = panelSize();
+  const out = [];
+  const put = (lvl, t, d) => out.push({ lvl, t, d });
+  const over = L.rowsL.map((R, i) => (R.over ? i + 1 : 0)).filter(Boolean);
+  if (over.length)
+    put(
+      'bad',
+      `Ряд ${over.join(', ')}: аппараты не помещаются на DIN-рейку`,
+      `В ряду ${L.per} модулей. Перенесите аппараты в другой ряд или возьмите корпус больше.`
+    );
+  else put('ok', 'Аппараты помещаются в ряды', `${sz.used} модулей из ${L.box}.`);
+  const free = L.box - sz.used;
+  if (free < L.box * 0.2)
+    put(
+      'warn',
+      `Резерв мест ${free} мод. — меньше 20 %`,
+      'Для будущих линий принято оставлять не меньше 20 % мест (СП 256.1325800, п. 13.2). Возьмите корпус на ступень больше.'
+    );
+  else
+    put(
+      'ok',
+      `Резерв мест ${free} мод. (${Math.round((100 * free) / L.box)} %)`,
+      'Не меньше 20 % — для будущих линий.'
+    );
+  const main = P_.mods.find(m => m.k === 'main2' || m.k === 'mcb4');
+  const grpA = S.elec.groups.map(g => brkA(String(g.brk)) || 0);
+  const maxA = Math.max(0, ...grpA);
+  const mainA = main ? brkA(String(main.r)) || 0 : 0;
+  if (!main)
+    put('bad', 'Нет вводного аппарата', 'Поставьте вводной автомат или выключатель нагрузки (палитра «Ввод и учёт»).');
+  else if (mainA && maxA && mainA <= maxA)
+    put(
+      'warn',
+      `Вводной ${main.r} не больше самого крупного группового (${maxA} А)`,
+      'Для селективности вводной должен быть хотя бы на ступень больше любого группового: при КЗ в группе первым отключается групповой.'
+    );
+  else if (main) put('ok', `Вводной ${main.r}: выше групповых (до ${maxA} А)`, 'Селективность по номиналам соблюдена.');
+  const st = groupStats();
+  const IDOP = { 1.5: 17, 2.5: 25, 4: 35, 6: 42, 10: 60 };
+  for (const g of S.elec.groups) {
+    const b = String(g.brk);
+    if (b === '—') continue;
+    const A = brkA(b) || 0;
+    const mm = cableMm(g.cable) || 0;
+    const Id = IDOP[mm] || 0;
+    if (A && Id && A > Id)
+      put(
+        'bad',
+        `Гр. ${g.n} «${g.name}»: автомат ${A} А больше допустимого тока кабеля ${mm} мм² (${Id} А)`,
+        'Автомат должен защищать кабель (ПУЭ 3.1.10, табл. 1.3.4): возьмите кабель толще или автомат меньше.'
+      );
+    const P = (st.get(g.n) || {}).P || 0;
+    if (A && P / 230 > A)
+      put(
+        'warn',
+        `Гр. ${g.n}: расчётный ток ${(P / 230).toFixed(1)} А больше номинала автомата ${A} А`,
+        'Разделите группу или увеличьте номинал вместе с сечением кабеля.'
+      );
+    const socket = S.ents.some(d => d.type === 'dev' && d.group === g.n && DEVK[d.kind] && DEVK[d.kind].f === 'socket');
+    const rcd = /Диф|УЗО/i.test(b) || P_.mods.some(m => /^uzo|rcbo/.test(m.k) && (m.g || []).includes(g.n));
+    if (socket && !rcd)
+      put(
+        'warn',
+        `Гр. ${g.n} «${g.name}»: розеточная линия без УЗО`,
+        'Розеточные группы защищают УЗО 30 мА (ПУЭ 7.1.79). Поставьте дифавтомат или УЗО на группу.'
+      );
+  }
+  for (const m of P_.mods.filter(m => /^uzo/.test(m.k) && m.k !== 'uzoF')) {
+    const In = parseFloat(String(m.r)) || 40;
+    const sumA = (m.g || []).reduce((a, n) => a + (brkA(String(groupOf(n).brk)) || 0), 0);
+    const Ip = (m.g || []).reduce((a, n) => a + ((st.get(n) || {}).P || 0), 0) / 230;
+    if (Ip > In)
+      put(
+        'bad',
+        `УЗО ${m.r}: нагрузка групп ${Ip.toFixed(1)} А больше его номинала`,
+        'Номинал УЗО — не меньше расчётного тока групп за ним. Возьмите УЗО больше или разделите группы.'
+      );
+    else if (sumA > In * 1.6)
+      put(
+        'warn',
+        `УЗО ${m.r}: за ним автоматы на ${sumA} А`,
+        'УЗО не защищено от перегрузки само: номинал УЗО — на ступень выше суммы с коэффициентом спроса или поставьте перед ним автомат.'
+      );
+  }
+  if (!P_.mods.some(m => m.k === 'nbus') || !P_.mods.some(m => m.k === 'pebus'))
+    put(
+      'warn',
+      'Нет шин N и PE на DIN-рейке',
+      'Нулевые и защитные проводники групп собирают на шинах (ПУЭ 7.1.68 — PE и N раздельно). Добавьте шины из палитры «Распределение».'
+    );
+  else {
+    const lines = S.elec.groups.filter(g => String(g.brk) !== '—').length;
+    const cap = P_.mods.filter(m => m.k === 'pebus').reduce((a, m) => a + (MODL[m.k].w * 17.5) / 7, 0);
+    if (lines > cap)
+      put(
+        'warn',
+        `Шина PE: ${Math.floor(cap)} мест на ${lines} линий`,
+        'Каждому защитному проводнику — свой зажим. Добавьте шину или возьмите длиннее.'
+      );
+    else put('ok', 'Шины N и PE есть', `Мест на шине PE: ${Math.floor(cap)}, линий: ${lines}.`);
+  }
+  if (!P_.head.surge)
+    put(
+      'info',
+      'УЗИП не установлен',
+      'Для частного дома с воздушным вводом УЗИП тип 2 обязателен (ПУЭ 7.1.22, СП 256), для квартиры — по решению проектировщика.'
+    );
+  return out;
+}
+function checksHTML(ck) {
+  const ic = { ok: '✓', warn: '!', bad: '✕', info: 'i' };
+  return `<p class="hint">Проверки по нормам, которые видно на этапе сборки щита. Всё, что отмечено, можно исправить в «Сборке» или в группах (Электрика → Группы).</p><div class="pnchk">${ck
+    .map(
+      c =>
+        `<div class="pnck ${c.lvl}"><span class="pnci">${ic[c.lvl]}</span><div><b>${esc(c.t)}</b><div class="hint">${esc(c.d)}</div></div></div>`
+    )
+    .join('')}</div>`;
+}
+function listHTML() {
+  const P_ = S.x.panel,
+    L = panelLayout(),
+    des = panelDes();
+  const rows = P_.mods.map((m, i) => {
+    const M = MODL[m.k] || { n: m.k, w: 1 };
+    const g = m.g && m.g.length ? 'гр. ' + m.g.join(', ') : '';
+    return `<tr><td>${i + 1}</td><td><b>${esc(des.get(m.id) || '')}</b></td><td>${esc(M.n)}</td><td>${esc(m.r || '')}</td><td>${modPoles(m.k, M.w)}</td><td>${M.w}</td><td>${esc([g, m.label].filter(Boolean).join(' · '))}</td></tr>`;
+  });
+  const runs = L.rowsL.reduce((a, R) => a + R.items.filter(it => BRK_RUN(it.m.k) && it.m.k !== 'main2').length, 0);
+  return `<p class="hint">Перечень аппаратов щита в порядке установки, с позиционными обозначениями по ГОСТ 2.710 — для схемы и для сборщика.</p>
+  <table class="pntbl"><thead><tr><th>№</th><th>Поз.</th><th>Аппарат</th><th>Номинал</th><th>Полюсов</th><th>Модулей</th><th>Назначение</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+  <table class="pntbl" style="margin-top:10px"><thead><tr><th colspan="2">Корпус и комплектующие</th></tr></thead><tbody>
+  <tr><td>Корпус ${esc(PMOUNT[P_.mount || 'surface'])}, ${L.box} модулей (${L.rows}×${L.per})</td><td>${L.W}×${L.H}×${L.D} мм</td></tr>
+  <tr><td>DIN-рейка TS35</td><td>${L.rows} × ${Math.round(L.per * MOD_W + 24)} мм</td></tr>
+  <tr><td>Шина-гребёнка (по рядам автоматов)</td><td>${runs} полюсных мест</td></tr>
+  <tr><td>Кабель-канал перфорированный 25×40</td><td>${Math.max(0, L.rows - 1)} × ${Math.round(L.per * MOD_W + 28)} мм</td></tr>
+  </tbody></table>`;
+}
+/* 3D of the panel in the tab: its own small view (orbit, zoom) of the same model as in the scene */
+const PV = { r: null };
+function renderPanel3D(el) {
+  el.innerHTML =
+    '<p class="hint">Модель щита как в сцене: тяните — повернуть, колесо — приблизить, правая кнопка — сдвинуть. Вид дверцы — в «Сборке» (В сцене).</p><div class="pn3d"></div>';
+  const host = el.querySelector('.pn3d');
+  if (!window.THREE || !THREE.OrbitControls) {
+    host.textContent = '3D-библиотека не загрузилась.';
+    return;
+  }
+  if (!PV.r) {
+    const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    r.outputEncoding = THREE.sRGBEncoding;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xf4f1ea, 0x3a4048, 0.8));
+    const d = new THREE.DirectionalLight(0xffffff, 0.75);
+    d.position.set(-0.6, -1.6, 1.2);
+    scene.add(d);
+    const cam = new THREE.PerspectiveCamera(30, 1, 5, 1e5);
+    cam.up.set(0, 0, 1);
+    const ctl = new THREE.OrbitControls(cam, r.domElement);
+    ctl.screenSpacePanning = true;
+    Object.assign(PV, { r, scene, cam, ctl, g: null });
+    ctl.addEventListener('change', () => PV.r.render(PV.scene, PV.cam));
+    new ResizeObserver(() => {
+      const h = PV.r.domElement.parentNode;
+      if (!h) return;
+      const w = h.clientWidth,
+        hh = h.clientHeight;
+      if (!w || !hh) return;
+      PV.r.setSize(w, hh, false);
+      PV.cam.aspect = w / hh;
+      PV.cam.updateProjectionMatrix();
+      PV.r.render(PV.scene, PV.cam);
+    }).observe(r.domElement);
+  }
+  host.appendChild(PV.r.domElement);
+  PV.r.domElement.style.width = '100%';
+  PV.r.domElement.style.height = '100%';
+  if (PV.g) PV.scene.remove(PV.g);
+  const L = panelDims();
+  PV.g = panelMeshes({ z: L.H / 2 });
+  PV.scene.add(PV.g);
+  const R = Math.max(L.W, L.H);
+  PV.ctl.target.set(0, -L.D / 2, L.H / 2);
+  PV.cam.position.set(R * 0.35, -R * 2.3, L.H / 2 + R * 0.25);
+  PV.ctl.update();
+  requestAnimationFrame(() => {
+    const w = host.clientWidth,
+      h = host.clientHeight;
+    if (w && h) {
+      PV.r.setSize(w, h, false);
+      PV.cam.aspect = w / h;
+      PV.cam.updateProjectionMatrix();
+    }
+    PV.r.render(PV.scene, PV.cam);
+  });
+}
 /* panel 3D in device-local coords: x across, -y out of the wall, z up; centre at e.z */
 function panelMeshes(e) {
   const L = panelLayout();
@@ -43886,39 +44343,46 @@ function panelMeshes(e) {
     }
   const yM = yF + 14; // module front plane
   mb.tag('DIN-рейки');
+  const xa = L.x0 - W / 2 - 12,
+    xb = L.x0 - W / 2 + L.per * MOD_W + 12;
   for (const R of L.rowsL) {
-    const zr = z0 + H - R.y;
-    box(
-      L.x0 - W / 2 - 12,
-      yM + MOD_D,
-      zr - 17.5,
-      L.x0 - W / 2 + L.per * MOD_W + 12,
-      yM + MOD_D + 7.5,
-      zr + 17.5,
-      '#a9b0b8'
-    );
+    const zr = z0 + H - R.y,
+      yr = yM + MOD_D;
+    // top-hat rail TS35: the back web, the walls, the front flanges
+    box(xa, yr + 6.5, zr - 13.5, xb, yr + 7.5, zr + 13.5, '#a9b0b8');
+    for (const sg of [-1, 1]) {
+      box(xa, yr, zr + sg * 12.5, xb, yr + 7.5, zr + sg * 13.5, '#a9b0b8');
+      box(xa, yr, zr + sg * 13.5, xb, yr + 1, zr + sg * 17.5, '#a9b0b8');
+    }
   }
+  // cable ducts between the rows (on the back plate)
+  L.rowsL.forEach((R, i) => {
+    const nx = L.rowsL[i + 1];
+    if (nx) duct3D(mb, xa, xb, z0 + H - (R.y + nx.y) / 2, yB - t);
+  });
   for (const R of L.rowsL) {
     const zr = z0 + H - R.y;
+    let run = null;
+    const flush = () => {
+      if (run && run.n > 1) comb3D(mb, run.a, run.b, zr, yM);
+      run = null;
+    };
     for (const it of R.items) {
       const m = it.m,
         x0 = L.x0 - W / 2 + it.x * MOD_W,
-        w = it.w * MOD_W - 0.6;
-      mb.tag('Модуль: ' + ((MODL[m.k] || {}).n || m.k));
-      box(x0, yM + 20, zr - MOD_H / 2, x0 + w, yM + MOD_D, zr + MOD_H / 2, m.k === 'blank' ? '#d3d7dc' : '#f4f4f2');
-      box(x0 + 1, yM, zr - 22, x0 + w - 1, yM + 20, zr + 22, '#f4f4f2');
-      const hc = MODCOL(m.k);
-      box(
-        x0 + w / 2 - Math.min(6, w / 2 - 1.5),
-        yM - 8,
-        zr - 4,
-        x0 + w / 2 + Math.min(6, w / 2 - 1.5),
-        yM,
-        zr + 12,
-        hc
-      );
-      if (/uzo|rcbo/.test(m.k)) mb.cyl(x0 + w / 2, yM - 2, zr - 20, zr - 16, 3, '#f2d15e', 8);
+        w = it.w * MOD_W;
+      module3D(mb, m.k, x0, w, zr, yM, MODCOL(m.k), (MODL[m.k] || {}).n);
+      if (BRK_RUN(m.k) && m.k !== 'main2') {
+        if (run && Math.abs(run.b - x0) < 0.5) {
+          run.b = x0 + w;
+          run.n++;
+        } else {
+          flush();
+          run = { a: x0, b: x0 + w, n: 1 };
+        }
+      } else flush();
     }
+    flush();
   }
   if (P_.door === 'closed') {
     mb.tag('Дверца щита');
@@ -97175,9 +97639,11 @@ function initLibrary() {
 
 /** The series of junction boxes: entries per side [+u, +v, −u, −v]. */
 const JB_SERIES = [
-  { k: '80', n: '80×80×50', a: 80, b: 80, h: 50, ent: 7, dmax: 20, lay: [2, 2, 2, 1], art: 'IEK КМ41238' },
   { k: '100', n: '100×100×50', a: 100, b: 100, h: 50, ent: 6, dmax: 25, lay: [2, 1, 2, 1], art: 'IEK КМ41233' },
-  { k: '150', n: '150×110×70', a: 150, b: 110, h: 70, ent: 10, dmax: 32, lay: [3, 2, 3, 2], art: 'ЭПП 210301' }
+  { k: '80', n: '80×80×50', a: 80, b: 80, h: 50, ent: 7, dmax: 20, lay: [2, 2, 2, 1], art: 'IEK КМ41238' },
+  { k: '100x55', n: '100×100×55', a: 100, b: 100, h: 55, ent: 8, dmax: 25, lay: [2, 2, 2, 2], art: 'TDM SQ1401-0923' },
+  { k: '150', n: '150×110×70', a: 150, b: 110, h: 70, ent: 10, dmax: 32, lay: [3, 2, 3, 2], art: 'ЭПП 210301' },
+  { k: '85x12', n: '85×85×38', a: 85, b: 85, h: 38, ent: 12, dmax: 20, lay: [3, 3, 3, 3], art: 'Gigant 44054GI' }
 ];
 /** Kinds of boxes; a flush one has one size. */
 const JB_T = {
@@ -97457,7 +97923,7 @@ function build() {
     if (inc.length > ser.ent)
       issues.push({
         lvl: 'bad',
-        msg: `В коробку ${ser.n} входит ${inc.length} кабелей, а вводов у неё ${ser.ent}. Возьмите коробку больше (открытого монтажа до 150×110, 10 вводов) или разнесите соединения на две.`
+        msg: `В коробку ${ser.n} входит ${inc.length} кабелей, а вводов у неё ${ser.ent}. Возьмите коробку с большим числом вводов (открытого монтажа — до 12) или разнесите соединения на две.`
       });
     else if (inc.some(x => x.gof > ser.dmax))
       issues.push({
@@ -97526,7 +97992,8 @@ function jbPanelHTML(e) {
     tk
   )}</label>`;
   if (T.series.length > 1)
-    h += `<label class="fl">Размер${sel('jsz', [['auto', 'по числу кабелей'], ...T.series.map(x => [x.k, `${x.n}, ${x.ent} вводов до Ø${x.dmax}`])], e.jsz || 'auto')}</label>`;
+    h += `<label class="fl">Вводов${sel('jsz', [['auto', `по числу кабелей (сейчас ${jbSeries(e).ent})`], ...T.series.map(x => [x.k, `${x.ent} — ${x.n} мм, гофра до Ø${x.dmax} (${x.art})`])], e.jsz || 'auto')}</label>`;
+  else h += `<div class="hint">${T.series[0].ent} ввода, ${T.series[0].n} мм — одна модель этого вида.</div>`;
   if (!B || !B.inc.length)
     return (
       h +
@@ -114545,6 +115012,438 @@ function blkSeriesRows(e) {
           : 'скрытый монтаж под шпаклёвку'
     )
   );
+}
+
+// ===== mep/electrical/din-modules.js =====
+/**
+ * mep/electrical/din-modules.js
+ *
+ * Modular devices of an apartment panel on a DIN rail (35 mm), by the shape of real ones:
+ * - the common body of a module: a rear block 90 mm high, the terminal shoulders with the clamp screws top and bottom
+ *   (one pair per pole), the front «neck» 45 mm high with the controls;
+ * - the front by kind: breaker levers (joined on a multi-pole one), the test button of an RCD, plug-in cartridges of a
+ *   surge arrester, the display and buttons of a meter / relay / timer, the knob of a dimmer, the window of a
+ *   contactor, the socket face of a DIN socket, the vents of a power supply;
+ * - bus bars N and PE on insulators, terminal blocks, the distribution block; the comb bus over the breakers of a
+ *   row and the cable duct between the rows;
+ * - designations for the documents (QF, QD, QFD, FV, PI, KM, KV, KT, …) and a front view for the 2D drawing.
+ * 3D: local panel coordinates — x across, y depth (the front of the modules at yM, the rail at yM + 70), z up.
+ * 2D: millimetres, the module's top-left corner at (X, Y), 90 mm high.
+ */
+/** Designations in the documents (ГОСТ 2.710): the letter code by kind. */
+const MODDES = {
+  main2: 'QF',
+  mcb1: 'QF',
+  mcb1n: 'QF',
+  mcb2: 'QF',
+  mcb3: 'QF',
+  mcb4: 'QF',
+  uzo: 'QD',
+  uzoA: 'QD',
+  uzo4: 'QD',
+  uzoF: 'QD',
+  rcbo: 'QFD',
+  surge: 'FV',
+  surge4: 'FV',
+  meter: 'PI',
+  meter3: 'PI',
+  cont: 'KM',
+  cont4: 'KM',
+  imp: 'KK',
+  irel: 'KL',
+  relay: 'KV',
+  vrel: 'KV',
+  timer: 'KT',
+  smart: 'A',
+  dim: 'A',
+  rgb: 'A',
+  gw: 'A',
+  dinsock: 'XS',
+  ind: 'HL',
+  term: 'XT',
+  cross: 'XT',
+  nbus: 'XN',
+  pebus: 'XPE',
+  psu1: 'G',
+  psu2: 'G',
+  psu3: 'G',
+  psu4: 'G',
+  psu6: 'G'
+};
+/** Number of poles (for the levers and the screws). */
+function modPoles(k, w) {
+  if (/^mcb1n$|^rcbo$/.test(k)) return 2;
+  if (k === 'mcb1') return 1;
+  if (k === 'mcb3') return 3;
+  if (/mcb4|uzo4|surge4|cont4/.test(k)) return 4;
+  if (/^(main2|mcb2|uzo|uzoA|uzoF|surge)$/.test(k)) return 2;
+  return Math.max(1, Math.min(4, w));
+}
+const BODY = '#f2f2ef',
+  SHADE = '#e2e3df',
+  DMK = '#2b2f35',
+  SCREW = '#9aa1a9';
+
+/** A module in 3D: the body, the screws, the front by kind. hc — the colour of the lever / the accent. */
+function module3D(mb, k, x0, w, zr, yM, hc, name) {
+  const x1 = x0 + w,
+    xm = (x0 + x1) / 2;
+  const poles = modPoles(k, Math.round(w / 17.5));
+  const pw = w / poles;
+  mb.smooth(true);
+  if (k === 'nbus' || k === 'pebus') {
+    // a bus bar on two insulators: brass bar in a coloured cover, screws along it
+    const col = k === 'nbus' ? '#2f6fd6' : '#b9c22e';
+    mb.tag(k === 'nbus' ? 'Шина N' : 'Шина PE');
+    for (const x of [x0 + 6, x1 - 6]) mb.rbox(x - 5, yM + 30, zr - 8, x + 5, yM + 70, zr + 8, 2, DMK, 2);
+    mb.rbox(x0, yM + 22, zr - 6, x1, yM + 32, zr + 6, 2, col, 2);
+    mb.lod('n');
+    for (let x = x0 + 5; x < x1 - 2; x += 7) {
+      mb.sweep(
+        [
+          [x, yM + 22, zr],
+          [x, yM + 20, zr]
+        ],
+        2.4,
+        SCREW,
+        10
+      );
+      mb.obox([x - 1.6, yM + 19.8, zr], [x + 1.6, yM + 19.8, zr], 0.5, 0.6, DMK);
+    }
+    mb.lod('');
+    mb.smooth(false);
+    return;
+  }
+  mb.tag('Модуль: ' + (name || k));
+  // body: rear block, shoulders, front neck
+  mb.rbox(x0 + 0.3, yM + 22, zr - 45, x1 - 0.3, yM + 70, zr + 45, 2, BODY, 2);
+  mb.rbox(x0 + 0.3, yM + 10, zr - 36, x1 - 0.3, yM + 22.5, zr + 36, 2, BODY, 2);
+  if (k !== 'term') mb.rbox(x0 + 0.6, yM, zr - 22.5, x1 - 0.6, yM + 10.5, zr + 22.5, 2.5, BODY, 2);
+  mb.lod('n');
+  // the clamp screws of every pole, top and bottom, in their wells
+  for (let i = 0; i < poles; i++) {
+    const xc = x0 + pw * (i + 0.5);
+    for (const zz of [zr + 30, zr - 30]) {
+      mb.sweep(
+        [
+          [xc, yM + 10.2, zz],
+          [xc, yM + 13, zz]
+        ],
+        3.6,
+        SHADE,
+        12
+      );
+      mb.sweep(
+        [
+          [xc, yM + 12, zz],
+          [xc, yM + 13.5, zz]
+        ],
+        2.6,
+        SCREW,
+        12
+      );
+      mb.obox([xc - 2, yM + 11.9, zz], [xc + 2, yM + 11.9, zz], 0.5, 0.6, DMK);
+    }
+  }
+  // the label window above the controls
+  if (!/term|blank/.test(k)) mb.rbox(x0 + 2, yM - 0.4, zr + 13, x1 - 2, yM + 0.6, zr + 20, 1, SHADE, 1);
+  mb.lod('');
+  const lever = (xc, wl, col) => {
+    mb.rbox(xc - wl / 2 - 1.2, yM - 0.6, zr - 11, xc + wl / 2 + 1.2, yM + 1, zr + 10, 1, '#d5d7d3', 1);
+    mb.rbox(xc - wl / 2, yM - 9, zr + 1, xc + wl / 2, yM + 1, zr + 9, 1.5, col, 2);
+  };
+  if (/^(mcb|main2)/.test(k) || k === 'rcbo') {
+    // levers of all poles joined into one handle
+    const wl = Math.max(5, Math.min(10, w - 4));
+    if (poles > 1 && w > 20) {
+      mb.rbox(x0 + 3, yM - 0.6, zr - 11, x1 - 3, yM + 1, zr + 10, 1, '#d5d7d3', 1);
+      mb.rbox(x0 + 4, yM - 9, zr + 1, x1 - 4, yM + 1, zr + 9, 1.5, hc, 2);
+    } else lever(xm, wl, hc);
+    mb.lod('n');
+    mb.rbox(x0 + 2, yM - 0.5, zr - 20, x0 + 7, yM + 0.5, zr - 15, 1, '#e44b3c', 1); // on/off indicator
+    if (k === 'rcbo')
+      mb.sweep(
+        [
+          [x1 - 5, yM, zr - 17],
+          [x1 - 5, yM - 2.5, zr - 17]
+        ],
+        2.6,
+        '#f2d15e',
+        10
+      );
+    mb.lod('');
+  } else if (/^uzo/.test(k)) {
+    if (w > 20) {
+      mb.rbox(x0 + 3, yM - 0.6, zr - 11, x1 - 3, yM + 1, zr + 10, 1, '#d5d7d3', 1);
+      mb.rbox(x0 + 4, yM - 9, zr + 1, x1 - 4, yM + 1, zr + 9, 1.5, hc, 2);
+    } else lever(xm, 8, hc);
+    mb.tag('Кнопка «Тест»');
+    mb.sweep(
+      [
+        [x1 - 6, yM, zr - 17],
+        [x1 - 6, yM - 3, zr - 17]
+      ],
+      3.2,
+      '#f2d15e',
+      12
+    );
+  } else if (/^surge/.test(k)) {
+    mb.tag('Сменные вставки УЗИП');
+    for (let i = 0; i < poles; i++) {
+      const a = x0 + pw * i + 0.8,
+        b = x0 + pw * (i + 1) - 0.8;
+      mb.rbox(a, yM - 6, zr - 21, b, yM + 2, zr + 21, 1.5, '#d84a3a', 2);
+      mb.lod('n');
+      mb.rbox((a + b) / 2 - 3, yM - 6.4, zr + 10, (a + b) / 2 + 3, yM - 5.8, zr + 15, 0.8, '#3fbf6a', 1);
+      mb.lod('');
+    }
+  } else if (/^meter/.test(k)) {
+    mb.tag('Дисплей счётчика');
+    mb.rbox(x0 + 4, yM - 0.8, zr - 2, x1 - 4, yM + 0.4, zr + 12, 1, '#3b4a3f', 1);
+    mb.lod('n');
+    mb.rbox(x0 + 6, yM - 1, zr, x1 - 6, yM - 0.6, zr + 10, 0.5, '#a9c3a0', 1);
+    for (let i = 0; i < 3; i++)
+      mb.sweep(
+        [
+          [x0 + 8 + i * 8, yM, zr - 12],
+          [x0 + 8 + i * 8, yM - 1.6, zr - 12]
+        ],
+        2.4,
+        DMK,
+        10
+      );
+    mb.sweep(
+      [
+        [x1 - 8, yM, zr - 12],
+        [x1 - 8, yM - 1, zr - 12]
+      ],
+      1.4,
+      '#e44b3c',
+      8
+    );
+    mb.lod('');
+  } else if (k === 'relay' || k === 'vrel' || k === 'timer' || k === 'smart' || k === 'gw' || k === 'rgb') {
+    mb.tag('Дисплей и кнопки');
+    const scr = k === 'smart' || k === 'gw' ? '#2d5fa8' : k === 'timer' ? '#5b7fa0' : '#2b2f35';
+    mb.rbox(x0 + 3, yM - 0.8, zr - 1, x1 - 3, yM + 0.4, zr + 11, 1, scr, 1);
+    mb.lod('n');
+    if (k === 'relay' || k === 'vrel') mb.rbox(x0 + 5, yM - 1, zr + 2, x1 - 5, yM - 0.6, zr + 8, 0.5, '#e44b3c', 1);
+    const nb = Math.max(2, Math.min(4, Math.round(w / 9)));
+    for (let i = 0; i < nb; i++) {
+      const xc = x0 + ((i + 0.5) * w) / nb;
+      mb.sweep(
+        [
+          [xc, yM, zr - 13],
+          [xc, yM - 2, zr - 13]
+        ],
+        2.4,
+        k === 'rgb' ? '#3fbf6a' : DMK,
+        10
+      );
+    }
+    mb.lod('');
+  } else if (k === 'cont' || k === 'cont4') {
+    mb.tag('Окно контактора');
+    mb.rbox(x0 + 2.5, yM - 1, zr - 15, x1 - 2.5, yM + 0.4, zr + 11, 1.5, '#a8b6c4', 1, 0.75);
+    mb.lod('n');
+    mb.rbox(xm - 3, yM - 3, zr - 12, xm + 3, yM, zr - 4, 1, DMK, 1);
+    mb.lod('');
+  } else if (k === 'dim') {
+    mb.tag('Ручка диммера');
+    mb.sweep(
+      [
+        [xm, yM, zr + 2],
+        [xm, yM - 6, zr + 2],
+        [xm, yM - 7, zr + 2]
+      ],
+      [8, 7.5, 6.5],
+      DMK,
+      20
+    );
+  } else if (k === 'imp' || k === 'irel') {
+    lever(xm, 6, k === 'imp' ? '#3a7bd5' : DMK);
+    mb.lod('n');
+    mb.sweep(
+      [
+        [xm, yM, zr - 16],
+        [xm, yM - 1, zr - 16]
+      ],
+      1.4,
+      '#e44b3c',
+      8
+    );
+    mb.lod('');
+  } else if (k === 'dinsock') {
+    mb.tag('Розетка на DIN');
+    mb.sweep(
+      [
+        [xm, yM - 0.5, zr],
+        [xm, yM + 6, zr]
+      ],
+      16,
+      '#dfe1dd',
+      24
+    );
+    mb.lod('n');
+    for (const s of [-1, 1])
+      mb.sweep(
+        [
+          [xm + s * 9.5, yM + 5.9, zr],
+          [xm + s * 9.5, yM + 8, zr]
+        ],
+        2.4,
+        DMK,
+        10
+      );
+    mb.lod('');
+  } else if (k === 'ind') {
+    mb.tag('Индикаторы фаз');
+    ['#3fbf6a', '#f2d15e', '#e44b3c'].forEach((c, i) =>
+      mb.sweep(
+        [
+          [xm, yM, zr + 8 - i * 9],
+          [xm, yM - 2, zr + 8 - i * 9]
+        ],
+        2.6,
+        c,
+        10
+      )
+    );
+  } else if (/^psu/.test(k)) {
+    mb.tag('Блок питания: решётка, светодиод');
+    mb.lod('n');
+    for (let z = zr - 14; z <= zr + 8; z += 4) mb.rbox(x0 + 3, yM - 0.4, z, x1 - 3, yM + 0.3, z + 2, 0.6, '#b9bec4', 1);
+    mb.sweep(
+      [
+        [x1 - 5, yM, zr + 16],
+        [x1 - 5, yM - 1, zr + 16]
+      ],
+      1.4,
+      '#3fbf6a',
+      8
+    );
+    mb.lod('');
+  } else if (k === 'cross') {
+    mb.tag('Кросс-модуль: шины L1 L2 L3 N');
+    ['#7a4a24', '#1e1f22', '#8c9095', '#2f6fd6'].forEach((c, i) =>
+      mb.rbox(x0 + 2, yM - 1, zr + 14 - i * 9, x1 - 2, yM + 0.5, zr + 18 - i * 9, 1, c, 1)
+    );
+  } else if (k === 'term') {
+    mb.tag('Клеммы на DIN');
+    for (let i = 0; i < 3; i++)
+      mb.rbox(
+        x0 + 0.4 + i * 5.8,
+        yM + 8,
+        zr - 30,
+        x0 + 5.4 + i * 5.8,
+        yM + 10.6,
+        zr + 30,
+        0.8,
+        i === 2 ? '#b9c22e' : '#9aa1a9',
+        1
+      );
+  } else if (k === 'blank') {
+    mb.tag('Заглушка');
+  }
+  mb.smooth(false);
+}
+/** A comb bus over a run of breakers of a row: the insulated bar and a tooth at every pole. */
+function comb3D(mb, xa, xb, zr, yM) {
+  mb.tag('Шина-гребёнка');
+  mb.smooth(true);
+  mb.rbox(xa + 1, yM + 13.5, zr + 37, xb - 1, yM + 19, zr + 43, 1.5, '#e8b84a', 2);
+  mb.lod('n');
+  for (let x = xa + 8.75; x < xb; x += 17.5)
+    mb.rbox(x - 2.5, yM + 12.6, zr + 30, x + 2.5, yM + 14, zr + 38, 0.8, '#c9a04a', 1);
+  mb.lod('');
+  mb.smooth(false);
+}
+/** The cable duct between rows: the channel with fingers (on the back plate). */
+function duct3D(mb, xa, xb, zc, yB) {
+  mb.tag('Кабель-канал перфорированный');
+  mb.box(xa, yB - 42, zc - 14, xb, yB - 1, zc - 12.8, '#c9cdd1');
+  mb.box(xa, yB - 42, zc + 12.8, xb, yB - 1, zc + 14, '#c9cdd1');
+  mb.box(xa, yB - 2, zc - 14, xb, yB - 1, zc + 14, '#c9cdd1');
+  mb.lod('n');
+  for (let x = xa + 4; x < xb - 4; x += 8) {
+    mb.box(x, yB - 42, zc - 14, x + 4.5, yB - 2, zc - 12, '#d5d8dc');
+    mb.box(x, yB - 42, zc + 12, x + 4.5, yB - 2, zc + 14, '#d5d8dc');
+  }
+  mb.box(xa, yB - 44, zc - 14.5, xb, yB - 42, zc + 14.5, '#d5d8dc');
+  mb.lod('');
+}
+const esc_ = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+/** Front view of a module for the drawing (mm): body, shoulders, screws, the front by kind, the rating, the code. */
+function moduleSvg(m, k, X, Y, w, hc, on, des) {
+  const poles = modPoles(k, Math.round(w / 17.5)),
+    pw = w / poles,
+    xm = X + w / 2;
+  if (k === 'nbus' || k === 'pebus') {
+    const col = k === 'nbus' ? '#2f6fd6' : '#b9c22e';
+    let s = `<rect x="${X + 1}" y="${Y + 36}" width="${w - 2}" height="18" rx="3" fill="${col}" stroke="${on ? '#5b8def' : '#5d656f'}" stroke-width="${on ? 2 : 0.6}"/>`;
+    for (let x = X + 5; x < X + w - 2; x += 7)
+      s += `<circle cx="${x}" cy="${Y + 45}" r="2.3" fill="#c9ced3" stroke="#5d656f" stroke-width="0.4"/>`;
+    return (
+      s +
+      `<text x="${xm}" y="${Y + 30}" font-size="7" fill="#2b2f35" text-anchor="middle">${k === 'nbus' ? 'N' : 'PE'}</text>`
+    );
+  }
+  let s = `<rect x="${X + 0.4}" y="${Y}" width="${w - 0.8}" height="90" rx="2.5" fill="${k === 'blank' ? '#d8dbdf' : '#f7f7f5'}" stroke="${on ? '#3b78e7' : '#8b939d'}" stroke-width="${on ? 2 : 0.7}"/>`;
+  s += `<line x1="${X + 0.6}" y1="${Y + 22.5}" x2="${X + w - 0.6}" y2="${Y + 22.5}" stroke="#c3c8ce" stroke-width="0.6"/><line x1="${X + 0.6}" y1="${Y + 67.5}" x2="${X + w - 0.6}" y2="${Y + 67.5}" stroke="#c3c8ce" stroke-width="0.6"/>`;
+  if (k !== 'blank')
+    for (let i = 0; i < poles; i++) {
+      const xc = X + pw * (i + 0.5);
+      for (const yy of [Y + 10, Y + 80])
+        s += `<circle cx="${xc}" cy="${yy}" r="3.2" fill="#dfe2e5" stroke="#8b939d" stroke-width="0.5"/><line x1="${xc - 2}" y1="${yy}" x2="${xc + 2}" y2="${yy}" stroke="#5d656f" stroke-width="0.7"/>`;
+    }
+  const lev = (x0, x1) =>
+    `<rect x="${x0}" y="${Y + 34}" width="${x1 - x0}" height="21" rx="2" fill="#dadcd8"/><rect x="${x0 + 1}" y="${Y + 34}" width="${x1 - x0 - 2}" height="9" rx="1.5" fill="${hc}"/>`;
+  if (/^(mcb|main2)/.test(k) || k === 'rcbo' || /^uzo/.test(k)) {
+    s += poles > 1 && w > 20 ? lev(X + 3, X + w - 3) : lev(xm - 5, xm + 5);
+    if (/^uzo/.test(k) || k === 'rcbo')
+      s += `<circle cx="${X + w - 6}" cy="${Y + 61}" r="2.8" fill="#f2d15e" stroke="#8b939d" stroke-width="0.4"/><text x="${X + w - 6}" y="${Y + 62.3}" font-size="3.4" text-anchor="middle" fill="#2b2f35">T</text>`;
+  } else if (/^surge/.test(k)) {
+    for (let i = 0; i < poles; i++)
+      s += `<rect x="${X + pw * i + 1}" y="${Y + 24}" width="${pw - 2}" height="42" rx="2" fill="#d84a3a"/><rect x="${X + pw * (i + 0.5) - 3}" y="${Y + 29}" width="6" height="4" fill="#3fbf6a"/>`;
+  } else if (/^meter/.test(k)) {
+    s += `<rect x="${X + 4}" y="${Y + 34}" width="${w - 8}" height="14" rx="1" fill="#3b4a3f"/><text x="${xm}" y="${Y + 44}" font-size="7" fill="#c8e0c0" text-anchor="middle" font-family="monospace">00123.7</text>`;
+  } else if (/relay|vrel|timer|smart|gw|rgb/.test(k)) {
+    const scr = k === 'smart' || k === 'gw' ? '#2d5fa8' : k === 'timer' ? '#5b7fa0' : '#2b2f35';
+    s += `<rect x="${X + 3}" y="${Y + 34}" width="${w - 6}" height="12" rx="1" fill="${scr}"/>`;
+    if (k === 'relay' || k === 'vrel')
+      s += `<text x="${xm}" y="${Y + 43}" font-size="7" fill="#ff6b5b" text-anchor="middle" font-family="monospace">230</text>`;
+    const nb = Math.max(2, Math.min(4, Math.round(w / 9)));
+    for (let i = 0; i < nb; i++)
+      s += `<circle cx="${X + ((i + 0.5) * w) / nb}" cy="${Y + 58}" r="2.4" fill="${k === 'rgb' ? '#3fbf6a' : '#2b2f35'}"/>`;
+  } else if (/cont/.test(k))
+    s += `<rect x="${X + 2.5}" y="${Y + 30}" width="${w - 5}" height="26" rx="2" fill="#a8b6c4"/><rect x="${xm - 3}" y="${Y + 48}" width="6" height="7" fill="#2b2f35"/>`;
+  else if (k === 'dim')
+    s += `<circle cx="${xm}" cy="${Y + 43}" r="8" fill="#2b2f35"/><line x1="${xm}" y1="${Y + 36}" x2="${xm}" y2="${Y + 40}" stroke="#f7f7f5" stroke-width="1"/>`;
+  else if (k === 'imp' || k === 'irel') s += lev(xm - 3.5, xm + 3.5);
+  else if (k === 'dinsock')
+    s += `<circle cx="${xm}" cy="${Y + 45}" r="15" fill="#e4e6e2" stroke="#8b939d" stroke-width="0.6"/><circle cx="${xm - 9.5}" cy="${Y + 45}" r="2.2" fill="#2b2f35"/><circle cx="${xm + 9.5}" cy="${Y + 45}" r="2.2" fill="#2b2f35"/>`;
+  else if (k === 'ind')
+    ['#3fbf6a', '#f2d15e', '#e44b3c'].forEach(
+      (c, i) => (s += `<circle cx="${xm}" cy="${Y + 35 + i * 9}" r="2.6" fill="${c}"/>`)
+    );
+  else if (/^psu/.test(k)) {
+    for (let y = Y + 30; y < Y + 56; y += 4)
+      s += `<rect x="${X + 3}" y="${y}" width="${w - 6}" height="1.6" fill="#b9bec4"/>`;
+    s += `<circle cx="${X + w - 5}" cy="${Y + 26}" r="1.6" fill="#3fbf6a"/>`;
+  } else if (k === 'cross')
+    ['#7a4a24', '#1e1f22', '#8c9095', '#2f6fd6'].forEach(
+      (c, i) => (s += `<rect x="${X + 2}" y="${Y + 28 + i * 9}" width="${w - 4}" height="5" rx="1" fill="${c}"/>`)
+    );
+  else if (k === 'term')
+    for (let i = 0; i < 3; i++)
+      s += `<rect x="${X + 0.6 + i * 5.8}" y="${Y + 4}" width="5" height="82" rx="1" fill="${i === 2 ? '#b9c22e' : '#aeb3b8'}"/>`;
+  // the rating on the label window and the designation above the module
+  const r = String(m.r || '').split(' ')[0];
+  if (r && k !== 'term')
+    s += `<text x="${xm}" y="${Y + 30.5}" font-size="${w < 20 ? 6 : 7}" font-weight="600" fill="#1f2328" text-anchor="middle">${esc_(r)}</text>`;
+  if (des)
+    s += `<text x="${xm}" y="${Y - 3}" font-size="7" font-weight="600" fill="#1f2328" text-anchor="middle">${esc_(des)}</text>`;
+  return s;
 }
 
 // ===== mep/electrical/power-supplies.js =====
