@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '43';
+const APP_VER = '44';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15583,6 +15583,10 @@ function drawDev(e, color, o = {}) {
           seg(L(Math.cos(a) * 0.65 * r, Math.sin(a) * 0.65 * r), L(Math.cos(a) * 1.05 * r, Math.sin(a) * 1.05 * r));
         }
         circ(p, 0.2 * r, true);
+      }
+      if (k === 'lring') {
+        circ(p, 1.05 * r);
+        circ(p, 0.8 * r);
       }
       if (k === 'lpendL') {
         poly([L(-1.2 * r, -0.25 * r), L(1.2 * r, -0.25 * r), L(1.2 * r, 0.25 * r), L(-1.2 * r, 0.25 * r)]);
@@ -65126,16 +65130,20 @@ Object.assign(DEVK, {
   lspotG: { f: 'light', n: 'Светильник гипсовый (встраиваемый под шпаклёвку)', kw: 'Гипсовый', mount: 'ceil', pw: 7 },
   lspotH: { f: 'light', n: 'Спот скрытый для натяжного потолка (безрамочный)', kw: 'Скрытый', mount: 'ceil', pw: 7 },
   lchand: { f: 'light', n: 'Люстра', kw: 'Люстра', mount: 'ceil', pw: 60 },
-  lpendL: { f: 'light', n: 'Подвес линейный над столом', kw: 'Линейный', mount: 'ceil', pw: 30 }
+  lpendL: { f: 'light', n: 'Подвес линейный над столом', kw: 'Линейный', mount: 'ceil', pw: 30 },
+  lring: { f: 'light', n: 'Подвес кольцо', kw: 'Кольцо', mount: 'ceil', pw: 40 }
 });
+/** Reflector / anti-glare tube finishes. */
+const REFL = { black: '#1d1f22', white: '#e9ecee', gold: '#c2a35a', chrome: '#c9cdd1' };
 const LCD = {
-  lspot: { dia: 85, cut: 75, cct: 3000, beam: 36, ring: 'round', col: '#f4f4f2' },
-  lspotS: { dia: 80, h: 110, cct: 3000, beam: 36, col: '#f4f4f2' },
+  lspot: { dia: 85, cut: 75, cct: 3000, beam: 36, ring: 'round', col: '#f4f8f4', refl: 'black' },
+  lspotS: { dia: 80, h: 110, cct: 3000, beam: 36, col: '#f4f8f4', refl: 'black' },
   lspotG: { dia: 110, cut: 120, cct: 3000, beam: 36, shape: 'round' },
   lspotH: { dia: 70, cut: 72, cct: 3000, beam: 36 },
-  lchand: { arms: 6, drop: 500, dia: 700, col: '#c9a640', shade: '#f2efe6' },
-  lpend: { shape: 'dome', drop: 700, dia: 350, n: 1, col: '#2b2f35' },
-  lpendL: { L: 1200, drop: 700, col: '#2b2f35' },
+  lchand: { arms: 6, drop: 500, dia: 700, col: '#c2a35a', shade: '#f2efe6' },
+  lpend: { shape: 'dome', drop: 700, dia: 350, n: 1, col: '#1c1c1c' },
+  lpendL: { L: 1200, drop: 700, col: '#1c1c1c' },
+  lring: { dia: 800, sec: 40, h: 50, drop: 700, col: '#1c1c1c', lit: 'down' },
   lsurf: { dia: 360, h: 60 },
   lwall: { sw: 'group', shape: 'cyl', col: '#d8d2c6' }
 };
@@ -65169,40 +65177,133 @@ function lightMesh(e, mb) {
     lamp = '#fff6d8';
   mb.smooth(true);
   if (k === 'lspot') {
-    const r = c.dia / 2;
+    const r = c.dia / 2,
+      RC = REFL[c.refl] || REFL.black;
     mb.tag('Рамка спота');
-    mb.cyl(0, 0, z - 4, z, r, c.col || W, 40);
-    mb.tag('Отражатель');
+    // lip: a thin flange with a rounded edge, flush to the ceiling
     sanLoft(
       mb,
-      [seRing(0, 0, r - 7, r - 7, 2, 2, z - 4, 40), seRing(0, 0, r - 14, r - 14, 2, 2, z + 30, 40)],
-      '#d6dade',
+      [
+        seRing(0, 0, r, r, 2, 2, z, 56),
+        seRing(0, 0, r, r, 2, 2, z - 1.6, 56),
+        seRing(0, 0, r - 1.2, r - 1.2, 2, 2, z - 2.8, 56),
+        seRing(0, 0, r - 7, r - 7, 2, 2, z - 2.8, 56),
+        seRing(0, 0, r - 7.5, r - 7.5, 2, 2, z - 1, 56)
+      ],
+      c.col || W,
+      false,
+      false
+    );
+    mb.tag('Отражатель (антиблик)');
+    sanLoft(
+      mb,
+      [
+        seRing(0, 0, r - 7.5, r - 7.5, 2, 2, z - 1, 48),
+        seRing(0, 0, r - 12, r - 12, 2, 2, z + 18, 48),
+        seRing(0, 0, r - 17, r - 17, 2, 2, z + 36, 48)
+      ],
+      RC,
       false,
       false
     );
     mb.tag('Линза LED');
-    mb.cyl(0, 0, z + 28, z + 31, r - 15, lamp, 32);
-    mb.tag('Корпус и пружины');
-    mb.cyl(0, 0, z, z + 70, r - 9, '#9aa1a9', 28);
-    for (const s of [-1, 1]) mb.box(s * (r - 6) - 3, -6, z + 6, s * (r - 6) + 3, 6, z + 40, CH);
-    mb.tag('Драйвер');
-    mb.box(r + 20, -20, z + 10, r + 110, 20, z + 40, '#e4e6e9');
-  } else if (k === 'lspotS') {
-    const r = c.dia / 2;
-    mb.tag('Основание');
-    mb.cyl(0, 0, z - 6, z, r + 4, c.col || W, 40);
-    mb.tag('Корпус накладного спота');
-    mb.cyl(0, 0, z - c.h, z - 6, r, c.col || W, 40);
-    mb.tag('Отражатель');
+    mb.cyl(0, 0, z + 35, z + 37, r - 17, lamp, 40);
+    mb.lod('n');
+    mb.tag('Кольцо линзы');
     sanLoft(
       mb,
-      [seRing(0, 0, r - 3, r - 3, 2, 2, z - c.h, 40), seRing(0, 0, r - 14, r - 14, 2, 2, z - c.h + 25, 40)],
-      '#2b2f35',
+      [seRing(0, 0, r - 17, r - 17, 2, 2, z + 34.5, 40), seRing(0, 0, r - 21, r - 21, 2, 2, z + 34.5, 40)],
+      RC,
       false,
-      true
+      false
+    );
+    mb.lod('');
+    mb.tag('Корпус-радиатор');
+    mb.cyl(0, 0, z + 2, z + 72, r - 9, '#9aa1a9', 32);
+    mb.lod('n');
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU;
+      mb.obox(
+        [Math.cos(a) * (r - 9), Math.sin(a) * (r - 9), z + 40],
+        [Math.cos(a) * (r - 2), Math.sin(a) * (r - 2), z + 40],
+        2,
+        56,
+        '#a7adb3'
+      );
+    }
+    mb.tag('Пружины крепления');
+    for (const sg of [-1, 1])
+      mb.sweep(
+        roundPath(
+          [
+            [sg * (r - 9), 0, z + 30],
+            [sg * (r - 3), 0, z + 30],
+            [sg * (r - 3), 0, z + 8],
+            [sg * (r + 18), 0, z + 4]
+          ],
+          4
+        ).pts,
+        1.2,
+        CH,
+        8
+      );
+    mb.tag('Драйвер');
+    mb.rbox(r + 20, -20, z + 10, r + 110, 20, z + 40, 4, '#e4e6e9', 3);
+    mb.tube([r - 2, 0, z + 60], [r + 20, 0, z + 25], 2.5, Dk, 8);
+    mb.lod('');
+  } else if (k === 'lspotS') {
+    const r = c.dia / 2,
+      h = +c.h || 110,
+      RC = REFL[c.refl] || REFL.black;
+    mb.tag('Основание');
+    sanLoft(
+      mb,
+      [
+        seRing(0, 0, r + 4, r + 4, 2, 2, z, 56),
+        seRing(0, 0, r + 4, r + 4, 2, 2, z - 3, 56),
+        seRing(0, 0, r + 3, r + 3, 2, 2, z - 4.2, 56),
+        seRing(0, 0, r - 2, r - 2, 2, 2, z - 4.2, 56)
+      ],
+      c.col || W,
+      false,
+      false
+    );
+    mb.tag('Теневой шов');
+    mb.cyl(0, 0, z - 6.5, z - 4.2, r - 2, '#3a3d41', 40);
+    mb.tag('Корпус накладного спота');
+    sanLoft(
+      mb,
+      [
+        seRing(0, 0, r, r, 2, 2, z - 6.5, 56),
+        seRing(0, 0, r, r, 2, 2, z - h + 3, 56),
+        seRing(0, 0, r - 1, r - 1, 2, 2, z - h + 0.7, 56),
+        seRing(0, 0, r - 3, r - 3, 2, 2, z - h, 56),
+        seRing(0, 0, r - 4, r - 4, 2, 2, z - h + 1.5, 56)
+      ],
+      c.col || W,
+      true,
+      false
+    );
+    mb.tag('Антибликовая труба');
+    sanLoft(
+      mb,
+      [seRing(0, 0, r - 4, r - 4, 2, 2, z - h + 1.5, 48), seRing(0, 0, r - 7, r - 7, 2, 2, z - h + 32, 48)],
+      RC,
+      false,
+      false
     );
     mb.tag('Линза LED');
-    mb.cyl(0, 0, z - c.h + 24, z - c.h + 26, r - 15, lamp, 32);
+    mb.cyl(0, 0, z - h + 31, z - h + 33, r - 7, lamp, 40);
+    mb.lod('n');
+    mb.tag('Кольцо линзы');
+    sanLoft(
+      mb,
+      [seRing(0, 0, r - 7, r - 7, 2, 2, z - h + 30.5, 40), seRing(0, 0, r - 12, r - 12, 2, 2, z - h + 30.5, 40)],
+      RC,
+      false,
+      false
+    );
+    mb.lod('');
   } else if (k === 'lspotG') {
     const r = c.dia / 2;
     mb.tag('Гипсовый корпус (заподлицо, под шпаклёвку)');
@@ -65344,15 +65445,100 @@ function lightMesh(e, mb) {
     }
   } else if (k === 'lpendL') {
     const L = +c.L || 1200,
-      drop = +c.drop || 700;
+      drop = +c.drop || 700,
+      zb = z - drop - 70,
+      zt = z - drop;
     mb.tag('Чашки крепления');
-    for (const s of [-1, 1]) mb.cyl(s * (L / 2 - 80), 0, z - 20, z, 40, c.col, 24);
-    mb.tag('Тросы');
-    for (const s of [-1, 1]) mb.cyl(s * (L / 2 - 80), 0, z - drop, z - 20, 1.5, '#9aa1a9', 8);
+    for (const sx of [-1, 1]) {
+      const x = sx * (L / 2 - 90);
+      sanLoft(
+        mb,
+        [
+          seRing(x, 0, 32, 32, 2, 2, z, 40),
+          seRing(x, 0, 32, 32, 2, 2, z - 10, 40),
+          seRing(x, 0, 30.5, 30.5, 2, 2, z - 12, 40),
+          seRing(x, 0, 4, 4, 2, 2, z - 12, 40)
+        ],
+        c.col,
+        false,
+        false
+      );
+      mb.tag('Тросы');
+      mb.cyl(x, 0, zt + 18, z - 12, 0.9, '#9aa1a9', 8);
+      mb.lod('n');
+      mb.tag('Цанговые зажимы троса');
+      mb.cyl(x, 0, zt, zt + 18, 4, CH, 16, undefined, 2.5);
+      mb.cyl(x, 0, z - 22, z - 12, 3.5, CH, 16);
+      mb.lod('');
+    }
+    mb.lod('n');
+    mb.tag('Кабель питания');
+    mb.cyl(-L / 2 + 90 + 14, 0, zt, z - 12, 2.2, Dk, 10);
+    mb.lod('');
     mb.tag('Корпус линейного светильника');
-    mb.box(-L / 2, -35, z - drop - 60, L / 2, 35, z - drop, c.col);
-    mb.tag('Рассеиватель');
-    mb.box(-L / 2 + 10, -28, z - drop - 62, L / 2 - 10, 28, z - drop - 60, lamp);
+    mb.rbox(-L / 2 + 3, -30, zb, L / 2 - 3, 30, zt, 4, c.col, 3);
+    mb.tag('Торцевые заглушки');
+    mb.rbox(-L / 2, -30.5, zb - 0.5, -L / 2 + 4, 30.5, zt + 0.5, 2, '#2f3236', 2);
+    mb.rbox(L / 2 - 4, -30.5, zb - 0.5, L / 2, 30.5, zt + 0.5, 2, '#2f3236', 2);
+    mb.tag('Рассеиватель (опал)');
+    mb.box(-L / 2 + 6, -24, zb - 0.5, L / 2 - 6, 24, zb + 6, '#1f2124');
+    mb.rbox(-L / 2 + 8, -21, zb + 1, L / 2 - 8, 21, zb + 8, 6, lamp, 3);
+  } else if (k === 'lring') {
+    const R = (+c.dia || 800) / 2,
+      w = (+c.sec || 40) / 2,
+      h = +c.h || 50,
+      drop = +c.drop || 700,
+      zt = z - drop,
+      zb = zt - h,
+      N = 96,
+      rr = Math.min(4, w / 3);
+    const ring = (rad, zz) => seRing(0, 0, rad, rad, 2, 2, zz, N);
+    mb.tag('Кольцо');
+    // rectangular section with rounded edges, closed round the ring
+    sanLoft(
+      mb,
+      [
+        ring(R + w - rr, zb),
+        ring(R + w, zb + rr),
+        ring(R + w, zt - rr),
+        ring(R + w - rr, zt),
+        ring(R - w + rr, zt),
+        ring(R - w, zt - rr),
+        ring(R - w, zb + rr),
+        ring(R - w + rr, zb),
+        ring(R + w - rr, zb)
+      ],
+      c.col,
+      false,
+      false
+    );
+    mb.tag('Рассеиватель (опал)');
+    const lit = c.lit || 'down';
+    if (lit === 'down' || lit === 'updown') sanStrip(mb, ring(R + w - 5, zb - 0.6), ring(R - w + 5, zb - 0.6), lamp);
+    if (lit === 'updown') sanStrip(mb, ring(R + w - 5, zt + 0.6), ring(R - w + 5, zt + 0.6), lamp);
+    if (lit === 'in') sanStrip(mb, ring(R - w - 0.6, zb + 6), ring(R - w - 0.6, zt - 6), lamp);
+    if (lit === 'out') sanStrip(mb, ring(R + w + 0.6, zb + 6), ring(R + w + 0.6, zt - 6), lamp);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * TAU + TAU / 12,
+        x = Math.cos(a) * R,
+        y = Math.sin(a) * R;
+      mb.tag('Тросы');
+      mb.cyl(x, y, zt + 16, z - 8, 0.9, '#9aa1a9', 8);
+      mb.tag('Чашки крепления');
+      mb.cyl(x, y, z - 8, z, 18, c.col, 28, undefined, 18);
+      mb.lod('n');
+      mb.tag('Цанговые зажимы троса');
+      mb.cyl(x, y, zt, zt + 16, 4, CH, 16, undefined, 2.5);
+      mb.lod('');
+    }
+    // power runs up beside the first suspension wire into its canopy
+    const a0 = TAU / 12,
+      px = Math.cos(a0) * R + Math.cos(a0 + Math.PI / 2) * 12,
+      py = Math.sin(a0) * R + Math.sin(a0 + Math.PI / 2) * 12;
+    mb.tag('Кабель питания');
+    mb.cyl(px, py, zt, z - 8, 2.2, Dk, 10);
+    mb.tag('Чашка с вводом питания');
+    mb.cyl(Math.cos(a0) * R, Math.sin(a0) * R, z - 14, z - 8, 30, c.col, 32, undefined, 30);
   } else if (k === 'lsurf') {
     const r = (+c.dia || 360) / 2;
     mb.tag('Светильник накладной');
@@ -65454,6 +65640,21 @@ function devCfgPanel(e) {
         ]
       ]);
     if (k === 'lspotS') R.push(['Высота корпуса, мм', 'lc.h', 'n']);
+    if (k === 'lspot' || k === 'lspotS')
+      R.push(
+        [
+          'Отражатель',
+          'lc.refl',
+          's',
+          [
+            ['black', 'чёрный антиблик'],
+            ['white', 'белый'],
+            ['gold', 'золото'],
+            ['chrome', 'хром']
+          ]
+        ],
+        ['Цвет корпуса', 'lc.col', 'c']
+      );
   }
   if (k === 'lchand')
     R.push(
@@ -65478,6 +65679,26 @@ function devCfgPanel(e) {
       ['Количество (каскад в ряд)', 'lc.n', 'n'],
       ['Длина подвеса, мм', 'lc.drop', 'n'],
       ['Диаметр, мм', 'lc.dia', 'n'],
+      ['Цвет', 'lc.col', 'c'],
+      ['Мощность, Вт', 'pw', 'n']
+    );
+  if (k === 'lring')
+    R.push(
+      ['Диаметр, мм', 'lc.dia', 'n'],
+      ['Ширина сечения, мм', 'lc.sec', 'n'],
+      ['Высота сечения, мм', 'lc.h', 'n'],
+      ['Длина подвеса, мм', 'lc.drop', 'n'],
+      [
+        'Свет',
+        'lc.lit',
+        's',
+        [
+          ['down', 'вниз'],
+          ['updown', 'вниз и вверх'],
+          ['in', 'внутрь кольца'],
+          ['out', 'наружу']
+        ]
+      ],
       ['Цвет', 'lc.col', 'c'],
       ['Мощность, Вт', 'pw', 'n']
     );
@@ -65522,7 +65743,11 @@ function devCfgPanel(e) {
       note = 'Скрытый спот рассчитан на натяжной потолок — для ГКЛ возьмите гипсовый или встраиваемый.';
     if (!ck && /lspot$|lspotG|lspotH/.test(k))
       note = 'Встраиваемому светильнику нужен подвесной/натяжной потолок — на этом месте потолок не задан.';
-    if (ck && ck.kind === 'stretch' && (k === 'lchand' || k === 'lpend' || k === 'lpendL' || k === 'lsurf'))
+    if (
+      ck &&
+      ck.kind === 'stretch' &&
+      (k === 'lchand' || k === 'lpend' || k === 'lpendL' || k === 'lring' || k === 'lsurf')
+    )
       note =
         'Натяжной потолок: под люстру/подвес — закладная (брус/фанера) на подвесах до плиты, крюк или монтажная планка через неё.';
   }
@@ -66141,70 +66366,119 @@ XT.tmod = {
       return [r.x, r.y, z];
     };
     const mb = MB(xf);
-    const col = tr.col === 'white' ? '#f4f4f2' : '#26292d';
+    const col = tr.col === 'white' ? '#f4f8f4' : '#1c1c1c';
     const lamp = '#fff6d8';
     mb.smooth(true);
+    const pin = '#c9a640',
+      dk = '#141517';
+    const adapter = x => {
+      mb.tag('Адаптер');
+      mb.rbox(x - 16, -9.5, z0 - 15, x + 16, 9.5, z0 + (tr.mount === 'recessed' ? 6 : 0), 3, col, 3);
+      mb.lod('n');
+      mb.tag('Контакты адаптера');
+      for (const sg of [-1, 1]) mb.box(x + sg * 9 - 1.5, -4, z0 - 0.5, x + sg * 9 + 1.5, 4, z0 + 1.5, pin);
+      mb.lod('');
+    };
     if (e.kind === 'spot' || e.kind === 'spot2') {
-      const xs = e.kind === 'spot2' ? [-35, 35] : [0];
+      const xs = e.kind === 'spot2' ? [-36, 36] : [0];
+      const R = 27;
       for (const x of xs) {
-        mb.tag('Адаптер');
-        mb.box(x - 15, -9, z0 - 14, x + 15, 9, z0, col);
+        adapter(x);
         const tilt = (+e.tilt || 30) * D2R;
-        const hz = z0 - 40;
-        mb.tag('Кронштейн');
-        mb.box(x - 4, -12, hz, x + 4, 12, z0 - 14, col);
+        const hz = z0 - 48;
+        mb.tag('Кронштейн (вилка)');
+        mb.rbox(x - 5, -R - 6, z0 - 21, x + 5, R + 6, z0 - 15, 2, col, 2);
+        for (const sg of [-1, 1])
+          mb.rbox(x - 5, sg > 0 ? R + 1 : -R - 6, hz - 6, x + 5, sg > 0 ? R + 6 : -R - 1, z0 - 15, 2, col, 2);
+        mb.tag('Ось поворота');
+        mb.tube([x, -R - 7, hz], [x, R + 7, hz], 5.5, col, 16);
+        // the body turns about the axis: from the back (rounded) to the front with a deep anti-glare tube
+        const ax = Math.sin(tilt),
+          az = -Math.cos(tilt);
+        const at = t => [x + ax * t, 0, hz + az * t];
         mb.tag('Корпус спота');
-        const dx = Math.sin(tilt) * 80,
-          dz = -Math.cos(tilt) * 80;
-        mb.tube([x, 0, hz], [x + dx, 0, hz + dz], 28, col, 24);
+        mb.tube(at(-38), at(56), R, col, 36);
+        const bk = at(-38);
+        mb.rbox(bk[0] - R, -R, bk[2] - R, bk[0] + R, R, bk[2] + R, R, col, 6);
+        mb.lod('n');
+        mb.tag('Радиатор (рёбра)');
+        for (let k = 0; k < 5; k++) mb.tube(at(-30 + k * 7), at(-27 + k * 7), R + 1.6, col, 36);
+        mb.lod('');
+        mb.tag('Антибликовая труба');
+        mb.tube(at(56), at(56.6), R - 2.5, dk, 32);
         mb.tag('Линза');
-        mb.tube([x + dx * 0.97, 0, hz + dz * 0.97], [x + dx * 1.0, 0, hz + dz * 1.0], 22, lamp, 20);
+        mb.tube(at(56.6), at(57), 13, lamp, 24);
+        mb.lod('n');
+        mb.tube(at(56.6), at(56.9), 18, '#2a2c30', 24);
+        mb.tube(at(56.9), at(57.2), 12.5, lamp, 24);
+        mb.lod('');
       }
     } else if (e.kind === 'pend') {
-      mb.tag('Адаптер');
-      mb.box(-15, -9, z0 - 14, 15, 9, z0, col);
+      adapter(0);
       const d = +e.drop || 500;
       mb.tag('Подвес');
-      mb.cyl(0, 0, z0 - d, z0 - 14, 1.5, '#26292d', 8);
+      mb.cyl(0, 0, z0 - d + 20, z0 - 15, 1.6, dk, 8);
+      mb.lod('n');
+      mb.tag('Зажим кабеля');
+      mb.cyl(0, 0, z0 - d, z0 - d + 20, 5, col, 16, undefined, 3);
+      mb.lod('');
       mb.tag('Плафон');
       sanLoft(
         mb,
-        [seRing(0, 0, 10, 10, 2, 2, z0 - d, 24), seRing(0, 0, 60, 60, 2, 2, z0 - d - 110, 24)],
+        [
+          seRing(0, 0, 6, 6, 2, 2, z0 - d, 32),
+          seRing(0, 0, 16, 16, 2, 2, z0 - d - 6, 32),
+          seRing(0, 0, 50, 50, 2, 2, z0 - d - 80, 32),
+          seRing(0, 0, 62, 62, 2, 2, z0 - d - 110, 32),
+          seRing(0, 0, 61, 61, 2, 2, z0 - d - 112, 32),
+          seRing(0, 0, 58, 58, 2, 2, z0 - d - 110, 32),
+          seRing(0, 0, 46, 46, 2, 2, z0 - d - 80, 32)
+        ],
         col,
         false,
         false
       );
-      mb.cyl(0, 0, z0 - d - 100, z0 - d - 98, 55, lamp, 24);
+      mb.cyl(0, 0, z0 - d - 82, z0 - d - 80, 44, lamp, 32);
     } else {
+      const rec = tr.mount === 'recessed',
+        hw = rec ? 13 : 11,
+        zb = z0 - (rec ? 6 : 32),
+        zt = z0 + (rec ? 2 : -0.5);
       mb.tag(TMK[e.kind].n);
-      mb.box(
-        -L / 2,
-        -(tr.mount === 'recessed' ? 14 : 11),
-        z0 - (tr.mount === 'recessed' ? 4 : 30),
-        L / 2,
-        tr.mount === 'recessed' ? 14 : 11,
-        z0 - 0.5,
-        col
-      );
+      mb.rbox(-L / 2, -hw, zb, L / 2, hw, zt, 3, col, 3);
+      if (e.kind === 'linr') {
+        mb.tag('Шарнир поворота');
+        for (const sg of [-1, 1])
+          mb.tube([sg * (L / 2 - 2), -hw - 1, zb + 8], [sg * (L / 2 - 2), hw + 1, zb + 8], 5, col, 16);
+      }
       if (e.kind === 'grid') {
         mb.tag('Линзы');
         const nn = Math.max(3, Math.round(L / 37));
+        mb.box(-L / 2 + 4, -8.5, zb - 0.4, L / 2 - 4, 8.5, zb + 2, dk);
         for (let i = 0; i < nn; i++) {
           const x = -L / 2 + ((i + 0.5) * L) / nn;
-          mb.cyl(x, 0, z0 - (tr.mount === 'recessed' ? 5 : 31), z0 - (tr.mount === 'recessed' ? 4 : 30), 9, lamp, 14);
+          mb.cyl(x, 0, zb - 0.8, zb, 7, lamp, 20);
+          mb.lod('n');
+          mb.cyl(x, 0, zb - 1.1, zb - 0.8, 3.5, '#ffffff', 14);
+          mb.lod('');
         }
       } else {
         mb.tag('Рассеиватель');
-        mb.box(
-          -L / 2 + 6,
-          -7,
-          z0 - (tr.mount === 'recessed' ? 5 : 31),
-          L / 2 - 6,
-          7,
-          z0 - (tr.mount === 'recessed' ? 4 : 30),
-          lamp
-        );
+        mb.rbox(-L / 2 + 5, -8, zb - 1.2, L / 2 - 5, 8, zb + 2, 3, lamp, 3);
       }
+      mb.lod('n');
+      mb.tag('Торцы модуля');
+      for (const sg of [-1, 1])
+        mb.box(
+          sg * (L / 2) - (sg > 0 ? 1.2 : 0),
+          -hw + 0.5,
+          zb + 0.5,
+          sg * (L / 2) + (sg > 0 ? 0 : 1.2),
+          hw - 0.5,
+          zt - 0.5,
+          dk
+        );
+      mb.lod('');
     }
     mb.smooth(false);
     return meshGroup(mb.meshes(), { edges: false });
@@ -66338,7 +66612,7 @@ function buildTrack3(e) {
     H_ = K.H[e.mount] || 45;
   const z = trackZ(e) - (e.mount === 'susp' ? +e.drop || 400 : 0);
   const mb = MB();
-  const col = e.col === 'white' ? '#f4f4f2' : '#26292d';
+  const col = e.col === 'white' ? '#f4f8f4' : '#1c1c1c';
   const C_ = trackCut(e);
   const T = trackPath(e);
   const n = T.segs.length;
@@ -66548,7 +66822,7 @@ function ceilExtras(c, mb) {
             '#9aa1a9'
           );
       }
-      if (k === 'lchand' || k === 'lpend' || k === 'lpendL' || k === 'lsurf') {
+      if (k === 'lchand' || k === 'lpend' || k === 'lpendL' || k === 'lring' || k === 'lsurf') {
         mb.tag('Закладная под люстру/подвес (фанера 18 мм на брусе)');
         mb.box(d.p.x - 180, d.p.y - 180, z + 2, d.p.x + 180, d.p.y + 180, z + 20, '#c9a46a');
         mb.box(d.p.x - 180, d.p.y - 25, z + 20, d.p.x + 180, d.p.y + 25, top, '#b88a5a');
@@ -95047,7 +95321,9 @@ function photOf(e) {
   // default: cos^m distribution with the half-intensity angle = beam / 2
   const lm = +lc.lm > 0 ? +lc.lm : pw * EFF;
   const kind = e.kind;
-  const diffuse = ['lchand', 'lpend', 'lsurf', 'lwall', 'lpendL', 'wash', 'grid', 'lin', 'pend'].includes(kind);
+  const diffuse = ['lchand', 'lpend', 'lsurf', 'lwall', 'lpendL', 'lring', 'wash', 'grid', 'lin', 'pend'].includes(
+    kind
+  );
   const beam = diffuse ? 120 : clamp(+lc.beam || 36, 8, 120);
   const m = Math.log(0.5) / Math.log(Math.cos(((beam / 2) * Math.PI) / 180));
   const down = kind === 'lwall' ? 0.5 : kind === 'lchand' ? 0.75 : 1; // share of the flux going down
@@ -95062,7 +95338,7 @@ function sources() {
     if (isLight(e)) {
       const lc = lcOf(e);
       let z = DEVK[e.kind].mount === 'ceil' ? ceilAt(e.p) - 5 : (e.z || 1700) + 100;
-      if (e.kind === 'lpend' || e.kind === 'lchand' || e.kind === 'lpendL') z -= +lc.drop || 500;
+      if (e.kind === 'lpend' || e.kind === 'lchand' || e.kind === 'lpendL' || e.kind === 'lring') z -= +lc.drop || 500;
       out.push({ e, p: e.p, z, axis: [0, 0, -1], rot: e.rot || 0, ph: photOf(e) });
     }
     if (e.type === 'tmod') {
