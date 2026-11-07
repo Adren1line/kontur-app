@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '48.1';
+const APP_VER = '48.2';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12823,6 +12823,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -13142,6 +13143,8 @@ function mkGrip(e, g) {
       pushUndo();
       Object.assign(e, g.apply(orig, p));
       if (e.type === 'dev') relinkWires();
+      // a pipe pulled next to another one joins its row of modular clips
+      if (e.type === 'pipe' && bundleSnap(e)) log('Труба пристроена к соседней в ряд модульных клипс');
       changed();
       return 'end';
     },
@@ -14943,6 +14946,7 @@ function gripsOf(e) {
       ];
     case 'wire':
     case 'duct':
+    case 'spline':
       return e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }));
     case 'door':
     case 'window': {
@@ -15031,6 +15035,7 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
+
 
 
 
@@ -16559,6 +16564,20 @@ function render() {
       }
       ctx.fillRect(Math.round(s.x) - 4, Math.round(s.y) - 4, 9, 9);
       ctx.strokeRect(Math.round(s.x) - 4.5, Math.round(s.y) - 4.5, 10, 10);
+    }
+    // a hint at a hovered vertex: what can be done with it
+    if (!commandsState.cmd && renderState.hoverGrip && gripVertex(renderState.hoverGrip)) {
+      const s = w2s(renderState.hoverGrip.g.p);
+      const t = 'тяните — переместить · Del / Ctrl+щелчок — удалить вершину · ПКМ — меню';
+      ctx.save();
+      ctx.font = '11px ' + TFONT;
+      const w = ctx.measureText(t).width + 12;
+      ctx.fillStyle = 'rgba(20,23,28,.86)';
+      ctx.fillRect(Math.round(s.x) + 10, Math.round(s.y) + 10, w, 20);
+      ctx.fillStyle = '#e9edf2';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t, Math.round(s.x) + 16, Math.round(s.y) + 20);
+      ctx.restore();
     }
     if (commandsState.cmd && commandsState.cmd.grip) {
       const s = w2s(commandsState.cmd.base());
@@ -18950,6 +18969,7 @@ function initBuild() {
 
 
 
+
 /* pointer input (plan) */
 let panning = null,
   lastMid = 0,
@@ -19243,6 +19263,14 @@ function primaryDown(e, sx, sy) {
     }
     if (!commandsState.cmd) {
       const g = hitGrip(sx, sy);
+      // Ctrl + click on a vertex: remove it
+      if (g && (e.ctrlKey || e.metaKey) && gripVertex(g)) {
+        const v = gripVertex(g);
+        removeVertex(v.e, v.i);
+        renderState.hoverGrip = null;
+        dirty();
+        return;
+      }
       if (g) {
         commandsState.cmd = mkGrip(g.e, g.g);
         refreshPrompt();
@@ -19347,7 +19375,19 @@ function initPointerRest() {
       updateProps();
     } else if (a.startsWith('opt:')) sendInput(a.slice(4));
     else if (a === 'snap') showSnapMenu(e.clientX, e.clientY);
-    else if (a === 'copyc') clipCopy(false);
+    else if (a === 'vdel' || a === 'vadd' || a === 'vmove' || a === 'vadde') {
+      const it = CTX.grip;
+      const v = gripVertex(it),
+        ge = gripEdge(it);
+      if (a === 'vdel' && v) removeVertex(v.e, v.i);
+      else if (a === 'vadd' && v) addVertex(v.e, v.i < v.e.pts.length - 1 ? v.i : v.i - 1);
+      else if (a === 'vadde' && ge) addVertex(ge.e, ge.i);
+      else if (a === 'vmove' && it) {
+        commandsState.cmd = mkGrip(it.e, it.g);
+        refreshPrompt();
+        syncTools();
+      }
+    } else if (a === 'copyc') clipCopy(false);
     else if (a === 'cut') clipCopy(true);
     else if (a === 'paste') clipPaste(at);
     else if (a === 'dup') dupSel();
@@ -19378,6 +19418,8 @@ function initPointerRest() {
  *
  * Context menu and clipboard (copy/paste/duplicate/select similar).
  */
+
+
 
 
 
@@ -19536,6 +19578,21 @@ function showCtx(x, y, at) {
       B('snap', 'Объектная привязка для точки…', 'Shift+ПКМ');
     }
   } else {
+    // a grip under the cursor: vertex operations
+    CTX.grip = renderState.hoverGrip;
+    const gv = gripVertex(CTX.grip),
+      ge = !gv && gripEdge(CTX.grip);
+    if (gv) {
+      H(`Вершина ${gv.i + 1} из ${gv.e.pts.length}`);
+      B('vmove', 'Переместить вершину', '');
+      B('vdel', 'Удалить вершину', 'Del', !canRemoveVertex(gv.e));
+      B('vadd', 'Добавить вершину рядом', '');
+      HR();
+    } else if (ge) {
+      H('Отрезок');
+      B('vadde', 'Добавить вершину здесь', '');
+      HR();
+    }
     const n = S.sel.size;
     if (n) {
       H(n === 1 ? esc(groupName(selEnts()[0])) : `Выбрано: ${n}`);
@@ -19567,7 +19624,7 @@ function showCtx(x, y, at) {
   m.innerHTML = it.join('');
   placePop(m, x, y);
 }
-const CTX = { at: null };
+const CTX = { at: null, grip: null };
 function cmdTitle() {
   const n = commandsState.cmd && commandsState.cmd.name;
   const c = n && CMDS[n];
@@ -20752,6 +20809,7 @@ function initMenubar() {
 
 
 
+
 /* keyboard */
 const FKEYS = { F3: 'osnap', F7: 'grid', F8: 'ortho', F9: 'snap', F10: 'polar', F11: 'otrack' };
 const MODE_N = {
@@ -20911,6 +20969,11 @@ function initKeyboard() {
     if (e.key === 'Delete' && !cin.value && !commandsState.cmd) {
       e.preventDefault();
       if (uiHooks.sheetDel && uiHooks.sheetDel()) return;
+      // a vertex grip under the cursor: remove that vertex, not the object
+      if (renderState.hoverGrip && deleteHoveredVertex(renderState.hoverGrip)) {
+        renderState.hoverGrip = null;
+        return;
+      }
       eraseSel();
       return;
     }
@@ -94706,6 +94769,105 @@ function xMigrate() {
     if (!S.layers.some(l => l.name === L[0]) && S.ents.some(e => e.layer === L[0])) ensureLayer(L[0]);
 }
 
+// ===== drafting/vertex-edit.js =====
+/**
+ * drafting/vertex-edit.js
+ *
+ * Editing the vertices of anything drawn through points (polylines, splines, pipes, wires, ducts, tracks, slabs,
+ * ceilings, roofs, railings…), as with the multifunctional grips in CAD:
+ * - a vertex grip under the cursor: Delete removes the vertex — the line goes on straight from the previous vertex
+ *   to the next one; right click — a menu: move / remove / add a vertex;
+ * - an edge grip (the middle of a segment): add a vertex there.
+ * The number of points does not drop below 2 (3 for closed outlines).
+ */
+
+
+
+
+
+/** Types whose points form a closed outline. */
+const CLOSED_T = new Set([
+  'slab',
+  'ceil',
+  'floor',
+  'room',
+  'hatch',
+  'roof',
+  'gbody',
+  'zone',
+  'flcov',
+  'tiles',
+  'sopen'
+]);
+const isClosed = e => !!e.closed || CLOSED_T.has(e.type);
+/** Arrays kept in step with e.pts (one value per point). */
+const PARALLEL = ['bulge', 'bulges', 'arcs', 'zs', 'ws', 'tags'];
+
+/** The vertex a grip stands on: {e, i} or null. */
+function gripVertex(it) {
+  if (!it || !it.e || !Array.isArray(it.e.pts) || it.g.edge) return null;
+  const e = it.e;
+  let i = e.pts.indexOf(it.g.p);
+  if (i < 0) i = e.pts.findIndex(q => q && dist(q, it.g.p) < 1e-6);
+  return i < 0 ? null : { e, i };
+}
+/** The segment an edge grip stands on (its middle): {e, i} — between points i and i+1 — or null. */
+function gripEdge(it) {
+  if (!it || !it.e || !Array.isArray(it.e.pts)) return null;
+  const e = it.e,
+    n = e.pts.length,
+    m = isClosed(e) ? n : n - 1;
+  for (let i = 0; i < m; i++) if (dist(mid(e.pts[i], e.pts[(i + 1) % n]), it.g.p) < 1e-3) return { e, i };
+  return null;
+}
+function minPts(e) {
+  return isClosed(e) ? 3 : 2;
+}
+function canRemoveVertex(e) {
+  return Array.isArray(e.pts) && e.pts.length > minPts(e);
+}
+/** Removes vertex i: the neighbours are joined directly. */
+function removeVertex(e, i) {
+  if (!canRemoveVertex(e)) {
+    log(`Нельзя: у объекта останется меньше ${minPts(e)} точек`, true);
+    return false;
+  }
+  pushUndo();
+  const n = e.pts.length;
+  e.pts.splice(i, 1);
+  for (const k of PARALLEL) if (Array.isArray(e[k]) && e[k].length === n) e[k].splice(i, 1);
+  // a route recalculates from its new points
+  if (e.rt) delete e.rt;
+  changed();
+  log('Вершина удалена — линия идёт напрямую через соседние точки');
+  return true;
+}
+/** Adds a vertex in the middle of the segment i → i+1 (or at the point p on it). */
+function addVertex(e, i, p) {
+  const n = e.pts.length;
+  const a = e.pts[i],
+    b = e.pts[(i + 1) % n];
+  if (!a || !b) return false;
+  pushUndo();
+  const q = p ? P(p.x, p.y) : mid(a, b);
+  if (a.z != null && b.z != null && a.z === b.z) q.z = a.z;
+  e.pts.splice(i + 1, 0, q);
+  for (const k of PARALLEL)
+    if (Array.isArray(e[k]) && e[k].length === n) e[k].splice(i + 1, 0, typeof e[k][i] === 'number' ? 0 : e[k][i]);
+  if (e.rt) delete e.rt;
+  changed();
+  log('Вершина добавлена в середине отрезка — тяните её ручку');
+  return true;
+}
+/** Delete over a grip: true when a vertex was handled (the object itself is not erased). */
+function deleteHoveredVertex(it) {
+  const v = gripVertex(it);
+  if (!v) return false;
+  if (!S.ents.includes(v.e)) return false;
+  removeVertex(v.e, v.i);
+  return true;
+}
+
 // ===== elements/build-catalog.js =====
 /**
  * elements/build-catalog.js
@@ -113295,7 +113457,7 @@ function bundleSnap(e) {
     const a = e.pts[i],
       b = e.pts[i + 1],
       L = dist(a, b);
-    const flat = Math.abs(zs[i] - zs[i + 1]) <= 5 && a.z == null && b.z == null;
+    const flat = Math.abs(zs[i] - zs[i + 1]) <= 5;
     let best = null;
     if (flat && L >= 300) {
       const us = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
@@ -113361,9 +113523,17 @@ function bundleSnap(e) {
       tg = hit.c;
       prevD = hit.D;
     }
-    const Q = s => P(E.a.x + E.u.x * s + E.n.x * tg, E.a.y + E.u.y * s + E.n.y * tg);
+    const Q = s => {
+      const q = P(E.a.x + E.u.x * s + E.n.x * tg, E.a.y + E.u.y * s + E.n.y * tg);
+      if (a.z != null || b.z != null) q.z = zs[i];
+      return q;
+    };
     const dirS = pb >= pa ? 1 : -1;
-    const at = t => P(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+    const at = t => {
+      const q = P(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+      if (a.z != null || b.z != null) q.z = zs[i];
+      return q;
+    };
     const pAt = t => pa + (pb - pa) * t,
       oAt = t => oa + (ob - oa) * t;
     let s0 = pAt(t0),
