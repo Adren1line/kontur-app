@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '42';
+const APP_VER = '43';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -8175,7 +8175,6 @@ const profReady = p => PK[p.kind].an.every(([k]) => p.an && p.an[k]);
 
 
 
-
 /* door configurator */
 const HINGE_T = {
   card: 'Карточные накладные',
@@ -8185,6 +8184,7 @@ const HINGE_T = {
 };
 const HANDLE_T = {
   rosette: 'На розетке',
+  knob: 'Кноб',
   plate: 'На планке',
   pull: 'Скоба',
   flush: 'Утопленная',
@@ -8201,32 +8201,52 @@ const STOP_T = { floor: 'Напольный', wall: 'Настенный', none: 
 const GLASS_T = { none: 'Глухое', center: 'Со стеклом по центру', full: 'Остеклённое' };
 const DCOL = [
   ['#e8e2d6', 'Белёный дуб'],
-  ['#f3f3f0', 'Белая эмаль'],
+  ['#f7fbf5', 'Белая эмаль — RAL 9016'],
+  ['#e3d9c6', 'Жемчужно-белая — RAL 1013'],
+  ['#cfd3cd', 'Папирус — RAL 9018'],
   ['#b48a5c', 'Дуб натуральный'],
   ['#6e5238', 'Орех'],
-  ['#3a3f45', 'Графит'],
-  ['#2b2f35', 'Чёрный']
+  ['#474a50', 'Графит — RAL 7024'],
+  ['#1c1c1c', 'Чёрная — RAL 9011']
 ];
 const MCOL = [
-  ['#c7ccd2', 'Хром'],
-  ['#b9bec4', 'Матовый никель'],
-  ['#2b2f35', 'Чёрный матовый'],
-  ['#c9a86a', 'Латунь'],
-  ['#f3f3f0', 'Белый']
+  ['#c9cdd1', 'Хром'],
+  ['#a9adb0', 'Нержавеющая сталь, сатин'],
+  ['#b7b2a6', 'Никель брашированный'],
+  ['#1c1c1c', 'Чёрный матовый — RAL 9011'],
+  ['#c2a35a', 'Латунь'],
+  ['#8a6a43', 'Бронза'],
+  ['#4a4c4f', 'Графит'],
+  ['#f7fbf5', 'Белый — RAL 9016']
 ];
 function defDoorCfg(mode) {
   const c = {
     mode: 'normal',
     open: 0,
     flushSide: 'swing',
-    leaf: { count: 1, split: 0.6, th: 40, color: '#e8e2d6', glass: 'none', gapFloor: 8, paint: false },
+    leaf: {
+      count: 1,
+      split: 0.6,
+      th: 40,
+      color: '#e8e2d6',
+      glass: 'none',
+      gapFloor: 8,
+      paint: false,
+      style: 'flat',
+      panels: 2,
+      lines: 4,
+      glassK: 'matte',
+      grid: '1x1',
+      edge: 'none'
+    },
     frame: { prof: 'fr_std', color: '#e8e2d6', gap: 10 },
     ext: { on: true, prof: 'ext_10', color: '#e8e2d6' },
     casing: { a: true, b: true, prof: 'cas_flat', color: '#e8e2d6', join: '45' },
-    hinges: { type: 'card', count: 2, top: 250, bottom: 250, color: '#b9bec4' },
-    handle: { type: 'rosette', h: 1000, color: '#2b2f35' },
+    hinges: { type: 'card', count: 2, top: 250, bottom: 250, color: '#a9adb0' },
+    handle: { type: 'rosette', series: 'round', h: 1000, color: '#1c1c1c' },
     lock: { type: 'magnetic' },
-    stop: { type: 'floor', color: '#9aa1a9' }
+    stop: { type: 'floor', color: '#a9adb0' },
+    closer: { type: 'none', color: '#a9adb0' }
   };
   if (mode === 'hidden') applyDoorMode(c, 'hidden');
   return c;
@@ -8419,13 +8439,96 @@ function entryLeaf(lm, mb, l, M, c) {
   lm.box(sa + 4, dhi, z0 + 4, sb - 4, dhi + 10, z1 - 4, en.inCol);
   if (l.act) {
     const free = l.dir > 0 ? sb : sa,
-      hx = free - l.dir * 70;
+      hx = free - l.dir * 62,
+      col = c.handle.color;
+    // lock escutcheons with the cylinder face and the keyway; the main lock is the one on the handle plate
     lm.tag('Замки');
-    lm.tube([hx, dlo - 6, c.handle.h + 280], [hx, dhi + 10, c.handle.h + 280], 20, CHR, 14);
-    if (en.locks > 1) lm.tube([hx, dlo - 6, c.handle.h - 90], [hx, dhi + 10, c.handle.h - 90], 20, CHR, 14);
+    const zs = en.locks > 1 ? [c.handle.h + 280] : [];
+    for (const z of zs)
+      for (const [df, sg] of [
+        [dlo - 6, -1],
+        [dhi + 10, 1]
+      ]) {
+        lm.sweep(
+          [
+            [hx, df, z],
+            [hx, df + sg * 5, z]
+          ],
+          25,
+          col,
+          40
+        );
+        lm.sweep(
+          [
+            [hx, df + sg * 5, z],
+            [hx, df + sg * 8, z]
+          ],
+          21,
+          col,
+          40
+        );
+        lm.sweep(
+          [
+            [hx, df + sg * 8, z],
+            [hx, df + sg * 10.5, z]
+          ],
+          8.6,
+          '#b8bcc0',
+          24
+        );
+        lm.lod('n');
+        lm.box(
+          hx - 1.3,
+          Math.min(df + sg * 10.5, df + sg * 10.9),
+          z - 6.5,
+          hx + 1.3,
+          Math.max(df + sg * 10.5, df + sg * 10.9),
+          z + 3,
+          '#1c1d1f'
+        );
+        lm.lod('');
+      }
     if (en.peep) {
       lm.tag('Глазок');
-      lm.tube([(sa + sb) / 2, dlo - 8, 1500], [(sa + sb) / 2, dhi + 12, 1500], 9, CHR, 12);
+      const px = (sa + sb) / 2;
+      lm.sweep(
+        [
+          [px, dlo - 6, 1500],
+          [px, dlo - 10, 1500]
+        ],
+        13,
+        col,
+        28
+      );
+      lm.sweep(
+        [
+          [px, dhi + 10, 1500],
+          [px, dhi + 15, 1500]
+        ],
+        15,
+        col,
+        28
+      );
+      lm.lod('n');
+      lm.sweep(
+        [
+          [px, dlo - 10, 1500],
+          [px, dlo - 10.6, 1500]
+        ],
+        6,
+        '#3d5a6c',
+        20
+      );
+      lm.sweep(
+        [
+          [px, dhi + 15, 1500],
+          [px, dhi + 15.6, 1500]
+        ],
+        8,
+        '#3d5a6c',
+        20
+      );
+      lm.lod('');
     }
   }
 }
@@ -9675,12 +9778,13 @@ function MB(xf) {
   const G = new Map();
   const T = xf || ((x, y, z) => [x, y, z]);
   let TAG = '',
-    SM = false;
+    SM = false,
+    LOD = '';
   const g = (col, op, sm) => {
     op = op ?? 1;
     const S_ = SM || !!sm;
-    const k = col + '|' + op + '|' + TAG + (S_ ? '|s' : '');
-    if (!G.has(k)) G.set(k, { c: Array.isArray(col) ? col : hex2rgb(col), op, p: [], tag: TAG, sm: S_ });
+    const k = col + '|' + op + '|' + TAG + (S_ ? '|s' : '') + (LOD ? '|L' + LOD : '');
+    if (!G.has(k)) G.set(k, { c: Array.isArray(col) ? col : hex2rgb(col), op, p: [], tag: TAG, sm: S_, lod: LOD });
     return G.get(k).p;
   };
   const tri = (a, p, q, r) => {
@@ -9783,6 +9887,11 @@ function MB(xf) {
     },
     smooth(v) {
       SM = !!v;
+    },
+    /** Level of detail of what follows: 'n' — only near the camera (small details), 'f' — only from afar (their
+       simple stand-ins), '' — always. */
+    lod(v) {
+      LOD = v || '';
     },
     box(x0, y0, z0, x1, y1, z1, col, op) {
       if (x1 - x0 < 1e-6 || y1 - y0 < 1e-6 || z1 - z0 < 1e-6) return;
@@ -9977,6 +10086,7 @@ function MB(xf) {
           const m = { pos: new Float32Array(v.p), color: v.c, op: v.op };
           if (v.tag) m.tag = v.tag;
           if (v.sm) m.smooth = true;
+          if (v.lod) m.lod = v.lod;
           return m;
         });
     }
@@ -16896,6 +17006,46 @@ function rawGroup(meshes) {
   };
   return g;
 }
+/* ---------- level of detail: small parts are drawn only near the camera, their simple stand-ins only from afar ---------- */
+const LOD_NEAR = 4200;
+const lodBox = new WeakMap();
+/** False for a near-only / far-only part hidden at the current distance (edges toggles keep it hidden). */
+function lodOk(o) {
+  const L = o.userData && o.userData.lod;
+  if (!L || !o.parent || o.parent.userData.lodNear == null) return true;
+  return (L === 'n') === !!o.parent.userData.lodNear;
+}
+/** Shows the near or the far parts of every object by its distance to the camera. */
+function lodApply() {
+  if (!V3.inited || !V3.objs) return;
+  const cp = V3.cam.position;
+  for (const [, o] of V3.objs) {
+    const g = o.obj;
+    if (!g || !g.userData) continue;
+    let groups = g.userData.hasLod ? [g] : null;
+    if (!groups && g.children)
+      for (const ch of g.children) if (ch.userData && ch.userData.hasLod) (groups = groups || []).push(ch);
+    if (!groups) continue;
+    for (const gg of groups) {
+      let c = lodBox.get(gg);
+      if (!c) {
+        const b = new THREE.Box3().setFromObject(gg);
+        if (b.isEmpty()) continue;
+        c = { p: b.getCenter(new THREE.Vector3()), r: b.getSize(new THREE.Vector3()).length() / 2 };
+        lodBox.set(gg, c);
+      }
+      const near = cp.distanceTo(c.p) - c.r < LOD_NEAR;
+      if (gg.userData.lodNear === near) continue;
+      gg.userData.lodNear = near;
+      for (const m of gg.children) {
+        const L = m.userData.lod;
+        if (!L) continue;
+        const show = L === 'n' ? near : !near;
+        m.visible = m.userData.edge ? show && V3.edges : show;
+      }
+    }
+  }
+}
 function meshGroup(meshes, opts = {}) {
   if (sceneState.raw) return rawGroup(meshes);
   const g = new THREE.Group();
@@ -16910,6 +17060,10 @@ function meshGroup(meshes, opts = {}) {
     }
     const mesh = new THREE.Mesh(geo, matFor(m.color, m.op));
     mesh.userData.part = m.tag;
+    if (m.lod) {
+      mesh.userData.lod = m.lod;
+      g.userData.hasLod = true;
+    }
     mesh.castShadow = m.op >= 1;
     mesh.receiveShadow = true;
     mesh.userData.base = mesh.material;
@@ -16924,6 +17078,7 @@ function meshGroup(meshes, opts = {}) {
       const l = new THREE.LineSegments(eg, edgeMat());
       l.userData.edge = true;
       l.userData.part = m.tag;
+      if (m.lod) l.userData.lod = m.lod;
       if (opts.shared) l.userData.shared = true;
       l.visible = V3.edges;
       g.add(l);
@@ -16972,6 +17127,7 @@ function init3D() {
   ctl.addEventListener('change', req3);
   ctl.addEventListener('change', () => {
     if (typeof tqWatch === 'function') tqWatch();
+    lodApply();
   });
   scene.add(new THREE.HemisphereLight(0xf4f1ea, 0x3a4048, 0.62));
   const amb = new THREE.AmbientLight(0xffffff, 0.18);
@@ -17514,6 +17670,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -17542,6 +17699,11 @@ function render3Main() {
     });
     try {
       applyCut(X);
+    } catch (err) {
+      console.error(err);
+    }
+    try {
+      lodApply();
     } catch (err) {
       console.error(err);
     }
@@ -18072,111 +18234,22 @@ function buildDoor3(e) {
       const q = leafRot(l, s, d, open);
       return P3(q[0], q[1], z);
     });
-    const { sa, sb, dlo, dhi } = l,
-      z1 = M.zt,
-      z0_ = M.zb;
-    lm.tag('Полотно');
-    if (c.leaf.glass === 'none') lm.box(sa, dlo, z0_, sb, dhi, z1, lc);
-    else {
-      const st = c.leaf.glass === 'full' ? 75 : 130,
-        rt = c.leaf.glass === 'full' ? 75 : 130,
-        rb = c.leaf.glass === 'full' ? 140 : 220;
-      lm.box(sa, dlo, z0_, sa + st, dhi, z1, lc);
-      lm.box(sb - st, dlo, z0_, sb, dhi, z1, lc);
-      lm.box(sa + st, dlo, z1 - rt, sb - st, dhi, z1, lc);
-      lm.box(sa + st, dlo, z0_, sb - st, dhi, z0_ + rb, lc);
-      const gm = (dlo + dhi) / 2;
-      lm.box(sa + st, gm - 3, z0_ + rb, sb - st, gm + 3, z1 - rt, '#a9d6ef', 0.35);
-    }
-    const hc = c.hinges.color,
-      ht = c.hinges.type,
-      dp = l.dp,
-      hs = l.hs,
-      dir = l.dir;
-    mb.tag('Петли');
-    lm.tag('Петли');
-    for (const z of hz) {
-      if (ht === 'card') {
-        mb.tube([hs, dp + 4, z - 55], [hs, dp + 4, z + 55], 7, hc, 10);
-      } else if (ht === 'butterfly') {
-        mb.tube([hs, dp + 4, z - 50], [hs, dp + 4, z + 50], 6, hc, 10);
-        mb.box(Math.min(hs, hs - dir * 38), dp, z - 50, Math.max(hs, hs - dir * 38), dp + 1.5, z + 50, hc);
-        lm.box(Math.min(hs, hs + dir * 38), dp, z - 50, Math.max(hs, hs + dir * 38), dp + 1.5, z + 50, hc);
-      } else if (ht === 'barrel') {
-        mb.tube([hs, dp + 4, z + 8], [hs, dp + 4, z + 48], 7, hc, 10);
-        lm.tube([hs, dp + 4, z - 48], [hs, dp + 4, z - 8], 7, hc, 10);
-      } else {
-        lm.box(
-          Math.min(hs + dir * 3, hs + dir * 26),
-          dlo + 9,
-          z - 62,
-          Math.max(hs + dir * 3, hs + dir * 26),
-          dhi - 9,
-          z + 62,
-          hc
-        );
-        mb.box(
-          Math.min(hs - dir * 2, hs - dir * 22),
-          dlo + 9,
-          z - 62,
-          Math.max(hs - dir * 2, hs - dir * 22),
-          dhi - 9,
-          z + 62,
-          hc
-        );
-      }
-    }
+    leafBody(lm, l, M, c, lc);
+    hingeSet(mb, lm, l, M, c, hz);
     if (c.mode === 'entry') entryLeaf(lm, mb, l, M, c);
     if (l.act) {
-      lm.tag('Ручка');
-      mb.tag('Ответная планка');
-      const free = dir > 0 ? sb : sa,
-        hx = free - dir * 62,
-        hzz = c.handle.h,
-        col = c.handle.color;
-      for (const [df, sg] of [
-        [dhi, 1],
-        [dlo, -1]
-      ]) {
-        const ht2 = c.handle.type;
-        if (ht2 === 'rosette' || ht2 === 'plate') {
-          if (ht2 === 'rosette') lm.tube([hx, df, hzz], [hx, df + sg * 9, hzz], 26, col, 20);
-          else lm.box(hx - 24, Math.min(df, df + sg * 8), hzz - 170, hx + 24, Math.max(df, df + sg * 8), hzz + 70, col);
-          lm.tube([hx, df, hzz], [hx, df + sg * 48, hzz], 9, col, 12);
-          lm.obox([hx, df + sg * 48, hzz], [hx - dir * 130, df + sg * 48, hzz], 18, 16, col);
-        } else if (ht2 === 'pull') {
-          lm.tube([hx, df + sg * 42, hzz - 160], [hx, df + sg * 42, hzz + 160], 12, col, 12);
-          for (const zz of [hzz - 120, hzz + 120]) lm.tube([hx, df, zz], [hx, df + sg * 42, zz], 8, col, 10);
-        } else if (ht2 === 'flush')
-          lm.box(hx - 15, Math.min(df, df - sg * 3), hzz - 80, hx + 15, Math.max(df, df - sg * 3), hzz + 80, '#2b2f35');
-        if (c.lock.type === 'cyl' || c.lock.type === 'wc' || c.lock.type === 'latch') {
-          if (c.lock.type !== 'latch') lm.tube([hx, df, hzz - 85], [hx, df + sg * 8, hzz - 85], 22, col, 18);
-          if (c.lock.type === 'wc' && sg > 0) lm.box(hx - 4, df, hzz - 105, hx + 4, df + sg * 16, hzz - 65, col);
-        }
-      }
-      const sx = free + dir * 2;
-      mb.box(
-        Math.min(sx, sx + dir * 4),
-        (dlo + dhi) / 2 - 12,
-        hzz - 45,
-        Math.max(sx, sx + dir * 4),
-        (dlo + dhi) / 2 + 12,
-        hzz + 45,
-        c.lock.type === 'magnetic' ? '#3a3f45' : '#c7ccd2'
-      );
-      mb.tag('Стопор');
-      if (c.stop.type === 'floor') {
-        const sp = stopPos(M, l);
-        mb.cyl(sp[0], sp[1], 0, 35, 20, c.stop.color, 18);
-      } else if (c.stop.type === 'wall' && !M.mir) {
-        const sxw = l.hs - dir * (l.w - 90);
-        mb.tube([sxw, 0, 150], [sxw, 48, 150], 18, c.stop.color, 16);
-      }
+      if (c.handle.type !== 'none' || c.lock.type !== 'none') handleSet(lm, mb, l, M, c);
+      stopSet(mb, l, M, c, c.stop.type === 'floor' ? stopPos(M, l) : null);
     }
+    closerSet(mb, lm, l, M, c, open);
     lm.meshes().forEach(m => {
       mb.tag(m.tag);
+      mb.lod(m.lod);
+      mb.smooth(!!m.smooth);
       mb.raw(m.color, m.op, m.pos);
     });
+    mb.lod('');
+    mb.smooth(false);
     mb.tag('');
   }
   if (c.mode === 'entry') entryFrame(mb, M, c);
@@ -18508,7 +18581,7 @@ function applySel3D() {
     o.obj.traverse(m => {
       if (m.isMesh && m.userData.base)
         m.material = sel ? m.userData.base.userData.selMat : ph ? ph : gh ? ghostMat() : m.userData.base;
-      if (m.userData.edge) m.visible = V3.edges && !gh;
+      if (m.userData.edge) m.visible = V3.edges && !gh && lodOk(m);
     });
   }
   const es = selEnts();
@@ -18747,7 +18820,7 @@ function initBuild() {
       V3.edges = !V3.edges;
       b.classList.toggle('on', V3.edges);
       V3.root.traverse(o => {
-        if (o.userData.edge) o.visible = V3.edges;
+        if (o.userData.edge) o.visible = V3.edges && lodOk(o);
       });
       req3();
     }
@@ -21396,6 +21469,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -21897,6 +21971,41 @@ function doorPanel(e) {
         : '') +
       cR('Толщина', cN('leaf.th', c.leaf.th)) +
       cR('Исполнение', cS('leaf.glass', Object.entries(GLASS_T), c.leaf.glass)) +
+      (c.leaf.glass === 'none' || !c.leaf.glass
+        ? cR('Поверхность', cS('leaf.style', Object.entries(LEAF_ST), c.leaf.style || 'flat')) +
+          (c.leaf.style === 'panel'
+            ? cR(
+                'Филёнок',
+                cS(
+                  'leaf.panels',
+                  [1, 2, 3, 4, 5].map(v => [v, String(v)]),
+                  c.leaf.panels || 2
+                )
+              )
+            : '') +
+          (c.leaf.style === 'lines'
+            ? cR(
+                'Пазов',
+                cS(
+                  'leaf.lines',
+                  [1, 2, 3, 4, 5, 6, 8, 10].map(v => [v, String(v)]),
+                  c.leaf.lines || 4
+                )
+              )
+            : '')
+        : cR('Стекло', cS('leaf.glassK', Object.entries(GLASS_K), c.leaf.glassK || 'matte')) +
+          cR('Раскладка', cS('leaf.grid', Object.entries(GLASS_GRID), c.leaf.grid || '1x1'))) +
+      cR(
+        'Кромка',
+        cS(
+          'leaf.edge',
+          [
+            ['none', 'в цвет полотна'],
+            ['alu', 'алюминиевая']
+          ],
+          c.leaf.edge || 'none'
+        )
+      ) +
       cR('Под покраску в цвет стены', cB('leaf.paint', c.leaf.paint)) +
       (c.leaf.paint ? '' : cR('Цвет', cC('leaf.color', c.leaf.color, DCOL))) +
       cR('Зазор под полотном', cN('leaf.gapFloor', c.leaf.gapFloor))
@@ -21959,12 +22068,25 @@ function doorPanel(e) {
   );
   h += cGrp(
     'Ручка',
-    HANDLE_T[c.handle.type],
+    HANDLE_T[c.handle.type] +
+      (c.handle.type !== 'none' && c.handle.type !== 'flush'
+        ? ' · ' + (HANDLE_SER[c.handle.series || 'round'] || '')
+        : ''),
     cR('Тип', cS('handle.type', Object.entries(HANDLE_T), c.handle.type)) +
+      (c.handle.type !== 'none' && c.handle.type !== 'flush'
+        ? cR('Серия', cS('handle.series', Object.entries(HANDLE_SER), c.handle.series || 'round'))
+        : '') +
       cR('Высота', cN('handle.h', c.handle.h)) +
       cR('Цвет', cC('handle.color', c.handle.color, MCOL))
   );
   h += cGrp('Замок', LOCK_T[c.lock.type], cR('Тип', cS('lock.type', Object.entries(LOCK_T), c.lock.type)));
+  const cl = c.closer || (c.closer = { type: 'none', color: '#a9adb0' });
+  h += cGrp(
+    'Доводчик',
+    CLOSER_T[cl.type],
+    cR('Тип', cS('closer.type', Object.entries(CLOSER_T), cl.type)) +
+      (cl.type === 'arm' ? cR('Цвет', cC('closer.color', cl.color, MCOL)) : '')
+  );
   h += cGrp(
     'Стопор',
     STOP_T[c.stop.type],
@@ -22997,6 +23119,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -23179,8 +23302,11 @@ function renderSpecLevel() {
       if (c.handle.type !== 'none')
         put(
           dkit,
-          'hd' + c.handle.type,
-          { name: `Ручка ${HANDLE_T[c.handle.type].toLowerCase()} (комплект)`, u: 'шт' },
+          'hd' + c.handle.type + (c.handle.series || 'round'),
+          {
+            name: `Ручка ${HANDLE_T[c.handle.type].toLowerCase()}${c.handle.type !== 'flush' ? ', серия «' + (HANDLE_SER[c.handle.series || 'round'] || '') + '»' : ''} (комплект)`,
+            u: 'шт'
+          },
           r => {
             r.q++;
             r.ids.push(id);
@@ -23188,6 +23314,11 @@ function renderSpecLevel() {
         );
       if (c.lock.type !== 'none')
         put(dkit, 'lk' + c.lock.type, { name: LOCK_T[c.lock.type], u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(id);
+        });
+      if (c.closer && c.closer.type !== 'none')
+        put(dkit, 'cl' + c.closer.type, { name: CLOSER_T[c.closer.type], u: 'шт' }, r => {
           r.q++;
           r.ids.push(id);
         });
@@ -98629,6 +98760,616 @@ function ceilBoardsMesh(e, mb, col, th) {
     const q = [bd.a, bd.b, add(bd.b, mul(bd.inw, th)), add(bd.a, mul(bd.inw, th))].map(p => [p.x, p.y]);
     prismL(mb, q, bd.z0, bd.z1, col);
   }
+}
+
+// ===== elements/door-hw.js =====
+/**
+ * elements/door-hw.js
+ *
+ * Shaped parts of an interior door in 3D: the leaf by its style (flat, panelled, ribbed, grooved, glazed with beads and
+ * a glazing grid, aluminium edges), hinges, handles in three series, lock fittings, lock faceplate and strike, stops and
+ * an overhead closer with a working arm. Coordinates of a door: s — along the wall, d — across it, z — up; a leaf
+ * builder (lm) turns with the leaf, the frame builder (mb) stays.
+ *
+ * Detail by distance: screws, keyways, caps and indicators are near-only (mb.lod('n')); far away a door keeps its leaf,
+ * frame and the silhouette of the hardware.
+ */
+
+
+
+const LEAF_ST = {
+  flat: 'Гладкое',
+  panel: 'Филёнчатое',
+  ribs: 'Реечное (рифлёное)',
+  lines: 'С горизонтальными пазами'
+};
+const HANDLE_SER = { round: 'Круг', square: 'Квадрат', slim: 'Минимал (тонкая розетка)' };
+const CLOSER_T = { none: 'Без доводчика', arm: 'Накладной с рычагом', hidden: 'Скрытый (в полотне)' };
+const GLASS_K = {
+  matte: 'Матовое (сатин)',
+  clear: 'Прозрачное',
+  bronze: 'Тонированное бронза',
+  graphite: 'Тонированное графит'
+};
+const GLASS_GRID = {
+  '1x1': 'Без раскладки',
+  '1x2': '2 по высоте',
+  '1x3': '3 по высоте',
+  '1x4': '4 по высоте',
+  '2x3': '2 × 3',
+  '2x4': '2 × 4'
+};
+const GLASS_C = {
+  clear: ['#bfdbe8', 0.28],
+  matte: ['#e6ecee', 0.78],
+  bronze: ['#8e6f4e', 0.5],
+  graphite: ['#4a5056', 0.55]
+};
+const DARK = '#1c1d1f',
+  RUBBER = '#2a2b2d',
+  ALU = '#a9adb0';
+const lo = (a, b) => Math.min(a, b),
+  hi = (a, b) => Math.max(a, b);
+/** Box between two corner points in any order. */
+function bx(m, a0, b0, c0, a1, b1, c1, col, r, k) {
+  const x0 = lo(a0, a1),
+    x1 = hi(a0, a1),
+    y0 = lo(b0, b1),
+    y1 = hi(b0, b1),
+    z0 = lo(c0, c1),
+    z1 = hi(c0, c1);
+  if (r) m.rbox(x0, y0, z0, x1, y1, z1, r, col, k || 3);
+  else m.box(x0, y0, z0, x1, y1, z1, col);
+}
+/** Two triangles both ways (no back-face holes): a flat quad in the leaf. */
+function quad(m, col, a, b, c, d) {
+  m.tri3(col, a, b, c);
+  m.tri3(col, a, c, d);
+  m.tri3(col, a, c, b);
+  m.tri3(col, a, d, c);
+}
+/** A slightly darker shade (grooves and recesses read as cuts). */
+function doorShade(hex, k) {
+  const n = parseInt(String(hex).slice(1, 7), 16);
+  const f = v => Math.max(0, Math.min(255, Math.round(v * k)));
+  return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => f(v).toString(16).padStart(2, '0')).join('');
+}
+
+/* ---------- leaf ---------- */
+function leafBody(lm, l, M, c, col) {
+  const { sa, sb, dlo, dhi } = l,
+    z0 = M.zb,
+    z1 = M.zt,
+    L = c.leaf;
+  lm.tag('Полотно');
+  if (L.glass && L.glass !== 'none') leafGlass(lm, l, M, c, col);
+  else {
+    const st = L.style || 'flat';
+    if (st === 'panel') leafPanels(lm, l, M, c, col);
+    else if (st === 'ribs') {
+      const S_ = 44,
+        dep = 5,
+        core = doorShade(col, 0.9);
+      bx(lm, sa, dlo, z0, sa + S_, dhi, z1, col, 2, 2);
+      bx(lm, sb - S_, dlo, z0, sb, dhi, z1, col, 2, 2);
+      bx(lm, sa + S_ - 1, dlo, z1 - S_, sb - S_ + 1, dhi, z1, col, 2, 2);
+      bx(lm, sa + S_ - 1, dlo, z0, sb - S_ + 1, dhi, z0 + S_, col, 2, 2);
+      lm.box(sa + S_, dlo + dep, z0 + S_, sb - S_, dhi - dep, z1 - S_, core);
+      const w = sb - sa - 2 * S_,
+        pitch = 30,
+        n = Math.max(1, Math.floor((w + 8) / pitch)),
+        rw = (w - (n - 1) * 8) / n;
+      for (let i = 0; i < n; i++) {
+        const x = sa + S_ + i * (rw + 8);
+        bx(lm, x, dlo, z0 + S_, x + rw, dlo + dep + 1, z1 - S_, col, 2, 2);
+        bx(lm, x, dhi - dep - 1, z0 + S_, x + rw, dhi, z1 - S_, col, 2, 2);
+      }
+    } else if (st === 'lines') {
+      const n = Math.max(1, Math.min(12, L.lines | 0 || 4)),
+        g = 4,
+        dep = 3;
+      lm.box(sa + 2, dlo + dep, z0 + 2, sb - 2, dhi - dep, z1 - 2, doorShade(col, 0.82));
+      let zz = z0;
+      for (let k = 1; k <= n + 1; k++) {
+        const ze = k <= n ? z0 + ((z1 - z0) * k) / (n + 1) - g / 2 : z1;
+        bx(lm, sa, dlo, zz, sb, dhi, ze, col, 1.5, 2);
+        zz = ze + g;
+      }
+    } else bx(lm, sa, dlo, z0, sb, dhi, z1, col, 2, 2);
+  }
+  // aluminium edges (premium hidden doors): a thin band round the leaf
+  if (L.edge === 'alu') {
+    lm.tag('Алюминиевая кромка');
+    lm.box(sa - 1.2, dlo, z0, sa + 0.3, dhi, z1, ALU);
+    lm.box(sb - 0.3, dlo, z0, sb + 1.2, dhi, z1, ALU);
+    lm.box(sa - 1.2, dlo, z1 - 0.3, sb + 1.2, dhi, z1 + 1.2, ALU);
+    lm.box(sa - 1.2, dlo, z0 - 1.2, sb + 1.2, dhi, z0 + 0.3, ALU);
+  }
+}
+/** Panelled leaf: stiles and rails, recessed fields with a bevel on both faces. */
+function leafPanels(lm, l, M, c, col) {
+  const { sa, sb, dlo, dhi } = l,
+    z0 = M.zb,
+    z1 = M.zt;
+  const n = Math.max(1, Math.min(5, c.leaf.panels | 0 || 2)),
+    S_ = Math.min(110, (sb - sa) * 0.16),
+    TR = 110,
+    BR = 170,
+    MR = 100;
+  bx(lm, sa, dlo, z0, sa + S_, dhi, z1, col, 2, 2);
+  bx(lm, sb - S_, dlo, z0, sb, dhi, z1, col, 2, 2);
+  const hTot = z1 - z0 - TR - BR - (n - 1) * MR,
+    ph = hTot / n;
+  const rails = [[z1 - TR, z1]];
+  const fields = [];
+  let zt = z1 - TR;
+  for (let i = 0; i < n; i++) {
+    const zb = zt - ph;
+    fields.push([zb, zt]);
+    if (i < n - 1) rails.push([zb - MR, zb]);
+    zt = zb - MR;
+  }
+  rails.push([z0, z0 + BR]);
+  for (const [a, b] of rails) bx(lm, sa + S_ - 1, dlo, a, sb - S_ + 1, dhi, b, col, 2, 2);
+  const x0 = sa + S_,
+    x1 = sb - S_,
+    rec = 12,
+    rise = 3,
+    bev = 32,
+    sh = doorShade(col, 0.94);
+  for (const [za, zb] of fields) {
+    lm.box(x0, dlo + rec, za, x1, dhi - rec, zb, col);
+    for (const [fd, sg] of [
+      [dlo, -1],
+      [dhi, 1]
+    ]) {
+      const dO = fd - sg * rec,
+        dI = fd - sg * rise;
+      const O = [
+          [x0, dO, za],
+          [x1, dO, za],
+          [x1, dO, zb],
+          [x0, dO, zb]
+        ],
+        I = [
+          [x0 + bev, dI, za + bev],
+          [x1 - bev, dI, za + bev],
+          [x1 - bev, dI, zb - bev],
+          [x0 + bev, dI, zb - bev]
+        ];
+      for (let k = 0; k < 4; k++) quad(lm, sh, O[k], O[(k + 1) % 4], I[(k + 1) % 4], I[k]);
+      quad(lm, col, I[0], I[1], I[2], I[3]);
+    }
+  }
+}
+/** Glazed leaf: stiles and rails, glazing beads on both faces, a glazing grid. */
+function leafGlass(lm, l, M, c, col) {
+  const { sa, sb, dlo, dhi } = l,
+    z0 = M.zb,
+    z1 = M.zt;
+  const full = c.leaf.glass === 'full';
+  const st = full ? 75 : 130,
+    rt = full ? 75 : 130,
+    rb = full ? 140 : 220;
+  bx(lm, sa, dlo, z0, sa + st, dhi, z1, col, 2, 2);
+  bx(lm, sb - st, dlo, z0, sb, dhi, z1, col, 2, 2);
+  bx(lm, sa + st - 1, dlo, z1 - rt, sb - st + 1, dhi, z1, col, 2, 2);
+  bx(lm, sa + st - 1, dlo, z0, sb - st + 1, dhi, z0 + rb, col, 2, 2);
+  const gx0 = sa + st,
+    gx1 = sb - st,
+    gz0 = z0 + rb,
+    gz1 = z1 - rt,
+    gm = (dlo + dhi) / 2;
+  const [gc, gop] = GLASS_C[c.leaf.glassK || 'matte'] || GLASS_C.matte;
+  lm.tag('Стекло');
+  lm.box(gx0, gm - 3, gz0, gx1, gm + 3, gz1, gc, gop);
+  lm.tag('Штапик');
+  const bw = 12;
+  for (const [fd, sg] of [
+    [dlo, -1],
+    [dhi, 1]
+  ]) {
+    const a = gm + sg * 3,
+      b = fd - sg * 1;
+    bx(lm, gx0, a, gz0, gx0 + bw, b, gz1, col, 3, 2);
+    bx(lm, gx1 - bw, a, gz0, gx1, b, gz1, col, 3, 2);
+    bx(lm, gx0, a, gz1 - bw, gx1, b, gz1, col, 3, 2);
+    bx(lm, gx0, a, gz0, gx1, b, gz0 + bw, col, 3, 2);
+  }
+  const [cols, rows] = String(c.leaf.grid || '1x1')
+    .split('x')
+    .map(v => Math.max(1, +v || 1));
+  if (cols > 1 || rows > 1) {
+    lm.tag('Раскладка');
+    const mw = 22;
+    for (let i = 1; i < cols; i++) {
+      const x = gx0 + ((gx1 - gx0) * i) / cols;
+      bx(lm, x - mw / 2, dlo + 6, gz0, x + mw / 2, dhi - 6, gz1, col, 2, 2);
+    }
+    for (let j = 1; j < rows; j++) {
+      const z = gz0 + ((gz1 - gz0) * j) / rows;
+      bx(lm, gx0, dlo + 6, z - mw / 2, gx1, dhi - 6, z + mw / 2, col, 2, 2);
+    }
+  }
+}
+
+/* ---------- hinges ---------- */
+function hingeSet(mb, lm, l, M, c, hz) {
+  const hc = c.hinges.color,
+    ht = c.hinges.type,
+    dp = l.dp,
+    hs = l.hs,
+    dir = l.dir,
+    { dlo, dhi } = l;
+  mb.tag('Петли');
+  lm.tag('Петли');
+  const knuckle = (m, z0, z1, r) => {
+    m.cyl(hs, dp + 4, z0, z1, r, hc, 20);
+  };
+  const capDown = (m, z, r) => m.cyl(hs, dp + 4, z - 5, z, r * 0.45, hc, 16, undefined, r * 0.92);
+  const capUp = (m, z, r) => m.cyl(hs, dp + 4, z, z + 5, r * 0.92, hc, 16, undefined, r * 0.45);
+  for (const z of hz) {
+    if (ht === 'card') {
+      knuckle(mb, z - 55, z - 1, 7);
+      knuckle(lm, z + 1, z + 55, 7);
+      mb.lod('n');
+      lm.lod('n');
+      capDown(mb, z - 55, 7);
+      capUp(lm, z + 55, 7);
+      mb.cyl(hs, dp + 4, z - 1, z + 1, 5.5, '#8f9396', 12);
+      // the cards in the rabbet: seen when the door is open, with their screws
+      for (const [m, sg] of [
+        [mb, -1],
+        [lm, 1]
+      ]) {
+        const s0 = hs + sg * dir * 0.2,
+          s1 = hs + sg * dir * 2.6;
+        bx(m, s0, dp + 2, z - 50, s1, dp + 28, z + 50, hc);
+        for (const zz of [z - 32, z, z + 32])
+          m.tube([s1, dp + 15, zz], [s1 + sg * dir * 0.8, dp + 15, zz], 3.2, '#8f9396', 10);
+      }
+      mb.lod('');
+      lm.lod('');
+    } else if (ht === 'butterfly') {
+      knuckle(mb, z - 50, z + 50, 6);
+      mb.lod('n');
+      capDown(mb, z - 50, 6);
+      capUp(mb, z + 50, 6);
+      mb.lod('');
+      const face = dp + 1.5;
+      bx(mb, hs, dp, z - 50, hs - dir * 38, face, z + 50, hc, 0.6, 1);
+      bx(lm, hs, dp, z - 50, hs + dir * 38, face, z + 50, hc, 0.6, 1);
+      mb.lod('n');
+      lm.lod('n');
+      for (const zz of [z - 34, z, z + 34]) {
+        mb.tube([hs - dir * 22, face, zz], [hs - dir * 22, face + 0.9, zz], 3, '#8f9396', 10);
+        lm.tube([hs + dir * 22, face, zz], [hs + dir * 22, face + 0.9, zz], 3, '#8f9396', 10);
+      }
+      mb.lod('');
+      lm.lod('');
+    } else if (ht === 'barrel') {
+      knuckle(mb, z + 4, z + 48, 7);
+      knuckle(lm, z - 48, z - 4, 7);
+      mb.lod('n');
+      lm.lod('n');
+      capUp(mb, z + 48, 7);
+      capDown(lm, z - 48, 7);
+      lm.cyl(hs, dp + 4, z - 4, z + 4, 6.2, '#8f9396', 12);
+      // threaded pins into the frame and the leaf edge
+      mb.tube([hs, dp + 4, z + 26], [hs - dir * 18, dp - 12, z + 26], 2.6, '#8f9396', 8);
+      lm.tube([hs, dp + 4, z - 26], [hs + dir * 18, dp - 12, z - 26], 2.6, '#8f9396', 8);
+      mb.lod('');
+      lm.lod('');
+    } else {
+      // concealed 3D hinge: bodies mortised in the leaf edge and the frame, the arms between them
+      bx(lm, hs + dir * 3, dlo + 9, z - 62, hs + dir * 26, dhi - 9, z + 62, hc, 1.5, 2);
+      bx(mb, hs - dir * 2, dlo + 9, z - 62, hs - dir * 22, dhi - 9, z + 62, hc, 1.5, 2);
+      lm.lod('n');
+      mb.lod('n');
+      bx(lm, hs + dir * 0.5, dlo + 13, z - 40, hs + dir * 4, dhi - 13, z + 40, '#8f9396');
+      for (const zz of [z - 50, z + 50]) {
+        lm.tube([hs + dir * 2.6, (dlo + dhi) / 2, zz], [hs + dir * 3.4, (dlo + dhi) / 2, zz], 3, '#7d8185', 10);
+        mb.tube([hs - dir * 1.6, (dlo + dhi) / 2, zz], [hs - dir * 2.4, (dlo + dhi) / 2, zz], 3, '#7d8185', 10);
+      }
+      lm.lod('');
+      mb.lod('');
+    }
+  }
+}
+
+/* ---------- handles and lock fittings ---------- */
+/** Rosette on the face: depth from the face df outwards (sg). */
+function rosette(lm, ser, x, df, sg, z, col, small) {
+  const r = small ? 23 : 26;
+  if (ser === 'square') bx(lm, x - r, df, z - r, x + r, df + sg * 9, z + r, col, 2.5, 3);
+  else if (ser === 'slim')
+    lm.sweep(
+      [
+        [x, df, z],
+        [x, df + sg * 4.5, z]
+      ],
+      r - 1,
+      col,
+      40
+    );
+  else {
+    lm.sweep(
+      [
+        [x, df, z],
+        [x, df + sg * 6, z]
+      ],
+      r,
+      col,
+      40
+    );
+    lm.sweep(
+      [
+        [x, df + sg * 6, z],
+        [x, df + sg * 9.5, z]
+      ],
+      r - 2.5,
+      col,
+      40
+    );
+  }
+}
+/** Lever from the rosette towards the leaf middle (dir: hinge side direction). */
+function lever(lm, ser, x, df, sg, z, dir, col) {
+  if (ser === 'square') {
+    bx(lm, x - 8, df, z - 8, x + 8, df + sg * 50, z + 8, col, 2, 2);
+    bx(lm, x + dir * 8, df + sg * 40, z - 9, x - dir * 132, df + sg * 56, z + 9, col, 4, 3);
+  } else if (ser === 'slim') {
+    lm.tube([x, df, z], [x, df + sg * 44, z], 7, col, 20);
+    bx(lm, x + dir * 7, df + sg * 38, z - 7, x - dir * 124, df + sg * 46, z + 7, col, 3.5, 3);
+  } else {
+    const P = roundPath(
+      [
+        [x, df, z],
+        [x, df + sg * 50, z],
+        [x - dir * 124, df + sg * 50, z]
+      ],
+      22
+    ).pts;
+    lm.sweep(P, 8.5, col, 24);
+    const e = P[P.length - 1];
+    lm.rbox(e[0] - 8.6, e[1] - 8.6, e[2] - 8.6, e[0] + 8.6, e[1] + 8.6, e[2] + 8.6, 8.6, col, 4);
+  }
+}
+/** Cylinder or privacy fitting under the handle (zl). inside: the face of the swing side. */
+function lockFit(lm, c, ser, x, df, sg, zl, col) {
+  const t = c.lock.type;
+  if (t !== 'cyl' && t !== 'wc') return;
+  rosette(lm, ser, x, df, sg, zl, col, true);
+  const f = df + sg * (ser === 'slim' ? 4.5 : 9.5);
+  if (t === 'cyl') {
+    lm.sweep(
+      [
+        [x, f, zl],
+        [x, f + sg * 2.5, zl]
+      ],
+      8.6,
+      '#b8bcc0',
+      24
+    );
+    lm.lod('n');
+    bx(lm, x - 1.3, f + sg * 2.5, zl - 6.5, x + 1.3, f + sg * 2.9, zl + 3, DARK);
+    lm.sweep(
+      [
+        [x, f + sg * 2.5, zl + 1.5],
+        [x, f + sg * 2.9, zl + 1.5]
+      ],
+      2.6,
+      DARK,
+      12
+    );
+    lm.lod('');
+  } else if (sg > 0) {
+    // inside: the thumb-turn
+    lm.sweep(
+      [
+        [x, f, zl],
+        [x, f + sg * 6, zl]
+      ],
+      10,
+      col,
+      24
+    );
+    bx(lm, x - 3.5, f + sg * 5, zl - 15, x + 3.5, f + sg * 21, zl + 15, col, 3, 3);
+  } else {
+    // outside: emergency slot and the free / engaged indicator
+    lm.sweep(
+      [
+        [x, f, zl],
+        [x, f + sg * 2, zl]
+      ],
+      9,
+      '#b8bcc0',
+      24
+    );
+    lm.lod('n');
+    bx(lm, x - 6, f + sg * 2, zl - 1, x + 6, f + sg * 2.4, zl + 1, DARK);
+    bx(lm, x - 4, f + sg * 2, zl + 3, x + 4, f + sg * 2.4, zl + 7, '#c0392b');
+    lm.lod('');
+  }
+}
+function handleSet(lm, mb, l, M, c) {
+  const { sa, sb, dlo, dhi, dir } = l;
+  const free = dir > 0 ? sb : sa,
+    hx = free - dir * 62,
+    hz = c.handle.h,
+    col = c.handle.color,
+    ser = c.handle.series || 'round',
+    ty = c.handle.type,
+    zl = hz - 85;
+  lm.tag('Ручка');
+  for (const [df, sg] of [
+    [dhi, 1],
+    [dlo, -1]
+  ]) {
+    if (ty === 'rosette') {
+      rosette(lm, ser, hx, df, sg, hz, col);
+      lever(lm, ser, hx, df + sg * (ser === 'slim' ? 4.5 : 9.5), sg, hz, dir, col);
+      lm.tag('Замок');
+      lockFit(lm, c, ser, hx, df, sg, zl, col);
+      lm.tag('Ручка');
+    } else if (ty === 'knob') {
+      rosette(lm, ser === 'square' ? 'round' : ser, hx, df, sg, hz, col);
+      lm.tube([hx, df, hz], [hx, df + sg * 34, hz], 9, col, 20);
+      const cd = df + sg * 56;
+      lm.rbox(hx - 28, cd - 22, hz - 28, hx + 28, cd + 22, hz + 28, 22, col, 5);
+      lm.tag('Замок');
+      lockFit(lm, c, ser === 'square' ? 'round' : ser, hx, df, sg, zl, col);
+      lm.tag('Ручка');
+    } else if (ty === 'plate') {
+      bx(lm, hx - 25, df, hz - 175, hx + 25, df + sg * 8, hz + 75, col, 3, 3);
+      lever(lm, ser, hx, df + sg * 8, sg, hz, dir, col);
+      if (c.lock.type === 'cyl' || c.lock.type === 'wc') {
+        lm.tag('Замок');
+        const f = df + sg * 8;
+        if (c.lock.type === 'cyl') {
+          lm.sweep(
+            [
+              [hx, f, zl],
+              [hx, f + sg * 2.5, zl]
+            ],
+            8.6,
+            '#b8bcc0',
+            24
+          );
+          lm.lod('n');
+          bx(lm, hx - 1.3, f + sg * 2.5, zl - 6.5, hx + 1.3, f + sg * 2.9, zl + 3, DARK);
+          lm.lod('');
+        } else bx(lm, hx - 3.5, f, zl - 15, hx + 3.5, f + sg * 16, zl + 15, col, 3, 3);
+        lm.tag('Ручка');
+      }
+    } else if (ty === 'pull') {
+      if (ser === 'square') {
+        for (const zz of [hz - 150, hz + 150]) bx(lm, hx - 9, df, zz - 9, hx + 9, df + sg * 45, zz + 9, col, 2, 2);
+        bx(lm, hx - 10, df + sg * 35, hz - 165, hx + 10, df + sg * 55, hz + 165, col, 3, 3);
+      } else {
+        const P = roundPath(
+          [
+            [hx, df, hz - 150],
+            [hx, df + sg * 48, hz - 150],
+            [hx, df + sg * 48, hz + 150],
+            [hx, df, hz + 150]
+          ],
+          32
+        ).pts;
+        lm.sweep(P, ser === 'slim' ? 8 : 12, col, 24);
+      }
+    } else if (ty === 'flush') {
+      // recessed pull: a dark pocket with a thin metal rim
+      bx(lm, hx - 17, df - sg * 0.2, hz - 85, hx + 17, df + sg * 0.3, hz + 85, DARK);
+      bx(lm, hx - 19, df, hz - 87, hx - 17, df + sg * 1.2, hz + 87, col);
+      bx(lm, hx + 17, df, hz - 87, hx + 19, df + sg * 1.2, hz + 87, col);
+      bx(lm, hx - 17, df, hz + 85, hx + 17, df + sg * 1.2, hz + 87, col);
+      bx(lm, hx - 17, df, hz - 87, hx + 17, df + sg * 1.2, hz - 85, col);
+    }
+  }
+  // lock faceplate on the leaf edge, strike plate on the frame
+  const mid = (dlo + dhi) / 2,
+    mag = c.lock.type === 'magnetic' || c.lock.type === 'none';
+  lm.tag('Замок');
+  bx(lm, free, mid - 10, hz - (mag ? 60 : 120), free + dir * 1.6, mid + 10, hz + (mag ? 60 : 120), '#b8bcc0', 0.8, 1);
+  lm.lod('n');
+  if (mag)
+    lm.sweep(
+      [
+        [free + dir * 1.6, mid, hz],
+        [free + dir * 2.2, mid, hz]
+      ],
+      7,
+      DARK,
+      16
+    );
+  else {
+    bx(lm, free + dir * 1.6, mid - 7, hz - 10, free + dir * 4, mid + 7, hz + 10, '#9ea2a6', 1.5, 2);
+    if (c.lock.type === 'cyl')
+      bx(lm, free + dir * 1.6, mid - 6, zl - 12, free + dir * 3, mid + 6, zl + 12, '#9ea2a6', 1, 1);
+  }
+  for (const zz of [hz - (mag ? 45 : 105), hz + (mag ? 45 : 105)])
+    lm.tube([free + dir * 1.6, mid, zz], [free + dir * 2.2, mid, zz], 2.8, '#8f9396', 10);
+  lm.lod('');
+  mb.tag('Ответная планка');
+  const sx = free + dir * 2.5;
+  bx(mb, sx, mid - 12, hz - 45, sx + dir * 2, mid + 12, hz + 45, mag ? '#5a5f64' : '#b8bcc0', 0.8, 1);
+  mb.lod('n');
+  bx(mb, sx - dir * 0.3, mid - 5, hz - 12, sx + dir * 0.2, mid + 5, hz + 12, DARK);
+  mb.lod('');
+}
+
+/* ---------- stops ---------- */
+function stopSet(mb, l, M, c, sp) {
+  mb.tag('Стопор');
+  const col = c.stop.color;
+  if (c.stop.type === 'floor' && sp) {
+    mb.cyl(sp[0], sp[1], 0, 4, 22, col, 32, undefined, 20);
+    mb.cyl(sp[0], sp[1], 4, 30, 14, col, 28);
+    mb.cyl(sp[0], sp[1], 30, 41, 15.5, RUBBER, 28);
+    mb.lod('n');
+    mb.cyl(sp[0], sp[1], 41, 43, 15.5, RUBBER, 28, undefined, 13);
+    mb.lod('');
+  } else if (c.stop.type === 'wall' && !M.mir) {
+    const sxw = l.hs - l.dir * (l.w - 90);
+    mb.sweep(
+      [
+        [sxw, 0, 150],
+        [sxw, 6, 150]
+      ],
+      24,
+      col,
+      32
+    );
+    mb.tube([sxw, 6, 150], [sxw, 40, 150], 12, col, 24);
+    mb.tube([sxw, 40, 150], [sxw, 50, 150], 13.5, RUBBER, 24);
+  }
+}
+
+/* ---------- overhead closer with a working arm ---------- */
+function closerSet(mb, lm, l, M, c, open) {
+  const t = c.closer && c.closer.type;
+  if (t !== 'arm' || !l.act) return;
+  const { hs, dir, dhi } = l,
+    zt = M.zt,
+    col = c.closer.color || '#a9adb0';
+  lm.tag('Доводчик');
+  const s0 = hs + dir * 70,
+    s1 = hs + dir * 300;
+  bx(lm, s0, dhi, zt - 78, s1, dhi + 46, zt - 22, col, 6, 3);
+  lm.lod('n');
+  bx(lm, s0 - dir * 3, dhi + 2, zt - 76, s0, dhi + 44, zt - 24, '#8f9396', 3, 2);
+  bx(lm, s1, dhi + 2, zt - 76, s1 + dir * 3, dhi + 44, zt - 24, '#8f9396', 3, 2);
+  lm.lod('');
+  // spindle on the body, the bracket on the frame head; the arm folds as the leaf turns
+  const sp = hs + dir * 110,
+    dP = dhi + 23,
+    zA = zt - 6;
+  lm.cyl(sp, dP, zt - 22, zA, 7, '#8f9396', 16);
+  const P = leafRot(l, sp, dP, open),
+    B = [hs + dir * 430, dhi + 12];
+  mb.tag('Доводчик');
+  bx(mb, B[0] - 22, dhi + 2, zt + 4, B[0] + 22, dhi + 26, zt + 40, col, 3, 2);
+  const L1 = 240,
+    L2 = 250,
+    dx = B[0] - P[0],
+    dy = B[1] - P[1],
+    D = Math.max(1e-6, Math.hypot(dx, dy));
+  let E;
+  if (D >= L1 + L2 - 1) E = [P[0] + (dx / D) * L1, P[1] + (dy / D) * L1];
+  else {
+    const a = (L1 * L1 - L2 * L2 + D * D) / (2 * D),
+      h = Math.sqrt(Math.max(0, L1 * L1 - a * a)),
+      mx = P[0] + (dx / D) * a,
+      my = P[1] + (dy / D) * a;
+    const E1 = [mx - (dy / D) * h, my + (dx / D) * h],
+      E2 = [mx + (dy / D) * h, my - (dx / D) * h];
+    E = E1[1] > E2[1] ? E1 : E2;
+  }
+  mb.obox([P[0], P[1], zA + 6], [E[0], E[1], zA + 6], 20, 10, col);
+  mb.obox([E[0], E[1], zA + 15], [B[0], B[1], zA + 15], 15, 8, col);
+  mb.cyl(E[0], E[1], zA + 1, zA + 20, 9, '#8f9396', 16);
+  mb.cyl(B[0], B[1], zA + 10, zt + 4, 7, '#8f9396', 16);
 }
 
 // ===== elements/roof.js =====
