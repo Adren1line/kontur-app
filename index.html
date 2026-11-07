@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '46';
+const APP_VER = '46.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -72562,10 +72562,10 @@ var CW_HD = {
   leather: { n: 'Кожаная петля', pr: 24 }
 };
 var CW_HCOL = {
-  black: ['чёрный матовый', '#25272a'],
-  chrome: ['хром', '#c4c9ce'],
-  brass: ['латунь', '#b8955a'],
-  steel: ['нерж. сталь', '#9ea4aa']
+  black: ['чёрный матовый (RAL 9011)', '#1c1c1c'],
+  chrome: ['хром', '#c9cdd1'],
+  brass: ['латунь', '#c2a35a'],
+  steel: ['нерж. сталь, сатин', '#a9adb0']
 };
 var CW_HINGE = {
   110: 'Blum CLIP top 110°',
@@ -73713,6 +73713,21 @@ function cwFrontMesh(mb, c, FT, x0, x1, z0, z1, y0, opts = {}) {
   const w = x1 - x0,
     h = z1 - z0;
   const B = (a, b, cc, d, y1, y2, cl, op) => mb.box(a, y1, cc, b, y2, d, cl, op);
+  // rounded edges on the visible panels (glass and mirrors stay sharp)
+  const R = (a, b, cc, d, y1, y2, cl, r = 1.5) => {
+    if (b - a < 4 || d - cc < 4) return B(a, b, cc, d, y1, y2, cl);
+    mb.rbox(
+      Math.min(a, b),
+      Math.min(y1, y2),
+      Math.min(cc, d),
+      Math.max(a, b),
+      Math.max(y1, y2),
+      Math.max(cc, d),
+      r,
+      cl,
+      2
+    );
+  };
   if (FT.mirror) {
     mb.tag('Фасады: зеркало');
     B(x0, x1, z0, z1, y0, y0 + th - 4, '#d9d4cb');
@@ -73739,10 +73754,10 @@ function cwFrontMesh(mb, c, FT, x0, x1, z0, z1, y0, opts = {}) {
   mb.tag('Фасады: ' + FT.n);
   if (FT.frame) {
     const a = Math.min(FT.frame, w / 4, h / 4);
-    B(x0, x0 + a, z0, z1, y0, y0 + th, col);
-    B(x1 - a, x1, z0, z1, y0, y0 + th, col);
-    B(x0 + a, x1 - a, z0, z0 + a, y0, y0 + th, col);
-    B(x0 + a, x1 - a, z1 - a, z1, y0, y0 + th, col);
+    R(x0, x0 + a, z0, z1, y0, y0 + th, col);
+    R(x1 - a, x1, z0, z1, y0, y0 + th, col);
+    R(x0 + a - 1, x1 - a + 1, z0, z0 + a, y0, y0 + th, col);
+    R(x0 + a - 1, x1 - a + 1, z1 - a, z1, y0, y0 + th, col);
     if (FT.glass) {
       mb.tag('Фасады: стекло');
       B(x0 + a, x1 - a, z0 + a, z1 - a, y0 + th / 2 - 2, y0 + th / 2 + 2, gcol, gop);
@@ -73751,7 +73766,11 @@ function cwFrontMesh(mb, c, FT, x0, x1, z0, z1, y0, opts = {}) {
     B(x0 + a, x1 - a, z0 + a, z1 - a, y0, y0 + th - 8, dark);
     if (FT.raised) {
       const b = 22;
-      B(x0 + a + b, x1 - a - b, z0 + a + b, z1 - a - b, y0, y0 + th - 3, col);
+      R(x0 + a + b, x1 - a - b, z0 + a + b, z1 - a - b, y0, y0 + th - 3, col, 4);
+      mb.lod('n');
+      // the raised field rises from the recess with a sloped band
+      R(x0 + a + 8, x1 - a - 8, z0 + a + 8, z1 - a - 8, y0, y0 + th - 6, cwShade(col, 0.92), 3);
+      mb.lod('');
     }
     return;
   }
@@ -73760,7 +73779,7 @@ function cwFrontMesh(mb, c, FT, x0, x1, z0, z1, y0, opts = {}) {
       dp = 4;
     const m = c.mill;
     B(x0, x1, z0, z1, y0, y0 + th - dp, dark);
-    const top = (a, b, cc, d) => B(a, b, cc, d, y0 + th - dp, y0 + th, col);
+    const top = (a, b, cc, d) => R(a, b, cc, d, y0 + th - dp - 0.5, y0 + th, col, 1.2);
     if (m === 'frame' || m === 'frame2') {
       const a = Math.min(70, w / 5, h / 5);
       const ring = (k, n) => {
@@ -73800,7 +73819,7 @@ function cwFrontMesh(mb, c, FT, x0, x1, z0, z1, y0, opts = {}) {
       top(x0 + (i * w) / n + (i ? gg / 2 : 0), x0 + ((i + 1) * w) / n - (i < n - 1 ? gg / 2 : 0), z0, z1);
     return;
   }
-  B(x0, x1, z0, z1, y0, y0 + th, FT.mat === 'ldsp' ? c.fcol : col);
+  R(x0, x1, z0, z1, y0, y0 + th, FT.mat === 'ldsp' ? c.fcol : col, FT.mat === 'ldsp' ? 1 : 1.8);
 }
 function cwHandleMesh(mb, c, f, y0, kind) {
   const HD = c.handle;
@@ -73826,37 +73845,106 @@ function cwHandleMesh(mb, c, f, y0, kind) {
     return;
   }
   if (HD === 'edge') {
+    // aluminium pull profile on the edge with a dark grip slot
     if (door) {
-      const xa = f.hinge === 'L' ? f.x1 - 3 : f.x0 - 11;
-      mb.box(xa, y0, f.z0 + (f.z1 - f.z0) * 0.3, xa + 14, yf + 12, f.z0 + (f.z1 - f.z0) * 0.7, hc);
-    } else mb.box(f.x0 + (f.x1 - f.x0) * 0.25, y0, f.z1 - 3, f.x1 - (f.x1 - f.x0) * 0.25, yf + 12, f.z1 + 11, hc);
+      const xa = f.hinge === 'L' ? f.x1 - 3 : f.x0 - 11,
+        za = f.z0 + (f.z1 - f.z0) * 0.3,
+        zb = f.z0 + (f.z1 - f.z0) * 0.7;
+      mb.rbox(xa, y0, za, xa + 14, yf + 12, zb, 2, hc, 2);
+      mb.lod('n');
+      mb.box(
+        f.hinge === 'L' ? xa + 2 : xa + 2,
+        yf + 2,
+        za + 3,
+        f.hinge === 'L' ? xa + 12 : xa + 12,
+        yf + 11.5,
+        zb - 3,
+        '#1c1d1f'
+      );
+      mb.lod('');
+    } else {
+      const xa = f.x0 + (f.x1 - f.x0) * 0.25,
+        xb = f.x1 - (f.x1 - f.x0) * 0.25;
+      mb.rbox(xa, y0, f.z1 - 3, xb, yf + 12, f.z1 + 11, 2, hc, 2);
+      mb.lod('n');
+      mb.box(xa + 3, yf + 2, f.z1 + 1, xb - 3, yf + 11.5, f.z1 + 9, '#1c1d1f');
+      mb.lod('');
+    }
     return;
   }
+  mb.smooth(true);
+  const rosette = (x, z) => {
+    mb.lod('n');
+    mb.sweep(
+      [
+        [x, yf, z],
+        [x, yf + 2, z]
+      ],
+      9,
+      hc,
+      20
+    );
+    mb.lod('');
+  };
   if (HD === 'knob' || HD === 'leather') {
     const zc = door ? Math.min(f.z1 - 80, Math.max(f.z0 + 80, f.ant ? f.z0 + 60 : +c.hZ)) : f.z1 - 50;
-    mb.smooth(true);
     if (HD === 'knob') {
-      mb.tube([xEdge, yf, zc], [xEdge, yf + 20, zc], 6, hc, 12);
-      mb.tube([xEdge, yf + 18, zc], [xEdge, yf + 28, zc], 15, hc, 18);
-    } else mb.tube([xEdge, yf + 8, zc - 45], [xEdge, yf + 8, zc + 45], 9, '#6b4a33', 12);
+      mb.sweep(
+        [
+          [xEdge, yf, zc],
+          [xEdge, yf + 3, zc]
+        ],
+        14,
+        hc,
+        28
+      );
+      mb.tube([xEdge, yf + 3, zc], [xEdge, yf + 20, zc], 6, hc, 16);
+      mb.rbox(xEdge - 15, yf + 18, zc - 15, xEdge + 15, yf + 32, zc + 15, 7, hc, 4);
+    } else {
+      // leather strap loop on two screw caps
+      const P = roundPath(
+        [
+          [xEdge, yf, zc - 45],
+          [xEdge, yf + 22, zc - 30],
+          [xEdge, yf + 22, zc + 30],
+          [xEdge, yf, zc + 45]
+        ],
+        16
+      ).pts;
+      mb.sweep(P, 6, '#6b4a33', 12);
+      for (const z of [zc - 45, zc + 45])
+        mb.sweep(
+          [
+            [xEdge, yf, z],
+            [xEdge, yf + 4, z]
+          ],
+          8,
+          hc,
+          20
+        );
+    }
     mb.smooth(false);
     return;
   }
   const L = +c.hSize || 160;
   const pr = (CW_HD[HD] || CW_HD.bar).pr;
-  mb.smooth(true);
+  // a bar on two posts with rosettes; the bar has rounded ends
   if (door) {
     const len = Math.min(L, f.z1 - f.z0 - 80);
     const zc = f.ant ? f.z0 + 40 + len / 2 : Math.min(f.z1 - 40 - len / 2, Math.max(f.z0 + 40 + len / 2, +c.hZ));
-    mb.tube([xEdge, yf + pr - 6, zc - len / 2 - 12], [xEdge, yf + pr - 6, zc + len / 2 + 12], 6, hc, 12);
-    mb.tube([xEdge, yf, zc - len / 2], [xEdge, yf + pr - 6, zc - len / 2], 4.5, hc, 10);
-    mb.tube([xEdge, yf, zc + len / 2], [xEdge, yf + pr - 6, zc + len / 2], 4.5, hc, 10);
+    for (const z of [zc - len / 2, zc + len / 2]) {
+      mb.tube([xEdge, yf, z], [xEdge, yf + pr - 6, z], 4.5, hc, 14);
+      rosette(xEdge, z);
+    }
+    mb.rbox(xEdge - 6, yf + pr - 12, zc - len / 2 - 14, xEdge + 6, yf + pr, zc + len / 2 + 14, 5, hc, 3);
   } else {
     const len = Math.min(L, f.x1 - f.x0 - 80);
     const zc = f.z1 - 45;
-    mb.tube([xEdge - len / 2 - 12, yf + pr - 6, zc], [xEdge + len / 2 + 12, yf + pr - 6, zc], 6, hc, 12);
-    mb.tube([xEdge - len / 2, yf, zc], [xEdge - len / 2, yf + pr - 6, zc], 4.5, hc, 10);
-    mb.tube([xEdge + len / 2, yf, zc], [xEdge + len / 2, yf + pr - 6, zc], 4.5, hc, 10);
+    for (const x of [xEdge - len / 2, xEdge + len / 2]) {
+      mb.tube([x, yf, zc], [x, yf + pr - 6, zc], 4.5, hc, 14);
+      rosette(x, zc);
+    }
+    mb.rbox(xEdge - len / 2 - 14, yf + pr - 12, zc - 6, xEdge + len / 2 + 14, yf + pr, zc + 6, 5, hc, 3);
   }
   mb.smooth(false);
 }
