@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '49';
+const APP_VER = '50';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -9745,6 +9745,70 @@ function ribSweep(mb, pts, r, depth, pitch, col, seg = 8, k = 2) {
     }
   }
   mb.sweep(Q, R, col, seg);
+}
+/**
+ * A straight extrusion of a closed section along a line: map(s, x, y) gives the 3D point of section point (x, y) at
+ * the distance s; the section is a closed polygon [[x, y], …] (convex or star-shaped around its centroid for the caps).
+ */
+function extrude(mb, map, sec, s0, s1, col, caps = true, op) {
+  const n = sec.length;
+  for (let i = 0; i < n; i++) {
+    const a = sec[i],
+      b = sec[(i + 1) % n];
+    const A0 = map(s0, a[0], a[1]),
+      B0 = map(s0, b[0], b[1]),
+      A1 = map(s1, a[0], a[1]),
+      B1 = map(s1, b[0], b[1]);
+    mb.tri3(col, A0, B0, B1, op);
+    mb.tri3(col, A0, B1, A1, op);
+  }
+  if (!caps) return;
+  const cx = sec.reduce((t, p) => t + p[0], 0) / n,
+    cy = sec.reduce((t, p) => t + p[1], 0) / n;
+  for (let i = 0; i < n; i++) {
+    const a = sec[i],
+      b = sec[(i + 1) % n];
+    mb.tri3(col, map(s0, cx, cy), map(s0, b[0], b[1]), map(s0, a[0], a[1]), op);
+    mb.tri3(col, map(s1, cx, cy), map(s1, a[0], a[1]), map(s1, b[0], b[1]), op);
+  }
+}
+/**
+ * A rectangular frame from a section with mitred corners: the rectangle x0..x1 × z0..z1 in the plane (x, z), section
+ * points [w, d] — w inwards from the outer edge, d across the plane (depth). map(x, d, z) — to 3D.
+ */
+function mitreRing(mb, map, x0, x1, z0, z1, sec, col) {
+  const sides = [
+    w => [
+      [x0 + w, z0 + w],
+      [x1 - w, z0 + w]
+    ],
+    w => [
+      [x1 - w, z0 + w],
+      [x1 - w, z1 - w]
+    ],
+    w => [
+      [x1 - w, z1 - w],
+      [x0 + w, z1 - w]
+    ],
+    w => [
+      [x0 + w, z1 - w],
+      [x0 + w, z0 + w]
+    ]
+  ];
+  const n = sec.length;
+  for (const sd of sides)
+    for (let i = 0; i < n; i++) {
+      const a = sec[i],
+        b = sec[(i + 1) % n];
+      const [a0, a1] = sd(a[0]),
+        [b0, b1] = sd(b[0]);
+      const A0 = map(a0[0], a[1], a0[1]),
+        A1 = map(a1[0], a[1], a1[1]),
+        B0 = map(b0[0], b[1], b0[1]),
+        B1 = map(b1[0], b[1], b1[1]);
+      mb.tri3(col, A0, B0, B1);
+      mb.tri3(col, A0, B1, A1);
+    }
 }
 // round the corners of a 3D polyline. rad: bend radius (number) or (i,deg,l1,l2)=>tangent length
 function roundPath(pts, rad) {
@@ -17783,6 +17847,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -18391,7 +18456,7 @@ function buildWin3(e) {
     fn(half, dIn, c.colIn);
   };
   mb.tag('Рама');
-  twoTone((da, db, col) => ring(x0, x1, fz0, fz1, fw, da, db, col));
+  winFrameRing(mb, x0, x1, fz0, fz1, fw, dOut, dIn, c.colOut, c.colIn);
   if (M.door) {
     const F = M.door;
     mb.tag('Рама балконной двери');
@@ -18403,8 +18468,9 @@ function buildWin3(e) {
     mb.tag('Порог');
     mb.box(F.fx0, dOut, F.fz0, F.fx1, dIn, F.fz0 + 30, '#b9bec4');
   }
-  for (const [a, b] of M.mulls) twoTone((da, db, col) => mb.box(a, da, fz0 + fw, b, db, M.mainTop, col));
-  if (M.tr) twoTone((da, db, col) => mb.box(x0 + fw, da, M.mainTop, x1 - fw, db, M.mainTop + mw, col));
+  mb.tag('Импосты');
+  for (const [a, b] of M.mulls) winBar(mb, a, b, fz0 + fw, M.mainTop, dOut, dIn, c.colOut, c.colIn, true);
+  if (M.tr) winBar(mb, x0 + fw, x1 - fw, M.mainTop, M.mainTop + mw, dOut, dIn, c.colOut, c.colIn, false);
   const lines = [];
   const gl = M.gl.t;
   for (const s of M.secs) {
@@ -18420,33 +18486,32 @@ function buildWin3(e) {
         a1 = s.x1 + o,
         b0 = s.z0 - o,
         b1 = s.z1 + o;
-      mb.box(a0, dIn - 2, b0, a1, dIn + 4, b0 + sw_, c.colIn);
-      mb.box(a0, dIn - 2, b1 - sw_, a1, dIn + 4, b1, c.colIn);
-      mb.box(a0, dIn - 2, b0 + sw_, a0 + sw_, dIn + 4, b1 - sw_, c.colIn);
-      mb.box(a1 - sw_, dIn - 2, b0 + sw_, a1, dIn + 4, b1 - sw_, c.colIn);
-      ring(a0, a1, b0, b1, sw_, half, dIn - 2, c.colIn);
-      ring(a0, a1, b0, b1, sw_, dOut + 6, half, c.colOut);
+      winSashRing(mb, a0, a1, b0, b1, sw_, dOut, dIn, gl, c.colOut, c.colIn);
       gx0 = a0 + sw_;
       gx1 = a1 - sw_;
       gz0 = b0 + sw_;
       gz1 = b1 - sw_;
       const hi = hingeAtHigh(M, s);
       const fs = hi ? a0 + sw_ / 2 : a1 - sw_ / 2;
-      if (s.t === 'tilt') {
-        const hx = (a0 + a1) / 2;
-        mb.box(hx - 40, dIn + 4, b1 - sw_ / 2 - 16, hx + 40, dIn + 14, b1 - sw_ / 2 + 16, c.handleCol);
-        mb.box(hx - 12, dIn + 14, b1 - sw_ / 2 - 120, hx + 12, dIn + 30, b1 - sw_ / 2, c.handleCol);
-      } else {
+      if (s.t === 'tilt') winHandle(mb, (a0 + a1) / 2, dIn + 6, b1 - sw_ / 2, c.handleCol, true);
+      else {
         const hz = s.door ? e.sill + 1050 : (b0 + b1) / 2;
-        mb.box(fs - 16, dIn + 4, hz - 40, fs + 16, dIn + 14, hz + 40, c.handleCol);
-        mb.box(fs - 12, dIn + 14, hz - 120, fs + 12, dIn + 30, hz, c.handleCol);
+        winHandle(mb, fs, dIn + 6, hz, c.handleCol, false);
         if (s.door) {
           // outer pull handle («ракушка») and the balcony latch
-          mb.box(fs - 14, dOut - 4, hz - 60, fs + 14, dOut + 6, hz + 60, c.handleCol);
+          mb.tag('Ручка-ракушка');
+          mb.rbox(fs - 14, dOut - 6, hz - 60, fs + 14, dOut + 6, hz + 60, 6, c.handleCol, 3);
           if (c.door && c.door.latch)
-            mb.box(fs - 10, dIn + 4, b1 - sw_ - 60, fs + 10, dIn + 16, b1 - sw_ - 20, '#c7ccd2');
+            mb.rbox(fs - 10, dIn + 6, b1 - sw_ - 60, fs + 10, dIn + 18, b1 - sw_ - 20, 4, '#c7ccd2', 2);
         }
       }
+      if (s.t === 'turn' || s.t === 'tt')
+        winHinges(mb, hi ? a1 - 6 : a0 + 6, dIn + 6, b0, b1, c.colIn === '#f4f5f3' ? '#eef0ef' : c.colIn, s.t === 'tt');
+      if (s.t === 'tilt') {
+        winHinges(mb, a0 + 40, dIn + 6, b0 - 60, b0 + 40, '#eef0ef', false);
+        winHinges(mb, a1 - 40, dIn + 6, b0 - 60, b0 + 40, '#eef0ef', false);
+      }
+      mb.tag('Створки');
       if (s.door && s.panel === 'half') {
         const pz = gz0 + Math.min(700, (gz1 - gz0) * 0.38);
         mb.tag('Сэндвич-панель');
@@ -18454,8 +18519,15 @@ function buildWin3(e) {
         mb.box(gx0, dIn - 2, pz - 30, gx1, dIn + 4, pz + 30, c.colIn);
         gz0 = pz + 30;
       }
-      if (s.net) mb.box(gx0, dOut - 4, gz0, gx1, dOut - 2, gz1, '#5b6068', 0.45);
-      const dl = dIn + 1;
+      if (s.net) {
+        mb.tag('Москитная сетка');
+        mb.box(gx0 - 20, dOut - 12, gz0 - 20, gx1 + 20, dOut - 2, gz0 - 4, '#e9ebec');
+        mb.box(gx0 - 20, dOut - 12, gz1 + 4, gx1 + 20, dOut - 2, gz1 + 20, '#e9ebec');
+        mb.box(gx0 - 20, dOut - 12, gz0 - 4, gx0 - 4, dOut - 2, gz1 + 4, '#e9ebec');
+        mb.box(gx1 + 4, dOut - 12, gz0 - 4, gx1 + 20, dOut - 2, gz1 + 4, '#e9ebec');
+        mb.box(gx0, dOut - 8, gz0, gx1, dOut - 7, gz1, '#5b6068', 0.45);
+      }
+      const dl = dIn + 7;
       const hingeSide = hi ? gx1 : gx0,
         handleSide = hi ? gx0 : gx1;
       if (s.t === 'turn' || s.t === 'tt') {
@@ -18467,26 +18539,36 @@ function buildWin3(e) {
       if (s.t === 'tilt' || s.t === 'tt') {
         lines.push([gx0, dl, gz1, (gx0 + gx1) / 2, dl, gz0], [gx1, dl, gz1, (gx0 + gx1) / 2, dl, gz0]);
       }
+    } else {
+      mb.tag('Штапик');
+      winFixedBead(mb, s.x0, s.x1, s.z0, s.z1, dOut, dIn, gl, c.colIn);
     }
     mb.tag('Стеклопакет');
     mb.box(gx0, half - gl / 2, gz0, gx1, half + gl / 2, gz1, '#a9d6ef', 0.3);
+    mb.lod('n');
+    // the spacer frame of the double glazing (seen through the glass)
+    mb.tag('Дистанционная рамка');
+    const sp = 9;
+    mb.box(gx0, half - gl / 2 + 4, gz0, gx1, half + gl / 2 - 4, gz0 + sp, '#9aa0a6');
+    mb.box(gx0, half - gl / 2 + 4, gz1 - sp, gx1, half + gl / 2 - 4, gz1, '#9aa0a6');
+    mb.box(gx0, half - gl / 2 + 4, gz0 + sp, gx0 + sp, half + gl / 2 - 4, gz1 - sp, '#9aa0a6');
+    mb.box(gx1 - sp, half - gl / 2 + 4, gz0 + sp, gx1, half + gl / 2 - 4, gz1 - sp, '#9aa0a6');
+    mb.lod('');
   }
   // sill and drip only under the window part (a balcony door has a threshold instead)
   const sx0 = M.wx0 > 0 ? M.wx0 : -c.sill.side,
     sx1 = M.wx1 < M.W ? M.wx1 : M.W + c.sill.side;
-  mb.tag('Подоконник');
   if (c.sill.on) {
     const sm = SILL_M[c.sill.mat] || SILL_M.pvc;
-    mb.box(sx0, dIn, fz0 - c.sill.th, sx1, c.sill.over, fz0, sm[1]);
+    winSill(mb, sx0, sx1, dIn - 20, c.sill.over, fz0, c.sill.th, sm[1], c.sill.mat || 'pvc');
   }
-  mb.tag('Отлив');
   if (c.drip.on)
-    mb.box(
+    winDrip(
+      mb,
       M.wx0 > 0 ? M.wx0 : -20,
-      -M.T - c.drip.over,
-      fz0 - c.sill.th - 2,
       M.wx1 < M.W ? M.wx1 : M.W + 20,
-      dOut,
+      dOut + 20,
+      -M.T - c.drip.over,
       fz0 - c.sill.th,
       c.colOut === '#f4f5f3' ? '#e6e8ea' : c.colOut
     );
@@ -29361,7 +29443,16 @@ const TRIMK = {
   cornice: { n: 'Карниз потолочный (молдинг)', zone: 'ceil', prof: 'tr_cornice', bar: 2000 },
   curtain: { n: 'Карниз для штор (шина)', zone: 'ceil', prof: 'tr_curtain', bar: 3000 },
   led: { n: 'Профиль LED угловой', zone: 'ceil', prof: 'tr_led', bar: 2000 },
+  ledR: { n: 'Профиль LED встраиваемый в потолок', zone: 'ceil', prof: 'tr_ledR', bar: 2000 },
   molding: { n: 'Молдинг настенный', zone: 'wall', prof: 'tr_molding', bar: 2000 }
+};
+/** The sections of the built-in profiles before v50 (to recognise unedited copies in documents). */
+const TRIM_OLD = {
+  tr_hplinth: '[[-14,0],[1,0],[1,60],[-14,60]]',
+  tr_shadowF: '[[-10,0],[0,0],[0,12],[-10,12]]',
+  tr_shadowC: '[[-10,0],[0,0],[0,15],[-10,15]]',
+  tr_led: '[[0,0],[18,0],[0,18]]',
+  tr_molding: '[[0,0],[12,0],[12,40],[0,40]]'
 };
 function trimProfiles() {
   return [
@@ -29382,39 +29473,82 @@ function trimProfiles() {
     {
       id: 'tr_hplinth',
       kind: 'trim',
-      name: 'Скрытый плинтус Al 60, заподлицо',
+      name: 'Скрытый плинтус Al 60, заподлицо, с теневым швом',
       color: '#c3c8ce',
       pts: [
         [-14, 0],
         [1, 0],
-        [1, 60],
-        [-14, 60]
+        [1, 56],
+        [-1.5, 56],
+        [-1.5, 2],
+        [-14, 2]
+      ],
+      parts: [
+        {
+          color: '#23272c',
+          pts: [
+            [-9, 56],
+            [1, 56],
+            [1, 64],
+            [-9, 64]
+          ]
+        }
       ],
       an: { W: [0, 0] }
     },
     {
       id: 'tr_shadowF',
       kind: 'trim',
-      name: 'Теневой зазор у пола 10×12',
-      color: '#24282d',
+      name: 'Теневой профиль у пола Al 10×12 (чёрный)',
+      color: '#2c3036',
       pts: [
-        [-10, 0],
-        [0, 0],
-        [0, 12],
-        [-10, 12]
+        [-11, 0],
+        [0.5, 0],
+        [0.5, 1.2],
+        [-9.8, 1.2],
+        [-9.8, 10.8],
+        [0.5, 10.8],
+        [0.5, 12],
+        [-11, 12]
+      ],
+      parts: [
+        {
+          color: '#16181b',
+          pts: [
+            [-0.4, 1.2],
+            [0.2, 1.2],
+            [0.2, 10.8],
+            [-0.4, 10.8]
+          ]
+        }
       ],
       an: { W: [0, 0] }
     },
     {
       id: 'tr_shadowC',
       kind: 'trim',
-      name: 'Теневой профиль потолочный 10×15',
-      color: '#24282d',
+      name: 'Теневой профиль потолочный Al 10×15 (чёрный)',
+      color: '#2c3036',
       pts: [
-        [-10, 0],
-        [0, 0],
-        [0, 15],
-        [-10, 15]
+        [-11, 0],
+        [0.5, 0],
+        [0.5, 1.2],
+        [-9.8, 1.2],
+        [-9.8, 13.8],
+        [0.5, 13.8],
+        [0.5, 15],
+        [-11, 15]
+      ],
+      parts: [
+        {
+          color: '#16181b',
+          pts: [
+            [-0.4, 1.2],
+            [0.2, 1.2],
+            [0.2, 13.8],
+            [-0.4, 13.8]
+          ]
+        }
       ],
       an: { W: [0, 0] }
     },
@@ -29450,12 +29584,35 @@ function trimProfiles() {
     {
       id: 'tr_led',
       kind: 'trim',
-      name: 'LED-профиль угловой 18×18',
-      color: '#e6e8ea',
+      name: 'LED-профиль угловой Al 18×18 с рассеивателем',
+      color: '#cfd4d9',
       pts: [
         [0, 0],
         [18, 0],
+        [18, 1.5],
+        [1.5, 1.5],
+        [1.5, 18],
         [0, 18]
+      ],
+      parts: [
+        {
+          color: '#f7f7f1',
+          pts: [
+            [18, 1.2],
+            [19.2, 2.4],
+            [2.4, 19.2],
+            [1.2, 18]
+          ]
+        },
+        {
+          color: '#f0de8c',
+          pts: [
+            [3, 1.5],
+            [12, 1.5],
+            [12, 2.6],
+            [3, 2.6]
+          ]
+        }
       ],
       an: { W: [0, 0] }
     },
@@ -29467,8 +29624,58 @@ function trimProfiles() {
       pts: [
         [0, 0],
         [12, 0],
+        [12, 4],
+        [9, 7],
+        [9, 12],
+        [12, 16],
+        [12, 27],
+        [10, 31],
+        [7, 34],
+        [8, 37],
+        [12, 38],
         [12, 40],
         [0, 40]
+      ],
+      an: { W: [0, 0] }
+    },
+    {
+      id: 'tr_ledR',
+      kind: 'trim',
+      name: 'LED-профиль встраиваемый Al 28×12 с рассеивателем',
+      color: '#cfd4d9',
+      pts: [
+        [46, 1.5],
+        [46, 0],
+        [50, 0],
+        [50, -12],
+        [70, -12],
+        [70, 0],
+        [74, 0],
+        [74, 1.5],
+        [68.5, 1.5],
+        [68.5, -10.5],
+        [51.5, -10.5],
+        [51.5, 1.5]
+      ],
+      parts: [
+        {
+          color: '#f7f7f1',
+          pts: [
+            [51.5, 0.3],
+            [68.5, 0.3],
+            [68.5, 1.5],
+            [51.5, 1.5]
+          ]
+        },
+        {
+          color: '#f0de8c',
+          pts: [
+            [55, -10.5],
+            [65, -10.5],
+            [65, -9.4],
+            [55, -9.4]
+          ]
+        }
       ],
       an: { W: [0, 0] }
     }
@@ -29542,7 +29749,11 @@ XT.trim = {
   },
   k3: e => [getProf(e.prof, 'trim'), e.zone === 'ceil' ? S.ceil : 0],
   build3(e) {
-    const pr = getProf(e.prof, 'trim');
+    let pr = getProf(e.prof, 'trim');
+    if (pr.id !== e.prof) pr = trimProfiles().find(p => p.id === e.prof) || pr;
+    // a document copy of an old built-in section (a plain rectangle) — the detailed built-in one instead
+    const D = trimProfiles().find(p => p.id === pr.id);
+    if (D && D.parts && !pr.parts && TRIM_OLD[pr.id] === JSON.stringify(pr.pts)) pr = D;
     const W0 = (pr.an && pr.an.W) || [0, 0];
     const sg = e.side === 'R' ? 1 : -1;
     const pts = pr.pts.map(([x, y]) => [(x - W0[0]) * sg, y - W0[1]]);
@@ -29551,6 +29762,17 @@ XT.trim = {
     const mb = MB((a, b, c) => [a, c, b]);
     mb.tag(pr.name);
     sweepProfile(mb, pts, e.color || pr.color, trimPath(e), Y => (zone === 'ceil' ? z - Y : z + Y));
+    // details of the section: the shadow inside, the diffuser, the LED strip
+    for (const pt of pr.parts || []) {
+      mb.tag(pr.name + ' · деталь');
+      sweepProfile(
+        mb,
+        pt.pts.map(([x, y]) => [(x - W0[0]) * sg, y - W0[1]]),
+        pt.color,
+        trimPath(e),
+        Y => (zone === 'ceil' ? z - Y : z + Y)
+      );
+    }
     return meshGroup(mb.meshes(), { edges: false });
   },
   group: e => `${(TRIMK[e.kind] || {}).n || 'Профиль'} · ${getProf(e.prof, 'trim').name}`,
@@ -63726,27 +63948,78 @@ function hatchBuild(e, mb) {
         [-w / 2 + 40, z1 - 40],
         [w / 2 - 40, z1 - 40]
       ])
-        mb.box(x - 10, -24, z - 10, x + 10, -12, z + 10, '#5d646c');
+        mb.sweep(
+          [
+            [x, -24, z],
+            [x, -12, z]
+          ],
+          10,
+          '#5d646c',
+          16
+        );
     } else {
       const col = e.kind === 'metal' ? '#eef0f2' : '#f6f7f8';
+      const ID = (x, d, z) => [x, d, z];
       mb.tag(e.kind === 'metal' ? 'Рамка стальная с полкой' : 'Рамка пластиковая');
-      mb.box(-w / 2 - 25, 0, z0 - 25, w / 2 + 25, 8, z0, col);
-      mb.box(-w / 2 - 25, 0, z1, w / 2 + 25, 8, z1 + 25, col);
-      mb.box(-w / 2 - 25, 0, z0, -w / 2, 8, z1, col);
-      mb.box(w / 2, 0, z0, w / 2 + 25, 8, z1, col);
-      mb.box(-w / 2, -D - 20, z0 - 2, w / 2, 0, z0, col);
-      mb.box(-w / 2, -D - 20, z1, w / 2, 0, z1 + 2, col);
-      mb.tag('Дверца');
-      mb.box(-w / 2 + 1, 1, z0 + 1, w / 2 - 1, 9, z1 - 1, col, op);
-      mb.tag(e.kind === 'metal' ? 'Замок под ключ' : 'Защёлка');
-      mb.smooth(true);
-      mb.tube(
-        [e.hinge === 'right' ? -(w / 2 - 30) : w / 2 - 30, 9, z0 + h / 2],
-        [e.hinge === 'right' ? -(w / 2 - 30) : w / 2 - 30, 14, z0 + h / 2],
-        8,
-        '#9aa1a9',
-        14
+      // the face flange with a rounded outer edge and the sleeve going into the wall
+      mitreRing(
+        mb,
+        ID,
+        -w / 2 - 25,
+        w / 2 + 25,
+        z0 - 25,
+        z1 + 25,
+        [
+          [0, 0],
+          [0, 5],
+          [3, 8],
+          [25, 8],
+          [25, 0]
+        ],
+        col
       );
+      mitreRing(
+        mb,
+        ID,
+        -w / 2,
+        w / 2,
+        z0,
+        z1,
+        [
+          [-2, -D - 20],
+          [0, -D - 20],
+          [0, 0],
+          [-2, 0]
+        ],
+        col
+      );
+      mb.tag('Дверца');
+      mb.smooth(true);
+      mb.rbox(-w / 2 + 1.5, 1, z0 + 1.5, w / 2 - 1.5, 9.5, z1 - 1.5, 2, col, 2, op);
+      const lx = e.hinge === 'right' ? -(w / 2 - 30) : w / 2 - 30;
+      if (e.kind === 'metal') {
+        mb.tag('Замок под ключ');
+        mb.sweep(
+          [
+            [lx, 9.5, z0 + h / 2],
+            [lx, 13, z0 + h / 2]
+          ],
+          [12, 11],
+          '#9aa1a9',
+          24
+        );
+        mb.lod('n');
+        mb.obox([lx, 13.1, z0 + h / 2 - 6], [lx, 13.1, z0 + h / 2 + 6], 2.4, 0.4, '#2b2f35');
+        mb.lod('');
+      } else {
+        mb.tag('Защёлки нажимные, 2 шт');
+        for (const zz of [z0 + h * 0.25, z1 - h * 0.25]) {
+          mb.rbox(lx - 7, 9.5, zz - 16, lx + 7, 12, zz + 16, 3, '#e9ebed', 2);
+          mb.lod('n');
+          mb.obox([lx, 12.1, zz - 8], [lx, 12.1, zz + 8], 1.6, 0.3, '#9aa1a9');
+          mb.lod('');
+        }
+      }
       mb.smooth(false);
     }
   } else {
@@ -91211,44 +91484,275 @@ XT.curtain = {
       mb.obox(at(0, w / 2, z + 3), at(L, w / 2, z + 3), w, 6, '#3c3f44');
     }
     mb.tag(K.n);
+    const ext = (sec, s0, s1, c_) => extrude(mb, (ss, o, zz) => at(ss, o, zz), sec, s0, s1, c_);
+    // runners / rings: along the rail, a little denser where the drapes gather at the ends
+    const stations = () => {
+      const st = [];
+      const n = Math.max(6, Math.round(L / 110));
+      for (let i = 0; i < n; i++) st.push(20 + ((L - 40) * i) / (n - 1));
+      return st;
+    };
     if (K.rod) {
+      const rr = (e.rd || 25) / 2;
       mb.smooth(true);
-      for (const r of rows) mb.tube(at(-60, r, z), at(L + 60, r, z), (e.rd || 25) / 2, col, 16);
+      for (const r of rows) mb.tube(at(-50, r, z), at(L + 50, r, z), rr, col, 18);
       mb.tag('Наконечники');
       for (const r of rows)
-        for (const s of [-75, L + 75]) {
-          const p = at(s, r, z);
-          mb.cyl(p[0], p[1], z - 28, z + 28, 22, col, 16, 1, 6);
+        for (const sg of [-1, 1]) {
+          const s0 = sg < 0 ? -50 : L + 50;
+          const P_ = (d, rad) => [at(s0 + sg * d, r, z), rad];
+          const prof = [
+            P_(0, rr + 3),
+            P_(6, rr + 3),
+            P_(10, rr - 2),
+            P_(16, rr + 4),
+            P_(34, rr + 9),
+            P_(52, rr + 6),
+            P_(62, 3)
+          ];
+          mb.sweep(
+            prof.map(q => q[0]),
+            prof.map(q => q[1]),
+            col,
+            18
+          );
         }
       mb.tag('Кронштейны');
       const nb = crFix(e);
+      const rl = rows[rows.length - 1];
       for (let i = 0; i < nb; i++) {
-        const s = nb === 1 ? L / 2 : 60 + ((L - 120) * i) / (nb - 1);
-        mb.obox(at(s, 0, z), at(s, rows[rows.length - 1] + 12, z), 14, 14, col);
-        mb.cyl(...at(s, 4, 0).slice(0, 2), z - 35, z + 35, 30, col, 16);
+        const s_ = nb === 1 ? L / 2 : 60 + ((L - 120) * i) / (nb - 1);
+        // round wall flange, the arm, a holder ring round each rod
+        mb.sweep([at(s_, 0, z), at(s_, 8, z)], 30, col, 24);
+        mb.sweep([at(s_, 8, z), at(s_, 14, z)], [22, 14], col, 20);
+        mb.tube(at(s_, 14, z), at(s_, rl, z), 6, col, 12);
+        for (const r of rows) mb.sweep([at(s_ - 9, r, z), at(s_ + 9, r, z)], rr + 3, col, 18);
       }
+      mb.tag('Кольца с крючками');
+      mb.lod('n');
+      for (const r of rows)
+        for (const s_ of stations()) {
+          const q0 = at(s_ - 3, r, z),
+            q1 = at(s_ + 3, r, z);
+          mb.sweep([q0, q1], rr + 5, col, 16);
+          mb.tube(at(s_, r, z - rr - 5), at(s_, r, z - rr - 16), 1.6, '#9aa1a9', 8);
+        }
+      mb.lod('');
       mb.smooth(false);
     } else if (!K.w) {
-      // a one-piece plastic rail with all rows
-      const w = rows[rows.length - 1] - rows[0] + 26;
-      const oc = (rows[0] + rows[rows.length - 1]) / 2;
-      mb.obox(at(0, oc, z - K.h / 2), at(L, oc, z - K.h / 2), w, K.h, col);
-    } else
+      // a one-piece plastic ceiling rail: a band with a T-slot under each row, decorative end caps, runners with hooks
+      const o0 = rows[0] - 13,
+        o1 = rows[rows.length - 1] + 13,
+        h = K.h;
+      ext(
+        [
+          [o0, z],
+          [o1, z],
+          [o1, z - h + 3],
+          [o1 - 3, z - h],
+          [o0 + 3, z - h],
+          [o0, z - h + 3]
+        ],
+        0,
+        L,
+        col
+      );
+      mb.tag('Пазы под бегунки');
+      for (const r of rows)
+        ext(
+          [
+            [r - 3, z - h - 0.5],
+            [r + 3, z - h - 0.5],
+            [r + 3, z - h + 6],
+            [r - 3, z - h + 6]
+          ],
+          2,
+          L - 2,
+          '#b9bdc1'
+        );
+      mb.tag('Заглушки торцевые');
+      mb.smooth(true);
+      for (const s_ of [-8, L]) {
+        const A = at(s_, o0 - 3, z - h - 3),
+          B = at(s_ + 8, o1 + 3, z);
+        mb.rbox(
+          Math.min(A[0], B[0]),
+          Math.min(A[1], B[1]),
+          A[2],
+          Math.max(A[0], B[0]),
+          Math.max(A[1], B[1]),
+          B[2],
+          3,
+          col,
+          2
+        );
+      }
+      mb.smooth(false);
+      mb.tag('Бегунки с крючками');
+      mb.lod('n');
+      for (const r of rows)
+        for (const s_ of stations()) {
+          mb.obox(at(s_ - 5, r, z - h - 2), at(s_ + 5, r, z - h - 2), 7, 5, '#f2f3f4');
+          mb.sweep(
+            [at(s_, r, z - h - 4), at(s_, r, z - h - 12), at(s_ + 3, r, z - h - 17), at(s_ + 6, r, z - h - 13)],
+            1.2,
+            '#c9cdd1',
+            8
+          );
+        }
+      mb.lod('');
+    } else {
+      // aluminium C-profile rails (in a niche, in a stretch ceiling, on the ceiling, motorised; on wall brackets)
+      const w = K.w,
+        h = K.h,
+        t = 1.6;
       for (const r of rows) {
-        mb.obox(at(0, r, z - K.h / 2), at(L, r, z - K.h / 2), K.w, K.h, col);
+        const L0 = r - w / 2,
+          R0 = r + w / 2,
+          zt = z - (K.wall ? 0 : 0);
+        // top web, the side walls, the lips forming the slot
+        ext(
+          [
+            [L0, zt],
+            [R0, zt],
+            [R0, zt - t],
+            [L0, zt - t]
+          ],
+          0,
+          L,
+          col
+        );
+        ext(
+          [
+            [L0, zt - t],
+            [L0 + t, zt - t],
+            [L0 + t, zt - h],
+            [L0, zt - h + 1]
+          ],
+          0,
+          L,
+          col
+        );
+        ext(
+          [
+            [R0 - t, zt - t],
+            [R0, zt - t],
+            [R0, zt - h + 1],
+            [R0 - t, zt - h]
+          ],
+          0,
+          L,
+          col
+        );
+        ext(
+          [
+            [L0, zt - h + t],
+            [r - 3.5, zt - h + t],
+            [r - 3.5, zt - h],
+            [L0 + 1, zt - h]
+          ],
+          0,
+          L,
+          col
+        );
+        ext(
+          [
+            [r + 3.5, zt - h + t],
+            [R0, zt - h + t],
+            [R0 - 1, zt - h],
+            [r + 3.5, zt - h]
+          ],
+          0,
+          L,
+          col
+        );
+        mb.tag('Заглушки профиля');
+        for (const s_ of [-3, L])
+          ext(
+            [
+              [L0 - 0.5, zt + 0.5],
+              [R0 + 0.5, zt + 0.5],
+              [R0 + 0.5, zt - h - 0.5],
+              [L0 - 0.5, zt - h - 0.5]
+            ],
+            s_,
+            s_ + 3,
+            '#3a3d41'
+          );
+        mb.tag('Бегунки с крючками');
+        mb.lod('n');
+        for (const s_ of stations()) {
+          mb.obox(at(s_ - 6, r, zt - h + 4), at(s_ + 6, r, zt - h + 4), w - 5, h - 7, '#eef0f1');
+          mb.tube(at(s_, r, zt - h + 1), at(s_, r, zt - h - 5), 2.4, '#eef0f1', 8);
+          mb.sweep(
+            [at(s_, r, zt - h - 5), at(s_, r, zt - h - 13), at(s_ + 3, r, zt - h - 18), at(s_ + 6, r, zt - h - 14)],
+            1.1,
+            '#aeb3b8',
+            8
+          );
+        }
+        mb.lod('');
+        mb.tag(K.n);
         if (K.wall) {
           mb.tag('Кронштейны');
           const nb = crFix(e);
           for (let i = 0; i < nb; i++) {
-            const s = nb === 1 ? L / 2 : 60 + ((L - 120) * i) / (nb - 1);
-            mb.obox(at(s, 0, z + K.h / 2 + 6), at(s, r, z + K.h / 2 + 6), 12, 12, '#9aa1a8');
+            const s_ = nb === 1 ? L / 2 : 60 + ((L - 120) * i) / (nb - 1);
+            // wall plate, the arm along the top of the rail, the clip
+            const A = at(s_ - 15, 0, zt - 30),
+              B = at(s_ + 15, 6, zt + 30);
+            mb.rbox(
+              Math.min(A[0], B[0]),
+              Math.min(A[1], B[1]),
+              A[2],
+              Math.max(A[0], B[0]),
+              Math.max(A[1], B[1]),
+              B[2],
+              3,
+              '#9aa1a8',
+              2
+            );
+            mb.obox(at(s_, 6, zt + 5), at(s_, R0 + 4, zt + 5), 12, 10, '#9aa1a8');
+            mb.obox(at(s_, r, zt + 1.5), at(s_, r, zt + 1.5), w + 6, 3, '#9aa1a8');
           }
+          mb.tag(K.n);
+        } else {
+          mb.tag('Крепёж к потолку');
+          mb.lod('n');
+          const nf = crFix(e);
+          for (let i = 0; i < nf; i++) {
+            const s_ = 30 + ((L - 60) * i) / Math.max(1, nf - 1);
+            mb.tube(at(s_, r, zt - t), at(s_, r, zt - t - 3), 3.5, '#9aa1a9', 10);
+          }
+          mb.lod('');
           mb.tag(K.n);
         }
       }
+    }
     if (K.motor) {
       mb.tag('Электропривод');
-      mb.obox(at(-40, rows[0], z - 60), at(-40, rows[rows.length - 1], z - 60), 70, 90, '#5d636b');
+      mb.smooth(true);
+      const o = (rows[0] + rows[rows.length - 1]) / 2;
+      // the gear head at the end of the rail and the motor lying along it
+      const A = at(-70, rows[0] - 18, z - 60),
+        B = at(-4, rows[rows.length - 1] + 18, z);
+      mb.rbox(
+        Math.min(A[0], B[0]),
+        Math.min(A[1], B[1]),
+        A[2],
+        Math.max(A[0], B[0]),
+        Math.max(A[1], B[1]),
+        B[2],
+        8,
+        '#e9ebee',
+        3
+      );
+      mb.sweep([at(-70, o, z - 34), at(-300, o, z - 34)], 24, '#e9ebee', 24);
+      mb.sweep([at(-300, o, z - 34), at(-306, o, z - 34)], [24, 10], '#c9ced3', 24);
+      mb.lod('n');
+      mb.sweep([at(-306, o, z - 34), at(-322, o, z - 34)], 4, '#3a3d41', 10);
+      mb.lod('');
+      mb.smooth(false);
     }
     // drapes
     if (e.drape) {
@@ -103119,7 +103623,8 @@ function solidInfo(e) {
  *
  * Catalogue of rolled and welded steel sections for columns and beams, timber and masonry presets,
  * and section geometry. Section coordinates: x across the flanges (width b), y along the depth (height h),
- * centred on the bounding box. Rolled sections are drawn without root fillets; masses are catalogue values.
+ * centred on the bounding box. Rolled I-beams and channels get root fillets at the web (radius ≈ 1.2 × web); masses
+ * are catalogue values.
  */
 
 
@@ -103243,7 +103748,7 @@ function steelSection(fam, size) {
       [-w, -y + tf],
       [-x, -y + tf]
     ];
-    return { outer, inner: null, b, h, kgm, perim: 4 * b + 2 * h - 2 * tw, name, size, fam };
+    return { outer: rootFillets(outer, Math.max(6, tw * 1.3)), inner: null, b, h, kgm, perim: 4 * b + 2 * h - 2 * tw, name, size, fam };
   }
   if (F.kind === 'C' || F.kind === 'C2') {
     const [h, b, tw, tf, kgm] = STEEL.ch.sizes[size];
@@ -103260,7 +103765,7 @@ function steelSection(fam, size) {
         [x, y],
         [-x, y]
       ];
-      return { outer, inner: null, b, h, kgm, perim: 2 * h + 4 * b - 2 * tw, name, size, fam };
+      return { outer: rootFillets(outer, Math.max(6, tw * 1.3)), inner: null, b, h, kgm, perim: 2 * h + 4 * b - 2 * tw, name, size, fam };
     }
     // two channels toe to toe, welded: closed box 2b × h
     const x = b;
@@ -103307,6 +103812,39 @@ function steelSection(fam, size) {
     fam,
     round: true
   };
+}
+/** Rounds the concave corners of a section (the roots of the flanges) with radius r. */
+function rootFillets(pts, r) {
+  const n = pts.length;
+  let A = 0;
+  for (let i = 0; i < n; i++) A += pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1];
+  const sg = Math.sign(A) || 1;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[(i + n - 1) % n],
+      c = pts[i],
+      q = pts[(i + 1) % n];
+    const u = [c[0] - p[0], c[1] - p[1]],
+      v = [q[0] - c[0], q[1] - c[1]];
+    const cr = u[0] * v[1] - u[1] * v[0];
+    const lu = Math.hypot(...u),
+      lv = Math.hypot(...v);
+    if (cr * sg >= 0 || lu < 2 * r || lv < 2 * r) {
+      out.push(c);
+      continue;
+    }
+    // concave: the arc from the point r back along the incoming edge to r along the outgoing one
+    const a = [c[0] - (u[0] / lu) * r, c[1] - (u[1] / lu) * r],
+      b = [c[0] + (v[0] / lv) * r, c[1] + (v[1] / lv) * r];
+    const o = [a[0] + b[0] - c[0], a[1] + b[1] - c[1]];
+    const a0 = Math.atan2(a[1] - o[1], a[0] - o[0]),
+      a1 = Math.atan2(b[1] - o[1], b[0] - o[0]);
+    let d = a1 - a0;
+    while (d > Math.PI) d -= TAU;
+    while (d < -Math.PI) d += TAU;
+    for (let k = 0; k <= 5; k++) out.push([o[0] + Math.cos(a0 + (d * k) / 5) * r, o[1] + Math.sin(a0 + (d * k) / 5) * r]);
+  }
+  return out;
 }
 function rect(x, y) {
   return [
@@ -104155,6 +104693,373 @@ function wallTie(e) {
   } catch (err) {
     return { below: 0, above: 0 };
   }
+}
+
+// ===== elements/window-parts.js =====
+/**
+ * elements/window-parts.js
+ *
+ * Shaped parts of a PVC window, in the local frame of the window model (s — along the wall, d — across it, + into
+ * the room, z — up; see buildWin3 in view3d/build.js):
+ * - frame and sash rings from sections with mitred corners: chamfered faces, the sash standing proud of the frame with
+ *   a rounded edge, a sloped glazing bead, black gaskets;
+ * - mullions and transoms with chamfered faces;
+ * - window handle: a rounded rosette with a cap, the neck, a bent tapering lever;
+ * - hinge covers on the hinge side (bottom hinge, top scissors);
+ * - PVC window sill with a rounded nose and end caps, stone / wood sill with a chamfer;
+ * - steel drip: the sloped plate under the frame, the front bend with a kick, plastic end caps.
+ * Sizes in mm.
+ */
+
+
+const ID = (x, d, z) => [x, d, z];
+const GASKET = '#2a2d31';
+
+/** The frame ring: two halves of depth (outside / inside colour), chamfers on both faces, the gasket at the rebate. */
+function winFrameRing(mb, x0, x1, z0, z1, fw, dOut, dIn, colOut, colIn) {
+  const half = (dOut + dIn) / 2;
+  mitreRing(
+    mb,
+    ID,
+    x0,
+    x1,
+    z0,
+    z1,
+    [
+      [0, dOut + 3],
+      [3, dOut],
+      [fw - 3, dOut],
+      [fw, dOut + 3],
+      [fw, half],
+      [0, half]
+    ],
+    colOut
+  );
+  mitreRing(
+    mb,
+    ID,
+    x0,
+    x1,
+    z0,
+    z1,
+    [
+      [0, half],
+      [fw, half],
+      [fw, dIn - 3],
+      [fw - 3, dIn],
+      [3, dIn],
+      [0, dIn - 3]
+    ],
+    colIn
+  );
+  mb.lod('n');
+  mitreRing(
+    mb,
+    ID,
+    x0,
+    x1,
+    z0,
+    z1,
+    [
+      [fw - 1, dIn - 3],
+      [fw + 1.5, dIn - 3],
+      [fw + 1.5, dIn - 7],
+      [fw - 1, dIn - 7]
+    ],
+    GASKET
+  );
+  mb.lod('');
+}
+/**
+ * The sash ring: proud of the frame towards the room, a rounded edge, the sloped glazing bead on the room side and
+ * gaskets on both sides of the glass. gl — the glass thickness.
+ */
+function winSashRing(mb, a0, a1, b0, b1, sw, dOut, dIn, gl, colOut, colIn) {
+  const half = (dOut + dIn) / 2,
+    bw = 18,
+    gIn = half + gl / 2,
+    gOut = half - gl / 2;
+  mitreRing(
+    mb,
+    ID,
+    a0,
+    a1,
+    b0,
+    b1,
+    [
+      [0, dOut + 8],
+      [2, dOut + 6],
+      [sw, dOut + 6],
+      [sw, half],
+      [0, half]
+    ],
+    colOut
+  );
+  mitreRing(
+    mb,
+    ID,
+    a0,
+    a1,
+    b0,
+    b1,
+    [
+      [0, half],
+      [sw - bw, half],
+      [sw - bw, dIn + 6],
+      [7, dIn + 6],
+      [3, dIn + 5],
+      [1, dIn + 3],
+      [0, dIn]
+    ],
+    colIn
+  );
+  // the glazing bead: its face slopes down to the glass
+  mitreRing(
+    mb,
+    ID,
+    a0,
+    a1,
+    b0,
+    b1,
+    [
+      [sw - bw, gIn + 3],
+      [sw, gIn + 3],
+      [sw, dIn - 4],
+      [sw - 5, dIn + 2],
+      [sw - bw, dIn + 5]
+    ],
+    colIn
+  );
+  mb.lod('n');
+  for (const d of [gIn + 1.5, gOut - 1.5])
+    mitreRing(
+      mb,
+      ID,
+      a0,
+      a1,
+      b0,
+      b1,
+      [
+        [sw - 1.5, d - 1.5],
+        [sw + 2, d - 1.5],
+        [sw + 2, d + 1.5],
+        [sw - 1.5, d + 1.5]
+      ],
+      GASKET
+    );
+  mb.lod('');
+}
+/** The glazing bead of a fixed field (in the frame opening). */
+function winFixedBead(mb, x0, x1, z0, z1, dOut, dIn, gl, colIn) {
+  const half = (dOut + dIn) / 2,
+    gIn = half + gl / 2;
+  mitreRing(
+    mb,
+    ID,
+    x0,
+    x1,
+    z0,
+    z1,
+    [
+      [0, gIn + 3],
+      [18, gIn + 3],
+      [18, gIn + 6],
+      [5, dIn - 6],
+      [0, dIn - 3]
+    ],
+    colIn
+  );
+  mb.lod('n');
+  mitreRing(
+    mb,
+    ID,
+    x0,
+    x1,
+    z0,
+    z1,
+    [
+      [17, gIn + 0.5],
+      [20, gIn + 0.5],
+      [20, gIn + 3],
+      [17, gIn + 3]
+    ],
+    GASKET
+  );
+  mb.lod('');
+}
+/** A mullion (vertical, s0..s1 × z0..z1) or a transom (horizontal) with chamfered faces. */
+function winBar(mb, a0, a1, b0, b1, dOut, dIn, colOut, colIn, vertical) {
+  const half = (dOut + dIn) / 2;
+  const w = vertical ? a1 - a0 : b1 - b0;
+  const secOut = [
+    [0, dOut + 3],
+    [3, dOut],
+    [w - 3, dOut],
+    [w, dOut + 3],
+    [w, half],
+    [0, half]
+  ];
+  const secIn = [
+    [0, half],
+    [w, half],
+    [w, dIn - 3],
+    [w - 3, dIn],
+    [3, dIn],
+    [0, dIn - 3]
+  ];
+  const map = vertical ? (z, x, d) => [a0 + x, d, z] : (s, x, d) => [s, d, b0 + x];
+  extrude(mb, map, secOut, vertical ? b0 : a0, vertical ? b1 : a1, colOut);
+  extrude(mb, map, secIn, vertical ? b0 : a0, vertical ? b1 : a1, colIn);
+}
+/**
+ * Window handle on the room face d of a sash at (s, z): a rounded rosette with a cap and the neck, the lever bent
+ * off the face and tapering, pointing down (dir −1) or sideways for a top-hung sash (horizontal).
+ */
+function winHandle(mb, s, d, z, col, horizontal) {
+  mb.tag('Ручка оконная');
+  mb.smooth(true);
+  if (horizontal) {
+    mb.rbox(s - 38, d, z - 15, s + 38, d + 11, z + 15, 6, col, 3);
+    mb.sweep(
+      [
+        [s, d + 11, z],
+        [s, d + 22, z]
+      ],
+      9,
+      col,
+      18
+    );
+    mb.sweep(
+      [
+        [s, d + 20, z],
+        [s - 14, d + 25, z],
+        [s - 95, d + 27, z],
+        [s - 104, d + 26, z]
+      ],
+      [8.5, 7.8, 6.6, 6],
+      col,
+      14
+    );
+  } else {
+    mb.rbox(s - 15, d, z - 38, s + 15, d + 11, z + 38, 6, col, 3);
+    mb.sweep(
+      [
+        [s, d + 11, z],
+        [s, d + 22, z]
+      ],
+      9,
+      col,
+      18
+    );
+    mb.sweep(
+      [
+        [s, d + 20, z],
+        [s, d + 25, z - 14],
+        [s, d + 27, z - 95],
+        [s, d + 26, z - 104]
+      ],
+      [8.5, 7.8, 6.6, 6],
+      col,
+      14
+    );
+  }
+  mb.lod('n');
+  // the cap of the rosette (turned off to show the screws) and its seam
+  if (horizontal) mb.rbox(s + 18, d + 10.5, z - 11, s + 34, d + 12, z + 11, 3, col, 2);
+  else mb.rbox(s - 11, d + 10.5, z + 18, s + 11, d + 12, z + 34, 3, col, 2);
+  mb.lod('');
+  mb.smooth(false);
+}
+/** Hinge covers on the room face of a sash: bottom hinge and top scissors at the hinge edge hx. */
+function winHinges(mb, hx, d, zb, zt, col, tilt) {
+  mb.tag('Петли (накладки)');
+  mb.smooth(true);
+  mb.rbox(hx - 9, d - 2, zb + 8, hx + 9, d + 14, zb + 78, 5, col, 3);
+  mb.rbox(hx - 8, d - 2, zt - 56, hx + 8, d + 10, zt - 8, 4, col, 3);
+  if (tilt) mb.rbox(hx - 8, d + 6, zt - 18, hx + 8, d + 11, zt - 8, 3, col, 2);
+  mb.smooth(false);
+}
+/**
+ * Window sill under the frame: s0..s1 along the wall, from d0 (under the frame) to the nose at d1, top at z.
+ * PVC — a rounded nose and end caps; stone / wood — a chamfered top edge.
+ */
+function winSill(mb, s0, s1, d0, d1, z, th, col, mat) {
+  mb.tag('Подоконник');
+  const map = (s, d, zz) => [s, d, zz];
+  let sec;
+  if (mat === 'pvc') {
+    const r = th / 2,
+      arc = [];
+    for (let k = 0; k <= 8; k++) {
+      const a = Math.PI / 2 - (k / 8) * Math.PI;
+      arc.push([d1 - r + Math.cos(a) * r, z - r + Math.sin(a) * r]);
+    }
+    // the polygon: top back → bottom back → the nose from the bottom up to the top
+    sec = [[d0, z], [d0, z - th], ...arc.slice().reverse()];
+  } else {
+    const c = Math.min(6, th / 4);
+    sec = [
+      [d0, z],
+      [d0, z - th],
+      [d1, z - th],
+      [d1, z - c],
+      [d1 - c, z]
+    ];
+  }
+  extrude(mb, map, sec, s0, s1, col);
+  if (mat === 'pvc') {
+    // the end caps: the same section a little larger
+    mb.tag('Заглушки подоконника');
+    const cz = z - th / 2;
+    const grow = sec.map(([d, zz]) => [d > d0 + 1 ? d + 1.5 : d, cz + (zz - cz) * 1.12]);
+    extrude(mb, map, grow, s0 - 3, s0, col === '#f4f5f3' ? '#eceeed' : col);
+    extrude(mb, map, grow, s1, s1 + 3, col === '#f4f5f3' ? '#eceeed' : col);
+  }
+}
+/**
+ * Steel drip outside: the plate goes under the frame at d0, slopes out to the face of the wall plus the overhang
+ * (d1, outwards is −d), bends down 22 mm with a small kick; plastic end caps.
+ */
+function winDrip(mb, s0, s1, d0, d1, z, col) {
+  mb.tag('Отлив');
+  const fall = Math.max(4, Math.abs(d0 - d1) * 0.08);
+  const t = 1.2;
+  const P = [
+    [d0, z],
+    [d1, z - fall],
+    [d1, z - fall - 22],
+    [d1 - 5, z - fall - 26]
+  ];
+  // each bend of the sheet — a thin strip along the wall
+  const fixed = [];
+  for (let i = 0; i + 1 < P.length; i++) {
+    const [ad, az] = P[i],
+      [bd, bz] = P[i + 1];
+    fixed.push([ad, az, bd, bz]);
+  }
+  for (const [ad, az, bd, bz] of fixed) {
+    const L = Math.hypot(bd - ad, bz - az) || 1;
+    const nd = -(bz - az) / L,
+      nz = (bd - ad) / L;
+    extrude(
+      mb,
+      (s, d, zz) => [s, d, zz],
+      [
+        [ad, az],
+        [bd, bz],
+        [bd - nd * t, bz - nz * t],
+        [ad - nd * t, az - nz * t]
+      ],
+      s0,
+      s1,
+      col
+    );
+  }
+  mb.lod('n');
+  mb.tag('Заглушки отлива');
+  for (const s of [s0 - 2, s1])
+    mb.box(s, Math.min(d0, d1) - 6, z - fall - 26, s + 2, Math.max(d0, d1), z + 6, '#d9dcdf');
+  mb.lod('');
 }
 
 // ===== interior/kitchen-fronts.js =====
