@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '48.2';
+const APP_VER = '48.3';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -13021,7 +13021,11 @@ function mkMove(copy) {
       }
       const d = sub(p, bp);
       pushUndo();
+      const ids0 = new Set(S.ents.map(e => e.id));
       transformSel(q => add(q, d), 0, copy);
+      // pipes put next to / onto others join their row of modular clips instead of overlapping
+      const moved = copy ? S.ents.filter(e => !ids0.has(e.id)) : selEnts();
+      if (snapPipes(moved)) log('Трубы встали в ряд модульных клипс рядом с соседними (без наложения)');
       changed();
       if (!copy) return 'end';
     },
@@ -19433,6 +19437,7 @@ function initPointerRest() {
 
 
 
+
 /* ---------- context menu (right mouse button), clipboard ---------- */
 let CLIPB = null;
 const isHostedT = e => e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted);
@@ -19490,9 +19495,10 @@ function clipPaste(at) {
     S.ents.push(n);
   }
   S.sel = new Set(made.map(n => n.id));
+  const sn = snapPipes(made);
   changed();
   selChanged();
-  log(`Вставлено: ${made.length}`);
+  log(`Вставлено: ${made.length}` + (sn ? ' · трубы встали в ряд модульных клипс рядом с соседними' : ''));
 }
 function dupSel() {
   if (!S.sel.size) return;
@@ -113563,6 +113569,12 @@ function bundleSnap(e) {
   if (!moved) return 0;
   e.pts = out.filter((p, k) => !k || dist(p, out[k - 1]) > 1);
   return moved;
+}
+/** After a move / copy / paste: the moved or new pipes join the rows next to them (one by one, so they stack). */
+function snapPipes(list) {
+  let n = 0;
+  for (const e of list) if (e && e.type === 'pipe') n += bundleSnap(e) ? 1 : 0;
+  return n;
 }
 
 // ===== mep/plumbing/plumb-parts.js =====
