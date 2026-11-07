@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '45.1';
+const APP_VER = '46';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -70258,6 +70258,7 @@ function mini3D(A) {
 
 
 
+
 /* кухня: зона по стенам (прямая, Г, П), модули в отдельном конструкторе — нижние, навесные, пеналы, техника;
    столешница, цоколь, фартук; фурнитура Blum (CLIP top BLUMOTION, LEGRABOX/TANDEMBOX, AVENTOS) и Häfele (опоры, навесы, Gola, LeMans) */
 var KM = {
@@ -70344,7 +70345,13 @@ const SINK_COL = { steel: '#c7ccd2', granite: '#4b4f55', ceramic: '#f1f0ec' };
 const kdep = (e, r) => (r && r.depth) || e.cfg.depth;
 /** Freestanding units: own height, no carcass, the worktop stops at them. */
 const kmFS = k => (KM[k] && KM[k].fs) || 0;
-var KH = { gola: 'профиль Gola (без ручек)', tipon: 'TIP-ON / SERVO-DRIVE', bar: 'ручка-скоба' };
+var KH = {
+  gola: 'профиль Gola (без ручек)',
+  tipon: 'TIP-ON / SERVO-DRIVE',
+  bar: 'ручка-рейлинг на стойках',
+  edge: 'профиль-ручка на кромке',
+  knob: 'ручка-кнопка'
+};
 function kitDefaults() {
   return {
     legs: 100,
@@ -70358,6 +70365,8 @@ function kitDefaults() {
     ccol: '#f2f2f0',
     topCol: '#3d3d3d',
     handle: 'gola',
+    fstyle: 'flat',
+    hcol: '#1c1c1c',
     drawer: 'legrabox',
     apron: 'tile',
     apronCol: '#e3e0d8',
@@ -70700,6 +70709,7 @@ function kitBuild(e, mb) {
     ft = 18;
   const zt = c.legs + c.baseH;
   const BK = '#16181b';
+  const SUBS = [];
   for (const it of L.items) {
     const m = it.m,
       k = m.kind,
@@ -70712,11 +70722,16 @@ function kitBuild(e, mb) {
     const w = +m.w;
     if (k === 'gap' || k === 'wgap') continue;
     const cd = kdep(e, r) - 40;
+    const SB = kitSub(mb, xf, it.s0),
+      F = SB.F,
+      hk = ['bar', 'edge', 'knob'].includes(c.handle) ? c.handle : null,
+      hcol = c.hcol || '#1c1c1c';
+    SUBS.push(SB);
     const custom = !!m.parts;
     if (custom) partsMesh(mb, m.parts, c, B);
     if (it.row === 'low') {
       if (kmFS(k) && !custom) {
-        kitFreeUnit(mb, B, k, w, c);
+        kitFreeUnit(F, k, w, c);
         continue;
       }
       const H = it.tall ? c.wallZ + c.wallH : zt;
@@ -70735,7 +70750,9 @@ function kitBuild(e, mb) {
         B(0, cd - 60, 0, w, cd - 44, c.legs, '#3d4248');
         for (const f of kitFrontsOf(e, it)) {
           if (f.tech) {
-            kitApplianceFront(mb, B, f, cd, xf, it);
+            mb.tag(AP_N[f.kind] || 'Техника');
+            F.tag(AP_N[f.kind] || 'Техника');
+            kitApplianceShape(F, f, cd, hcol);
             continue;
           }
           if (f.kind === 'blind') {
@@ -70754,12 +70771,18 @@ function kitBuild(e, mb) {
           mb.tag(
             f.kind === 'dw' ? 'Фасад ПММ (на петлях ПММ)' : f.kind === 'drawer' ? 'Фасады ящиков' : 'Фасады распашные'
           );
-          B(f.x0, cd, f.z0, f.x1, cd + ft, f.z1, c.fcol);
-          kitHandle(mb, c, f, it, xf, cd + ft);
+          F.tag(
+            f.kind === 'dw' ? 'Фасад ПММ (на петлях ПММ)' : f.kind === 'drawer' ? 'Фасады ящиков' : 'Фасады распашные'
+          );
+          kitFrontPanel(F, f, cd, ft, c.fcol, c.fstyle);
+          if (hk) {
+            F.tag('Ручки');
+            kitHandleShape(F, f, cd + ft, hk, hcol, { tall: it.tall });
+          }
         }
         if (c.handle === 'gola' && !it.tall) {
-          mb.tag('Профиль Gola');
-          B(0, cd - 26, zt - 60, w, cd, zt - 16, '#3d4248');
+          F.tag('Профиль Gola');
+          kitGola(F, w, cd, zt);
         }
         if (k === 'b_dw') {
           mb.tag('Посудомоечная машина');
@@ -70825,26 +70848,20 @@ function kitBuild(e, mb) {
       B(30, -6, z1 - 80, w - 30, 0, z1 - 50, '#7d848c');
       for (const f of kitFrontsOf(e, it)) {
         if (f.tech) {
-          kitApplianceFront(mb, B, f, d, xf, it);
+          F.tag(AP_N[f.kind] || 'Техника');
+          kitApplianceShape(F, f, d, hcol);
           continue;
         }
-        mb.tag(f.kind === 'flap' ? 'Фасад откидной (AVENTOS)' : 'Фасады навесные');
-        B(f.x0, d, f.z0, f.x1, d + ft, f.z1, c.fcol);
-        if (c.handle === 'bar') {
-          mb.tag('Ручки');
-          mb.smooth(true);
-          mb.tube(
-            xf(it.s0 + (f.x0 + f.x1) / 2 - 80, d + ft + 30, f.z0 + 45),
-            xf(it.s0 + (f.x0 + f.x1) / 2 + 80, d + ft + 30, f.z0 + 45),
-            6,
-            '#9aa1a9',
-            12
-          );
-          mb.smooth(false);
+        F.tag(f.kind === 'flap' ? 'Фасад откидной (AVENTOS)' : 'Фасады навесные');
+        kitFrontPanel(F, f, d, ft, c.fcol, c.fstyle);
+        if (hk) {
+          F.tag('Ручки');
+          kitHandleShape(F, f, d + ft, hk, hcol, { up: true });
         }
       }
     }
   }
+  for (const sb of SUBS) sb.flush();
   // end panels of the runs
   for (const r of L.runs) kitEndPanels(mb, e, L, r);
   // worktop with the sink cut-outs, apron (islands draw their own top: cfg.noTop)
@@ -70961,24 +70978,6 @@ function kitEndParts(e) {
   return out;
 }
 /** Handles of a front (bar handles only; Gola and TIP-ON have none). */
-function kitHandle(mb, c, f, it, xf, y) {
-  if (c.handle !== 'bar') return;
-  mb.tag('Ручки');
-  mb.smooth(true);
-  const zc = f.kind === 'door' && it.tall ? f.z0 + (f.z1 - f.z0) / 2 : f.z1 - 45;
-  if (f.kind === 'door' && f.z1 - f.z0 > 500) {
-    const xc = f.hinge === 'L' ? f.x1 - 45 : f.x0 + 45;
-    mb.tube(xf(it.s0 + xc, y + 30, zc - 90), xf(it.s0 + xc, y + 30, zc + 90), 6, '#9aa1a9', 12);
-  } else
-    mb.tube(
-      xf(it.s0 + (f.x0 + f.x1) / 2 - 80, y + 30, zc),
-      xf(it.s0 + (f.x0 + f.x1) / 2 + 80, y + 30, zc),
-      6,
-      '#9aa1a9',
-      12
-    );
-  mb.smooth(false);
-}
 const AP_N = {
   oven: 'Духовой шкаф 60 см',
   mw: 'СВЧ встраиваемая',
@@ -70986,80 +70985,118 @@ const AP_N = {
   coffee: 'Кофемашина встраиваемая 45 см',
   warm: 'Подогреватель посуды 14 см'
 };
-/** A built-in appliance in its niche: the body, the glass front, a handle / panel. */
-function kitApplianceFront(mb, B, f, cd, xf, it) {
-  const BK = '#16181b';
-  mb.tag(AP_N[f.kind] || 'Техника');
-  B(f.x0, cd - 540, f.z0, f.x1, cd, f.z1, '#2b2f35');
-  B(f.x0, cd, f.z0, f.x1, cd + 22, f.z1, BK);
-  const h = f.z1 - f.z0;
-  if (f.kind === 'warm') {
-    B(f.x0 + 20, cd + 22, f.z0 + 20, f.x1 - 20, cd + 23, f.z1 - 20, '#33383e');
-    return;
-  }
-  if (f.kind === 'coffee') {
-    mb.tag('Кофемашина: панель и выход кофе');
-    B(f.x0 + 30, cd + 22, f.z1 - 90, f.x1 - 30, cd + 23, f.z1 - 20, '#33383e');
-    B(f.x0 + 230, cd + 22, f.z0 + 60, f.x1 - 230, cd + 24, f.z0 + h * 0.55, '#22262b');
-    return;
-  }
-  B(f.x0 + 40, cd + 22, f.z0 + 40, f.x1 - 40, cd + 23, f.z1 - (f.kind === 'mw' ? 40 : 120), '#22262b');
-  if (f.kind === 'oven' || f.kind === 'steam') {
-    mb.tag('Ручка духовки');
-    mb.smooth(true);
-    mb.tube(xf(it.s0 + f.x0 + 60, cd + 55, f.z1 - 95), xf(it.s0 + f.x1 - 60, cd + 55, f.z1 - 95), 8, '#c7ccd2', 14);
-    mb.smooth(false);
-    mb.tag('Панель управления');
-    B(f.x0, cd + 22, f.z1 - 80, f.x1, cd + 23, f.z1 - 5, '#33383e');
-  }
-}
 /** Freestanding appliances: fridges (single, side-by-side, French door), a cooker, a washing machine. */
-function kitFreeUnit(mb, B, k, w, c) {
+function kitFreeUnit(F, k, w, c) {
   const H = kmFS(k),
     D = k === 'f_stove' || k === 'f_wm' ? 600 : 680;
   const body = '#d9dde1',
-    door = '#e9ecef',
-    hd = '#9aa1a9';
-  mb.tag(KM[k].n);
+    door = c.applCol || '#e9ecef',
+    hd = '#a9adb0',
+    ST = '#c7ccd2';
+  F.tag(KM[k].n);
+  // a vertical handle on two posts (fridges)
+  const vHandle = (x, z0, z1) => {
+    for (const z of [z0 + 20, z1 - 20]) F.tube([x, D - 28, z], [x, D + 4, z], 6, hd, 16);
+    F.rbox(x - 9, D, z0, x + 9, D + 14, z1, 5, hd, 3);
+  };
+  const doorP = (x0, x1, z0, z1) => F.rbox(x0, D - 30, z0, x1, D - 26, z1, 3, door, 2);
+  if (k === 'b_fridgeF' || k === 'f_sbs' || k === 'f_french') {
+    F.rbox(0, 0, 0, w - 10, D - 30, H, 6, body, 3);
+    F.lod('n');
+    F.tag('Решётка вентиляции');
+    F.box(40, D - 31, 8, w - 50, D - 29, 28, '#3a3d41');
+    F.lod('');
+    F.tag(KM[k].n);
+  }
   if (k === 'b_fridgeF') {
-    B(0, 0, 0, w - 10, D - 30, H, body);
-    B(5, D - 30, 1200, w - 15, D - 28, H - 10, door);
-    B(5, D - 30, 10, w - 15, D - 28, 1190, door);
-    mb.tag('Ручки');
-    B(w - 60, D - 28, 1300, w - 40, D, 1600, hd);
-    B(w - 60, D - 28, 900, w - 40, D, 1150, hd);
+    doorP(5, w - 15, 1200, H - 10);
+    doorP(5, w - 15, 40, 1190);
+    F.tag('Ручки');
+    vHandle(w - 60, 1300, 1650);
+    vHandle(w - 60, 850, 1150);
   } else if (k === 'f_sbs') {
-    B(0, 0, 0, w - 10, D - 30, H, body);
-    B(5, D - 30, 30, w / 2 - 8, D - 28, H - 10, door);
-    B(w / 2 - 2, D - 30, 30, w - 15, D - 28, H - 10, door);
-    mb.tag('Диспенсер льда и воды');
-    B(w / 4 - 110, D - 28, 1050, w / 4 + 110, D - 26, 1400, '#5d646c');
-    mb.tag('Ручки');
-    B(w / 2 - 40, D - 28, 700, w / 2 - 24, D, 1500, hd);
-    B(w / 2 + 14, D - 28, 700, w / 2 + 30, D, 1500, hd);
+    doorP(5, w / 2 - 8, 40, H - 10);
+    doorP(w / 2 - 2, w - 15, 40, H - 10);
+    F.tag('Диспенсер льда и воды');
+    F.rbox(w / 4 - 110, D - 30, 1050, w / 4 + 110, D - 24, 1400, 8, '#2f3337', 3);
+    F.box(w / 4 - 80, D - 26, 1080, w / 4 + 80, D - 23.5, 1300, '#0f1012');
+    F.lod('n');
+    F.rbox(w / 4 - 60, D - 24, 1330, w / 4 + 60, D - 22, 1385, 3, '#1a1c1f', 2);
+    F.lod('');
+    F.tag('Ручки');
+    vHandle(w / 2 - 36, 700, 1500);
+    vHandle(w / 2 + 28, 700, 1500);
   } else if (k === 'f_french') {
-    B(0, 0, 0, w - 10, D - 30, H, body);
-    B(5, D - 30, 760, w / 2 - 8, D - 28, H - 10, door);
-    B(w / 2 - 2, D - 30, 760, w - 15, D - 28, H - 10, door);
-    B(5, D - 30, 30, w - 15, D - 28, 740, door);
-    mb.tag('Ручки');
-    B(w / 2 - 40, D - 28, 1000, w / 2 - 24, D, 1600, hd);
-    B(w / 2 + 14, D - 28, 1000, w / 2 + 30, D, 1600, hd);
-    B(80, D - 28, 640, w - 90, D, 660, hd);
+    doorP(5, w / 2 - 8, 760, H - 10);
+    doorP(w / 2 - 2, w - 15, 760, H - 10);
+    doorP(5, w - 15, 40, 740);
+    F.tag('Ручки');
+    vHandle(w / 2 - 36, 1000, 1600);
+    vHandle(w / 2 + 28, 1000, 1600);
+    for (const x of [100, w - 110]) F.tube([x, D - 28, 640], [x, D + 4, 640], 6, hd, 16);
+    F.rbox(80, D, 631, w - 90, D + 14, 649, 5, hd, 3);
   } else if (k === 'f_stove') {
-    B(0, 0, 0, w, D, H - 10, '#e9ecef');
-    mb.tag('Варочная поверхность плиты');
-    B(0, 0, H - 10, w, D, H, BKc);
-    mb.tag('Дверца духовки');
-    B(30, D, 120, w - 30, D + 4, H - 160, '#22262b');
-    mb.tag('Панель управления');
-    B(0, D, H - 130, w, D + 6, H - 20, '#c7ccd2');
+    F.rbox(0, 0, 0, w, D, H - 10, 4, '#e9ecef', 3);
+    F.tag('Варочная поверхность плиты');
+    F.rbox(0, 0, H - 10, w, D, H, 3, '#16181b', 2);
+    F.tag('Дверца духовки');
+    F.rbox(30, D, 110, w - 30, D + 22, H - 160, 3, '#16181b', 2);
+    F.box(70, D + 21.5, 150, w - 70, D + 23, H - 210, '#22262b', 0.85);
+    for (const x of [80, w - 80]) F.tube([x, D + 22, H - 185], [x, D + 52, H - 185], 6, ST, 16);
+    F.rbox(60, D + 46, H - 193, w - 60, D + 58, H - 177, 5, ST, 3);
+    F.tag('Панель управления');
+    F.rbox(0, D, H - 130, w, D + 6, H - 20, 3, '#c7ccd2', 2);
+    for (let i = 0; i < 4; i++) {
+      const x = 80 + (i * (w - 160)) / 3;
+      F.sweep(
+        [
+          [x, D + 6, H - 75],
+          [x, D + 28, H - 75]
+        ],
+        17,
+        '#2b2f35',
+        28
+      );
+      F.lod('n');
+      F.box(x - 1.5, D + 28, H - 70, x + 1.5, D + 28.6, H - 60, ST);
+      F.lod('');
+    }
   } else if (k === 'f_wm') {
-    B(0, 0, 0, w, D, H, '#f1f2f4');
-    mb.tag('Люк');
-    B(w / 2 - 150, D, 180, w / 2 + 150, D + 6, 480, '#9aa1a9');
-    B(w / 2 - 120, D + 6, 210, w / 2 + 120, D + 8, 450, '#5b6b78');
-    B(30, D, H - 110, w - 30, D + 3, H - 20, '#c7ccd2');
+    F.rbox(0, 0, 0, w, D, H, 6, '#f1f2f4', 3);
+    F.tag('Люк');
+    F.sweep(
+      [
+        [w / 2, D, 330],
+        [w / 2, D + 18, 330]
+      ],
+      160,
+      '#c7ccd2',
+      64
+    );
+    F.sweep(
+      [
+        [w / 2, D + 18, 330],
+        [w / 2, D + 22, 330]
+      ],
+      128,
+      '#5b6b78',
+      64,
+      0.7
+    );
+    F.tag('Панель управления');
+    F.rbox(30, D - 1, H - 110, w - 30, D + 3, H - 20, 3, '#c7ccd2', 2);
+    F.sweep(
+      [
+        [w - 120, D + 3, H - 65],
+        [w - 120, D + 20, H - 65]
+      ],
+      26,
+      '#e9ecef',
+      32
+    );
+    F.lod('n');
+    F.box(60, D + 2.6, H - 90, 200, D + 3.4, H - 40, '#0f1012');
+    F.lod('');
   }
 }
 /** The sink: bowls, a drainer wing, the rim at the mounting height, the mixer. */
@@ -72049,7 +72086,7 @@ function renderKitchen() {
         : `<div class="sech" style="margin-top:10px">Торцы стены ${KD.run + 1}</div><div style="display:grid;gap:6px">${sel('Слева', 'endA', run.endA || 'auto', ENDS, 'data-kr')}${sel('Справа', 'endB', run.endB || 'auto', ENDS, 'data-kr')}${num('Толщина боковины, мм', 'endT', c.endT || 18)}</div>`
     }
     <div class="sech" style="margin-top:10px">Параметры</div><div style="display:grid;gap:6px">${num('Опоры / цоколь, мм', 'legs', c.legs)}${isl ? '' : num('Корпус нижний, мм', 'baseH', c.baseH)}${isl ? '' : num('Столешница, мм', 'top', c.top) + num('Глубина столешницы', 'depth', c.depth)}${isl ? '' : num('Низ навесных, мм', 'wallZ', c.wallZ) + num('Высота навесных', 'wallH', c.wallH) + num('Глубина навесных', 'wallD', c.wallD)}
-    ${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${isl ? '' : sel('Вытяжка (по умолчанию)', 'hood', c.hood || 'built', Object.entries(HOOD_T))}${sel('Варочная (по умолчанию)', 'hobT', c.hobT || 'ind', Object.entries(HOB_T))}${sel('Материал мойки', 'sink', c.sink, Object.entries(SINK_MAT))}${
+    ${sel('Фасады: исполнение', 'fstyle', c.fstyle || 'flat', Object.entries(KFS))}${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${['bar', 'edge', 'knob'].includes(c.handle) ? sel('Цвет ручек', 'hcol', c.hcol || '#1c1c1c', KHC) : ''}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${isl ? '' : sel('Вытяжка (по умолчанию)', 'hood', c.hood || 'built', Object.entries(HOOD_T))}${sel('Варочная (по умолчанию)', 'hobT', c.hobT || 'ind', Object.entries(HOB_T))}${sel('Материал мойки', 'sink', c.sink, Object.entries(SINK_MAT))}${
       isl
         ? ''
         : sel('Фартук', 'apron', c.apron, [
@@ -102251,6 +102288,261 @@ function wallTie(e) {
   }
 }
 
+// ===== interior/kitchen-fronts.js =====
+/**
+ * interior/kitchen-fronts.js
+ *
+ * Shaped kitchen fronts and handles: front styles (flat with rounded edges, shaker, slim shaker, ribbed), handles
+ * (bar on posts, edge profile, knob), the Gola channel, built-in appliance fronts (oven with a glazed door and knobs,
+ * microwave, coffee machine) and freestanding fridge doors. Built in module coordinates (x along the module from its
+ * start, y from the wall, z up) by a sub-builder, then merged into the kitchen mesh — runs at any angle work.
+ */
+
+
+const KFS = {
+  flat: 'Гладкие (скруглённая кромка)',
+  shaker: 'Рамочные (шейкер)',
+  slim: 'Тонкая рамка (slim shaker)',
+  ribs: 'Реечные (рифлёные)'
+};
+const KHC = [
+  ['#1c1c1c', 'Чёрный — RAL 9011'],
+  ['#a9adb0', 'Сталь сатин'],
+  ['#c2a35a', 'Латунь'],
+  ['#8a6a43', 'Бронза'],
+  ['#4a4c4f', 'Графит']
+];
+const KDARK = '#1c1d1f';
+/** A sub-builder in module coordinates; flush() merges it into the kitchen mesh. */
+function kitSub(mb, xf, s0) {
+  const F = MB((x, y, z) => xf(s0 + x, y, z));
+  return {
+    F,
+    flush() {
+      for (const m of F.meshes()) {
+        mb.tag(m.tag);
+        mb.lod(m.lod);
+        mb.smooth(!!m.smooth);
+        mb.raw(m.color, m.op, m.pos);
+      }
+      mb.lod('');
+      mb.smooth(false);
+      mb.tag('');
+    }
+  };
+}
+function shadeHex(hex, k) {
+  const n = parseInt(String(hex).slice(1, 7), 16);
+  const f = v => Math.max(0, Math.min(255, Math.round(v * k)));
+  return '#' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => f(v).toString(16).padStart(2, '0')).join('');
+}
+/** One front panel between x0..x1, z0..z1, its back at y, thickness ft, in a style. */
+function kitFrontPanel(F, f, y, ft, col, style) {
+  const { x0, x1, z0, z1 } = f;
+  const W = x1 - x0,
+    H = z1 - z0;
+  const st = W < 160 || H < 120 ? 'flat' : style || 'flat';
+  if (st === 'shaker' || st === 'slim') {
+    const fr = st === 'slim' ? Math.min(26, W / 6) : Math.min(70, W / 5, H / 4),
+      rec = 6;
+    F.rbox(x0, y, z0, x0 + fr, y + ft, z1, 1.5, col, 2);
+    F.rbox(x1 - fr, y, z0, x1, y + ft, z1, 1.5, col, 2);
+    F.rbox(x0 + fr - 1, y, z1 - fr, x1 - fr + 1, y + ft, z1, 1.5, col, 2);
+    F.rbox(x0 + fr - 1, y, z0, x1 - fr + 1, y + ft, z0 + fr, 1.5, col, 2);
+    F.box(x0 + fr, y, z0 + fr, x1 - fr, y + ft - rec, z1 - fr, shadeHex(col, 0.96));
+    F.lod('n');
+    // the inner bevel of the frame
+    F.box(x0 + fr, y + ft - rec, z0 + fr, x0 + fr + 2, y + ft - 1, z1 - fr, shadeHex(col, 0.9));
+    F.box(x1 - fr - 2, y + ft - rec, z0 + fr, x1 - fr, y + ft - 1, z1 - fr, shadeHex(col, 0.9));
+    F.lod('');
+  } else if (st === 'ribs') {
+    const fr = 30,
+      dep = 5;
+    F.rbox(x0, y, z0, x1, y + ft - dep, z1, 1.5, shadeHex(col, 0.9), 2);
+    F.rbox(x0, y, z0, x0 + fr, y + ft, z1, 1.5, col, 2);
+    F.rbox(x1 - fr, y, z0, x1, y + ft, z1, 1.5, col, 2);
+    const w = W - 2 * fr,
+      n = Math.max(1, Math.floor((w + 6) / 26)),
+      rw = (w - (n - 1) * 6) / n;
+    for (let i = 0; i < n; i++) {
+      const x = x0 + fr + i * (rw + 6);
+      F.rbox(x, y + ft - dep - 1, z0, x + rw, y + ft, z1, 2, col, 2);
+    }
+  } else F.rbox(x0, y, z0, x1, y + ft, z1, 1.6, col, 2);
+}
+/**
+ * Handle on a front (y — its face). kind: bar (posts + bar), edge (aluminium profile on the edge), knob.
+ * up — the front of a wall unit (handle at the bottom).
+ */
+function kitHandleShape(F, f, y, kind, col, opts = {}) {
+  const { x0, x1, z0, z1 } = f;
+  const tallDoor = f.kind === 'door' && z1 - z0 > 500;
+  const xc = (x0 + x1) / 2;
+  if (kind === 'edge') {
+    // a pull profile along the top edge (bottom edge for wall units)
+    const ze = opts.up ? z0 : z1,
+      sg = opts.up ? -1 : 1;
+    const L = Math.min(x1 - x0 - 40, Math.max(150, (x1 - x0) * 0.8));
+    F.rbox(xc - L / 2, y - 2, Math.min(ze, ze - sg * 2), xc + L / 2, y + 16, Math.max(ze, ze + sg * 14), 2, col, 2);
+    F.box(
+      xc - L / 2 + 2,
+      y + 2,
+      Math.min(ze + sg * 4, ze + sg * 12),
+      xc + L / 2 - 2,
+      y + 14,
+      Math.max(ze + sg * 4, ze + sg * 12),
+      KDARK
+    );
+    return;
+  }
+  if (kind === 'knob') {
+    const kx = tallDoor ? (f.hinge === 'L' ? x1 - 50 : x0 + 50) : xc,
+      kz = tallDoor ? (opts.tall ? (z0 + z1) / 2 : opts.up ? z0 + 60 : z1 - 60) : opts.up ? z0 + 50 : z1 - 50;
+    F.sweep(
+      [
+        [kx, y, kz],
+        [kx, y + 3, kz]
+      ],
+      14,
+      col,
+      28
+    );
+    F.tube([kx, y + 3, kz], [kx, y + 22, kz], 6, col, 16);
+    F.rbox(kx - 15, y + 20, kz - 15, kx + 15, y + 34, kz + 15, 7, col, 4);
+    return;
+  }
+  // bar handle on two posts
+  const post = (px, pz, len) => {
+    F.tube([px, y, pz], [px, y + len, pz], 5, col, 16);
+    F.lod('n');
+    F.sweep(
+      [
+        [px, y, pz],
+        [px, y + 1.5, pz]
+      ],
+      8,
+      col,
+      20
+    );
+    F.lod('');
+  };
+  if (tallDoor) {
+    const hx = f.hinge === 'L' ? x1 - 40 : x0 + 40,
+      zc = opts.tall ? (z0 + z1) / 2 : opts.up ? z0 + 120 : z1 - 140,
+      L = Math.min(320, (z1 - z0) * 0.4);
+    post(hx, zc - L / 2 + 16, 30);
+    post(hx, zc + L / 2 - 16, 30);
+    F.rbox(hx - 6, y + 28, zc - L / 2, hx + 6, y + 38, zc + L / 2, 4, col, 3);
+  } else {
+    const zc = opts.up ? z0 + 40 : z1 - 40,
+      L = Math.min(Math.max(128, (x1 - x0) * 0.45), 320);
+    post(xc - L / 2 + 16, zc, 30);
+    post(xc + L / 2 - 16, zc, 30);
+    F.rbox(xc - L / 2, y + 28, zc - 6, xc + L / 2, y + 38, zc + 6, 4, col, 3);
+  }
+}
+/** Gola channel (C-section) along a base module at the top of its fronts. */
+function kitGola(F, w, cd, zt, col = '#3d4248') {
+  F.box(0, cd - 26, zt - 62, w, cd - 22, zt - 16, col);
+  F.box(0, cd - 26, zt - 62, w, cd + 2, zt - 58, col);
+  F.box(0, cd - 2, zt - 20, w, cd + 2, zt - 16, col);
+  F.lod('n');
+  F.box(0, cd - 4, zt - 58, w, cd - 1, zt - 54, '#8f9396');
+  F.lod('');
+}
+/** Built-in appliance front: oven / steam with a glazed door and knobs, microwave, coffee machine, warming drawer. */
+function kitApplianceShape(F, f, cd, hcol) {
+  const { x0, x1, z0, z1 } = f,
+    BK = '#16181b',
+    GL = '#22262b',
+    ST = '#c7ccd2',
+    h = z1 - z0;
+  F.box(x0, cd - 540, z0, x1, cd, z1, '#2b2f35');
+  if (f.kind === 'warm') {
+    F.rbox(x0, cd, z0, x1, cd + 22, z1, 2, BK, 2);
+    F.rbox(x0 + 20, cd + 21, z0 + 20, x1 - 20, cd + 23, z1 - 20, 1, '#33383e', 2);
+    return;
+  }
+  const panel = f.kind === 'oven' || f.kind === 'steam' ? 80 : 0;
+  // the door: a dark frame with a glazed field
+  F.rbox(x0, cd, z0, x1, cd + 22, z1 - panel, 2, BK, 2);
+  if (f.kind === 'coffee') {
+    F.rbox(x0 + 30, cd + 21, z1 - 90, x1 - 30, cd + 23, z1 - 20, 1, '#33383e', 2);
+    F.box(x0 + 230, cd + 10, z0 + 60, x1 - 230, cd + 22.5, z0 + h * 0.55, '#0f1012');
+    F.lod('n');
+    F.cyl((x0 + x1) / 2 - 12, cd + 30, z0 + h * 0.5, z0 + h * 0.55, 6, ST, 16);
+    F.cyl((x0 + x1) / 2 + 12, cd + 30, z0 + h * 0.5, z0 + h * 0.55, 6, ST, 16);
+    F.lod('');
+    return;
+  }
+  F.box(x0 + 40, cd + 21.5, z0 + 40, x1 - 40, cd + 23, z1 - panel - 40, GL, 0.85);
+  if (f.kind === 'mw') {
+    F.rbox(x1 - 120, cd + 21, z0 + 30, x1 - 30, cd + 23, z1 - 30, 1, '#33383e', 2);
+    F.lod('n');
+    F.sweep(
+      [
+        [x1 - 75, cd + 23, (z0 + z1) / 2],
+        [x1 - 75, cd + 30, (z0 + z1) / 2]
+      ],
+      18,
+      ST,
+      28
+    );
+    F.lod('');
+    return;
+  }
+  // control panel with two knobs and a display; a bar handle on posts across the door top
+  F.rbox(x0, cd, z1 - panel, x1, cd + 22, z1, 2, '#2b2f35', 2);
+  for (const kx of [x0 + 110, x1 - 110]) {
+    F.sweep(
+      [
+        [kx, cd + 22, z1 - panel / 2],
+        [kx, cd + 26, z1 - panel / 2]
+      ],
+      22,
+      ST,
+      32
+    );
+    F.sweep(
+      [
+        [kx, cd + 26, z1 - panel / 2],
+        [kx, cd + 44, z1 - panel / 2]
+      ],
+      18,
+      ST,
+      32
+    );
+    F.lod('n');
+    F.box(kx - 1.5, cd + 44, z1 - panel / 2 + 6, kx + 1.5, cd + 44.6, z1 - panel / 2 + 16, KDARK);
+    F.lod('');
+  }
+  F.lod('n');
+  F.rbox(
+    (x0 + x1) / 2 - 70,
+    cd + 21.5,
+    z1 - panel / 2 - 16,
+    (x0 + x1) / 2 + 70,
+    cd + 22.6,
+    z1 - panel / 2 + 16,
+    2,
+    '#0a0b0c',
+    2
+  );
+  F.box(
+    (x0 + x1) / 2 - 30,
+    cd + 22.6,
+    z1 - panel / 2 - 6,
+    (x0 + x1) / 2 + 30,
+    cd + 22.8,
+    z1 - panel / 2 + 6,
+    '#e6a23c'
+  );
+  F.lod('');
+  const hz = z1 - panel - 35;
+  for (const px of [x0 + 70, x1 - 70]) F.tube([px, cd + 22, hz], [px, cd + 55, hz], 6, ST, 16);
+  F.rbox(x0 + 55, cd + 50, hz - 8, x1 - 55, cd + 62, hz + 8, 5, hcol || ST, 3);
+}
+
 // ===== interior/molding-editor.js =====
 /**
  * interior/molding-editor.js
@@ -112159,16 +112451,52 @@ function handShowerSet(mb, x, zOut, zHold, col = PCHR) {
     hy = 50,
     zc = zHold + 95;
   mb.tube([hx, hy, zHold - 110], [hx, hy, zHold + 45], 12, col, 24);
-  mb.sweep(roundPath([[hx, hy, zHold + 45], [hx, hy, zc - 30], [hx, hy - 2, zc]], 20).pts, 10, col, 20);
+  mb.sweep(
+    roundPath(
+      [
+        [hx, hy, zHold + 45],
+        [hx, hy, zc - 30],
+        [hx, hy - 2, zc]
+      ],
+      20
+    ).pts,
+    10,
+    col,
+    20
+  );
   // the head faces into the room
-  mb.sweep([[hx, hy - 8, zc], [hx, hy + 6, zc]], 42, col, 48);
-  mb.sweep([[hx, hy + 6, zc], [hx, hy + 9, zc]], 39, col, 48);
+  mb.sweep(
+    [
+      [hx, hy - 8, zc],
+      [hx, hy + 6, zc]
+    ],
+    42,
+    col,
+    48
+  );
+  mb.sweep(
+    [
+      [hx, hy + 6, zc],
+      [hx, hy + 9, zc]
+    ],
+    39,
+    col,
+    48
+  );
   mb.lod('n');
   for (let ring = 1; ring <= 2; ring++)
     for (let i = 0; i < ring * 9; i++) {
       const a = (i / (ring * 9)) * TAU,
         rr = ring * 12;
-      mb.box(hx + Math.cos(a) * rr - 1.3, hy + 9, zc + Math.sin(a) * rr - 1.3, hx + Math.cos(a) * rr + 1.3, hy + 9.6, zc + Math.sin(a) * rr + 1.3, '#3a3d41');
+      mb.box(
+        hx + Math.cos(a) * rr - 1.3,
+        hy + 9,
+        zc + Math.sin(a) * rr - 1.3,
+        hx + Math.cos(a) * rr + 1.3,
+        hy + 9.6,
+        zc + Math.sin(a) * rr + 1.3,
+        '#3a3d41'
+      );
     }
   mb.lod('');
   mb.tag('Шланг');
