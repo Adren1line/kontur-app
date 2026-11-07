@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '50';
+const APP_VER = '50.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12888,6 +12888,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -13660,8 +13661,13 @@ function mkWire() {
   };
   const fin = () => {
     if (pts.length >= 2) {
-      const a = devAt(pts[0]),
+      let a = devAt(pts[0]),
         b = devAt(pts[pts.length - 1]);
+      // the ends at the entries of a junction box: the cable keeps that entry
+      const ja = !a && jbPortAt(pts[0]),
+        jb = !b && jbPortAt(pts[pts.length - 1]);
+      if (ja) a = ja.dev;
+      if (jb) b = jb.dev;
       const base = {
         type: 'wire',
         pts: pts.slice(),
@@ -13671,6 +13677,8 @@ function mkWire() {
         z: methodZ(method),
         from: a ? a.id : null,
         to: b ? b.id : null,
+        ...(ja ? { fromPort: ja.k } : {}),
+        ...(jb ? { toPort: jb.k } : {}),
         layer: ensureLayer('Электрика')
       };
       const r = resolveSw();
@@ -44057,6 +44065,14 @@ function routeGrid(method) {
       fill(o.poly, k => (soft[k] = Math.max(soft[k], wet ? 14 : 5)));
     }
   if (method === 'ceil') {
+    // a junction box on the slab: routes go round it to their entries, not through it
+    for (const b of S.ents.filter(e => e.type === 'dev' && e.kind === 'jboxc' && visible(e))) {
+      const r = 95;
+      fill(
+        [P(b.p.x - r, b.p.y - r), P(b.p.x + r, b.p.y - r), P(b.p.x + r, b.p.y + r), P(b.p.x - r, b.p.y + r)],
+        k => (soft[k] = Math.max(soft[k], 30))
+      );
+    }
     for (const b of S.ents.filter(e => e.type === 'beam')) {
       const zb = (b.zt || S.ceil) - (b.h || 0);
       if (zb < S.ceil - 20) fill(XT.beam.poly(b), k => (beamZ[k] = Math.min(beamZ[k], zb)));
@@ -44789,7 +44805,18 @@ function computeRoute(e) {
     const p = i ? e.pts[e.pts.length - 1] : e.pts[0];
     if (d && d.type === 'dev') {
       const D = DEVK[d.kind] || {};
-      if (d.kind === 'jboxc') return { d, p: d.p, pr: d.p, z: zR, ceil: true };
+      // a box: the cable comes to its entry (the one it was drawn to, else the one facing its route)
+      const port = d.kind === 'jbox' || d.kind === 'jboxc' ? (i ? e.toPort : e.fromPort) : null;
+      const PT = port != null ? jbPorts(d)[port] : null;
+      if (d.kind === 'jboxc') {
+        // the route comes to a point straight out of the entry, the last piece goes into it
+        if (PT) {
+          const q = P(PT.p.x, PT.p.y),
+            o = PT.out || P(0, 0);
+          return { d, p: q, pr: P(q.x + o.x * 80, q.y + o.y * 80), z: Math.min(PT.z, zR), ceil: true };
+        }
+        return { d, p: d.p, pr: d.p, z: zR, ceil: true };
+      }
       if (D.mount === 'ceil') return { d, p: d.p, pr: d.p, z: d.z, ceil: true };
       const w = hostWallOf(d);
       const f = devF(d);
@@ -44802,6 +44829,18 @@ function computeRoute(e) {
       const si = sideInfo(w, d.p);
       const ch = chaseFor(si, gof, e.cable);
       const dep = si.knauf ? si.sheets + Math.min(25, si.cav / 2) : si.fin + ch.depth / 2;
+      if (PT)
+        return {
+          d,
+          w,
+          si,
+          ch,
+          p: d.p,
+          pin: P(PT.p.x, PT.p.y),
+          pr: method === 'wall' ? sub(d.p, mul(f, w.th / 2)) : add(d.p, mul(f, 90)),
+          z: PT.z,
+          f
+        };
       return {
         d,
         w,
@@ -45778,7 +45817,13 @@ function wireJointsSpec(put) {
         jl.forEach(w => r.ids.push(w.id));
       }));
   if (T.mode === 'wago') {
-    // the clamps are counted with the junction boxes (junction-boxes.js)
+    // joints on the routes (the clamps of the joints in box devices are counted with the boxes)
+    for (const n of T.nodes) {
+      const t = n.ports <= 2 ? '221-412 (2 порта)' : n.ports <= 3 ? '221-413 (3 порта)' : '221-415 (5 портов)';
+      put(S_, 'wg' + t, { name: `Клемма Wago ${t}`, u: 'шт' }, r => {
+        r.q += n.cores;
+      });
+    }
     const pc = S.ents.filter(e => e.type === 'wire').length + [...T.cuts.values()].reduce((a, b) => a + b, 0);
     put(S_, 'pcs', { name: 'Отрезков кабеля (с учётом разрывов на Wago)', u: 'шт' }, r => {
       r.q = pc;
@@ -97027,11 +97072,15 @@ function initLibrary() {
  * mep/electrical/junction-boxes.js
  *
  * Junction boxes of the wiring: the size from the number of cables coming in, what is joined to what inside, the load.
- * - Boxes: the «Распаячная коробка» devices (wall / ceiling) and the joints on the routes (two cable ends meeting or a
- *   branch from a passing cable — a box above the ceiling there).
- * - Size: the smallest box of the series with enough entries for the cables (one conduit — one entry) and entries wide
- *   enough for the conduits: 80×80×50 — 7 entries up to Ø20 (IEK КМ41238), 100×100×50 — 6 entries up to Ø25
- *   (IEK КМ41233, DKC 53800), 150×110×70 — 10 entries (ЭПП 210301). More cables — two boxes.
+ * - Boxes are placed by hand only: the «Распаячная коробка» devices on a wall and in a ceiling. A joint of cables on a
+ *   route without a box is an issue.
+ * - Kinds: surface IP54 with membrane entries (on a wall, on the slab above a ceiling), flush round Ø80 (brick,
+ *   concrete, monolithic slab), flush for hollow walls / plasterboard ceilings with clamping lugs.
+ * - Size of a surface box: chosen by hand or the smallest of the series with enough entries for the cables (one
+ *   conduit — one entry) wide enough for the conduits: 80×80×50 — 7 entries up to Ø20 (IEK КМ41238), 100×100×50 —
+ *   6 entries up to Ø25 (IEK КМ41233, DKC 53800), 150×110×70 — 10 entries (ЭПП 210301).
+ * - Cables come to the entries of the box (like the outlets of a manifold): a wire drawn to an entry keeps it
+ *   (fromPort / toPort), the others take the free entry on their side.
  * - Inside: groups — one incoming (supply) cable and the outgoing cables joined to it. Several outgoing cables may hang on
  *   one incoming one: one clamp per core for the whole group (Wago 221-412 / 413 / 415 by the number of wires). In a box
  *   device the outgoing cables go to the incoming one of the same kind (lighting / sockets) and not thinner — or as set
@@ -97049,12 +97098,74 @@ function initLibrary() {
 
 
 
+
+
+
 /** The series of junction boxes: entries per side [+u, +v, −u, −v]. */
 const JB_SERIES = [
   { k: '80', n: '80×80×50', a: 80, b: 80, h: 50, ent: 7, dmax: 20, lay: [2, 2, 2, 1], art: 'IEK КМ41238' },
   { k: '100', n: '100×100×50', a: 100, b: 100, h: 50, ent: 6, dmax: 25, lay: [2, 1, 2, 1], art: 'IEK КМ41233' },
   { k: '150', n: '150×110×70', a: 150, b: 110, h: 70, ent: 10, dmax: 32, lay: [3, 2, 3, 2], art: 'ЭПП 210301' }
 ];
+/** Kinds of boxes; a flush one has one size. */
+const JB_T = {
+  surf: { n: 'Открытого монтажа IP54, мембранные вводы', series: JB_SERIES },
+  flushR: {
+    n: 'Скрытого монтажа круглая (кирпич, бетон, монолитная плита)',
+    flush: true,
+    series: [
+      {
+        k: 'r80',
+        n: 'Ø80×45',
+        a: 80,
+        b: 80,
+        h: 45,
+        ent: 4,
+        dmax: 20,
+        lay: [1, 1, 1, 1],
+        round: true,
+        art: 'скрытая Ø80'
+      }
+    ]
+  },
+  flushG: {
+    n: 'Для полых стен и потолков ГКЛ, с прижимными лапками',
+    flush: true,
+    series: [
+      {
+        k: 'g100',
+        n: '100×100×45',
+        a: 100,
+        b: 100,
+        h: 45,
+        ent: 6,
+        dmax: 25,
+        lay: [2, 1, 2, 1],
+        lugs: true,
+        art: 'для ГКЛ 100×100'
+      }
+    ]
+  }
+};
+/** The kind of a box device: set by hand, else by the place (plasterboard wall — for hollow walls). */
+function jbType(e) {
+  if (e.jt && JB_T[e.jt]) return e.jt;
+  if (e.kind === 'jboxc') return 'surf';
+  const w = e.host != null ? byId(e.host) : null;
+  return w && w.type === 'wall' && isKnauf(w) ? 'flushG' : 'flushR';
+}
+/** Cables fixed to a box device (no routes needed). */
+const wiresAt = e =>
+  S.ents.filter(w => w.type === 'wire' && visible(w) && (w.from === e.id || w.to === e.id) && !/UTP|RG/.test(w.cable));
+/** The size of a box device: by hand, else the smallest with enough entries. */
+function jbSeries(e) {
+  const T = JB_T[jbType(e)];
+  if (T.series.length === 1) return T.series[0];
+  if (e.jsz && e.jsz !== 'auto') return T.series.find(x => x.k === e.jsz) || T.series[0];
+  const ws = wiresAt(e);
+  const g = Math.max(16, ...ws.map(w => gofraFor(w.cable)));
+  return jbPick(ws.length, g, T.series) || T.series[T.series.length - 1];
+}
 /** Permissible current of a copper cable in a conduit, А (ПУЭ табл. 1.3.4, три жилы в трубе). */
 const IDOP = { 1: 14, 1.5: 17, 2.5: 25, 4: 35, 6: 42, 10: 60, 16: 80 };
 const idop = mm => IDOP[mm] || (mm ? Math.round(17 * Math.pow(mm / 1.5, 0.62)) : 17);
@@ -97069,8 +97180,8 @@ const isBoxDev = d => !!d && d.type === 'dev' && (d.kind === 'jbox' || d.kind ==
 const wn = d => (d && d.type === 'dev' ? (DEVK[d.kind] || {}).n || d.kind : 'узел');
 
 /** The smallest box of the series for n cables with conduits up to gmax. */
-function jbPick(n, gmax) {
-  return JB_SERIES.find(s => s.ent >= n && s.dmax >= gmax) || null;
+function jbPick(n, gmax, list = JB_SERIES) {
+  return list.find(s => s.ent >= n && s.dmax >= gmax) || null;
 }
 
 const JB = { v: -1, list: [], byDev: new Map(), byKey: new Map() };
@@ -97176,18 +97287,21 @@ function build() {
     }
     return { P, devs };
   };
-  // the boxes: box devices and joints on the routes
+  // the boxes: only those placed by hand
   const boxes = [];
   for (const d of S.ents) if (isBoxDev(d) && visible(d)) boxes.push({ n: 'd' + d.id, ent: d, p: d.p });
-  for (const nd of T.nodes || []) {
-    const n = pk(nd.p);
-    if (adj.has(n) && !boxes.some(b => b.n === n)) boxes.push({ n, ent: null, p: nd.p });
-  }
   for (const B of boxes) {
     const inc = (adj.get(B.n) || []).map(e => {
       const w = e.w,
         mm = cableMm(w.cable) || 1.5;
-      return { e, w, mm, gof: gofraFor(w.cable), cls: wireClass(w), cores: coresOf(w.cable), far: other(e, B.n) };
+      const port = B.ent
+        ? w.from === B.ent.id && e.a === B.n
+          ? w.fromPort
+          : w.to === B.ent.id && e.b === B.n
+            ? w.toPort
+            : null
+        : null;
+      return { e, w, mm, gof: gofraFor(w.cable), cls: wireClass(w), cores: coresOf(w.cable), far: other(e, B.n), port };
     });
     if (!inc.length) {
       if (B.ent) {
@@ -97197,7 +97311,8 @@ function build() {
           p: B.p,
           inc: [],
           groups: [],
-          series: JB_SERIES[0],
+          series: jbSeries(B.ent),
+          type: jbType(B.ent),
           over: false,
           issues: [],
           owner: 0
@@ -97265,12 +97380,17 @@ function build() {
             msg: `Коробка: отходящий кабель №${o.w.id} (${o.mm} мм²) толще ввода №${g.inp.w.id} (${g.inp.mm} мм²) — ввод защищает только автомат линии, отходящий кабель не нагрузить на своё сечение.`
           });
     }
-    const gmax = Math.max(...inc.map(x => x.gof));
-    const ser = jbPick(inc.length, gmax);
-    if (!ser)
+    const ser = jbSeries(B.ent),
+      over = inc.length > ser.ent || inc.some(x => x.gof > ser.dmax);
+    if (inc.length > ser.ent)
       issues.push({
         lvl: 'bad',
-        msg: `В коробку входит ${inc.length} кабелей — больше, чем вводов у самой большой коробки серии (10). Разнесите соединения на две коробки.`
+        msg: `В коробку ${ser.n} входит ${inc.length} кабелей, а вводов у неё ${ser.ent}. Возьмите коробку больше (открытого монтажа до 150×110, 10 вводов) или разнесите соединения на две.`
+      });
+    else if (inc.some(x => x.gof > ser.dmax))
+      issues.push({
+        lvl: 'warn',
+        msg: `Гофра шире ввода коробки ${ser.n} (до Ø${ser.dmax}) — возьмите коробку больше.`
       });
     const box = {
       key: B.n,
@@ -97278,8 +97398,9 @@ function build() {
       p: B.p,
       inc,
       groups,
-      series: ser || JB_SERIES[JB_SERIES.length - 1],
-      over: !ser,
+      series: ser,
+      type: jbType(B.ent),
+      over,
       issues,
       owner: Math.min(...inc.map(x => x.w.id))
     };
@@ -97321,10 +97442,26 @@ function jbSig(box) {
 /** The connection table of a box for its panel. */
 function jbPanelHTML(e) {
   const B = jbOfDev(e);
-  if (!B) return '<div class="sech">Схема соединений</div><div class="hint">К коробке не подключены кабели.</div>';
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  let h = `<div class="sech">Коробка ${B.series.n}, ${B.series.ent} вводов${B.over ? ' — <b style="color:var(--bad,#c0392b)">не хватает вводов</b>' : ''}</div>`;
-  h += `<div class="hint">Занято вводов: ${B.inc.length} из ${B.series.ent}. Подбирается по числу кабелей и диаметру гофры (${esc(B.series.art)}).</div>`;
+  const tk = jbType(e),
+    T = JB_T[tk];
+  const sel = (attr, opts, v) =>
+    `<select data-${attr} style="width:100%;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:4px 6px;color:var(--fg)">${opts.map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  let h = '<div class="sech">Вид коробки</div>';
+  h += `<label class="fl">Вид${sel(
+    'jt',
+    Object.entries(JB_T).map(([k, t]) => [k, t.n]),
+    tk
+  )}</label>`;
+  if (T.series.length > 1)
+    h += `<label class="fl">Размер${sel('jsz', [['auto', 'по числу кабелей'], ...T.series.map(x => [x.k, `${x.n}, ${x.ent} вводов до Ø${x.dmax}`])], e.jsz || 'auto')}</label>`;
+  if (!B || !B.inc.length)
+    return (
+      h +
+      '<div class="hint">К коробке не подключены кабели. Ведите провод к вводу коробки — точка привязки на её стороне.</div>'
+    );
+  h += `<div class="sech">Коробка ${B.series.n}, ${B.series.ent} вводов${B.over ? ' — <b style="color:var(--bad,#c0392b)">не хватает вводов</b>' : ''}</div>`;
+  h += `<div class="hint">Занято вводов: ${B.inc.length} из ${B.series.ent} (${esc(B.series.art)}). Провод, приведённый к вводу, держит его; остальные занимают свободный ввод со своей стороны.</div>`;
   B.groups.forEach((g, gi) => {
     h += `<div class="jbg" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin:6px 0">`;
     h += `<div><b>Группа ${gi + 1}</b> · клемма Wago ${g.clamp} на каждую жилу (${g.inp.cores})</div>`;
@@ -97351,6 +97488,14 @@ function jbPanelHTML(e) {
 }
 /** Panel bindings: reassigning an outgoing cable to another incoming one. */
 function jbBind(el, e, changed) {
+  const st = (k, v) => {
+    e[k] = v;
+    changed();
+  };
+  const t = el.querySelector('[data-jt]'),
+    z = el.querySelector('[data-jsz]');
+  if (t) t.onchange = () => st('jt', t.value);
+  if (z) z.onchange = () => st('jsz', z.value);
   el.querySelectorAll('[data-jmap]').forEach(s => {
     s.onchange = () => {
       e.jmap = Object.assign({}, e.jmap || {}, { [s.dataset.jmap]: +s.value });
@@ -97360,7 +97505,25 @@ function jbBind(el, e, changed) {
 }
 /** Issues of all boxes. */
 function jbIssues(add_) {
-  for (const B of jbAll()) for (const it of B.issues) add_(B.ent || byId(B.groups[0].inp.w.id), it.lvl, it.msg, B.p);
+  for (const B of jbAll()) for (const it of B.issues) add_(B.ent, it.lvl, it.msg, B.p);
+  // joints of cables on the routes: they need a box placed by hand
+  try {
+    for (const nd of wireTopo().nodes || []) {
+      if (S.ents.some(d => isBoxDev(d) && Math.hypot(d.p.x - nd.p.x, d.p.y - nd.p.y) < 200)) continue;
+      const w = S.ents.find(
+        x =>
+          x.type === 'wire' &&
+          [x.pts[0], x.pts[x.pts.length - 1]].some(q => Math.hypot(q.x - nd.p.x, q.y - nd.p.y) < 30)
+      );
+      if (w)
+        add_(
+          w,
+          'warn',
+          'Соединение кабелей на трассе без распаячной коробки: поставьте коробку (Щит, распаячная коробка) — к соединению нужен доступ.',
+          nd.p
+        );
+    }
+  } catch (err) {}
 }
 /** Specification rows: boxes by size and the clamps. */
 function jbSpec(put) {
@@ -97368,15 +97531,15 @@ function jbSpec(put) {
   if (!L.length) return;
   const S_ = 'Электромонтаж: распаячные коробки';
   for (const B of L) {
-    const where = B.ent
-      ? B.ent.kind === 'jbox'
-        ? 'на стене'
-        : 'на плите (в потолке)'
-      : 'в точке соединения (над потолком)';
+    const T = JB_T[B.type] || JB_T.surf;
+    const where = B.ent.kind === 'jbox' ? 'на стене' : T.flush ? 'в потолке' : 'на плите над потолком';
     put(
       S_,
       'jb' + B.series.k + where,
-      { name: `Коробка распаячная ${B.series.n}, ${B.series.ent} вводов (${B.series.art}) — ${where}`, u: 'шт' },
+      {
+        name: `Коробка распаячная ${T.n.toLowerCase()} ${B.series.n}, ${B.series.ent} вводов (${B.series.art}) — ${where}`,
+        u: 'шт'
+      },
       r => {
         r.q++;
         if (B.ent) r.ids.push(B.ent.id);
@@ -97397,30 +97560,28 @@ function jbSpec(put) {
  */
 function jbFrame(box) {
   const s = box.series,
-    e = box.ent;
-  const r = e ? e.rot || 0 : 0;
+    e = box.ent,
+    T = JB_T[box.type || jbType(e)] || JB_T.surf;
+  const r = e.rot || 0;
   const u = [Math.cos(r), Math.sin(r), 0];
-  let c, w, d0, flush;
-  if (e && e.kind === 'jbox') {
-    // flush in the wall, the lid in the plane of the finish
-    c = [e.p.x, e.p.y, e.z || 0];
+  let c, w, d0;
+  if (e.kind === 'jbox') {
+    // on the wall: flush — the lid in the plane of the finish; surface — the body on the finish, the lid out
     w = [Math.sin(r), -Math.cos(r), 0];
+    const out = T.flush ? 0 : s.h;
+    c = [e.p.x + w[0] * out, e.p.y + w[1] * out, e.z || 0];
     d0 = -s.h / 2;
-    flush = true;
+  } else if (T.flush) {
+    // in the ceiling: the lid in the plane of the ceiling (the slab or the plasterboard), the body goes up
+    c = [e.p.x, e.p.y, e.z || S.ceil];
+    w = [0, 0, -1];
+    d0 = -s.h / 2;
   } else {
-    const g = Math.max(16, ...box.inc.map(x => x.gof));
-    const ceil = !box.inc.length || box.inc.some(x => (wireRoute(x.w) || {}).method !== 'floor');
-    if (ceil) {
-      // on the slab above the ceiling, the lid down; the entries at the height of the routes
-      c = [box.p.x, box.p.y, S.ceil - 2 - s.h];
-      w = [0, 0, -1];
-      d0 = -s.h + g / 2 + 3;
-    } else {
-      const zR = (wireRoute(box.inc[0].w) || {}).zR || 0;
-      c = [box.p.x, box.p.y, zR + s.h / 2];
-      w = [0, 0, 1];
-      d0 = -s.h / 2;
-    }
+    // on the slab above the ceiling, the lid down; the entries at the height of the routes
+    const g = Math.max(16, ...wiresAt(e).map(x => gofraFor(x.cable)));
+    c = [e.p.x, e.p.y, S.ceil - 2 - s.h];
+    w = [0, 0, -1];
+    d0 = -s.h + g / 2 + 3;
   }
   const v = [w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0]];
   const at = (a, b, d) => [
@@ -97428,7 +97589,7 @@ function jbFrame(box) {
     c[1] + u[1] * a + v[1] * b + w[1] * d,
     c[2] + u[2] * a + v[2] * b + w[2] * d
   ];
-  return { c, u, v, w, d0, flush: !!flush, at, A: s.a / 2, B: s.b / 2, H: s.h };
+  return { c, u, v, w, d0, flush: !!T.flush, at, A: s.a / 2, B: s.b / 2, H: s.h };
 }
 /**
  * The entries of a box: all the slots of the series ({a, b, sa, sb} — position and outward direction) and the slot of
@@ -97460,7 +97621,16 @@ function jbEntries(box, F) {
     })
     .sort((p, q) => q.m - p.m);
   const of = new Map();
+  // a cable drawn to an entry keeps it
   for (const o of order) {
+    const z = o.x.port != null ? slots[o.x.port] : null;
+    if (z && !z.used) {
+      z.used = o.x;
+      of.set(o.x, z);
+    }
+  }
+  for (const o of order) {
+    if (of.has(o.x)) continue;
     const pref = sides
       .map((sd, i) => ({ i, sc: sd[0] * o.du + sd[1] * o.dv }))
       .sort((p, q) => q.sc - p.sc)
@@ -97487,6 +97657,30 @@ function jbEntryPt(box, x) {
   if (!E) return null;
   return F.at(E.a + E.sa * 9, E.b + E.sb * 9, F.d0);
 }
+/** The entries of a box device for snapping and routing: [{k, p (plan), z}] — the point outside each entry. */
+function jbPorts(e) {
+  const box = { ent: e, p: e.p, series: jbSeries(e), type: jbType(e), inc: [] };
+  const F = jbFrame(box);
+  return jbEntries(box, F).slots.map((z, k) => {
+    const q = F.at(z.a + z.sa * 9, z.b + z.sb * 9, F.d0);
+    // outward in plan (none for the top / bottom entries of a wall box)
+    const o = [F.u[0] * z.sa + F.v[0] * z.sb, F.u[1] * z.sa + F.v[1] * z.sb];
+    const ol = Math.hypot(o[0], o[1]);
+    return { k, p: { x: q[0], y: q[1] }, z: q[2], side: z.side, out: ol > 0.5 ? { x: o[0] / ol, y: o[1] / ol } : null };
+  });
+}
+/** The entry of a box under the point p (plan), if any: {dev, k, p, z}. */
+function jbPortAt(p, tol = 30) {
+  let best = null;
+  for (const e of S.ents) {
+    if (!isBoxDev(e) || !visible(e) || Math.hypot(e.p.x - p.x, e.p.y - p.y) > 400) continue;
+    for (const q of jbPorts(e)) {
+      const d = Math.hypot(q.p.x - p.x, q.p.y - p.y);
+      if (d < tol && (!best || d < best.d)) best = { dev: e, k: q.k, p: q.p, z: q.z, d };
+    }
+  }
+  return best;
+}
 /** 3D cache key part of a wire: the boxes it comes into (their contents change its conduit ends and the boxes it draws). */
 function jbWireKey(e) {
   try {
@@ -97503,6 +97697,17 @@ function jbWireKey(e) {
 }
 /** The box devices get the model with their contents and the connection table. Called once by app/boot.js. */
 function initJunctionBoxes() {
+  // the entries of the boxes are snap points (as the outlets of a manifold)
+  const prev = snapHooks.ports;
+  snapHooks.ports = (w, R) => {
+    const out = prev ? prev(w, R) : [];
+    for (const e of S.ents)
+      if (isBoxDev(e) && visible(e) && Math.hypot(e.p.x - w.x, e.p.y - w.y) < R + 400)
+        for (const q of jbPorts(e))
+          if (Math.hypot(q.p.x - w.x, q.p.y - w.y) <= R)
+            out.push({ p: P(q.p.x, q.p.y), z: q.z, n: 'ввод ' + (q.k + 1) });
+    return out;
+  };
   for (const k of ['jbox', 'jboxc'])
     if (DEVK[k]) {
       DEVK[k].mesh = e => {
@@ -98371,27 +98576,51 @@ function drawJunctionBox(mb, box) {
     { at, A, B, H } = F;
   const ser = box.series;
   mb.tag(`Коробка распаячная ${ser.n}`);
-  // body: the bottom and four walls (open to the lid, so the joints show through it)
-  lbox(mb, at, -A, A, -B, B, -H, -H + 2, JBC);
-  lbox(mb, at, -A, A, -B, -B + 2, -H, -1, JBC);
-  lbox(mb, at, -A, A, B - 2, B, -H, -1, JBC);
-  lbox(mb, at, -A, -A + 2, -B + 2, B - 2, -H, -1, JBC);
-  lbox(mb, at, A - 2, A, -B + 2, B - 2, -H, -1, JBC);
-  mb.tag('Крышка коробки');
-  lbox(mb, at, -A - 2, A + 2, -B - 2, B + 2, -1, 2, JBL, 0.3);
-  mb.lod('n');
-  for (const [a, b] of [
-    [-1, -1],
-    [1, -1],
-    [1, 1],
-    [-1, 1]
-  ]) {
-    const x = a * (A - 5),
-      y = b * (B - 5);
-    mb.tube(at(x, y, -H + 2), at(x, y, 2), 3, JBC, 10);
-    mb.tube(at(x, y, 2), at(x, y, 3.5), 3.4, SCR, 10);
+  if (ser.round) {
+    // a round flush box: a cup with ribs, the lid on two screws
+    const R = A;
+    mb.sweep([at(0, 0, -H), at(0, 0, -H + 2)], R - 1, JBC, 36);
+    mb.sweep([at(0, 0, -H), at(0, 0, -1)], [R - 1.5, R], JBC, 36, 1, false);
+    mb.tag('Крышка коробки');
+    mb.sweep([at(0, 0, -1), at(0, 0, 2)], [R + 6, R + 5], JBL, 36, 0.3);
+    mb.lod('n');
+    for (const a of [-1, 1]) {
+      mb.tube(at(a * (R - 9), 0, -H + 2), at(a * (R - 9), 0, 2), 3.2, JBC, 10);
+      mb.tube(at(a * (R - 9), 0, 2), at(a * (R - 9), 0, 3.5), 3.4, SCR, 10);
+    }
+    mb.lod('');
+  } else {
+    // body: the bottom and four walls (open to the lid, so the joints show through it)
+    lbox(mb, at, -A, A, -B, B, -H, -H + 2, JBC);
+    lbox(mb, at, -A, A, -B, -B + 2, -H, -1, JBC);
+    lbox(mb, at, -A, A, B - 2, B, -H, -1, JBC);
+    lbox(mb, at, -A, -A + 2, -B + 2, B - 2, -H, -1, JBC);
+    lbox(mb, at, A - 2, A, -B + 2, B - 2, -H, -1, JBC);
+    mb.tag('Крышка коробки');
+    const fl = ser.lugs ? 7 : 2;
+    lbox(mb, at, -A - fl, A + fl, -B - fl, B + fl, -1, 2, JBL, 0.3);
+    mb.lod('n');
+    for (const [a, b] of [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1]
+    ]) {
+      const x = a * (A - 5),
+        y = b * (B - 5);
+      mb.tube(at(x, y, -H + 2), at(x, y, 2), 3, JBC, 10);
+      mb.tube(at(x, y, 2), at(x, y, 3.5), 3.4, SCR, 10);
+    }
+    if (ser.lugs) {
+      // the clamping lugs behind the plasterboard and their screws
+      mb.tag('Прижимные лапки');
+      for (const a of [-1, 1]) {
+        lbox(mb, at, a * A - 2, a * A + a * 12, -14, 14, -16, -13, '#5d646c');
+        mb.tube(at(a * (A + 5), 0, 2), at(a * (A + 5), 0, -16), 1.8, SCR, 8);
+      }
+    }
+    mb.lod('');
   }
-  mb.lod('');
   const { slots, of } = jbEntries(box, F);
   const d0 = F.d0;
   // membrane entries (all of the series; a used one has the cable in it)
@@ -103748,7 +103977,17 @@ function steelSection(fam, size) {
       [-w, -y + tf],
       [-x, -y + tf]
     ];
-    return { outer: rootFillets(outer, Math.max(6, tw * 1.3)), inner: null, b, h, kgm, perim: 4 * b + 2 * h - 2 * tw, name, size, fam };
+    return {
+      outer: rootFillets(outer, Math.max(6, tw * 1.3)),
+      inner: null,
+      b,
+      h,
+      kgm,
+      perim: 4 * b + 2 * h - 2 * tw,
+      name,
+      size,
+      fam
+    };
   }
   if (F.kind === 'C' || F.kind === 'C2') {
     const [h, b, tw, tf, kgm] = STEEL.ch.sizes[size];
@@ -103765,7 +104004,17 @@ function steelSection(fam, size) {
         [x, y],
         [-x, y]
       ];
-      return { outer: rootFillets(outer, Math.max(6, tw * 1.3)), inner: null, b, h, kgm, perim: 2 * h + 4 * b - 2 * tw, name, size, fam };
+      return {
+        outer: rootFillets(outer, Math.max(6, tw * 1.3)),
+        inner: null,
+        b,
+        h,
+        kgm,
+        perim: 2 * h + 4 * b - 2 * tw,
+        name,
+        size,
+        fam
+      };
     }
     // two channels toe to toe, welded: closed box 2b × h
     const x = b;
@@ -103842,7 +104091,8 @@ function rootFillets(pts, r) {
     let d = a1 - a0;
     while (d > Math.PI) d -= TAU;
     while (d < -Math.PI) d += TAU;
-    for (let k = 0; k <= 5; k++) out.push([o[0] + Math.cos(a0 + (d * k) / 5) * r, o[1] + Math.sin(a0 + (d * k) / 5) * r]);
+    for (let k = 0; k <= 5; k++)
+      out.push([o[0] + Math.cos(a0 + (d * k) / 5) * r, o[1] + Math.sin(a0 + (d * k) / 5) * r]);
   }
   return out;
 }
