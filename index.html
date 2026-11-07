@@ -669,7 +669,7 @@ table.sp th {
 }
 table.sp td {
   padding: 7px 12px;
-  border-bottom: 1px solid #23282e;
+  border-bottom: 1px solid var(--line);
 }
 table.sp td.n {
   text-align: right;
@@ -698,7 +698,7 @@ table.sp tbody tr:not(.cat):not(.tot) {
   cursor: pointer;
 }
 table.sp tbody tr:not(.cat):not(.tot):hover td {
-  background: #1c2026;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel2));
 }
 
 #side {
@@ -954,7 +954,7 @@ table.sp tbody tr:not(.cat):not(.tot):hover td {
 .btn.pri {
   background: color-mix(in srgb, var(--accent) 20%, var(--panel2));
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-  color: #f6d9a6;
+  color: color-mix(in srgb, var(--accent) 70%, var(--fg));
 }
 details.ps {
   grid-column: 1/-1;
@@ -1953,7 +1953,7 @@ details.ps dl {
 }
 .mtbl td {
   padding: 5px 8px;
-  border-bottom: 1px solid #23282e;
+  border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
 .mtbl td.n {
@@ -1972,7 +1972,7 @@ details.ps dl {
   cursor: pointer;
 }
 .mtbl tr[data-sel]:hover td {
-  background: #1c2026;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel2));
 }
 .tabsrow {
   display: flex;
@@ -2415,7 +2415,7 @@ details.cfg .props {
   line-height: 1.4;
 }
 .issrow:hover {
-  background: #1c2026;
+  background: var(--panel2);
 }
 .issrow b {
   font-weight: 600;
@@ -2697,11 +2697,11 @@ ul.calc li.hint {
 #tedit .tbar .ok {
   margin-left: auto;
   padding: 0 10px;
-  color: #f6d9a6;
+  color: color-mix(in srgb, var(--accent) 70%, var(--fg));
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 #tedit textarea {
-  background: #101215;
+  background: var(--canvas);
   border: 1px solid var(--line);
   border-radius: 4px;
   color: var(--fg);
@@ -4327,6 +4327,16 @@ label.ck {
   border-bottom: 1px solid var(--line);
 }
 
+/* v40.4: status colours readable on the light sheet */
+[data-skin='kalka'] .ok,
+[data-skin='kalka'] ul.calc li.ok {
+  color: #1f7a45;
+}
+[data-skin='kalka'] .warn,
+[data-skin='kalka'] ul.calc li.warn {
+  color: #9a5700;
+}
+
 /*
  * Скин «Студия» — в духе приложений Apple для macOS (Keynote, Freeform, Final Cut): светлое окно, полупрозрачные
  * боковые панели с размытием, сегментные переключатели с белым «бегунком», мягкие кнопки со скруглением,
@@ -5190,6 +5200,47 @@ label.ck {
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* v40.4: on a blue (selected) row every text and button is light — no grey counters or dark × on blue */
+[data-skin='mac'] .shrow.cur *,
+[data-skin='mac'] .stgrow.on *,
+[data-skin='mac'] #vwList button.on *,
+[data-skin='mac'] #wtlist button.on *,
+[data-skin='mac'] #prlist button.on *,
+[data-skin='mac'] #catlist button.on *,
+[data-skin='mac'] #odNav button.on *,
+[data-skin='mac'] .btn.pri *,
+[data-skin='mac'] .tool.on *,
+[data-skin='mac'] .chipb.on * {
+  color: #fff !important;
+}
+[data-skin='mac'] .shrow.cur .x,
+[data-skin='mac'] .stgrow.on .x {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+[data-skin='mac'] .shrow.cur .x:hover,
+[data-skin='mac'] .stgrow.on .x:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+/* status colours readable on a light page */
+[data-skin='mac'] .ok,
+[data-skin='mac'] ul.calc li.ok {
+  color: #1f8a4c;
+}
+[data-skin='mac'] .warn,
+[data-skin='mac'] ul.calc li.warn,
+[data-skin='mac'] .warn b {
+  color: #a65f00;
+}
+[data-skin='mac'] .bad,
+[data-skin='mac'] ul.calc li.bad {
+  color: #d70015;
+}
+[data-skin='mac'] .iss .warn b,
+[data-skin='mac'] .iss .bad b {
+  color: inherit;
+}
+
 /* ---------- toolbar: groups with captions, buttons with names (v40.3) ---------- */
 #tools .tl,
 #tools .tcap {
@@ -5832,6 +5883,447 @@ html[data-form='phone'] #v3cats {
   width: auto;
   top: 120px;
 }
+
+/* ===== touch screens (v40.4): selection bar, dialogs, specification ===== */
+
+/* ---------- selection bar: phone and tablet ---------- */
+#selBar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  width: min(440px, calc(100% - 16px));
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--panel);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.14),
+    0 8px 24px rgba(0, 0, 0, 0.18);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#selBar::-webkit-scrollbar {
+  display: none;
+}
+#selBar .sbn {
+  display: none;
+}
+#selBar button {
+  flex: 1 1 0;
+  min-width: 52px;
+  padding: 6px 2px 5px;
+  border-radius: 12px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1.1;
+}
+#selBar button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#selBar button:active {
+  background: var(--panel2);
+}
+#selBar button.danger {
+  color: var(--danger, #e5484d);
+}
+#propChip {
+  display: none !important;
+}
+
+/* ---------- dialogs on a phone: full screen, nothing runs off the right edge ---------- */
+html[data-form='phone'] .modal > .dlg,
+html[data-form='phone'] .modal > .dlg.mini {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  border-radius: 0 !important;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+html[data-form='phone'] .modal {
+  padding: 0 !important;
+}
+html[data-form='phone'] .modal .dlgh {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: none;
+  padding-top: max(8px, env(safe-area-inset-top, 0px));
+  gap: 8px;
+  flex-wrap: wrap;
+}
+html[data-form='phone'] .modal .dlgh h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px;
+}
+/* the close button: always visible, large */
+html[data-form='phone'] .modal .dlgh .x,
+html[data-form='phone'] .modal .dlgh [id$='Close'],
+html[data-form='phone'] .modal .dlgh [id$='X'] {
+  order: -1;
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 22px;
+}
+html[data-form='phone'] .modal .dlg > :not(.dlgh) {
+  min-width: 0;
+  max-width: 100%;
+}
+/* the body of a dialog scrolls; wide content (tables, 1:1 drawings) scrolls sideways inside it */
+html[data-form='phone'] .modal .dlg > :not(.dlgh):not(.tabsrow):not(.stabs) {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+html[data-form='phone'] .modal .tabsrow,
+html[data-form='phone'] .modal .seg {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  flex: none;
+}
+html[data-form='phone'] .modal .tabsrow button,
+html[data-form='phone'] .modal .seg button {
+  flex: none;
+}
+html[data-form='phone'] .modal .tblwrap,
+html[data-form='phone'] .modal .mtblwrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+html[data-form='phone'] .modal table {
+  font-size: 13px;
+}
+html[data-form='phone'] .modal table input,
+html[data-form='phone'] .modal table select {
+  min-width: 64px;
+}
+/* side-by-side columns of builders (palette | drawing | properties) stack on a phone */
+html[data-form='phone'] .modal .cols,
+html[data-form='phone'] .modal .split,
+html[data-form='phone'] .modal [data-phone='stack'] {
+  display: flex !important;
+  flex-direction: column !important;
+  grid-template-columns: none !important;
+}
+html[data-form='phone'] .modal .cols > *,
+html[data-form='phone'] .modal .split > *,
+html[data-form='phone'] .modal [data-phone='stack'] > * {
+  width: auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  max-height: none !important;
+}
+html[data-form='phone'] .modal .form {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+html[data-form='phone'] .modal .btnrow {
+  flex-wrap: wrap;
+}
+html[data-form='phone'] .modal svg,
+html[data-form='phone'] .modal canvas {
+  max-width: none;
+}
+
+/* ---------- specification on a phone: each row is a card ---------- */
+#stage.v-spec #cvBtns {
+  display: none;
+}
+html[data-form='phone'] #spec {
+  padding: 12px 12px 24px;
+  font-size: 14px;
+}
+html[data-form='phone'] #spec h2 {
+  font-size: 20px;
+  margin-top: 4px;
+}
+html[data-form='phone'] #spec table.sp,
+html[data-form='phone'] #spec table.sp tbody {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+html[data-form='phone'] #spec table.sp thead {
+  display: none;
+}
+html[data-form='phone'] #spec table.sp tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+}
+html[data-form='phone'] #spec table.sp td {
+  display: block;
+  padding: 0;
+  border: 0 !important;
+  text-align: left !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: none !important;
+}
+/* first cell — the name across the whole card, the rest in a row under it */
+html[data-form='phone'] #spec table.sp td:first-child {
+  flex: 1 1 100%;
+  font-weight: 500;
+}
+html[data-form='phone'] #spec table.sp td:not(:first-child) {
+  display: inline;
+  color: var(--muted);
+  font-size: 13px;
+}
+html[data-form='phone'] #spec table.sp td[data-l]:not(:first-child)::before {
+  content: attr(data-l) ': ';
+}
+html[data-form='phone'] #spec table.sp tr.cat td,
+html[data-form='phone'] #spec table.sp tr.tot td {
+  font-weight: 600;
+  color: var(--fg);
+}
+html[data-form='phone'] #spec .tblwrap {
+  overflow: visible;
+}
+
+/* ---------- builders and libraries on a phone: the columns go one under another ---------- */
+html[data-form='phone'] #spec table.sp {
+  min-width: 0 !important;
+}
+html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'],
+html[data-form='phone'] .catbody,
+html[data-form='phone'] .wtbody,
+html[data-form='phone'] .prbody,
+html[data-form='phone'] .odbody,
+html[data-form='phone'] .vwbody,
+html[data-form='phone'] .solbody {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > *,
+html[data-form='phone'] .catbody > *,
+html[data-form='phone'] .wtbody > *,
+html[data-form='phone'] .prbody > *,
+html[data-form='phone'] .odbody > *,
+html[data-form='phone'] .vwbody > *,
+html[data-form='phone'] .solbody > * {
+  flex: none;
+  width: auto !important;
+  max-width: 100%;
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1px solid var(--line);
+}
+/* the drawing / 3D of a builder first, with a real height */
+html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > div[style*='grid-template-rows'] {
+  order: -1;
+  height: 62vh;
+  min-height: 320px;
+  overflow: hidden;
+}
+html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > div[style*='grid-template-rows'] > div:last-child {
+  max-height: 30vh;
+}
+html[data-form='phone'] .vwbody > :last-child,
+html[data-form='phone'] .solbody > :nth-child(2) {
+  min-height: 50vh;
+}
+html[data-form='phone'] .pnsvg {
+  overflow-x: auto;
+  max-width: 100%;
+  flex: none;
+}
+html[data-form='phone'] .pnwrap > * {
+  flex: none;
+  min-width: 0;
+}
+html[data-form='phone'] .pnpal {
+  max-height: 40vh;
+}
+html[data-form='phone'] #tools .wsbtn {
+  white-space: nowrap;
+  padding: 0 10px;
+  width: auto;
+}
+
+/* ---------- dialog tables on a phone: one card per row, each value with its column name ---------- */
+html[data-form='phone'] .modal table.cards,
+html[data-form='phone'] .modal table.cards tbody {
+  display: block;
+  width: 100%;
+  min-width: 0 !important;
+}
+html[data-form='phone'] .modal table.cards thead {
+  display: none;
+}
+html[data-form='phone'] .modal table.cards tr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 10px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+}
+html[data-form='phone'] .modal table.cards td {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 !important;
+  border: 0 !important;
+  text-align: left !important;
+  min-width: 0;
+  font-size: 13px;
+}
+html[data-form='phone'] .modal table.cards td[data-l]::before {
+  content: attr(data-l);
+  font-size: 11px;
+  color: var(--muted);
+}
+/* the name of a row and its first field span the card; empty cells take no room */
+html[data-form='phone'] .modal table.cards td:nth-child(2),
+html[data-form='phone'] .modal table.cards td:has(> input:not([type='color']):not([type='checkbox'])) {
+  grid-column: 1/-1;
+}
+html[data-form='phone'] .modal table.cards td:empty {
+  display: none;
+}
+html[data-form='phone'] .modal table.cards td input:not([type='checkbox']):not([type='color']),
+html[data-form='phone'] .modal table.cards td select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+html[data-form='phone'] .modal table.cards td .btn,
+html[data-form='phone'] .modal table.cards td button {
+  align-self: flex-start;
+  min-height: 36px;
+}
+html[data-form='phone'] .modal .tblwrap:has(table.cards) {
+  overflow: visible;
+  border-radius: 10px;
+}
+
+/* ---------- builders (kitchen, cabinets): the view buttons scroll in one row above the drawing ---------- */
+html[data-form='phone'] .modal .cvbtns {
+  left: 0 !important;
+  right: 0 !important;
+  top: 0 !important;
+  padding: 6px 8px;
+  flex-wrap: nowrap !important;
+  justify-content: flex-start !important;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+html[data-form='phone'] .modal .cvbtns::-webkit-scrollbar {
+  display: none;
+}
+html[data-form='phone'] .modal .cvbtns .btn {
+  flex: none;
+  min-height: 36px;
+}
+/* mouse hints over the 3D views mean nothing to a finger */
+html[data-touch='1'] #cw3hint,
+html[data-touch='1'] #kd3hint,
+html[data-touch='1'] .modal .hint[id$='3hint'] {
+  display: none !important;
+}
+
+/* ---------- the panel (щит) on a phone: the board first, then what is selected, the palette last ---------- */
+html[data-form='phone'] .pnwrap {
+  display: flex !important;
+  flex-direction: column;
+  gap: 10px;
+}
+html[data-form='phone'] .pnwrap > .pnsvg {
+  order: -2;
+}
+html[data-form='phone'] .pnwrap > .pnedit {
+  order: -1;
+}
+html[data-form='phone'] .pnpal {
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  max-height: none !important;
+  gap: 6px;
+}
+html[data-form='phone'] .pnpal .btn {
+  flex: 1 1 46%;
+  min-height: 40px;
+  font-size: 13px;
+}
+html[data-form='phone'] .pnpal > :not(.btn) {
+  flex: 1 1 100%;
+}
+
+/* ---------- specification on a phone: quantity at the right of the name ---------- */
+html[data-form='phone'] #spec table.sp tr:not(.cat):not(.tot) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+html[data-form='phone'] #spec table.sp tr:not(.cat):not(.tot) td:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+html[data-form='phone'] #spec table.sp tr:not(.cat):not(.tot) td.n:not([data-l]) {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--fg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right !important;
+  font-family: var(--f-ui);
+}
+html[data-form='phone'] #spec table.sp tr:not(.cat):not(.tot) td.n:not([data-l]) + td {
+  grid-column: 2;
+  grid-row: 2;
+  text-align: right !important;
+}
+html[data-form='phone'] #spec table.sp tr:not(.cat):not(.tot) td[data-l] {
+  grid-column: 1 / -1;
+}
+html[data-form='phone'] #spec h3 {
+  position: sticky;
+  top: -12px;
+  z-index: 2;
+  margin: 18px -12px 4px;
+  padding: 8px 12px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+}
+html[data-form='phone'] #spec .sub {
+  font-size: 13px;
+}
+html[data-form='phone'] .modal table.cards td,
+html[data-form='phone'] .modal table.cards td::before {
+  font-family: var(--f-ui);
+}
 </style>
 
 <div id="app">
@@ -6067,7 +6559,7 @@ html[data-form='phone'] #v3cats {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '40.3';
+const APP_VER = '40.4';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -18797,6 +19289,8 @@ function inkC(c) {
 
 
 
+
+
 const RESP = { form: 'desk', touch: false, padSeen: 0, padAt: 0 };
 
 /** Phone / tablet / desktop from the size and the pointer. */
@@ -19035,24 +19529,87 @@ function initResponsive() {
     side.addEventListener('touchend', endDrag);
     side.addEventListener('touchcancel', endDrag);
   }
-  const chip = document.createElement('button');
-  chip.id = 'propChip';
-  chip.hidden = true;
-  document.body.appendChild(chip);
-  chip.onclick = () => {
-    if (side) side.classList.add('open');
-    chip.hidden = true;
-  };
+  watchTables();
+  // the selection bar: what a finger needs for the selected objects (no Del key, no right button on a phone)
+  const bar = document.createElement('div');
+  bar.id = 'selBar';
+  bar.hidden = true;
+  const SB = [
+    ['props', 'Свойства', '<path d="M4 5h12M4 10h12M4 15h8"/>'],
+    [
+      'move',
+      'Перенести',
+      '<path d="M10 2v16M2 10h16M10 2l-2.5 2.5M10 2l2.5 2.5M10 18l-2.5-2.5M10 18l2.5-2.5M2 10l2.5-2.5M2 10l2.5 2.5M18 10l-2.5-2.5M18 10l-2.5 2.5"/>'
+    ],
+    ['copy', 'Копия', '<rect x="3" y="3" width="10" height="10"/><path d="M7 17h10V7"/>'],
+    ['rotate', 'Повернуть', '<path d="M15.5 6.5A6.5 6.5 0 1 0 16.5 11"/><path d="M15.8 2.8v4h-4"/>'],
+    ['del', 'Удалить', '<path d="M4 5.5h12M8 5.5V3.5h4v2M5.5 5.5l1 11h7l1-11M8.5 8.5v5.5M11.5 8.5v5.5"/>'],
+    ['none', 'Снять', '<path d="M5 5l10 10M15 5L5 15"/>']
+  ];
+  bar.innerHTML =
+    '<span class="sbn"></span>' +
+    SB.map(
+      ([k, n, ic]) =>
+        `<button data-sb="${k}" class="${k === 'del' ? 'danger' : ''}" aria-label="${n}"><svg viewBox="0 0 20 20">${ic}</svg><span>${n}</span></button>`
+    ).join('');
+  const host = $('#stage') || document.body;
+  host.appendChild(bar);
+  bar.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-sb]');
+    if (!b) return;
+    ev.stopPropagation();
+    const k = b.dataset.sb;
+    if (k === 'props') {
+      if (side) side.classList.add('open');
+    } else if (k === 'move' || k === 'copy' || k === 'rotate') startCmd(k);
+    else if (k === 'del') eraseSel();
+    else if (k === 'none') {
+      S.sel.clear();
+      selChanged();
+    }
+  });
   setInterval(() => {
     if (RESP.form === 'desk') {
-      if (!chip.hidden) chip.hidden = true;
+      if (!bar.hidden) bar.hidden = true;
       return;
     }
     const n = S.sel ? S.sel.size : 0;
-    const show = n > 0 && side && !side.classList.contains('open');
-    chip.textContent = n > 1 ? `Свойства · ${n} ▴` : 'Свойства ▴';
-    if (chip.hidden === !!show) chip.hidden = !show;
-  }, 350);
+    const sheetOpen = side && side.classList.contains('open');
+    const inSpec = !!document.querySelector('#stage.v-spec');
+    const show = n > 0 && !commandsState.cmd && !inSpec && !(sheetOpen && RESP.form === 'phone');
+    const t = n > 1 ? `Выбрано: ${n}` : n ? 'Выбран объект' : '';
+    const sn = bar.querySelector('.sbn');
+    if (sn.textContent !== t) sn.textContent = t;
+    if (bar.hidden === !!show) bar.hidden = !show;
+  }, 300);
+}
+
+/**
+ * Phone: the cells of dialog tables get the names of their columns (data-l), so a table can be shown as cards —
+ * one card per row, «Автомат: C16», «Кабель: 3×2,5» — instead of running off the right edge.
+ */
+function labelTables(root) {
+  for (const t of root.querySelectorAll('.modal table.mtbl, .modal table.sp')) {
+    const hs = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    if (!hs.length) continue;
+    t.classList.add('cards');
+    for (const tr of t.querySelectorAll('tbody tr'))
+      [...tr.children].forEach((td, i) => {
+        if (!td.dataset.l && hs[i]) td.dataset.l = hs[i];
+      });
+  }
+}
+function watchTables() {
+  if (typeof MutationObserver === 'undefined') return;
+  let q = false;
+  new MutationObserver(() => {
+    if (q || RESP.form !== 'phone') return;
+    q = true;
+    requestAnimationFrame(() => {
+      q = false;
+      labelTables(document);
+    });
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 /** «Настройки» menu: wheel behaviour. */
@@ -22491,7 +23048,7 @@ function renderSpecLevel() {
   });
   const tbl = (title, rs, priced) =>
     rs.length
-      ? `<h3>${esc(title)}</h3><div class="tblwrap"><table class="sp"><thead><tr><th>Наименование</th>${priced ? '<th>Артикул</th>' : ''}<th style="text-align:right">Кол-во</th><th>Ед.</th>${priced ? '<th style="text-align:right">Цена</th><th style="text-align:right">Сумма</th>' : ''}</tr></thead><tbody>${rs.map(r => `<tr data-ids="${(r.ids || []).join(',')}"><td>${esc(r.name)}</td>${priced ? `<td>${esc(r.art)}</td>` : ''}<td class="n">${r.u === 'шт' ? Math.round(r.q) : q2(r.q).toFixed(2)}</td><td>${r.u}</td>${priced ? `<td class="n">${r.price != null ? fmtMoney(r.price) : '—'}</td><td class="n">${r.price != null ? fmtMoney(r.price * r.q) : '—'}</td>` : ''}</tr>`).join('')}${priced ? `<tr class="tot"><td colspan="5">Итого по позициям с ценой</td><td class="n">${fmtMoney(total)}</td></tr>` : ''}</tbody></table></div>`
+      ? `<h3>${esc(title)}</h3><div class="tblwrap"><table class="sp"><thead><tr><th>Наименование</th>${priced ? '<th>Артикул</th>' : ''}<th style="text-align:right">Кол-во</th><th>Ед.</th>${priced ? '<th style="text-align:right">Цена</th><th style="text-align:right">Сумма</th>' : ''}</tr></thead><tbody>${rs.map(r => `<tr data-ids="${(r.ids || []).join(',')}"><td>${esc(r.name)}</td>${priced ? `<td data-l="Артикул">${esc(r.art)}</td>` : ''}<td class="n">${r.u === 'шт' ? Math.round(r.q) : q2(r.q).toFixed(2)}</td><td>${r.u}</td>${priced ? `<td class="n" data-l="Цена">${r.price != null ? fmtMoney(r.price) : '—'}</td><td class="n" data-l="Сумма">${r.price != null ? fmtMoney(r.price * r.q) : '—'}</td>` : ''}</tr>`).join('')}${priced ? `<tr class="tot"><td colspan="5">Итого по позициям с ценой</td><td class="n">${fmtMoney(total)}</td></tr>` : ''}</tbody></table></div>`
       : '';
   $('#spec').innerHTML =
     `<h2>Спецификация проекта</h2><p class="sub">Собирается из модели автоматически. Площади стен — за вычетом проёмов; материалы Кнауф — по нормам расхода на 1 м²; кабель — с опусками к устройствам и запасом на подключение; воздуховоды — с опусками к решёткам. Щелчок по строке выделяет элементы на плане.</p>` +
@@ -69047,7 +69604,7 @@ function openKitchen(id) {
     d.id = 'kitdlg';
     d.className = 'modal';
     d.innerHTML = `<div class="dlg" role="dialog" aria-label="Конструктор кухни" style="width:min(1320px,100%);height:min(860px,100%)"><div class="dlgh"><h3>Конструктор кухни</h3><span class="hint" id="kdSum"></span><button class="x" id="kdClose" aria-label="Закрыть">×</button></div>
-  <div style="display:grid;grid-template-columns:250px minmax(0,1fr) 250px;min-height:0;overflow:hidden"><div id="kdLeft" style="padding:12px;overflow:auto;border-right:1px solid var(--line)"></div><div style="display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0"><div style="position:relative;min-height:0;overflow:hidden"><canvas id="kdCv" style="position:absolute;inset:0;width:100%;height:100%;background:#f4f2ee;cursor:pointer"></canvas><canvas id="kd3" style="position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#eeece6"></canvas><div style="position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2"><button class="btn" data-kdm="3d">3D</button><button class="btn" data-kdm="2d">Развёртка</button><button class="btn" data-kdm="dw">Чертёж и раскрой</button></div><div class="hint" id="kd3hint" style="position:absolute;left:10px;bottom:8px;pointer-events:none;z-index:2">3D: щелчок — выбрать модуль · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="kdMod" style="padding:10px 12px;border-top:1px solid var(--line);max-height:250px;overflow:auto"></div></div><div id="kdRight" style="padding:12px;overflow:auto;border-left:1px solid var(--line)"></div></div></div>`;
+  <div style="display:grid;grid-template-columns:250px minmax(0,1fr) 250px;min-height:0;overflow:hidden"><div id="kdLeft" style="padding:12px;overflow:auto;border-right:1px solid var(--line)"></div><div style="display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0"><div style="position:relative;min-height:0;overflow:hidden"><canvas id="kdCv" style="position:absolute;inset:0;width:100%;height:100%;background:#f4f2ee;cursor:pointer"></canvas><canvas id="kd3" style="position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#eeece6"></canvas><div class="cvbtns" style="position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2"><button class="btn" data-kdm="3d">3D</button><button class="btn" data-kdm="2d">Развёртка</button><button class="btn" data-kdm="dw">Чертёж и раскрой</button></div><div class="hint" id="kd3hint" style="position:absolute;left:10px;bottom:8px;pointer-events:none;z-index:2">3D: щелчок — выбрать модуль · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="kdMod" style="padding:10px 12px;border-top:1px solid var(--line);max-height:250px;overflow:auto"></div></div><div id="kdRight" style="padding:12px;overflow:auto;border-left:1px solid var(--line)"></div></div></div>`;
     document.body.appendChild(d);
     d.querySelector('#kdClose').onclick = () => {
       d.hidden = true;
@@ -76896,7 +77453,7 @@ function openCasework(id) {
     d.id = 'cwdlg';
     d.className = 'modal';
     d.innerHTML = `<div class="dlg" role="dialog" aria-label="Конструктор корпусной мебели" style="width:min(1400px,100%);height:min(900px,100%)"><div class="dlgh"><h3>Конструктор корпусной мебели</h3><span class="hint" id="cwSum"></span><button class="x" id="cwClose" aria-label="Закрыть">×</button></div>
-  <div style="display:grid;grid-template-columns:270px minmax(0,1fr) 290px;min-height:0;overflow:hidden"><div id="cwLeft" style="padding:12px;overflow:auto;border-right:1px solid var(--line)"></div><div style="display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0"><div style="position:relative;min-height:0;overflow:hidden"><canvas id="cwCv" style="position:absolute;inset:0;width:100%;height:100%;background:#f4f2ee;cursor:pointer"></canvas><canvas id="cw3" style="position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#eeece6"></canvas><div style="position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2;flex-wrap:wrap;justify-content:end"><button class="btn" data-cwm="front">Фасады</button><button class="btn" data-cwm="inside">Наполнение</button><button class="btn" data-cwm="3d">3D</button><button class="btn" data-cwm="open">Открыть двери</button><button class="btn" data-cwm="dw">Чертежи и раскрой</button></div><div class="hint" id="cw3hint" style="position:absolute;left:10px;bottom:8px;pointer-events:none;z-index:2">3D: щелчок — секция · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="cwBottom" style="padding:8px 12px;border-top:1px solid var(--line);max-height:190px;overflow:auto"></div></div><div id="cwRight" style="padding:12px;overflow:auto;border-left:1px solid var(--line)"></div></div></div>`;
+  <div style="display:grid;grid-template-columns:270px minmax(0,1fr) 290px;min-height:0;overflow:hidden"><div id="cwLeft" style="padding:12px;overflow:auto;border-right:1px solid var(--line)"></div><div style="display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0"><div style="position:relative;min-height:0;overflow:hidden"><canvas id="cwCv" style="position:absolute;inset:0;width:100%;height:100%;background:#f4f2ee;cursor:pointer"></canvas><canvas id="cw3" style="position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#eeece6"></canvas><div class="cvbtns" style="position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2;flex-wrap:wrap;justify-content:end"><button class="btn" data-cwm="front">Фасады</button><button class="btn" data-cwm="inside">Наполнение</button><button class="btn" data-cwm="3d">3D</button><button class="btn" data-cwm="open">Открыть двери</button><button class="btn" data-cwm="dw">Чертежи и раскрой</button></div><div class="hint" id="cw3hint" style="position:absolute;left:10px;bottom:8px;pointer-events:none;z-index:2">3D: щелчок — секция · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="cwBottom" style="padding:8px 12px;border-top:1px solid var(--line);max-height:190px;overflow:auto"></div></div><div id="cwRight" style="padding:12px;overflow:auto;border-left:1px solid var(--line)"></div></div></div>`;
     const st = document.createElement('style');
     st.textContent =
       '#cwdlg .fl input,#cwdlg .fl select{width:100%;box-sizing:border-box;min-width:0}#cwdlg .fl{min-width:0}';
@@ -77941,12 +78498,14 @@ function renderWS() {
   if (ws.id === 'draft' && uiHooks.stageHtml) h = uiHooks.stageHtml() + h;
   if (NV.on || MEPW) {
     if (NV.on)
-      h += `<div class="hint" style="margin:2px 0 4px">Системы в «Виде сетей»:</div><div class="chips">${Object.entries(NVN)
-      .map(
-        ([k, [n, c]]) =>
-          `<button class="chipb ${NV.f[k] ? 'on' : ''}" data-nv="${k}" style="--c:${c}" ${NV.on ? '' : 'disabled title="Включите «Вид сетей»"'}>${n}</button>`
+      h += `<div class="hint" style="margin:2px 0 4px">Системы в «Виде сетей»:</div><div class="chips">${Object.entries(
+        NVN
       )
-      .join('')}</div>`;
+        .map(
+          ([k, [n, c]]) =>
+            `<button class="chipb ${NV.f[k] ? 'on' : ''}" data-nv="${k}" style="--c:${c}" ${NV.on ? '' : 'disabled title="Включите «Вид сетей»"'}>${n}</button>`
+        )
+        .join('')}</div>`;
     if (ws.id === 'elec')
       h += `<div class="btnrow"><button class="btn pri" id="wsOptW" title="Пересоздаёт проводку: щит → выключатель → светильники шлейфом по клавишам; розетки — отдельными линиями. Ctrl+Z — вернуть.">Оптимизировать проводку</button><button class="btn" id="wsAutoW">Дотянуть до щита</button><button class="btn" id="wsReroute" title="Трассы зафиксированы: скрытие слоёв и правка архитектуры их не меняют. Пересчитать все по текущей архитектуре.">Перетрассировать все</button></div><details class="wsset"><summary class="sech" style="cursor:pointer">Настройки проводки</summary><label class="fl">Соединения проводов<select id="wsJoints" style="background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:4px 6px;color:var(--fg)">${Object.entries(
         JOINTS
@@ -94522,6 +95081,7 @@ const solidEditorState = ED;
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -94682,6 +95242,15 @@ function xBoot() {
     pipeCross,
     S,
     openObj,
+    openMEP,
+    openCasework,
+    openKitchen,
+    cwCreate,
+    openCatalog,
+    openProfiles,
+    openSanLib,
+    openLevels,
+    openFurnDraw_: openFurnDraw,
     selectAndShow,
     setWS,
     setView,
