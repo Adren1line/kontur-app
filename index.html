@@ -5241,6 +5241,141 @@ label.ck {
   color: inherit;
 }
 
+/* ---------- own parts of furniture modules (v41) ---------- */
+.pe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pe .pehead {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.pe .pehead .hint {
+  font-size: 11px;
+}
+.pe .peadd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pe .peadd .btn {
+  padding: 3px 8px;
+  font-size: 11.5px;
+}
+.pe .tblwrap {
+  max-height: none;
+  overflow-x: auto;
+}
+.pe .petbl {
+  font-size: 12px;
+  min-width: 900px;
+}
+.pe .petbl td {
+  padding: 2px 4px;
+}
+.pe .petbl input,
+.pe .petbl select {
+  font-size: 12px;
+  height: 26px;
+  padding: 2px 6px;
+  min-width: 0;
+}
+.pe .petbl input[data-pe$=':n'] {
+  width: 160px;
+}
+.pe .petbl select {
+  max-width: 150px;
+}
+.pe .petbl .btn {
+  padding: 2px 7px;
+  min-height: 0;
+}
+#kdMod:has(.pe) {
+  max-height: 46vh !important;
+}
+.kdcat > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kdcat > summary::before {
+  content: '▸';
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.kdcat[open] > summary::before {
+  transform: rotate(90deg);
+}
+.kdcat > summary .cnt {
+  margin-left: auto;
+}
+
+/* ---------- molding editor: decor, curves, dimensions (v41) ---------- */
+.mle-dec circle,
+.mle-dec ellipse,
+.mle-dec rect,
+.mle-dec path {
+  fill: #ece6d8;
+  stroke: #6b645a;
+  stroke-width: 1;
+}
+.mle-dec {
+  cursor: move;
+}
+.mle-dec.on circle,
+.mle-dec.on ellipse,
+.mle-dec.on rect,
+.mle-dec.on path {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+.mle-hit {
+  fill: transparent;
+  stroke: none;
+  cursor: move;
+}
+.mle-hitl {
+  stroke: transparent;
+  stroke-width: 12;
+  fill: none;
+  cursor: move;
+}
+.mle-dim .tk {
+  stroke-width: 1.1;
+}
+.mle-dim.anno path {
+  stroke: #3f7fbf;
+}
+.mle-dim.anno text {
+  fill: #2c6aa8;
+}
+.mle-dim.user path {
+  stroke: #2f3a44;
+  stroke-width: 1;
+}
+.mle-dim.on path {
+  stroke: var(--accent);
+  stroke-width: 1.4;
+}
+.mle-sp {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.4;
+}
+.mle-anno {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* ---------- toolbar: groups with captions, buttons with names (v40.3) ---------- */
 #tools .tl,
 #tools .tcap {
@@ -6559,7 +6694,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '40.4';
+const APP_VER = '41';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -54225,6 +54360,55 @@ function roundTread(poly, side, R) {
   }
   return out;
 }
+/**
+ * A horizontal slab z0…z1 over the polygon `outer` ([[x,y]…]) with holes (sink cut-outs and the like).
+ * map(x, y, z) → [x,y,z] (a local frame). Falls back to a slab without holes when there is no triangulator.
+ */
+function slabCut(mb, outer, holes, z0, z1, col, map = (x, y, z) => [x, y, z], op) {
+  const area = pl => {
+    let s = 0;
+    for (let i = 0; i < pl.length; i++) {
+      const a = pl[i],
+        b = pl[(i + 1) % pl.length];
+      s += a[0] * b[1] - b[0] * a[1];
+    }
+    return s / 2;
+  };
+  const O = area(outer) < 0 ? outer.slice().reverse() : outer;
+  const H = (holes || []).filter(h => h.length > 2).map(h => (area(h) > 0 ? h.slice().reverse() : h));
+  const TH = typeof THREE !== 'undefined' && THREE.ShapeUtils ? THREE : null;
+  if (!TH || !H.length) {
+    prismPoly(mb, O, (a, b, t) => map(a, b, t), z0, z1, col, op);
+    return;
+  }
+  const tris = TH.ShapeUtils.triangulateShape(
+    O.map(([x, y]) => new TH.Vector2(x, y)),
+    H.map(h => h.map(([x, y]) => new TH.Vector2(x, y)))
+  );
+  const all = [...O, ...H.flat()];
+  for (const [i, j, k] of tris) {
+    const a = all[i],
+      b = all[j],
+      c = all[k];
+    if (!a || !b || !c) continue;
+    const up = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0;
+    const [p, q] = up ? [b, c] : [c, b];
+    mb.tri3(col, map(a[0], a[1], z1), map(p[0], p[1], z1), map(q[0], q[1], z1), op);
+    mb.tri3(col, map(a[0], a[1], z0), map(q[0], q[1], z0), map(p[0], p[1], z0), op);
+  }
+  // walls: the outline counter-clockwise, the holes clockwise — the faces look out of the material
+  for (const pl of [O, ...H])
+    for (let i = 0; i < pl.length; i++) {
+      const a = pl[i],
+        b = pl[(i + 1) % pl.length];
+      const a0 = map(a[0], a[1], z0),
+        b0 = map(b[0], b[1], z0),
+        b1 = map(b[0], b[1], z1),
+        a1 = map(a[0], a[1], z1);
+      mb.tri3(col, a0, b0, b1, op);
+      mb.tri3(col, a0, b1, a1, op);
+    }
+}
 
 // ===== elements/railings.js =====
 /**
@@ -68642,29 +68826,94 @@ function mini3D(A) {
 
 
 
+
+
 /* кухня: зона по стенам (прямая, Г, П), модули в отдельном конструкторе — нижние, навесные, пеналы, техника;
    столешница, цоколь, фартук; фурнитура Blum (CLIP top BLUMOTION, LEGRABOX/TANDEMBOX, AVENTOS) и Häfele (опоры, навесы, Gola, LeMans) */
 var KM = {
-  b_door: { n: 'Нижний с дверцей', row: 'low', w: [300, 400, 450, 500, 600, 800] },
-  b_drawers: { n: 'Нижний с ящиками (3)', row: 'low', w: [300, 400, 450, 500, 600, 800, 900] },
-  b_sink: { n: 'Под мойку', row: 'low', w: [500, 600, 800] },
-  b_hob: { n: 'Под варочную (ящики)', row: 'low', w: [600, 800, 900] },
-  b_oven: { n: 'Под духовой шкаф', row: 'low', w: [600] },
-  b_dw: { n: 'Посудомоечная машина (встр.)', row: 'low', w: [450, 600] },
-  b_corner: { n: 'Угловой (слепой угол, LeMans)', row: 'low', w: [1000, 1050, 1100] },
-  b_bottle: { n: 'Бутылочница выдвижная', row: 'low', w: [150, 200, 300] },
-  b_fridgeF: { n: 'Холодильник отдельностоящий', row: 'low', w: [600, 700] },
-  t_fridge: { n: 'Пенал: встроенный холодильник', row: 'low', tall: true, w: [600] },
-  t_oven: { n: 'Пенал: духовка + СВЧ', row: 'low', tall: true, w: [600] },
-  t_store: { n: 'Пенал хранения', row: 'low', tall: true, w: [400, 450, 500, 600] },
-  gap: { n: 'Проём / зазор', row: 'low', w: [50, 100, 150, 600] },
-  w_door: { n: 'Навесной с дверцей', row: 'up', w: [300, 400, 450, 500, 600, 800] },
-  w_lift: { n: 'Навесной с подъёмником AVENTOS', row: 'up', w: [450, 600, 800, 900] },
-  w_hood: { n: 'Вытяжка (встроенная / купольная)', row: 'up', w: [600, 900] },
-  w_dry: { n: 'Навесной с сушилкой', row: 'up', w: [500, 600, 800] },
-  w_open: { n: 'Открытая полка', row: 'up', w: [300, 400, 600, 800] },
-  wgap: { n: 'Проём / зазор', row: 'up', w: [50, 100, 300, 600] }
+  b_door: { n: 'Нижний с дверцей', row: 'low', w: [300, 400, 450, 500, 600, 800], g: 'Нижние' },
+  b_drawers: { n: 'Нижний с ящиками (3)', row: 'low', w: [300, 400, 450, 500, 600, 800, 900], g: 'Нижние' },
+  b_sink: { n: 'Под мойку', row: 'low', w: [500, 600, 800, 900], g: 'Нижние' },
+  b_hob: { n: 'Под варочную (ящики)', row: 'low', w: [600, 800, 900], g: 'Нижние' },
+  b_corner: { n: 'Угловой (слепой угол, LeMans)', row: 'low', w: [1000, 1050, 1100], g: 'Нижние' },
+  b_bottle: { n: 'Бутылочница выдвижная', row: 'low', w: [150, 200, 300], g: 'Нижние' },
+  b_oven: { n: 'Под духовой шкаф', row: 'low', w: [600], g: 'Встроенная техника' },
+  b_dw: { n: 'Посудомоечная машина (встр.)', row: 'low', w: [450, 600], g: 'Встроенная техника' },
+  b_wm: { n: 'Стиральная машина встроенная', row: 'low', w: [600], g: 'Встроенная техника' },
+  b_fridgeU: { n: 'Холодильник подстольный', row: 'low', w: [600], g: 'Встроенная техника' },
+  b_wine: { n: 'Винный шкаф подстольный', row: 'low', w: [300, 450, 600], g: 'Встроенная техника' },
+  t_fridge: { n: 'Пенал: встроенный холодильник', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_freezer: { n: 'Пенал: морозильник', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_oven: { n: 'Пенал: духовка + СВЧ', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_oven2: { n: 'Пенал: две духовки', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_steam: { n: 'Пенал: духовка + пароварка + подогреватель', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_coffee: { n: 'Пенал: кофемашина + СВЧ + подогреватель', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_wine: { n: 'Пенал: винный шкаф', row: 'low', tall: true, w: [600], g: 'Пеналы' },
+  t_store: { n: 'Пенал хранения', row: 'low', tall: true, w: [400, 450, 500, 600], g: 'Пеналы' },
+  b_fridgeF: { n: 'Холодильник отдельностоящий', row: 'low', w: [600, 700], fs: 2000, g: 'Отдельностоящие' },
+  f_sbs: { n: 'Холодильник Side-by-Side', row: 'low', w: [910], fs: 1790, g: 'Отдельностоящие' },
+  f_french: { n: 'Холодильник French Door', row: 'low', w: [830, 900], fs: 1830, g: 'Отдельностоящие' },
+  f_stove: { n: 'Плита отдельностоящая', row: 'low', w: [500, 600], fs: 850, g: 'Отдельностоящие' },
+  f_wm: { n: 'Стиральная машина отдельностоящая', row: 'low', w: [600], fs: 850, g: 'Отдельностоящие' },
+  gap: { n: 'Проём / зазор', row: 'low', w: [50, 100, 150, 600], g: 'Нижние' },
+  b_custom: { n: 'Свой модуль из деталей', row: 'low', w: [300, 400, 450, 500, 600, 800, 900], own: true, g: 'Свои' },
+  t_custom: { n: 'Свой пенал из деталей', row: 'low', tall: true, w: [400, 450, 500, 600], own: true, g: 'Свои' },
+  w_door: { n: 'Навесной с дверцей', row: 'up', w: [300, 400, 450, 500, 600, 800], g: 'Навесные' },
+  w_lift: { n: 'Навесной с подъёмником AVENTOS', row: 'up', w: [450, 600, 800, 900], g: 'Навесные' },
+  w_hood: { n: 'Вытяжка (тип — в свойствах модуля)', row: 'up', w: [600, 900], g: 'Навесные' },
+  w_mw: { n: 'Навесной со встроенной СВЧ', row: 'up', w: [600], g: 'Навесные' },
+  w_dry: { n: 'Навесной с сушилкой', row: 'up', w: [500, 600, 800], g: 'Навесные' },
+  w_open: { n: 'Открытая полка', row: 'up', w: [300, 400, 600, 800], g: 'Навесные' },
+  wgap: { n: 'Проём / зазор', row: 'up', w: [50, 100, 300, 600], g: 'Навесные' },
+  w_custom: { n: 'Свой навесной из деталей', row: 'up', w: [300, 400, 450, 500, 600, 800], own: true, g: 'Свои' }
 };
+/** Hoods: the hidden ones are closed by the front of their cabinet. */
+const HOOD_T = {
+  built: 'встроенная телескопическая (скрыта в шкафу)',
+  integr: 'полностью встроенная (скрыта, снизу — панель)',
+  flat: 'плоская под шкафом',
+  dome: 'купольная (каминная)',
+  incl: 'наклонная настенная',
+  ceil: 'встроенная в потолок',
+  none: 'без вытяжки (шкаф)'
+};
+/** Hobs; «vent» — induction with the hood built into the hob (no hood above needed). */
+const HOB_T = {
+  ind: 'индукция, 4 зоны',
+  flex: 'индукция Flex (зоны-полосы)',
+  gas: 'газовая, 4 конфорки',
+  domino: 'два «домино» по 30 см',
+  vent: 'индукция со встроенной вытяжкой'
+};
+/** Sinks: bowls [w, d] side by side, a drainer wing, or a round bowl. */
+const SINK_T = {
+  single: { n: 'одна чаша 500×420', b: [[500, 420]] },
+  compact: { n: 'компактная 400×400', b: [[400, 400]] },
+  big: { n: 'большая чаша 700×450', b: [[700, 450]] },
+  drainer: { n: 'чаша + крыло 780×480', b: [[420, 400]], wing: 300 },
+  onehalf: {
+    n: 'полторы чаши 600×450',
+    b: [
+      [340, 400],
+      [180, 300]
+    ]
+  },
+  double: {
+    n: 'две чаши 780×450',
+    b: [
+      [350, 400],
+      [350, 400]
+    ]
+  },
+  round: { n: 'круглая Ø450', r: 225 }
+};
+const SINK_M = { top: 'врезная сверху', under: 'подстольная (под столешницу)', flush: 'в уровень со столешницей' };
+const SINK_MAT = { steel: 'нержавеющая сталь', granite: 'кварцевый гранит', ceramic: 'керамика' };
+const SINK_COL = { steel: '#c7ccd2', granite: '#4b4f55', ceramic: '#f1f0ec' };
+/** Depth of the worktop of a run (an island's back side has its own). */
+const kdep = (e, r) => (r && r.depth) || e.cfg.depth;
+/** Freestanding units: own height, no carcass, the worktop stops at them. */
+const kmFS = k => (KM[k] && KM[k].fs) || 0;
 var KH = { gola: 'профиль Gola (без ручек)', tipon: 'TIP-ON / SERVO-DRIVE', bar: 'ручка-скоба' };
 function kitDefaults() {
   return {
@@ -68686,14 +68935,33 @@ function kitDefaults() {
     sink: 'steel'
   };
 }
+/** Is there a wall right past an end of a run (then no end panel is needed there)? */
+function kitWallPast(p, u, n, sgn) {
+  try {
+    return !!pipeInWallZone(add(add(p, mul(u, 40 * sgn)), mul(n, 300)), 0);
+  } catch (_) {
+    return false;
+  }
+}
 function kitRuns(e) {
+  const c = e.cfg || {};
+  const ET = +c.endT || 18;
   return e.runs.map((r, i) => {
     const u = nrm(sub(r.b, r.a)),
       L = dist(r.a, r.b);
     const n = r.n ? P(r.n.x, r.n.y) : P(-u.y, u.x);
-    const prev = i > 0 ? e.runs[i - 1] : null;
-    const corner = !!(prev && dist(prev.b, r.a) < 50);
-    return { i, a: r.a, b: r.b, u, n, L, corner };
+    const prev = i > 0 ? e.runs[i - 1] : null,
+      next = e.runs[i + 1];
+    const corner = !e.island && !!(prev && dist(prev.b, r.a) < 50);
+    const cornerB = !e.island && !!(next && dist(next.a, r.b) < 50);
+    // end panels: «auto» — at a free end (no corner and no wall right past it)
+    const end = (v, auto) => (v === 'panel' ? true : v === 'none' ? false : c.ends === 'none' ? false : auto);
+    const wallA = kitWallPast(r.a, u, n, -1),
+      wallB = kitWallPast(r.b, u, n, 1);
+    // the panels stand outside the modules: before the first one and after the last one
+    const endA = !corner && end(r.endA, !wallA);
+    const endB = !cornerB && end(r.endB, !wallB);
+    return { i, a: r.a, b: r.b, u, n, L, corner, endA, endB, ET, wallA, wallB, depth: +r.depth || 0 };
   });
 }
 function kitLayout(e) {
@@ -68711,13 +68979,17 @@ function kitLayout(e) {
       if (it.tall) tall.push(it);
       s += +m.w;
     }
-    if (s > r.L + 1) out.over.push({ r, row: 'low', d: s - r.L });
+    r.lowEnd = s;
+    const eb = r.endB && r.wallB ? r.ET : 0;
+    if (s + eb > r.L + 1) out.over.push({ r, row: 'low', d: s + eb - r.L });
+    if (r.endA && r.wallA) out.over.push({ r, row: 'low', d: r.ET, endA: true });
     s = r.corner ? c.wallD : 0;
     for (const m of up) {
       for (const t of tall) if (s < t.s1 && s + +m.w > t.s0) s = t.s1;
       out.items.push({ m, r, s0: s, s1: s + +m.w, row: 'up' });
       s += +m.w;
     }
+    r.upEnd = s;
     if (s > r.L + 1) out.over.push({ r, row: 'up', d: s - r.L });
   }
   return out;
@@ -68821,75 +69093,175 @@ function kitXF(r) {
     return [q.x, q.y, z];
   };
 }
+/** Hood type of a hood module (its own or the kitchen's). */
+const kitHoodT = (e, m) => (m && m.hood) || e.cfg.hood || 'built';
+/** Hob type of a module with a hob. */
+const kitHobT = (e, m) => (m && m.hobT) || e.cfg.hobT || 'ind';
+/** Appliance fronts: f.tech — not a front of the carcass (no hinges, not in the cutting list). */
+const TECH_F = { oven: 1, mw: 1, steam: 1, coffee: 1, warm: 1 };
 function kitFrontsOf(e, it) {
   const c = e.cfg,
     m = it.m,
     w = +m.w,
     k = m.kind;
+  if (m.parts) return [];
   const g = 3;
   const F = [];
   const zb = c.legs,
     zt = c.legs + c.baseH;
-  const door = (x0, x1, z0, z1, h) =>
-    F.push({ kind: 'door', x0: x0 + g / 2, x1: x1 - g / 2, z0: z0 + g / 2, z1: z1 - g / 2, hinge: h });
+  const H = c.wallZ + c.wallH;
+  const door = (x0, x1, z0, z1, h, kind = 'door') =>
+    F.push({ kind, x0: x0 + g / 2, x1: x1 - g / 2, z0: z0 + g / 2, z1: z1 - g / 2, hinge: h });
   const drw = (z0, z1) => F.push({ kind: 'drawer', x0: g / 2, x1: w - g / 2, z0: z0 + g / 2, z1: z1 - g / 2 });
+  // a built-in appliance of 595 mm width, h tall, its bottom at z0
+  const ap = (kind, z0, h) => F.push({ kind, tech: true, x0: (w - 595) / 2, x1: (w + 595) / 2, z0, z1: z0 + h - 2 });
+  const doors2 = (z0, z1) => {
+    if (w <= 500) door(0, w, z0, z1, 'L');
+    else {
+      door(0, w / 2, z0, z1, 'L');
+      door(w / 2, w, z0, z1, 'R');
+    }
+  };
   if (it.row === 'low') {
-    if (k === 'b_door' || k === 'b_sink') {
-      if (w <= 500) door(0, w, zb, zt, 'L');
-      else {
-        door(0, w / 2, zb, zt, 'L');
-        door(w / 2, w, zb, zt, 'R');
-      }
-    } else if (k === 'b_drawers' || k === 'b_hob') {
+    if (k === 'b_door' || k === 'b_sink') doors2(zb, zt);
+    else if (k === 'b_drawers' || k === 'b_hob') {
       const h = c.baseH;
       drw(zb, zb + h * 0.375);
       drw(zb + h * 0.375, zb + h * 0.75);
       drw(zb + h * 0.75, zt);
     } else if (k === 'b_oven') {
       drw(zb, zt - 600);
-      F.push({ kind: 'oven', x0: (w - 595) / 2, x1: (w + 595) / 2, z0: zt - 597, z1: zt - 2 });
+      ap('oven', zt - 597, 597);
     } else if (k === 'b_dw') F.push({ kind: 'dw', x0: g / 2, x1: w - g / 2, z0: zb + g / 2, z1: zt - g / 2 });
+    else if (k === 'b_wm' || k === 'b_fridgeU') door(0, w, zb, zt, 'L');
+    else if (k === 'b_wine') door(0, w, zb, zt, 'L', 'glass');
     else if (k === 'b_bottle') F.push({ kind: 'drawer', x0: g / 2, x1: w - g / 2, z0: zb + g / 2, z1: zt - g / 2 });
     else if (k === 'b_corner') {
       door(c.depth + 20, w, zb, zt, 'R');
       F.push({ kind: 'blind', x0: 0, x1: c.depth + 20, z0: zb, z1: zt });
     } else if (k === 't_fridge') {
-      const H = c.wallZ + c.wallH;
       door(0, w, zb, zb + 720, 'L');
       door(0, w, zb + 720, zb + 1780, 'L');
       door(0, w, zb + 1780, H, 'L');
+    } else if (k === 't_freezer') {
+      door(0, w, zb, zb + 1780, 'L');
+      door(0, w, zb + 1780, H, 'L');
     } else if (k === 't_oven') {
-      const H = c.wallZ + c.wallH;
       drw(zb, zb + 380);
       drw(zb + 380, zb + 760);
-      F.push({ kind: 'oven', x0: (w - 595) / 2, x1: (w + 595) / 2, z0: zb + 800, z1: zb + 1395 });
-      F.push({ kind: 'mw', x0: (w - 595) / 2, x1: (w + 595) / 2, z0: zb + 1400, z1: zb + 1780 });
+      ap('oven', zb + 800, 597);
+      ap('mw', zb + 1400, 380);
+      door(0, w, zb + 1780, H, 'L');
+    } else if (k === 't_oven2') {
+      drw(zb, zb + 300);
+      drw(zb + 300, zb + 600);
+      ap('oven', zb + 600, 597);
+      ap('oven', zb + 1200, 597);
+      door(0, w, zb + 1800, H, 'L');
+    } else if (k === 't_steam') {
+      drw(zb, zb + 460);
+      ap('warm', zb + 460, 140);
+      ap('oven', zb + 600, 597);
+      ap('steam', zb + 1200, 455);
+      door(0, w, zb + 1655, H, 'L');
+    } else if (k === 't_coffee') {
+      drw(zb, zb + 600);
+      ap('warm', zb + 600, 140);
+      ap('coffee', zb + 740, 455);
+      ap('mw', zb + 1195, 455);
+      door(0, w, zb + 1650, H, 'L');
+    } else if (k === 't_wine') {
+      door(0, w, zb, zb + 1780, 'L', 'glass');
       door(0, w, zb + 1780, H, 'L');
     } else if (k === 't_store') {
-      const H = c.wallZ + c.wallH;
       door(0, w, zb, zb + 1350, 'L');
       door(0, w, zb + 1350, H, 'L');
     }
   } else {
     const z0 = c.wallZ,
       z1 = c.wallZ + c.wallH;
-    if (k === 'w_door' || k === 'w_dry') {
-      if (w <= 500) door(0, w, z0, z1, 'L');
-      else {
-        door(0, w / 2, z0, z1, 'L');
-        door(w / 2, w, z0, z1, 'R');
+    if (k === 'w_door' || k === 'w_dry') doors2(z0, z1);
+    else if (k === 'w_lift') F.push({ kind: 'flap', x0: g / 2, x1: w - g / 2, z0: z0 + g / 2, z1: z1 - g / 2 });
+    else if (k === 'w_mw') {
+      ap('mw', z0 + 2, 380);
+      door(0, w, z0 + 390, z1, 'L');
+    } else if (k === 'w_hood') {
+      const ht = kitHoodT(e, m);
+      // hidden hoods: the cabinet (raised over the hob) is closed by its front from the bottom to the top
+      if (ht === 'built' || ht === 'integr' || ht === 'flat' || ht === 'none') {
+        const hz = kitHoodCab(e, m);
+        F.push({ kind: 'flap', x0: g / 2, x1: w - g / 2, z0: hz + g / 2, z1: z1 - g / 2 });
       }
-    } else if (k === 'w_lift') F.push({ kind: 'flap', x0: g / 2, x1: w - g / 2, z0: z0 + g / 2, z1: z1 - g / 2 });
-    else if (k === 'w_hood' && e.cfg.hood === 'built')
-      F.push({
-        kind: 'flap',
-        x0: g / 2,
-        x1: w - g / 2,
-        z0: Math.max(kitHoodZ(e) + 80, z1 - 360) + g / 2,
-        z1: z1 - g / 2
-      });
+    }
   }
   return F;
+}
+const BKc = '#16181b';
+/** Sink of a module: type, mounting, material (the kitchen's material by default). */
+function kitSink(e, m) {
+  return {
+    t: SINK_T[m.sinkT] ? m.sinkT : 'single',
+    mo: SINK_M[m.sinkM] ? m.sinkM : 'top',
+    mat: SINK_MAT[m.sinkMat]
+      ? m.sinkMat
+      : e.cfg.sink === 'granite'
+        ? 'granite'
+        : e.cfg.sink === 'ceramic'
+          ? 'ceramic'
+          : 'steel'
+  };
+}
+/**
+ * Geometry of a sink in the module frame (x along the run from the module's left edge, y from the wall):
+ * bowls (rectangles or a circle), the drainer wing, the rim and the cut-out of the worktop.
+ */
+function kitSinkGeom(e, m, D = e.cfg.depth) {
+  const w = +m.w,
+    sk = kitSink(e, m),
+    T = SINK_T[sk.t];
+  const yc = D / 2 + 10;
+  const rim = sk.mo === 'under' ? 0 : 25;
+  const bowls = [];
+  let wing = null;
+  if (T.r) bowls.push({ cx: w / 2, cy: yc, r: T.r });
+  else {
+    const gap = 40;
+    const tw = T.b.reduce((a, b) => a + b[0], 0) + gap * (T.b.length - 1) + (T.wing ? T.wing + gap : 0);
+    let x = w / 2 - tw / 2;
+    for (const [bw, bd] of T.b) {
+      bowls.push({ x0: x, x1: x + bw, y0: yc - bd / 2, y1: yc + bd / 2 });
+      x += bw + gap;
+    }
+    if (T.wing) wing = { x0: x, x1: x + T.wing, y0: yc - 190, y1: yc + 190 };
+  }
+  const xs = bowls.flatMap(b => (b.r ? [b.cx - b.r, b.cx + b.r] : [b.x0, b.x1])).concat(wing ? [wing.x0, wing.x1] : []);
+  const ys = bowls.flatMap(b => (b.r ? [b.cy - b.r, b.cy + b.r] : [b.y0, b.y1]));
+  const R = {
+    x0: Math.min(...xs) - rim,
+    x1: Math.max(...xs) + rim,
+    y0: Math.min(...ys) - rim,
+    y1: Math.max(...ys) + rim
+  };
+  const circ = (cx, cy, r, n = 36) =>
+    Array.from({ length: n }, (_, i) => [cx + Math.cos((i / n) * TAU) * r, cy + Math.sin((i / n) * TAU) * r]);
+  const rect = (a, b, c2, d) => [
+    [a, b],
+    [c2, b],
+    [c2, d],
+    [a, d]
+  ];
+  // the worktop opening: under-mount — each bowl; over-mount — inside the rim; flush — the whole rim
+  let holes;
+  if (sk.mo === 'flush') holes = [T.r ? circ(w / 2, yc, T.r + rim) : rect(R.x0, R.y0, R.x1, R.y1)];
+  else if (sk.mo === 'under') holes = bowls.map(b => (b.r ? circ(b.cx, b.cy, b.r) : rect(b.x0, b.y0, b.x1, b.y1)));
+  else holes = [T.r ? circ(w / 2, yc, T.r + 8) : rect(R.x0 + 12, R.y0 + 12, R.x1 - 12, R.y1 - 12)];
+  return { sk, T, bowls, wing, rim: R, holes, circ, yc };
+}
+/** Cut-outs of the worktop in the run frame (x from the run start): sinks, and the opening of a vent hob. */
+function kitTopHoles(e, it) {
+  const m = it.m;
+  if (m.kind === 'b_sink') return kitSinkGeom(e, m, kdep(e, it.r)).holes.map(h => h.map(([x, y]) => [it.s0 + x, y]));
+  return [];
 }
 function kitBuild(e, mb) {
   const c = e.cfg,
@@ -68909,163 +69281,81 @@ function kitBuild(e, mb) {
     };
     const w = +m.w;
     if (k === 'gap' || k === 'wgap') continue;
+    const cd = kdep(e, r) - 40;
+    const custom = !!m.parts;
+    if (custom) partsMesh(mb, m.parts, c, B);
     if (it.row === 'low') {
-      if (k === 'b_fridgeF') {
-        mb.tag('Холодильник отдельностоящий');
-        B(0, 0, 0, w - 10, 650, 2000, '#d9dde1');
-        B(5, 650, 1200, w - 15, 652, 1990, '#e9ecef');
-        B(5, 650, 10, w - 15, 652, 1190, '#e9ecef');
-        mb.tag('Ручки');
-        B(w - 60, 652, 1300, w - 40, 680, 1600, '#9aa1a9');
-        B(w - 60, 652, 900, w - 40, 680, 1150, '#9aa1a9');
+      if (kmFS(k) && !custom) {
+        kitFreeUnit(mb, B, k, w, c);
         continue;
       }
       const H = it.tall ? c.wallZ + c.wallH : zt;
-      mb.tag(it.tall ? 'Пенал (корпус ЛДСП 16)' : 'Корпус нижний (ЛДСП 16)');
-      B(0, 0, c.legs, 16, cd, H, c.ccol);
-      B(w - 16, 0, c.legs, w, cd, H, c.ccol);
-      B(16, 0, c.legs, w - 16, cd, c.legs + 16, c.ccol);
-      if (it.tall) B(16, 0, H - 16, w - 16, cd, H, c.ccol);
-      else {
-        B(16, cd - 100, zt - 16, w - 16, cd, zt, c.ccol);
-        B(16, 0, zt - 16, w - 16, 100, zt, c.ccol);
-      }
-      B(2, -3, c.legs + 2, w - 2, 0, H - 2, '#d8d0c2');
-      mb.tag('Опоры Häfele + цоколь');
-      B(0, cd - 60, 0, w, cd - 44, c.legs, '#3d4248');
-      for (const f of kitFrontsOf(e, it)) {
-        if (f.kind === 'oven' || f.kind === 'mw') {
-          mb.tag(f.kind === 'oven' ? 'Духовой шкаф 60 см' : 'СВЧ встраиваемая');
-          B(f.x0, cd - 540, f.z0, f.x1, cd, f.z1, '#2b2f35');
-          B(f.x0, cd, f.z0, f.x1, cd + 22, f.z1, BK);
-          B(f.x0 + 40, cd + 22, f.z0 + 40, f.x1 - 40, cd + 23, f.z1 - (f.kind === 'oven' ? 120 : 40), '#22262b');
-          if (f.kind === 'oven') {
-            mb.tag('Ручка духовки');
-            mb.smooth(true);
-            mb.tube(
-              xf(it.s0 + f.x0 + 60, cd + 55, f.z1 - 95),
-              xf(it.s0 + f.x1 - 60, cd + 55, f.z1 - 95),
-              8,
-              '#c7ccd2',
-              14
-            );
-            mb.smooth(false);
-            mb.tag('Панель управления');
-            B(f.x0, cd + 22, f.z1 - 80, f.x1, cd + 23, f.z1 - 5, '#33383e');
+      if (!custom) {
+        mb.tag(it.tall ? 'Пенал (корпус ЛДСП 16)' : 'Корпус нижний (ЛДСП 16)');
+        B(0, 0, c.legs, 16, cd, H, c.ccol);
+        B(w - 16, 0, c.legs, w, cd, H, c.ccol);
+        B(16, 0, c.legs, w - 16, cd, c.legs + 16, c.ccol);
+        if (it.tall) B(16, 0, H - 16, w - 16, cd, H, c.ccol);
+        else {
+          B(16, cd - 100, zt - 16, w - 16, cd, zt, c.ccol);
+          B(16, 0, zt - 16, w - 16, 100, zt, c.ccol);
+        }
+        B(2, -3, c.legs + 2, w - 2, 0, H - 2, '#d8d0c2');
+        mb.tag('Опоры Häfele + цоколь');
+        B(0, cd - 60, 0, w, cd - 44, c.legs, '#3d4248');
+        for (const f of kitFrontsOf(e, it)) {
+          if (f.tech) {
+            kitApplianceFront(mb, B, f, cd, xf, it);
+            continue;
           }
-          continue;
+          if (f.kind === 'blind') {
+            mb.tag('Фальш-панель углового модуля');
+            B(f.x0, cd, f.z0 + 2, f.x1, cd + ft, f.z1 - 2, c.fcol);
+            continue;
+          }
+          if (f.kind === 'glass') {
+            mb.tag('Дверь стеклянная (винный шкаф)');
+            B(f.x0, cd, f.z0, f.x1, cd + 6, f.z1, '#2b2f35');
+            B(f.x0 + 40, cd + 6, f.z0 + 60, f.x1 - 40, cd + 7, f.z1 - 60, '#5b6b78', 0.55);
+            mb.tag('Полки для бутылок');
+            for (let z = f.z0 + 120; z < f.z1 - 60; z += 160) B(30, 60, z, w - 30, cd - 20, z + 10, '#8b6a4c');
+            continue;
+          }
+          mb.tag(
+            f.kind === 'dw' ? 'Фасад ПММ (на петлях ПММ)' : f.kind === 'drawer' ? 'Фасады ящиков' : 'Фасады распашные'
+          );
+          B(f.x0, cd, f.z0, f.x1, cd + ft, f.z1, c.fcol);
+          kitHandle(mb, c, f, it, xf, cd + ft);
         }
-        if (f.kind === 'blind') {
-          mb.tag('Фальш-панель углового модуля');
-          B(f.x0, cd, f.z0 + 2, f.x1, cd + ft, f.z1 - 2, c.fcol);
-          continue;
+        if (c.handle === 'gola' && !it.tall) {
+          mb.tag('Профиль Gola');
+          B(0, cd - 26, zt - 60, w, cd, zt - 16, '#3d4248');
         }
-        mb.tag(
-          f.kind === 'dw' ? 'Фасад ПММ (на петлях ПММ)' : f.kind === 'drawer' ? 'Фасады ящиков' : 'Фасады распашные'
-        );
-        B(f.x0, cd, f.z0, f.x1, cd + ft, f.z1, c.fcol);
-        if (c.handle === 'bar') {
-          mb.tag('Ручки');
-          mb.smooth(true);
-          const zc = f.kind === 'door' && it.tall ? f.z0 + (f.z1 - f.z0) / 2 : f.z1 - 45;
-          if (f.kind === 'door' && f.z1 - f.z0 > 500) {
-            const xc = f.hinge === 'L' ? f.x1 - 45 : f.x0 + 45;
-            mb.tube(xf(it.s0 + xc, cd + ft + 30, zc - 90), xf(it.s0 + xc, cd + ft + 30, zc + 90), 6, '#9aa1a9', 12);
-          } else
-            mb.tube(
-              xf(it.s0 + (f.x0 + f.x1) / 2 - 80, cd + ft + 30, zc),
-              xf(it.s0 + (f.x0 + f.x1) / 2 + 80, cd + ft + 30, zc),
-              6,
-              '#9aa1a9',
-              12
-            );
-          mb.smooth(false);
+        if (k === 'b_dw') {
+          mb.tag('Посудомоечная машина');
+          B(16, 40, c.legs + 20, w - 16, cd - 2, zt - 20, '#c7ccd2');
         }
-      }
-      if (c.handle === 'gola' && !it.tall) {
-        mb.tag('Профиль Gola');
-        B(0, cd - 26, zt - 60, w, cd, zt - 16, '#3d4248');
-      }
-      if (k === 'b_dw') {
-        mb.tag('Посудомоечная машина');
-        B(16, 40, c.legs + 20, w - 16, cd - 2, zt - 20, '#c7ccd2');
-      }
-      if (k === 'b_sink') {
-        mb.tag('Мойка ' + (c.sink === 'granite' ? 'гранитная' : 'нерж.'));
-        const sw = Math.min(w - 140, 500),
-          sd = 420;
-        const x0 = (w - sw) / 2,
-          y0 = (c.depth - sd) / 2 + 10;
-        const sc = c.sink === 'granite' ? '#4b4f55' : '#c7ccd2';
-        const zs = zt + c.top;
-        B(x0 - 10, y0 - 10, zs - 1, x0 + sw + 10, y0 + sd + 10, zs + 1, sc);
-        B(x0, y0, zs - 190, x0 + sw, y0 + sd, zs - 180, sc);
-        for (const [a, b2, cc, d2] of [
-          [x0, y0, x0 + 6, y0 + sd],
-          [x0 + sw - 6, y0, x0 + sw, y0 + sd],
-          [x0, y0, x0 + sw, y0 + 6],
-          [x0, y0 + sd - 6, x0 + sw, y0 + sd]
-        ])
-          B(a, b2, zs - 190, cc, d2, zs, sc);
-        mb.tag('Смеситель');
-        mb.smooth(true);
-        const mx = xf(it.s0 + w / 2, y0 - 40, zs);
-        mb.cyl(mx[0], mx[1], zs, zs + 260, 18, '#c7ccd2', 16);
-        const top = [mx[0], mx[1], zs + 300];
-        mb.sweep(
-          roundPath(
-            [
-              [mx[0], mx[1], zs + 240],
-              top,
-              [...xf(it.s0 + w / 2, y0 + 150, zs + 300)],
-              [...xf(it.s0 + w / 2, y0 + 210, zs + 220)]
-            ],
-            70
-          ).pts,
-          10,
-          '#c7ccd2',
-          14
-        );
-        mb.smooth(false);
-      }
-      if (k === 'b_hob' || (k === 'b_oven' && m.hob)) {
-        mb.tag('Варочная панель (стеклокерамика/индукция)');
-        const hw = Math.min(w - 20, 590),
-          hd = 520;
-        const x0 = (w - hw) / 2,
-          y0 = (c.depth - hd) / 2;
-        const zs = zt + c.top;
-        B(x0, y0, zs, x0 + hw, y0 + hd, zs + 5, BK);
-        mb.tag('Конфорки');
-        for (const [dx, dy, rr] of [
-          [0.27, 0.3, 90],
-          [0.73, 0.3, 70],
-          [0.27, 0.72, 70],
-          [0.73, 0.72, 100]
-        ]) {
-          const q = xf(it.s0 + x0 + hw * dx, y0 + hd * dy, zs + 5.2);
-          mb.cyl(q[0], q[1], zs + 5.1, zs + 5.4, rr, '#3a3f45', 28);
-          mb.cyl(q[0], q[1], zs + 5.1, zs + 5.5, rr - 12, BK, 28);
+        if (k === 'b_wm') {
+          mb.tag('Стиральная машина встраиваемая');
+          B(16, 40, c.legs + 10, w - 16, cd - 2, zt - 20, '#e9ecef');
+        }
+        if (k === 'b_fridgeU') {
+          mb.tag('Холодильник подстольный');
+          B(16, 40, c.legs + 10, w - 16, cd - 2, zt - 20, '#e9ecef');
         }
       }
+      if (k === 'b_sink') kitSinkMesh(mb, e, it, B, xf, zt);
+      if (k === 'b_hob' || (k === 'b_oven' && m.hob)) kitHobMesh(mb, e, it, B, xf, zt + c.top);
     } else {
-      if (k === 'w_hood' && c.hood === 'dome') {
-        const hz = kitHoodZ(e);
-        mb.tag('Вытяжка купольная');
-        B(0, 0, hz, w, 500, hz + 80, '#c7ccd2');
-        const q = [
-          xf(it.s0 + w * 0.1, 0, hz + 80),
-          xf(it.s0 + w * 0.9, 0, hz + 80),
-          xf(it.s0 + w * 0.65, 0, hz + 380),
-          xf(it.s0 + w * 0.35, 0, hz + 380)
-        ];
-        mb.tag('Купол');
-        prism3(mb, q, [r_n(r).x * 350, r_n(r).y * 350, 0], '#c7ccd2');
-        mb.tag('Короб вытяжки');
-        B(w / 2 - 150, 0, hz + 380, w / 2 + 150, 250, S.ceil || 2700, '#c7ccd2');
-        continue;
+      if (custom) continue;
+      if (k === 'w_hood') {
+        const ht = kitHoodT(e, m);
+        if (ht === 'dome' || ht === 'incl' || ht === 'ceil') {
+          kitHoodOpen(mb, e, it, B, ht);
+          continue;
+        }
       }
-      const z0 = k === 'w_hood' ? kitHoodZ(e) : c.wallZ,
+      const z0 = k === 'w_hood' ? kitHoodCab(e, m) : c.wallZ,
         z1 = c.wallZ + c.wallH,
         d = c.wallD;
       mb.tag('Корпус навесной (ЛДСП 16)');
@@ -69079,17 +69369,35 @@ function kitBuild(e, mb) {
         B(16, 0, (z0 + z1) / 2 - 8, w - 16, d - 10, (z0 + z1) / 2 + 8, c.ccol);
       }
       if (k === 'w_hood') {
-        mb.tag('Вытяжка встроенная (телескопическая)');
-        B(30, 40, z0 - 5, w - 30, d - 10, z0 + 60, '#9aa1a9');
-        B(30, d - 30, z0 - 10, w - 30, d + 40, z0 + 20, '#c7ccd2');
+        const ht = kitHoodT(e, m);
+        if (ht === 'built') {
+          mb.tag('Вытяжка встроенная телескопическая (внутри шкафа)');
+          B(30, 30, z0 + 16, w - 30, d - 10, z0 + 200, '#9aa1a9');
+          mb.tag('Выдвижной козырёк вытяжки (закрыт)');
+          B(20, d - 260, z0 - 20, w - 20, d + ft, z0, '#c7ccd2');
+        } else if (ht === 'integr') {
+          mb.tag('Вытяжка полностью встроенная: панель снизу шкафа');
+          B(20, 20, z0 - 2, w - 20, d - 10, z0 + 200, '#5d646c');
+        } else if (ht === 'flat') {
+          mb.tag('Вытяжка плоская подвесная');
+          B(0, 0, z0 - 60, w, d + 20, z0, '#c7ccd2');
+        }
       }
       if (k === 'w_dry') {
         mb.tag('Сушилка для посуды');
         for (const zz of [z0 + 80, z0 + 330]) B(30, 30, zz, w - 30, d - 30, zz + 6, '#c7ccd2');
       }
+      if (k === 'w_mw') {
+        mb.tag('СВЧ встраиваемая (корпус)');
+        B(30, 30, z0 + 16, w - 30, d - 2, z0 + 380, '#2b2f35');
+      }
       mb.tag('Навесы Häfele + монтажная шина');
       B(30, -6, z1 - 80, w - 30, 0, z1 - 50, '#7d848c');
       for (const f of kitFrontsOf(e, it)) {
+        if (f.tech) {
+          kitApplianceFront(mb, B, f, d, xf, it);
+          continue;
+        }
         mb.tag(f.kind === 'flap' ? 'Фасад откидной (AVENTOS)' : 'Фасады навесные');
         B(f.x0, d, f.z0, f.x1, d + ft, f.z1, c.fcol);
         if (c.handle === 'bar') {
@@ -69107,36 +69415,454 @@ function kitBuild(e, mb) {
       }
     }
   }
-  // worktop, apron (islands draw their own top: cfg.noTop)
+  // end panels of the runs
+  for (const r of L.runs) kitEndPanels(mb, e, L, r);
+  // worktop with the sink cut-outs, apron (islands draw their own top: cfg.noTop)
   for (const r of c.noTop ? [] : L.runs) {
-    const low = L.items.filter(it => it.r === r && it.row === 'low');
-    let segs = [];
-    let cur = null;
-    for (const it of low) {
-      const cut = it.tall || it.m.kind === 'b_fridgeF' || it.m.kind === 'gap';
-      if (cut) {
-        if (cur) {
-          segs.push(cur);
-          cur = null;
-        }
-        continue;
-      }
-      if (!cur) cur = { s0: it === low[0] && !r.corner ? 0 : it.s0, s1: it.s1 };
-      else cur.s1 = it.s1;
-    }
-    if (cur) segs.push(cur);
-    for (const sg of segs) {
-      const xf = kitXF(r);
-      const s0 = Math.max(sg.s0, r.corner ? 0 : 0);
-      const q = [xf(s0, 0, zt), xf(sg.s1, 0, zt), xf(sg.s1, c.depth + 20 - 20, zt), xf(s0, c.depth, zt)];
+    const xf = kitXF(r);
+    for (const sg of kitTopSegs(e, L, r)) {
       mb.tag('Столешница ' + c.top + ' мм');
-      prism3(mb, q, [0, 0, c.top], c.topCol);
+      const outer = [
+        [sg.s0, 0],
+        [sg.s1, 0],
+        [sg.s1, c.depth],
+        [sg.s0, c.depth]
+      ];
+      slabCut(mb, outer, sg.holes, zt, zt + c.top, c.topCol, (x, y, z) => xf(x, y, z));
       if (c.apron !== 'none') {
         mb.tag(c.apron === 'glass' ? 'Фартук: стекло (скинали)' : 'Фартук: плитка');
-        const a = [xf(s0, 0, zt + c.top), xf(sg.s1, 0, zt + c.top), xf(sg.s1, 6, zt + c.top), xf(s0, 6, zt + c.top)];
+        const a = [
+          xf(sg.s0, 0, zt + c.top),
+          xf(sg.s1, 0, zt + c.top),
+          xf(sg.s1, 6, zt + c.top),
+          xf(sg.s0, 6, zt + c.top)
+        ];
         prism3(mb, a, [0, 0, c.wallZ - zt - c.top], c.apronCol);
       }
     }
+  }
+}
+/** Pieces of the worktop of a run (they stop at tall units and freestanding appliances) with their cut-outs. */
+function kitTopSegs(e, L, r) {
+  const low = L.items.filter(it => it.r === r && it.row === 'low');
+  const segs = [];
+  let cur = null;
+  for (const it of low) {
+    const cut = it.tall || kmFS(it.m.kind) || it.m.kind === 'gap';
+    if (cut) {
+      if (cur) segs.push(cur);
+      cur = null;
+      continue;
+    }
+    if (!cur)
+      cur = { s0: it === low[0] ? (r.corner ? 0 : r.endA ? it.s0 - r.ET : it.s0) : it.s0, s1: it.s1, holes: [] };
+    else cur.s1 = it.s1;
+    cur.holes.push(...kitTopHoles(e, it));
+    cur.last = it;
+  }
+  if (cur) segs.push(cur);
+  // over the end panel at the free end
+  const lastLow = low[low.length - 1];
+  if (r.endB && segs.length && lastLow && segs[segs.length - 1].last === lastLow) segs[segs.length - 1].s1 += r.ET;
+  return segs;
+}
+/** Decorative end panels (боковины) at the free ends of a run: the low row and the wall row. */
+function kitEndPanels(mb, e, L, r) {
+  const c = e.cfg,
+    xf = kitXF(r);
+  const zt = c.legs + c.baseH,
+    cd = c.depth - 40;
+  const B = (x0, y0, z0, x1, y1, z1, col) =>
+    prism3(mb, [xf(x0, y0, z0), xf(x1, y0, z0), xf(x1, y1, z0), xf(x0, y1, z0)], [0, 0, z1 - z0], col);
+  const col = c.endCol || c.fcol;
+  const ET = r.ET;
+  const low = L.items.filter(it => it.r === r && it.row === 'low' && !['gap'].includes(it.m.kind));
+  const up = L.items.filter(it => it.r === r && it.row === 'up' && !['wgap'].includes(it.m.kind));
+  const lowTop = it => (it.tall ? c.wallZ + c.wallH : zt);
+  const at = (x0, lowIt, upIt) => {
+    mb.tag(`Боковина декоративная ${ET} мм`);
+    if (lowIt && !kmFS(lowIt.m.kind)) B(x0, 0, 0, x0 + ET, cd + 18, lowTop(lowIt), col);
+    if (upIt && !(lowIt && lowIt.tall)) B(x0, 0, c.wallZ, x0 + ET, c.wallD + 18, c.wallZ + c.wallH, col);
+  };
+  if (r.endA) at(-ET, low[0] && low[0].s0 <= 1 ? low[0] : null, up[0] && up[0].s0 <= 1 ? up[0] : null);
+  if (r.endB) {
+    const lo = low[low.length - 1],
+      u = up[up.length - 1];
+    const x = Math.max(lo ? lo.s1 : 0, u ? u.s1 : 0);
+    at(x, lo && lo.s1 >= x - 1 ? lo : null, u && u.s1 >= x - 1 ? u : null);
+  }
+}
+/** End panels as parts of the drawings (one unit). */
+function kitEndParts(e) {
+  const c = e.cfg,
+    L = kitLayout(e),
+    zt = c.legs + c.baseH,
+    cd = c.depth - 40;
+  const out = [];
+  for (const r of L.runs) {
+    const n = (r.endA ? 1 : 0) + (r.endB ? 1 : 0);
+    if (!n) continue;
+    const low = L.items.filter(it => it.r === r && it.row === 'low');
+    const tall = low.some(it => it.tall && (it === low[0] || it === low[low.length - 1]));
+    out.push({
+      name: 'Боковина декоративная нижнего ряда',
+      L: tall ? c.wallZ + c.wallH : zt,
+      W: cd + 18,
+      t: +c.endT || 18,
+      mat: 'front',
+      edge: 'по периметру 2 мм',
+      box: [0, 0, 0, +c.endT || 18, cd + 18, zt],
+      qty: n,
+      grp: 'Фасады'
+    });
+    if (L.items.some(it => it.r === r && it.row === 'up'))
+      out.push({
+        name: 'Боковина декоративная навесного ряда',
+        L: c.wallH,
+        W: c.wallD + 18,
+        t: +c.endT || 18,
+        mat: 'front',
+        edge: 'по периметру 2 мм',
+        box: [0, 0, 0, +c.endT || 18, c.wallD + 18, c.wallH],
+        qty: n,
+        grp: 'Фасады'
+      });
+  }
+  return out;
+}
+/** Handles of a front (bar handles only; Gola and TIP-ON have none). */
+function kitHandle(mb, c, f, it, xf, y) {
+  if (c.handle !== 'bar') return;
+  mb.tag('Ручки');
+  mb.smooth(true);
+  const zc = f.kind === 'door' && it.tall ? f.z0 + (f.z1 - f.z0) / 2 : f.z1 - 45;
+  if (f.kind === 'door' && f.z1 - f.z0 > 500) {
+    const xc = f.hinge === 'L' ? f.x1 - 45 : f.x0 + 45;
+    mb.tube(xf(it.s0 + xc, y + 30, zc - 90), xf(it.s0 + xc, y + 30, zc + 90), 6, '#9aa1a9', 12);
+  } else
+    mb.tube(
+      xf(it.s0 + (f.x0 + f.x1) / 2 - 80, y + 30, zc),
+      xf(it.s0 + (f.x0 + f.x1) / 2 + 80, y + 30, zc),
+      6,
+      '#9aa1a9',
+      12
+    );
+  mb.smooth(false);
+}
+const AP_N = {
+  oven: 'Духовой шкаф 60 см',
+  mw: 'СВЧ встраиваемая',
+  steam: 'Пароварка компактная 45 см',
+  coffee: 'Кофемашина встраиваемая 45 см',
+  warm: 'Подогреватель посуды 14 см'
+};
+/** A built-in appliance in its niche: the body, the glass front, a handle / panel. */
+function kitApplianceFront(mb, B, f, cd, xf, it) {
+  const BK = '#16181b';
+  mb.tag(AP_N[f.kind] || 'Техника');
+  B(f.x0, cd - 540, f.z0, f.x1, cd, f.z1, '#2b2f35');
+  B(f.x0, cd, f.z0, f.x1, cd + 22, f.z1, BK);
+  const h = f.z1 - f.z0;
+  if (f.kind === 'warm') {
+    B(f.x0 + 20, cd + 22, f.z0 + 20, f.x1 - 20, cd + 23, f.z1 - 20, '#33383e');
+    return;
+  }
+  if (f.kind === 'coffee') {
+    mb.tag('Кофемашина: панель и выход кофе');
+    B(f.x0 + 30, cd + 22, f.z1 - 90, f.x1 - 30, cd + 23, f.z1 - 20, '#33383e');
+    B(f.x0 + 230, cd + 22, f.z0 + 60, f.x1 - 230, cd + 24, f.z0 + h * 0.55, '#22262b');
+    return;
+  }
+  B(f.x0 + 40, cd + 22, f.z0 + 40, f.x1 - 40, cd + 23, f.z1 - (f.kind === 'mw' ? 40 : 120), '#22262b');
+  if (f.kind === 'oven' || f.kind === 'steam') {
+    mb.tag('Ручка духовки');
+    mb.smooth(true);
+    mb.tube(xf(it.s0 + f.x0 + 60, cd + 55, f.z1 - 95), xf(it.s0 + f.x1 - 60, cd + 55, f.z1 - 95), 8, '#c7ccd2', 14);
+    mb.smooth(false);
+    mb.tag('Панель управления');
+    B(f.x0, cd + 22, f.z1 - 80, f.x1, cd + 23, f.z1 - 5, '#33383e');
+  }
+}
+/** Freestanding appliances: fridges (single, side-by-side, French door), a cooker, a washing machine. */
+function kitFreeUnit(mb, B, k, w, c) {
+  const H = kmFS(k),
+    D = k === 'f_stove' || k === 'f_wm' ? 600 : 680;
+  const body = '#d9dde1',
+    door = '#e9ecef',
+    hd = '#9aa1a9';
+  mb.tag(KM[k].n);
+  if (k === 'b_fridgeF') {
+    B(0, 0, 0, w - 10, D - 30, H, body);
+    B(5, D - 30, 1200, w - 15, D - 28, H - 10, door);
+    B(5, D - 30, 10, w - 15, D - 28, 1190, door);
+    mb.tag('Ручки');
+    B(w - 60, D - 28, 1300, w - 40, D, 1600, hd);
+    B(w - 60, D - 28, 900, w - 40, D, 1150, hd);
+  } else if (k === 'f_sbs') {
+    B(0, 0, 0, w - 10, D - 30, H, body);
+    B(5, D - 30, 30, w / 2 - 8, D - 28, H - 10, door);
+    B(w / 2 - 2, D - 30, 30, w - 15, D - 28, H - 10, door);
+    mb.tag('Диспенсер льда и воды');
+    B(w / 4 - 110, D - 28, 1050, w / 4 + 110, D - 26, 1400, '#5d646c');
+    mb.tag('Ручки');
+    B(w / 2 - 40, D - 28, 700, w / 2 - 24, D, 1500, hd);
+    B(w / 2 + 14, D - 28, 700, w / 2 + 30, D, 1500, hd);
+  } else if (k === 'f_french') {
+    B(0, 0, 0, w - 10, D - 30, H, body);
+    B(5, D - 30, 760, w / 2 - 8, D - 28, H - 10, door);
+    B(w / 2 - 2, D - 30, 760, w - 15, D - 28, H - 10, door);
+    B(5, D - 30, 30, w - 15, D - 28, 740, door);
+    mb.tag('Ручки');
+    B(w / 2 - 40, D - 28, 1000, w / 2 - 24, D, 1600, hd);
+    B(w / 2 + 14, D - 28, 1000, w / 2 + 30, D, 1600, hd);
+    B(80, D - 28, 640, w - 90, D, 660, hd);
+  } else if (k === 'f_stove') {
+    B(0, 0, 0, w, D, H - 10, '#e9ecef');
+    mb.tag('Варочная поверхность плиты');
+    B(0, 0, H - 10, w, D, H, BKc);
+    mb.tag('Дверца духовки');
+    B(30, D, 120, w - 30, D + 4, H - 160, '#22262b');
+    mb.tag('Панель управления');
+    B(0, D, H - 130, w, D + 6, H - 20, '#c7ccd2');
+  } else if (k === 'f_wm') {
+    B(0, 0, 0, w, D, H, '#f1f2f4');
+    mb.tag('Люк');
+    B(w / 2 - 150, D, 180, w / 2 + 150, D + 6, 480, '#9aa1a9');
+    B(w / 2 - 120, D + 6, 210, w / 2 + 120, D + 8, 450, '#5b6b78');
+    B(30, D, H - 110, w - 30, D + 3, H - 20, '#c7ccd2');
+  }
+}
+/** The sink: bowls, a drainer wing, the rim at the mounting height, the mixer. */
+function kitSinkMesh(mb, e, it, B, xf, zt) {
+  const c = e.cfg,
+    m = it.m;
+  const G = kitSinkGeom(e, m, kdep(e, it.r));
+  const sc = SINK_COL[G.sk.mat];
+  const zs = zt + c.top;
+  const zr = G.sk.mo === 'top' ? zs : G.sk.mo === 'flush' ? zs - 1 : zt - 1;
+  const depthB = 190;
+  mb.tag(`Мойка ${SINK_T[G.sk.t].n} · ${SINK_M[G.sk.mo]} · ${SINK_MAT[G.sk.mat]}`);
+  // the rim (an outline ring around the bowls) and the wing
+  const Rr = G.rim;
+  const quad = (pts, z0, z1, col) =>
+    prism3(
+      mb,
+      pts.map(([x, y]) => xf(it.s0 + x, y, z0)),
+      [0, 0, z1 - z0],
+      col
+    );
+  if (G.sk.mo !== 'under') {
+    if (G.T.r) {
+      const n = 36,
+        r0 = G.T.r,
+        r1 = G.T.r + 25;
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * TAU,
+          a1 = ((i + 1) / n) * TAU;
+        const cx = +m.w / 2,
+          cy = G.yc;
+        quad(
+          [
+            [cx + Math.cos(a0) * r0, cy + Math.sin(a0) * r0],
+            [cx + Math.cos(a0) * r1, cy + Math.sin(a0) * r1],
+            [cx + Math.cos(a1) * r1, cy + Math.sin(a1) * r1],
+            [cx + Math.cos(a1) * r0, cy + Math.sin(a1) * r0]
+          ],
+          zr,
+          zr + 2,
+          sc
+        );
+      }
+    } else {
+      const inner = G.bowls.concat(G.wing ? [G.wing] : []);
+      // rim strips: front, back, the ends and between the bowls
+      const xs = [Rr.x0, ...inner.flatMap(b => [b.x0, b.x1]), Rr.x1].sort((a, b) => a - b);
+      B(Rr.x0, Rr.y0, zr, Rr.x1, Rr.y0 + 25, zr + 2, sc);
+      B(Rr.x0, Rr.y1 - 25, zr, Rr.x1, Rr.y1, zr + 2, sc);
+      for (let i = 0; i + 1 < xs.length; i += 2)
+        if (xs[i + 1] - xs[i] > 1) B(xs[i], Rr.y0 + 25, zr, xs[i + 1], Rr.y1 - 25, zr + 2, sc);
+    }
+  }
+  if (G.wing) {
+    mb.tag('Крыло мойки (рифлёное)');
+    B(G.wing.x0, G.wing.y0, zr - 6, G.wing.x1, G.wing.y1, zr - 4, sc);
+    for (let y = G.wing.y0 + 30; y < G.wing.y1 - 20; y += 40)
+      B(G.wing.x0 + 20, y, zr - 4, G.wing.x1 - 20, y + 8, zr, sc);
+  }
+  mb.tag('Чаши мойки');
+  for (const b of G.bowls) {
+    if (b.r) {
+      mb.smooth(true);
+      const q = xf(it.s0 + b.cx, b.cy, 0);
+      mb.cyl(q[0], q[1], zr - depthB, zr - depthB + 6, b.r, sc, 36);
+      const n = 36;
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * TAU,
+          a1 = ((i + 1) / n) * TAU,
+          r0 = b.r,
+          r1 = b.r + 6;
+        quad(
+          [
+            [b.cx + Math.cos(a0) * r0, b.cy + Math.sin(a0) * r0],
+            [b.cx + Math.cos(a0) * r1, b.cy + Math.sin(a0) * r1],
+            [b.cx + Math.cos(a1) * r1, b.cy + Math.sin(a1) * r1],
+            [b.cx + Math.cos(a1) * r0, b.cy + Math.sin(a1) * r0]
+          ],
+          zr - depthB,
+          zr,
+          sc
+        );
+      }
+      mb.smooth(false);
+      continue;
+    }
+    const d = b.x1 - b.x0 < 250 ? depthB - 60 : depthB;
+    B(b.x0, b.y0, zr - d, b.x1, b.y1, zr - d + 6, sc);
+    for (const [a, b2, cc, d2] of [
+      [b.x0 - 6, b.y0 - 6, b.x0, b.y1 + 6],
+      [b.x1, b.y0 - 6, b.x1 + 6, b.y1 + 6],
+      [b.x0, b.y0 - 6, b.x1, b.y0],
+      [b.x0, b.y1, b.x1, b.y1 + 6]
+    ])
+      B(a, b2, zr - d, cc, d2, zr, sc);
+    mb.tag('Слив');
+    mb.smooth(true);
+    const q = xf(it.s0 + (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, 0);
+    mb.cyl(q[0], q[1], zr - d + 6, zr - d + 8, 40, '#9aa1a9', 20);
+    mb.smooth(false);
+    mb.tag('Чаши мойки');
+  }
+  // mixer behind the (first) bowl
+  mb.tag('Смеситель');
+  mb.smooth(true);
+  const bx = G.bowls[0].r ? G.bowls[0].cx : (G.bowls[0].x0 + G.bowls[0].x1) / 2;
+  const by = Rr.y0 - (G.sk.mo === 'under' ? 40 : 0) + 12;
+  const mx = xf(it.s0 + bx, by - 30, zs);
+  mb.cyl(mx[0], mx[1], zs, zs + 260, 18, '#c7ccd2', 16);
+  mb.sweep(
+    roundPath(
+      [
+        [mx[0], mx[1], zs + 240],
+        [mx[0], mx[1], zs + 300],
+        [...xf(it.s0 + bx, by + 120, zs + 300)],
+        [...xf(it.s0 + bx, by + 180, zs + 220)]
+      ],
+      70
+    ).pts,
+    10,
+    '#c7ccd2',
+    14
+  );
+  mb.smooth(false);
+}
+/** Hobs: induction, flex, gas with grates, domino, induction with a built-in hood. */
+function kitHobMesh(mb, e, it, B, xf, zs) {
+  const c = e.cfg,
+    m = it.m,
+    w = +m.w;
+  const t = kitHobT(e, m);
+  const hw = t === 'domino' ? Math.min(w - 20, 580) : Math.min(w - 20, w >= 800 ? 780 : 590),
+    hd = 520;
+  const x0 = (w - hw) / 2,
+    y0 = (kdep(e, it.r) - hd) / 2;
+  mb.tag(`Варочная панель: ${HOB_T[t]}`);
+  if (t === 'domino') {
+    B(x0, y0, zs, x0 + hw / 2 - 2, y0 + hd, zs + 5, BKc);
+    B(x0 + hw / 2 + 2, y0, zs, x0 + hw, y0 + hd, zs + 5, BKc);
+  } else B(x0, y0, zs, x0 + hw, y0 + hd, zs + 5, t === 'gas' ? '#3a3f45' : BKc);
+  if (t === 'flex') {
+    mb.tag('Зоны Flex');
+    for (const dx of [0.08, 0.58])
+      B(x0 + hw * dx, y0 + 40, zs + 5, x0 + hw * (dx + 0.34), y0 + hd - 40, zs + 5.3, '#3a3f45');
+    return;
+  }
+  const zones =
+    t === 'vent'
+      ? [
+          [0.2, 0.28, 90],
+          [0.2, 0.72, 90],
+          [0.8, 0.28, 90],
+          [0.8, 0.72, 90]
+        ]
+      : t === 'domino'
+        ? [
+            [0.25, 0.3, 80],
+            [0.25, 0.72, 80],
+            [0.75, 0.5, 110]
+          ]
+        : [
+            [0.27, 0.3, 90],
+            [0.73, 0.3, 70],
+            [0.27, 0.72, 70],
+            [0.73, 0.72, 100]
+          ];
+  mb.tag(t === 'gas' ? 'Конфорки и решётки' : 'Конфорки');
+  mb.smooth(true);
+  for (const [dx, dy, rr] of zones) {
+    const q = xf(it.s0 + x0 + hw * dx, y0 + hd * dy, zs + 5.2);
+    if (t === 'gas') {
+      mb.cyl(q[0], q[1], zs + 5, zs + 25, rr * 0.45, '#2b2f35', 20);
+      mb.cyl(q[0], q[1], zs + 25, zs + 30, rr * 0.3, '#16181b', 20);
+    } else {
+      mb.cyl(q[0], q[1], zs + 5.1, zs + 5.4, rr, '#3a3f45', 28);
+      mb.cyl(q[0], q[1], zs + 5.1, zs + 5.5, rr - 12, BKc, 28);
+    }
+  }
+  mb.smooth(false);
+  if (t === 'gas') {
+    mb.tag('Решётки чугунные');
+    for (const dy of [0.12, 0.5, 0.88])
+      B(x0 + 10, y0 + hd * dy - 6, zs + 30, x0 + hw - 10, y0 + hd * dy + 6, zs + 40, '#16181b');
+    for (const dx of [0.04, 0.5, 0.96])
+      B(x0 + hw * dx - 6, y0 + 10, zs + 30, x0 + hw * dx + 6, y0 + hd - 10, zs + 40, '#16181b');
+  }
+  if (t === 'vent') {
+    mb.tag('Встроенная вытяжка: решётка в центре варочной');
+    B(x0 + hw / 2 - 70, y0 + 40, zs + 5, x0 + hw / 2 + 70, y0 + hd - 40, zs + 5.6, '#5d646c');
+    for (let y = y0 + 60; y < y0 + hd - 50; y += 24)
+      B(x0 + hw / 2 - 60, y, zs + 5.6, x0 + hw / 2 + 60, y + 8, zs + 6, '#2b2f35');
+    mb.tag('Встроенная вытяжка: мотор и короб (в шкафу)');
+    B(x0 + hw / 2 - 150, 120, c.legs + 40, x0 + hw / 2 + 150, kdep(e, it.r) - 120, zs - 2, '#5d646c');
+  }
+}
+/** Open hoods: dome (chimney), inclined, built into the ceiling. */
+function kitHoodOpen(mb, e, it, B, ht) {
+  const c = e.cfg,
+    w = +it.m.w,
+    r = it.r,
+    xf = kitXF(r);
+  const hz = kitHoodZ(e);
+  const ceil = S.ceil || 2700;
+  if (ht === 'dome') {
+    mb.tag('Вытяжка купольная');
+    B(0, 0, hz, w, 500, hz + 80, '#c7ccd2');
+    const q = [
+      xf(it.s0 + w * 0.1, 0, hz + 80),
+      xf(it.s0 + w * 0.9, 0, hz + 80),
+      xf(it.s0 + w * 0.65, 0, hz + 380),
+      xf(it.s0 + w * 0.35, 0, hz + 380)
+    ];
+    mb.tag('Купол');
+    prism3(mb, q, [r.n.x * 350, r.n.y * 350, 0], '#c7ccd2');
+    mb.tag('Короб вытяжки');
+    B(w / 2 - 150, 0, hz + 380, w / 2 + 150, 250, ceil, '#c7ccd2');
+  } else if (ht === 'incl') {
+    mb.tag('Вытяжка наклонная: корпус');
+    B(40, 0, hz + 120, w - 40, 260, hz + 520, '#2b2f35');
+    mb.tag('Вытяжка наклонная: стеклянная панель');
+    const a = [
+      xf(it.s0 + 20, 250, hz + 520),
+      xf(it.s0 + w - 20, 250, hz + 520),
+      xf(it.s0 + w - 20, 420, hz + 60),
+      xf(it.s0 + 20, 420, hz + 60)
+    ];
+    prism3(mb, a, [-r.n.x * 8, -r.n.y * 8, 0], '#16181b');
+    mb.tag('Короб вытяжки');
+    B(w / 2 - 140, 0, hz + 520, w / 2 + 140, 220, ceil, '#2b2f35');
+  } else if (ht === 'ceil') {
+    mb.tag('Вытяжка встроенная в потолок');
+    B(w / 2 - 450, 100, ceil - 30, w / 2 + 450, 100 + 500, ceil, '#c7ccd2');
+    B(w / 2 - 420, 120, ceil - 32, w / 2 + 420, 100 + 480, ceil - 30, '#9aa1a9');
   }
 }
 function r_n(r) {
@@ -69144,7 +69870,20 @@ function r_n(r) {
 }
 function kitHoodZ(e) {
   const c = e.cfg;
-  return Math.max(c.wallZ, c.legs + c.baseH + c.top + (c.hob === 'gas' ? 750 : 680));
+  return Math.max(c.wallZ, c.legs + c.baseH + c.top + (kitHobGas(e) ? 750 : 680));
+}
+const kitHobGas = e => e.cfg.hob === 'gas' || (e.mods || []).some(m => m.hobT === 'gas');
+/** Bottom of the cabinet of a hood module (raised over the hob so that the hood is high enough). */
+function kitHoodCab(e, m) {
+  const ht = kitHoodT(e, m);
+  return ht === 'flat' ? kitHoodZ(e) + 60 : ht === 'none' ? e.cfg.wallZ : kitHoodZ(e);
+}
+/** Height of the hood's underside above the floor (for the check over the hob); null — none / in the ceiling. */
+function kitHoodBottom(e, m) {
+  const ht = kitHoodT(e, m);
+  if (ht === 'none' || ht === 'ceil') return null;
+  if (ht === 'built') return kitHoodZ(e) - 20;
+  return kitHoodZ(e);
 }
 /* ---------- plan ---------- */
 function kitDraw(e, col, o, ghost) {
@@ -69163,23 +69902,42 @@ function kitDraw(e, col, o, ghost) {
     const w = +it.m.w,
       k = it.m.kind;
     if (k === 'gap' || k === 'wgap') continue;
+    const cd = kdep(e, it.r) - 40;
     if (it.row === 'low') {
-      const D = k === 'b_fridgeF' ? 650 : cd + 18;
+      const D = kmFS(k)
+        ? k === 'f_stove' || k === 'f_wm'
+          ? 600
+          : 680
+        : it.m.parts
+          ? Math.max(cd + 18, ...it.m.parts.map(p => p.y + p.d))
+          : cd + 18;
       pathPoly([P2(0, 0), P2(w, 0), P2(w, D), P2(0, D)]);
       ctx.stroke();
-      if (it.tall || k === 'b_fridgeF') {
+      if (it.tall || kmFS(k)) {
         pathPoly([P2(0, 0), P2(w, D)], false);
         ctx.stroke();
         pathPoly([P2(w, 0), P2(0, D)], false);
         ctx.stroke();
       }
       if (k === 'b_sink') {
-        const sw = Math.min(w - 140, 500),
-          sd = 420,
-          x0 = (w - sw) / 2,
-          y0 = (c.depth - sd) / 2 + 10;
-        pathPoly([P2(x0, y0), P2(x0 + sw, y0), P2(x0 + sw, y0 + sd), P2(x0, y0 + sd)]);
-        ctx.stroke();
+        const G = kitSinkGeom(e, it.m, kdep(e, it.r));
+        for (const b of G.bowls) {
+          pathPoly(
+            b.r
+              ? G.circ(b.cx, b.cy, b.r, 28).map(([x, y]) => P2(x, y))
+              : [P2(b.x0, b.y0), P2(b.x1, b.y0), P2(b.x1, b.y1), P2(b.x0, b.y1)]
+          );
+          ctx.stroke();
+        }
+        if (G.wing) {
+          pathPoly([
+            P2(G.wing.x0, G.wing.y0),
+            P2(G.wing.x1, G.wing.y0),
+            P2(G.wing.x1, G.wing.y1),
+            P2(G.wing.x0, G.wing.y1)
+          ]);
+          ctx.stroke();
+        }
       }
       if (k === 'b_hob' || (k === 'b_oven' && it.m.hob)) {
         const hw = Math.min(w - 20, 590),
@@ -69212,6 +69970,21 @@ function kitDraw(e, col, o, ghost) {
       ctx.setLineDash([]);
     }
   }
+  // end panels
+  for (const r of L.runs) {
+    const xf = kitXF(r);
+    const P2 = (x, y) => {
+      const q = xf(x, y, 0);
+      return P(q[0], q[1]);
+    };
+    const xs = [];
+    if (r.endA) xs.push(-r.ET);
+    if (r.endB) xs.push(Math.max(r.lowEnd || 0, r.upEnd || 0));
+    for (const x of xs) {
+      pathPoly([P2(x, 0), P2(x + r.ET, 0), P2(x + r.ET, cd + 18), P2(x, cd + 18)]);
+      ctx.stroke();
+    }
+  }
   for (const r of L.runs) {
     const xf = kitXF(r);
     const q = [xf(0, c.depth, 0), xf(r.L, c.depth, 0)];
@@ -69236,7 +70009,10 @@ function kitHardware(e) {
   const cd = c.depth - 40;
   for (const it of L.items) {
     const k = it.m.kind;
-    if (k === 'gap' || k === 'wgap' || k === 'b_fridgeF') continue;
+    if (k === 'gap' || k === 'wgap' || kmFS(k)) continue;
+    // own modules: hinges by their fronts
+    for (const p of it.m.parts || [])
+      if (p.k === 'front') add_('Blum CLIP top BLUMOTION 110° (петля + планка)', hingesFor(p.h, p.w));
     const F = kitFrontsOf(e, it);
     for (const f of F) {
       if (f.kind === 'door')
@@ -69251,8 +70027,7 @@ function kitHardware(e) {
       if (f.kind === 'flap')
         add_(f.z1 - f.z0 > 450 ? 'Blum AVENTOS HF (складной подъёмник)' : 'Blum AVENTOS HK top (подъёмник)', 1);
       if (f.kind === 'dw') add_('Петли для фасада ПММ (комплект Häfele)', 1);
-      if (c.handle === 'bar' && f.kind !== 'oven' && f.kind !== 'mw' && f.kind !== 'blind')
-        add_('Ручка-скоба Häfele 160 мм', 1);
+      if (c.handle === 'bar' && !f.tech && f.kind !== 'blind') add_('Ручка-скоба Häfele 160 мм', 1);
     }
     if (it.row === 'low') {
       // a wide module sags in the middle: 6 legs from 900 mm
@@ -69260,13 +70035,22 @@ function kitHardware(e) {
       add_('Клипса цоколя Häfele', 2);
     } else add_('Навес для навесного шкафа Häfele + монтажная шина (пара)', 1);
     if (k === 'b_corner') add_('Угловая система LeMans II (Kesseböhmer / Häfele)', 1);
-    if (k === 'b_sink') add_('Поддон под мойку алюминиевый Häfele', 1);
+    if (k === 'b_sink') {
+      add_('Поддон под мойку алюминиевый Häfele', 1);
+      const sk = kitSink(e, it.m);
+      add_(`Мойка ${SINK_T[sk.t].n}, ${SINK_MAT[sk.mat]}, ${SINK_M[sk.mo]}`, 1);
+      if (sk.mo === 'under') add_('Крепёж подстольной мойки (комплект)', 1);
+    }
+    if (k === 'b_wm') add_('Петли для фасада встраиваемой стиральной машины (комплект)', 1);
+    if (k === 'b_fridgeU' || k === 't_fridge' || k === 't_freezer')
+      add_('Направляющие фасада встраиваемого холодильника', 1);
+    if (it.row === 'up' && k === 'w_hood') add_(`Вытяжка: ${HOOD_T[kitHoodT(e, it.m)]}`, 1);
     if (k === 'b_bottle') add_('Бутылочница выдвижная Häfele (каркас + направляющие)', 1);
   }
   if (c.handle === 'gola') {
     const Lm =
       L.items
-        .filter(it => it.row === 'low' && !it.tall && it.m.kind !== 'gap' && it.m.kind !== 'b_fridgeF')
+        .filter(it => it.row === 'low' && !it.tall && it.m.kind !== 'gap' && !kmFS(it.m.kind))
         .reduce((a, it) => a + +it.m.w, 0) / 1000;
     add_('Профиль Gola горизонтальный (L-образный), м', Math.round(Lm * 1.05 * 10) / 10, 'м');
   }
@@ -69275,7 +70059,7 @@ function kitHardware(e) {
 function kitWorktopLen(e) {
   const L = kitLayout(e);
   let s = 0;
-  for (const it of L.items) if (it.row === 'low' && !it.tall && !['gap', 'b_fridgeF'].includes(it.m.kind)) s += +it.m.w;
+  for (const r of L.runs) for (const sg of kitTopSegs(e, L, r)) s += sg.s1 - sg.s0;
   return s;
 }
 function kitChecks(e) {
@@ -69285,7 +70069,9 @@ function kitChecks(e) {
   for (const o of L.over)
     out.push([
       'bad',
-      `Стена ${o.r.i + 1}: ${o.row === 'low' ? 'нижний ряд' : 'верхний ряд'} длиннее стены на ${Math.round(o.d)} мм.`
+      o.endA
+        ? `Стена ${o.r.i + 1}: боковина слева упирается в стену — уберите её (Торцы → нет) или сдвиньте модули.`
+        : `Стена ${o.r.i + 1}: ${o.row === 'low' ? 'нижний ряд' : 'верхний ряд'} длиннее стены на ${Math.round(o.d)} мм.`
     ]);
   const low = L.items.filter(it => it.row === 'low');
   const by = k =>
@@ -69306,7 +70092,7 @@ function kitChecks(e) {
   }
   if (hob) {
     for (const it of low)
-      if (it.r === hob.r && (it.m.kind === 't_fridge' || it.m.kind === 'b_fridgeF')) {
+      if (it.r === hob.r && /fridge|freezer|f_sbs|f_french/.test(it.m.kind)) {
         const gap = Math.max(hob.s0 - it.s1, it.s0 - hob.s1);
         if (gap < 300)
           out.push(['warn', 'Варочная панель рядом с холодильником — нужен отступ ≥ 300 мм (тумба/пенал между ними).']);
@@ -69315,13 +70101,31 @@ function kitChecks(e) {
       it => it.row === 'up' && it.m.kind === 'w_hood' && it.r === hob.r && it.s0 < hob.s1 && it.s1 > hob.s0
     );
     const zt = c.legs + c.baseH + c.top;
-    if (!hood) out.push(['warn', 'Над варочной нет вытяжки.']);
+    const vent = kitHobT(e, hob.m) === 'vent';
+    if (vent) out.push(['info', 'Вытяжка встроена в варочную панель — короб воздуховода или рециркуляция в цоколе.']);
+    else if (!hood || kitHoodT(e, hood.m) === 'none') out.push(['warn', 'Над варочной нет вытяжки.']);
+    else if (kitHoodT(e, hood.m) === 'ceil')
+      out.push([
+        'info',
+        'Вытяжка в потолке — высоту и производительность проверьте по паспорту (обычно до 1,5 м над варочной).'
+      ]);
     else {
-      const hz = kitHoodZ(e) - (c.hood === 'built' ? 5 : 0) - zt;
+      const hz = Math.round(kitHoodBottom(e, hood.m) - zt);
       if (hz < 650)
         out.push(['bad', `Вытяжка ${hz} мм над варочной — меньше 650 мм (электрическая 650–750, газовая 750–850).`]);
       if (hz > 850) out.push(['info', `Вытяжка высоко (${hz} мм) — хуже тяга.`]);
     }
+  }
+  for (const it of by('b_sink')) {
+    const G = kitSinkGeom(e, it.m);
+    const bw =
+      Math.max(...G.bowls.map(b => (b.r ? b.cx + b.r : b.x1))) -
+      Math.min(...G.bowls.map(b => (b.r ? b.cx - b.r : b.x0)));
+    if (bw > +it.m.w - 60)
+      out.push([
+        'bad',
+        `Мойка ${SINK_T[G.sk.t].n}: чаши ${Math.round(bw)} мм не помещаются в модуль ${it.m.w} мм — нужен модуль шире.`
+      ]);
   }
   const dw = by('b_dw')[0];
   if (dw && sink) {
@@ -69351,7 +70155,31 @@ function kitChecks(e) {
       })
   ).length;
   const need =
-    low.filter(it => ['b_dw', 'b_oven', 't_oven', 't_fridge', 'b_fridgeF'].includes(it.m.kind)).length +
+    low.reduce(
+      (a, it) =>
+        a +
+        ([
+          'b_dw',
+          'b_oven',
+          'b_wm',
+          'b_fridgeU',
+          'b_wine',
+          't_fridge',
+          't_freezer',
+          't_wine',
+          'b_fridgeF',
+          'f_sbs',
+          'f_french',
+          'f_wm'
+        ].includes(it.m.kind)
+          ? 1
+          : it.m.kind === 't_oven2' || it.m.kind === 't_oven'
+            ? 2
+            : it.m.kind === 't_steam' || it.m.kind === 't_coffee'
+              ? 3
+              : 0),
+      0
+    ) +
     (hob ? 1 : 0) +
     (L.items.some(it => it.m.kind === 'w_hood') ? 1 : 0) +
     3;
@@ -69478,10 +70306,26 @@ XT.kitchen = {
     for (const it of L.items) {
       const k = it.m.kind;
       if (k === 'gap' || k === 'wgap') continue;
+      const det =
+        k === 'b_sink'
+          ? ` · мойка ${SINK_T[kitSink(e, it.m).t].n} (${SINK_M[kitSink(e, it.m).mo]})`
+          : k === 'b_hob' || it.m.hob
+            ? ` · ${HOB_T[kitHobT(e, it.m)]}`
+            : k === 'w_hood'
+              ? ` · ${HOOD_T[kitHoodT(e, it.m)]}`
+              : '';
       put(
         S_,
-        'km' + k + it.m.w + (it.m.hob ? 'h' : ''),
-        { name: `${KM[k].n} ${it.m.w}${it.m.hob ? ' + варочная над ним' : ''}`, u: 'шт' },
+        'km' +
+          k +
+          it.m.w +
+          (it.m.hob ? 'h' : '') +
+          det +
+          (it.m.parts ? 'p' + JSON.stringify(it.m.parts.map(p => [p.k, p.w, p.d, p.h])) : ''),
+        {
+          name: `${KM[k].n} ${it.m.w}${it.m.hob ? ' + варочная над ним' : ''}${det}${it.m.parts ? ' — свои детали (' + it.m.parts.length + ')' : ''}`,
+          u: 'шт'
+        },
         r => {
           r.q++;
           r.ids.push(e.id);
@@ -69493,6 +70337,23 @@ XT.kitchen = {
       r.q = Math.round((r.q + top * 1.05) * 100) / 100;
       r.ids.push(e.id);
     });
+    const ends = L.runs.reduce((a, r) => a + (r.endA ? 1 : 0) + (r.endB ? 1 : 0), 0);
+    if (ends)
+      put(S_, 'kend', { name: `Боковина декоративная ${c.endT || 18} мм (в цвет фасадов)`, u: 'шт' }, r => {
+        r.q += ends;
+        r.ids.push(e.id);
+      });
+    const under = L.items.filter(it => it.m.kind === 'b_sink' && kitSink(e, it.m).mo !== 'top').length;
+    if (under)
+      put(
+        S_,
+        'ktcu',
+        { name: 'Вырез под подстольную / врезную в уровень мойку: фрезеровка и полировка кромки', u: 'шт' },
+        r => {
+          r.q += under;
+          r.ids.push(e.id);
+        }
+      );
     const cut = L.items.filter(it => it.m.kind === 'b_sink' || it.m.kind === 'b_hob' || it.m.hob).length;
     if (cut)
       put(S_, 'ktc', { name: 'Вырез в столешнице (мойка/варочная) + обработка торцов', u: 'шт' }, r => {
@@ -69501,7 +70362,7 @@ XT.kitchen = {
       });
     const pl =
       L.items
-        .filter(it => it.row === 'low' && it.m.kind !== 'gap' && it.m.kind !== 'b_fridgeF')
+        .filter(it => it.row === 'low' && it.m.kind !== 'gap' && !kmFS(it.m.kind))
         .reduce((a, it) => a + +it.m.w, 0) / 1000;
     put(S_, 'kpl', { name: `Цоколь ${c.legs} мм, м`, u: 'м' }, r => {
       r.q = Math.round((r.q + pl) * 100) / 100;
@@ -69592,6 +70453,91 @@ function mkKitchen() {
   };
 }
 /* ---------- constructor dialog ---------- */
+/** The frame of a module for its parts: width, carcass depth, bottom and top heights. */
+function kitModU(e, it) {
+  const c = e.cfg,
+    w = +it.m.w;
+  if (it.row !== 'low') return { w, d: c.wallD, z0: c.wallZ, z1: c.wallZ + c.wallH, t: 16, legs: 0, base: false };
+  const cd = kdep(e, it.r) - 40;
+  return {
+    w,
+    d: cd,
+    z0: c.legs,
+    z1: it.tall ? c.wallZ + c.wallH : c.legs + c.baseH,
+    t: 16,
+    legs: c.legs,
+    base: !it.tall
+  };
+}
+/** A standard module as separate parts (carcass, fronts, appliance envelopes) — to edit them one by one. */
+function kitModToParts(e, it) {
+  const c = e.cfg,
+    m = it.m,
+    w = +m.w,
+    U = kitModU(e, it);
+  const k = m.kind;
+  const out = [];
+  let id = 1;
+  const add = (kk, n, mat, x, y, z, ww, d, h) =>
+    out.push({
+      id: id++,
+      k: kk,
+      n,
+      mat,
+      x: Math.round(x * 10) / 10,
+      y: Math.round(y * 10) / 10,
+      z: Math.round(z * 10) / 10,
+      w: Math.round(ww * 10) / 10,
+      d: Math.round(d * 10) / 10,
+      h: Math.round(h * 10) / 10
+    });
+  if (kmFS(k)) {
+    add('tech', KM[k].n, 'tech', 0, 0, 0, w - 10, k === 'f_stove' || k === 'f_wm' ? 600 : 680, kmFS(k));
+    return out;
+  }
+  for (const p of partCarcass(U, U.base)) out.push({ ...p, id: id++ });
+  const F = kitFrontsOf(e, { ...it, m: { ...m, parts: null } });
+  const y = U.d;
+  for (const f of F) {
+    if (f.tech) add('tech', AP_N[f.kind] || 'Техника', 'tech', f.x0, y - 540, f.z0, f.x1 - f.x0, 562, f.z1 - f.z0);
+    else
+      add(
+        'front',
+        f.kind === 'drawer'
+          ? 'Фасад ящика'
+          : f.kind === 'flap'
+            ? 'Фасад подъёмный'
+            : f.kind === 'dw'
+              ? 'Фасад ПММ'
+              : f.kind === 'blind'
+                ? 'Фальш-панель'
+                : f.kind === 'glass'
+                  ? 'Дверь стеклянная'
+                  : 'Фасад распашной',
+        f.kind === 'glass' ? 'glass' : 'front',
+        f.x0,
+        y,
+        f.z0,
+        f.x1 - f.x0,
+        18,
+        f.z1 - f.z0
+      );
+  }
+  if (k === 'b_dw' || k === 'b_wm' || k === 'b_fridgeU')
+    add(
+      'tech',
+      k === 'b_dw' ? 'Посудомоечная машина' : k === 'b_wm' ? 'Стиральная машина' : 'Холодильник подстольный',
+      'tech',
+      16,
+      40,
+      c.legs + 20,
+      w - 32,
+      U.d - 42,
+      c.baseH - 40
+    );
+  if (k === 'w_hood') add('tech', 'Вытяжка встроенная', 'tech', 30, 30, U.z0 + 16, w - 60, U.d - 40, 180);
+  return out;
+}
 var KD = { id: null, run: 0, sel: null };
 /** Kitchen constructor dialog: 3D view or 2D elevation of the selected wall, module catalogue and settings. */
 function openKitchen(id) {
@@ -69641,8 +70587,12 @@ function openKitchen(id) {
   renderKitchen();
 }
 function kdE() {
-  return KD.id != null ? byId(KD.id) : null;
+  const e = KD.id != null ? byId(KD.id) : null;
+  if (e && e.type === 'kisland') return kitHooks.islandKit ? kitHooks.islandKit(e) : null;
+  return e;
 }
+/** Hooks filled by other modules (the island registers its constructor proxy). */
+const kitHooks = {};
 function renderKitchen() {
   const e = kdE();
   if (!e) return;
@@ -69650,67 +70600,109 @@ function renderKitchen() {
     L = kitLayout(e);
   const R = L.runs;
   KD.run = Math.min(KD.run, R.length - 1);
+  const isl = !!e.island;
   const num = (lab, k, v) => `<label class="fl">${lab}<input type="number" data-kc="${k}" value="${v}"></label>`;
-  const sel = (lab, k, v, o) =>
-    `<label class="fl">${lab}<select data-kc="${k}">${o.map(([a, b]) => `<option value="${a}" ${String(a) === String(v) ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></label>`;
+  const sel = (lab, k, v, o, attr = 'data-kc') =>
+    `<label class="fl">${lab}<select ${attr}="${k}">${o.map(([a, b]) => `<option value="${a}" ${String(a) === String(v) ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></label>`;
   const col = (lab, k, v) => `<label class="fl">${lab}<input type="color" data-kc="${k}" value="${v}"></label>`;
+  const run = e.runs[KD.run] || {};
+  const ENDS = [
+    ['auto', 'авто (у свободного торца)'],
+    ['panel', 'боковина'],
+    ['none', 'нет']
+  ];
   $('#kdLeft').innerHTML =
-    `<div class="sech">Стены кухни</div>${R.map(r => `<button class="btn ${r.i === KD.run ? 'pri' : ''}" data-run="${r.i}" style="display:block;width:100%;margin:3px 0;text-align:left">Стена ${r.i + 1} · ${Math.round(r.L)} мм</button>`).join('')}
-    <div class="sech" style="margin-top:10px">Параметры</div><div style="display:grid;gap:6px">${num('Опоры / цоколь, мм', 'legs', c.legs)}${num('Корпус нижний, мм', 'baseH', c.baseH)}${num('Столешница, мм', 'top', c.top)}${num('Глубина столешницы', 'depth', c.depth)}${num('Низ навесных, мм', 'wallZ', c.wallZ)}${num('Высота навесных', 'wallH', c.wallH)}${num('Глубина навесных', 'wallD', c.wallD)}
-    ${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${sel(
-      'Вытяжка',
-      'hood',
-      c.hood,
-      [
-        ['built', 'встроенная (телескоп)'],
-        ['dome', 'купольная']
-      ]
-    )}${sel('Мойка', 'sink', c.sink, [
-      ['steel', 'нержавеющая'],
-      ['granite', 'гранитная']
-    ])}${sel('Фартук', 'apron', c.apron, [
-      ['tile', 'плитка'],
-      ['glass', 'стекло'],
-      ['none', 'нет']
-    ])}
-    ${col('Фасады', 'fcol', c.fcol)}${col('Корпуса', 'ccol', c.ccol)}${col('Столешница', 'topCol', c.topCol)}<button class="btn" id="kdAuto">Заполнить автоматически</button></div>`;
-  const cat = row =>
-    Object.entries(KM)
-      .filter(([k, v]) => v.row === row)
-      .map(
-        ([k, v]) =>
-          `<button class="btn" data-add="${k}" style="display:block;width:100%;margin:3px 0;text-align:left">+ ${esc(v.n)}</button>`
-      )
-      .join('');
+    `<div class="sech">${isl ? 'Стороны острова' : 'Стены кухни'}</div>${R.map(r => `<button class="btn ${r.i === KD.run ? 'pri' : ''}" data-run="${r.i}" style="display:block;width:100%;margin:3px 0;text-align:left">${isl ? (r.i ? 'Задняя сторона' : 'Рабочая сторона') : 'Стена ' + (r.i + 1)} · ${Math.round(r.L)} мм</button>`).join('')}
+    ${
+      isl
+        ? ''
+        : `<div class="sech" style="margin-top:10px">Торцы стены ${KD.run + 1}</div><div style="display:grid;gap:6px">${sel('Слева', 'endA', run.endA || 'auto', ENDS, 'data-kr')}${sel('Справа', 'endB', run.endB || 'auto', ENDS, 'data-kr')}${num('Толщина боковины, мм', 'endT', c.endT || 18)}</div>`
+    }
+    <div class="sech" style="margin-top:10px">Параметры</div><div style="display:grid;gap:6px">${num('Опоры / цоколь, мм', 'legs', c.legs)}${isl ? '' : num('Корпус нижний, мм', 'baseH', c.baseH)}${isl ? '' : num('Столешница, мм', 'top', c.top) + num('Глубина столешницы', 'depth', c.depth)}${isl ? '' : num('Низ навесных, мм', 'wallZ', c.wallZ) + num('Высота навесных', 'wallH', c.wallH) + num('Глубина навесных', 'wallD', c.wallD)}
+    ${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${isl ? '' : sel('Вытяжка (по умолчанию)', 'hood', c.hood || 'built', Object.entries(HOOD_T))}${sel('Варочная (по умолчанию)', 'hobT', c.hobT || 'ind', Object.entries(HOB_T))}${sel('Материал мойки', 'sink', c.sink, Object.entries(SINK_MAT))}${
+      isl
+        ? ''
+        : sel('Фартук', 'apron', c.apron, [
+            ['tile', 'плитка'],
+            ['glass', 'стекло'],
+            ['none', 'нет']
+          ])
+    }
+    ${col('Фасады', 'fcol', c.fcol)}${col('Корпуса', 'ccol', c.ccol)}${isl ? '' : col('Столешница', 'topCol', c.topCol)}${isl ? '' : '<button class="btn" id="kdAuto">Заполнить автоматически</button>'}</div>`;
+  const groups = {};
+  for (const [k, v] of Object.entries(KM)) {
+    if (isl && (v.row !== 'low' || v.tall || v.fs)) continue;
+    (groups[v.g || 'Прочее'] = groups[v.g || 'Прочее'] || []).push([k, v]);
+  }
   $('#kdRight').innerHTML =
-    `<div class="sech">Нижние и пеналы</div>${cat('low')}<div class="sech" style="margin-top:10px">Навесные</div>${cat('up')}<div class="sech" style="margin-top:10px">Проверки</div>${
+    Object.entries(groups)
+      .map(
+        ([g, list]) =>
+          `<details class="kdcat" ${g === 'Нижние' || g === 'Навесные' ? 'open' : ''}><summary class="sech">${esc(g)} <span class="cnt">${list.length}</span></summary>${list
+            .map(
+              ([k, v]) =>
+                `<button class="btn" data-add="${k}" style="display:block;width:100%;margin:3px 0;text-align:left">+ ${esc(v.n)}</button>`
+            )
+            .join('')}</details>`
+      )
+      .join('') +
+    `<div class="sech" style="margin-top:10px">Проверки</div>${
       kitChecks(e)
         .map(([l, m]) => `<div class="${l}" style="font-size:11.5px;margin:4px 0">${esc(m)}</div>`)
         .join('') || '<div class="hint">Эргономика ✓</div>'
     }`;
   const m = e.mods.find(x => x.id === KD.sel);
   const it = m && L.items.find(i => i.m === m);
-  $('#kdMod').innerHTML = m
-    ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><b style="align-self:center">${esc(KM[m.kind].n)}</b>${sel(
-        'Тип',
-        'kind',
-        m.kind,
-        Object.entries(KM)
-          .filter(([k, v]) => v.row === KM[m.kind].row)
-          .map(([k, v]) => [k, v.n])
-      ).replace(/data-kc/g, 'data-km')}<label class="fl">Ширина<select data-km="w">${[
-        ...new Set([...KM[m.kind].w, +m.w])
-      ]
-        .sort((a, b) => a - b)
-        .map(w => `<option value="${w}" ${w === +m.w ? 'selected' : ''}>${w}</option>`)
-        .join(
-          ''
-        )}</select></label><label class="fl">Своя ширина<input type="number" data-km="w" value="${m.w}" style="width:80px"></label>${m.kind === 'b_oven' ? `<label class="ck"><input type="checkbox" data-km="hob" ${m.hob ? 'checked' : ''}>варочная над духовкой</label>` : ''}<button class="btn" data-mv="-1">← левее</button><button class="btn" data-mv="1">правее →</button><button class="btn" data-del="1">Удалить</button><span class="hint">позиция ${Math.round(it.s0)}…${Math.round(it.s1)} мм</span></div>`
-    : `<span class="hint">Щёлкните модуль на развёртке, чтобы изменить. Добавление — справа (в конец выбранной стены), порядок — кнопками ← →.</span>`;
+  const box = $('#kdMod');
+  if (m && it) {
+    const row = KM[m.kind].row;
+    const kinds = Object.entries(KM)
+      .filter(([k, v]) => v.row === row && !(isl && (v.tall || v.fs)))
+      .map(([k, v]) => [k, v.n]);
+    const extra = [];
+    if (m.kind === 'b_sink') {
+      const sk = kitSink(e, m);
+      extra.push(
+        sel(
+          'Мойка',
+          'sinkT',
+          sk.t,
+          Object.entries(SINK_T).map(([k, v]) => [k, v.n]),
+          'data-km'
+        ),
+        sel('Установка', 'sinkM', sk.mo, Object.entries(SINK_M), 'data-km'),
+        sel('Материал', 'sinkMat', sk.mat, Object.entries(SINK_MAT), 'data-km')
+      );
+    }
+    if (m.kind === 'b_hob' || (m.kind === 'b_oven' && m.hob))
+      extra.push(sel('Варочная', 'hobT', kitHobT(e, m), Object.entries(HOB_T), 'data-km'));
+    if (m.kind === 'w_hood') extra.push(sel('Вытяжка', 'hood', kitHoodT(e, m), Object.entries(HOOD_T), 'data-km'));
+    box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><b style="align-self:center">${esc(KM[m.kind].n)}</b>${sel('Тип', 'kind', m.kind, kinds, 'data-km')}<label class="fl">Ширина<select data-km="w">${[
+      ...new Set([...KM[m.kind].w, +m.w])
+    ]
+      .sort((a, b) => a - b)
+      .map(w => `<option value="${w}" ${w === +m.w ? 'selected' : ''}>${w}</option>`)
+      .join(
+        ''
+      )}</select></label><label class="fl">Своя ширина<input type="number" data-km="w" value="${m.w}" style="width:80px"></label>${m.kind === 'b_oven' ? `<label class="ck"><input type="checkbox" data-km="hob" ${m.hob ? 'checked' : ''}>варочная над духовкой</label>` : ''}${extra.join('')}<button class="btn" data-mv="-1">← левее</button><button class="btn" data-mv="1">правее →</button>${m.parts ? (KM[m.kind].own ? '' : '<button class="btn" data-kp="std" title="Вернуть стандартный модуль (свои детали удалятся)">Стандартный модуль</button>') : '<button class="btn pri" data-kp="split" title="Разобрать модуль на боковины, дно, царги, фасады — и править каждую деталь">Разобрать на детали</button>'}<button class="btn" data-del="1">Удалить</button><span class="hint">позиция ${Math.round(it.s0)}…${Math.round(it.s1)} мм</span></div><div id="kdParts"></div>`;
+    if (m.parts)
+      partsEditor(
+        box.querySelector('#kdParts'),
+        () => m.parts,
+        kitModU(e, it),
+        () => {
+          changed();
+          renderKitchen();
+        },
+        `Детали модуля «${KM[m.kind].n}» ${m.w} мм`
+      );
+  } else
+    box.innerHTML = `<span class="hint">Щёлкните модуль на развёртке или в 3D, чтобы изменить. Добавление — справа (в конец ${isl ? 'выбранной стороны' : 'выбранной стены'}), порядок — кнопками ← →. Любой модуль можно разобрать на детали, а «Свой модуль из деталей» собрать с нуля.</span>`;
   const used = r =>
     Math.round(L.items.filter(it => it.r === r && it.row === 'low').reduce((a, it) => Math.max(a, it.s1), 0));
-  $('#kdSum').textContent =
-    `Стена ${KD.run + 1}: ${Math.round(R[KD.run].L)} мм · занято низом ${used(R[KD.run])} · столешница ${(kitWorktopLen(e) / 1000).toFixed(2)} м`;
+  $('#kdSum').textContent = isl
+    ? `${R[KD.run].i ? 'Задняя' : 'Рабочая'} сторона: ${used(R[KD.run])} мм модулей`
+    : `Стена ${KD.run + 1}: ${Math.round(R[KD.run].L)} мм · занято низом ${used(R[KD.run])} · столешница ${(kitWorktopLen(e) / 1000).toFixed(2)} м`;
   const ch = () => {
     changed();
     renderKitchen();
@@ -69735,12 +70727,24 @@ function renderKitchen() {
           ch();
         })
     );
-  $('#kdAuto').onclick = () => {
-    pushUndo();
-    kitAutofill(e);
-    KD.sel = null;
-    ch();
-  };
+  $('#kdLeft')
+    .querySelectorAll('[data-kr]')
+    .forEach(
+      i =>
+        (i.onchange = () => {
+          pushUndo();
+          if (e.runs[KD.run]) e.runs[KD.run][i.dataset.kr] = i.value;
+          ch();
+        })
+    );
+  const auto = $('#kdAuto');
+  if (auto)
+    auto.onclick = () => {
+      pushUndo();
+      kitAutofill(e);
+      KD.sel = null;
+      ch();
+    };
   $('#kdRight')
     .querySelectorAll('[data-add]')
     .forEach(
@@ -69749,52 +70753,63 @@ function renderKitchen() {
           pushUndo();
           const k = b.dataset.add;
           const id = Math.max(0, ...e.mods.map(x => x.id)) + 1;
-          e.mods.push({ id, run: KD.run, kind: k, w: KM[k].w.includes(600) ? 600 : KM[k].w[0] });
+          const nm = { id, run: KD.run, kind: k, w: KM[k].w.includes(600) ? 600 : KM[k].w[0] };
+          e.mods.push(nm);
+          if (KM[k].own) {
+            const L2 = kitLayout(e);
+            const it2 = L2.items.find(x => x.m === nm);
+            if (it2) nm.parts = partCarcass(kitModU(e, it2), KM[k].row === 'low' && !KM[k].tall);
+          }
           KD.sel = id;
           ch();
         })
     );
-  $('#kdMod')
-    .querySelectorAll('[data-km]')
-    .forEach(
-      i =>
-        (i.onchange = () => {
-          pushUndo();
-          const k = i.dataset.km;
-          if (k === 'hob') m.hob = i.checked;
-          else if (k === 'w') m.w = Math.max(50, parseFloat(i.value) || m.w);
-          else m.kind = i.value;
-          ch();
-        })
-    );
-  $('#kdMod')
-    .querySelectorAll('[data-mv]')
-    .forEach(
-      b =>
-        (b.onclick = () => {
-          pushUndo();
-          const row = KM[m.kind].row;
-          const same = e.mods.filter(x => x.run === m.run && KM[x.kind].row === row);
-          const i = same.indexOf(m),
-            j = i + +b.dataset.mv;
-          if (j < 0 || j >= same.length) return;
-          const ia = e.mods.indexOf(same[i]),
-            ib = e.mods.indexOf(same[j]);
-          [e.mods[ia], e.mods[ib]] = [e.mods[ib], e.mods[ia]];
-          ch();
-        })
-    );
-  $('#kdMod')
-    .querySelectorAll('[data-del]')
-    .forEach(
-      b =>
-        (b.onclick = () => {
-          pushUndo();
-          e.mods = e.mods.filter(x => x !== m);
-          KD.sel = null;
-          ch();
-        })
-    );
+  if (!m) return kdDraw();
+  box.querySelectorAll('[data-km]').forEach(
+    i =>
+      (i.onchange = () => {
+        pushUndo();
+        const k = i.dataset.km;
+        if (k === 'hob') m.hob = i.checked;
+        else if (k === 'w') m.w = Math.max(50, parseFloat(i.value) || m.w);
+        else if (k === 'kind') m.kind = i.value;
+        else m[k] = i.value;
+        ch();
+      })
+  );
+  box.querySelectorAll('[data-kp]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        if (b.dataset.kp === 'split') m.parts = kitModToParts(e, it);
+        else delete m.parts;
+        ch();
+      })
+  );
+  box.querySelectorAll('[data-mv]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        const row = KM[m.kind].row;
+        const same = e.mods.filter(x => x.run === m.run && KM[x.kind].row === row);
+        const i = same.indexOf(m),
+          j = i + +b.dataset.mv;
+        if (j < 0 || j >= same.length) return;
+        const ia = e.mods.indexOf(same[i]),
+          ib = e.mods.indexOf(same[j]);
+        [e.mods[ia], e.mods[ib]] = [e.mods[ib], e.mods[ia]];
+        ch();
+      })
+  );
+  box.querySelectorAll('[data-del]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        e.mods.splice(e.mods.indexOf(m), 1);
+        KD.sel = null;
+        ch();
+      })
+  );
   kdDraw();
 }
 /** 2D elevation of the current wall with clickable modules. */
@@ -69849,18 +70864,55 @@ function drawKitchenElevation() {
       });
       continue;
     }
-    const top = it.row === 'low' ? (it.tall ? c.wallZ + c.wallH : kk === 'b_fridgeF' ? 2000 : zt) : c.wallZ + c.wallH,
-      bot = it.row === 'low' ? 0 : c.wallZ;
-    g.fillStyle = kk === 'b_fridgeF' ? '#d9dde1' : c.ccol;
-    g.fillRect(X(it.s0), Y(top), (it.s1 - it.s0) * k, (top - bot) * k);
+    const own = m.parts;
+    const ht = kk === 'w_hood' ? kitHoodT(e, m) : '';
+    const top = own
+        ? Math.max(...own.map(p => p.z + p.h), it.row === 'low' ? 100 : c.wallZ + 100)
+        : it.row === 'low'
+          ? it.tall
+            ? c.wallZ + c.wallH
+            : kmFS(kk) || zt
+          : c.wallZ + c.wallH,
+      bot = own
+        ? Math.min(...own.map(p => p.z), it.row === 'low' ? 0 : c.wallZ)
+        : it.row === 'low'
+          ? 0
+          : kk === 'w_hood' && /dome|incl|ceil/.test(ht)
+            ? kitHoodZ(e)
+            : c.wallZ;
+    if (own) {
+      for (const p of own.slice().sort((a, b) => a.y + a.d - (b.y + b.d))) {
+        g.fillStyle = partCol(p, c);
+        g.globalAlpha = p.mat === 'glass' ? 0.5 : 1;
+        g.fillRect(X(it.s0 + p.x), Y(p.z + p.h), p.w * k, p.h * k);
+        g.globalAlpha = 1;
+        g.strokeStyle = '#8a8378';
+        g.lineWidth = 0.6;
+        g.strokeRect(X(it.s0 + p.x), Y(p.z + p.h), p.w * k, p.h * k);
+      }
+    } else {
+      g.fillStyle = kmFS(kk) ? '#d9dde1' : ht === 'ceil' ? 'rgba(0,0,0,0)' : c.ccol;
+      g.fillRect(X(it.s0), Y(top), (it.s1 - it.s0) * k, (top - bot) * k);
+    }
+    if (kmFS(kk)) {
+      g.fillStyle = '#3d4248';
+      g.font = '10px "IBM Plex Sans", sans-serif';
+      g.textAlign = 'center';
+      g.fillText(KM[kk].n.replace('Холодильник ', ''), X((it.s0 + it.s1) / 2), Y(top / 2));
+    }
+    if (kk === 'w_hood' && /dome|incl|ceil/.test(ht)) {
+      g.fillStyle = '#c7ccd2';
+      const hz = ht === 'ceil' ? (S.ceil || 2700) - 30 : kitHoodZ(e);
+      g.fillRect(X(it.s0), Y(hz + (ht === 'ceil' ? 30 : 380)), (it.s1 - it.s0) * k, (ht === 'ceil' ? 30 : 380) * k);
+    }
     for (const f of kitFrontsOf(e, it)) {
-      g.fillStyle = f.kind === 'oven' || f.kind === 'mw' ? '#2b2f35' : f.kind === 'blind' ? '#cfc8bb' : c.fcol;
+      g.fillStyle = f.tech ? '#2b2f35' : f.kind === 'glass' ? '#4a5560' : f.kind === 'blind' ? '#cfc8bb' : c.fcol;
       g.fillRect(X(it.s0 + f.x0), Y(f.z1), (f.x1 - f.x0) * k, (f.z1 - f.z0) * k);
       g.strokeStyle = '#8a8378';
       g.lineWidth = 0.8;
       g.strokeRect(X(it.s0 + f.x0), Y(f.z1), (f.x1 - f.x0) * k, (f.z1 - f.z0) * k);
     }
-    if (it.row === 'low' && !it.tall && kk !== 'b_fridgeF') {
+    if (it.row === 'low' && !it.tall && !kmFS(kk) && !own) {
       g.fillStyle = '#8a8f96';
       g.fillRect(X(it.s0), Y(c.legs), (it.s1 - it.s0) * k, c.legs * k);
     }
@@ -69876,10 +70928,20 @@ function drawKitchenElevation() {
   }
   // worktop line
   g.fillStyle = c.topCol;
-  const lows = L.items.filter(
-    it => it.r === R && it.row === 'low' && !it.tall && !['gap', 'b_fridgeF'].includes(it.m.kind)
-  );
-  for (const it of lows) g.fillRect(X(it.s0), Y(zt + c.top), (it.s1 - it.s0) * k, c.top * k);
+  for (const sg of kitTopSegs(e, L, R)) g.fillRect(X(sg.s0), Y(zt + c.top), (sg.s1 - sg.s0) * k, c.top * k);
+  // end panels
+  g.fillStyle = c.endCol || c.fcol;
+  g.strokeStyle = '#5d646c';
+  g.lineWidth = 1;
+  for (const x of [R.endA ? -R.ET : null, R.endB ? Math.max(R.lowEnd || 0, R.upEnd || 0) : null]) {
+    if (x == null) continue;
+    g.fillRect(X(x), Y(zt), R.ET * k, zt * k);
+    g.strokeRect(X(x), Y(zt), R.ET * k, zt * k);
+    if (L.items.some(it => it.r === R && it.row === 'up')) {
+      g.fillRect(X(x), Y(c.wallZ + c.wallH), R.ET * k, c.wallH * k);
+      g.strokeRect(X(x), Y(c.wallZ + c.wallH), R.ET * k, c.wallH * k);
+    }
+  }
   if (R.corner) {
     g.fillStyle = '#cfc8bb';
     g.fillRect(X(0), Y(zt + c.top), c.depth * k, (zt + c.top) * k);
@@ -69932,6 +70994,7 @@ defineTools({
  * Run-local coordinates: x along the wall from the run start, y from the wall face into the room, z up from the
  * floor. Every carcass part carries its box, so the 3D model, the drawings and the cutting list are the same data.
  */
+
 
 
 
@@ -70669,8 +71732,14 @@ function cwUnits(e, G = cwGeom(e)) {
       );
       parts[parts.length - 1].kgm2 = FT.kg;
     }
+    // a section taken apart: its own parts instead of the generated carcass (the fronts stay generated)
+    if (Array.isArray(s.parts)) {
+      const keep = parts.filter(p => p.grp === 'Фасады');
+      parts.length = 0;
+      parts.push(...keep, ...partsToCut(s.parts, 0, () => 'Свои детали', true));
+    }
     units.push({
-      name: `С${S_.gi} · секция ${Math.round(w)} мм${s.zones && s.zones.length ? ' · ' + s.zones.map(z => (CW_ZK[z.k] || {}).n || z.k).join(' / ') : ''}`,
+      name: `С${S_.gi} · секция ${Math.round(w)} мм${s.parts ? ' · свои детали' : ''}${s.zones && s.zones.length ? ' · ' + s.zones.map(z => (CW_ZK[z.k] || {}).n || z.k).join(' / ') : ''}`,
       c: { w: Math.round(w), h: Math.round(G.zt), d: Math.round(G.Dc + (G.ft || G.rail)) },
       parts,
       no: S_.gi,
@@ -71336,7 +72405,15 @@ function cwMeshes(e) {
     return byRun.get(R);
   };
   const bodyCol = p =>
-    p.mat === 'hdf' ? '#d8d0c2' : p.grp === 'Ящики' ? '#e9e5dd' : p.grp === 'Доборы' ? c.fcol : c.col;
+    p.own
+      ? partCol({ mat: p.ownMat || p.mat, col: p.col }, { ccol: c.col, fcol: c.fcol })
+      : p.mat === 'hdf'
+        ? '#d8d0c2'
+        : p.grp === 'Ящики'
+          ? '#e9e5dd'
+          : p.grp === 'Доборы'
+            ? c.fcol
+            : c.col;
   for (const u of U) {
     const R = u.extra ? u.R : u.S_.R;
     const mb = mbOf(R);
@@ -74200,6 +75277,20 @@ const ISK = {
     H: 900,
     equip: 'none'
   },
+  free: {
+    n: 'Остров из модулей (своя сборка)',
+    g: 'i',
+    cab: true,
+    free: true,
+    L: 2400,
+    D: 600,
+    back: 'none',
+    backD: 600,
+    seat: 'back',
+    ov: 0,
+    H: 900,
+    equip: 'sink'
+  },
   bar_wall: {
     n: 'Барная стойка у стены (на кронштейнах)',
     g: 'b',
@@ -74298,7 +75389,21 @@ const SUP = {
   legs: 'ножки 60×60',
   panel: 'боковые панели'
 };
-const HOODS = { island: 'островная вытяжка (с потолка)', down: 'вытяжка в столешнице (downdraft)', none: 'нет' };
+const HOODS = {
+  island: 'островная вытяжка (с потолка)',
+  ceil: 'встроенная в потолок',
+  vent: 'встроенная в варочную панель',
+  down: 'выдвижная в столешнице (downdraft)',
+  none: 'нет'
+};
+/** Ends of a free island: what closes each end of the cabinets. */
+const ENDK = {
+  none: 'ничего (торец корпуса)',
+  panel: 'боковина 18 мм (цвет фасадов)',
+  wf: '«водопад» из материала столешницы',
+  shelf: 'открытые полки на торце',
+  seat: 'свес под стулья на опорах'
+};
 const BACKS = { doors: 'шкафы с дверцами', drawers: 'ящики', open: 'открытые полки', none: 'нет (гладкая стенка)' };
 /** seating height → recommended knee overhang (mm) and seat height */
 function knee(h) {
@@ -74403,6 +75508,163 @@ function arcPoly(cx, cy, r, a0, a1, n = 24) {
   }
   return out;
 }
+/** Modules of a free island by side: 0 — the working side, 1 — the back side. */
+function freeMods(e) {
+  if (!Array.isArray(e.mods))
+    e.mods = defMods(e, { L: 2400, equip: 'sink' }).map((m, i) => ({ ...m, id: i + 1, run: 0 }));
+  e.mods.forEach((m, i) => {
+    if (m.id == null) m.id = i + 1;
+    if (m.run == null) m.run = 0;
+  });
+  return [e.mods.filter(m => m.run === 0), e.mods.filter(m => m.run === 1)];
+}
+/** Width an end piece adds to the island. */
+const endExt = (k, w) => (k === 'panel' ? 18 : k === 'wf' ? 40 : k === 'shelf' || k === 'seat' ? w : 0);
+/**
+ * A free island: cabinets on the working side and (optionally) on the back side, any ends, any overhangs —
+ * assembled from kitchen modules (they can be taken apart into own parts in the constructor).
+ */
+function freeIsland(e, M, top, legsAt, edge) {
+  const c = M.c;
+  const [F, Bk] = freeMods(e);
+  const sum = a => a.reduce((s, m) => s + +m.w, 0);
+  const Lf = sum(F),
+    Lb = sum(Bk);
+  const L = Math.max(600, Lf, Lb);
+  c.L = L;
+  const D = c.D,
+    th = c.th,
+    H = c.H;
+  const bD = Bk.length ? c.backD || 600 : 18;
+  const endL = c.endL || 'none',
+    endR = c.endR || 'none';
+  const eW = +c.endW || 400;
+  const x0 = -L / 2 - endExt(endL, eW),
+    x1 = L / 2 + endExt(endR, eW);
+  const ov = c.ov || 0;
+  const y1 = bD + ov;
+  top(
+    [
+      [x0, -D],
+      [x1, -D],
+      [x1, y1],
+      [x0, y1]
+    ],
+    H - th
+  );
+  // the runs: the working side faces −y, the back side +y
+  M.runs.push({ a: [-L / 2, 0], b: [L / 2, 0], n: [0, -1], depth: D, mods: F, front: true });
+  if (Bk.length) M.runs.push({ a: [L / 2, 0], b: [-L / 2, 0], n: [0, 1], depth: bD, mods: Bk, back: true });
+  else
+    M.panels.push({
+      poly: [
+        [-L / 2, 0],
+        [L / 2, 0],
+        [L / 2, 18],
+        [-L / 2, 18]
+      ],
+      z0: 0,
+      z1: H - th,
+      tag: 'Задняя панель острова (фасадная, 18 мм)',
+      col: 'front'
+    });
+  if (ov >= 150) edge([x0, y1], [x1, y1], H, [0, 1]);
+  // the ends
+  M.endShelves = [];
+  for (const [side, k] of [
+    [-1, endL],
+    [1, endR]
+  ]) {
+    const xa = side < 0 ? -L / 2 : L / 2;
+    if (k === 'panel' || k === 'wf') {
+      const t = k === 'panel' ? 18 : 40;
+      const xx = side < 0 ? xa - t : xa;
+      M.panels.push({
+        poly: [
+          [xx, -D],
+          [xx + t, -D],
+          [xx + t, k === 'wf' ? y1 : bD],
+          [xx, k === 'wf' ? y1 : bD]
+        ],
+        z0: 0,
+        z1: H - th,
+        tag: k === 'panel' ? 'Боковина острова 18 мм' : 'Боковина «водопад» из материала столешницы',
+        col: k === 'panel' ? 'front' : undefined
+      });
+    } else if (k === 'shelf') {
+      const xa2 = side < 0 ? xa - eW : xa;
+      M.endShelves.push({ x0: xa2, x1: xa2 + eW, y0: -D, y1: bD, outer: side < 0 ? xa2 : xa2 + eW - 18 });
+    } else if (k === 'seat') {
+      const xo = side < 0 ? xa - eW : xa + eW;
+      legsAt(
+        [
+          [xo - side * 80, -D + 80],
+          [xo - side * 80, y1 - 80]
+        ],
+        H - th
+      );
+      edge([xo, -D], [xo, y1], H, [side, 0]);
+    }
+  }
+  // equipment on the top (sinks, hobs) for the hood and the checks
+  let s = -L / 2;
+  for (const m of F) {
+    if (m.kind === 'b_sink' || m.kind === 'b_hob' || m.kind === 'b_dw')
+      M.equip.push({ k: m.kind, x: s + m.w / 2, y: -D / 2 });
+    s += +m.w;
+  }
+  s = L / 2;
+  for (const m of Bk) {
+    if (m.kind === 'b_sink' || m.kind === 'b_hob') M.equip.push({ k: m.kind, x: s - m.w / 2, y: bD / 2 });
+    s -= +m.w;
+  }
+  return seatsAlong(M, c);
+}
+/** Stools along the seating edges. */
+function seatsAlong(M, c) {
+  if (c.stools)
+    for (const ed of M.edges) {
+      const Ls = Math.hypot(ed.b[0] - ed.a[0], ed.b[1] - ed.a[1]);
+      const n = Math.floor(Ls / 600);
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        M.seats.push({
+          x: ed.a[0] + (ed.b[0] - ed.a[0]) * t + ed.out[0] * 120,
+          y: ed.a[1] + (ed.b[1] - ed.a[1]) * t + ed.out[1] * 120,
+          h: ed.h,
+          ang: Math.atan2(ed.out[1], ed.out[0])
+        });
+      }
+    }
+  return M;
+}
+/** The free island as a kitchen for the kitchen constructor (the same modules and parameters, edited in place). */
+function islandKit(e) {
+  if (!e || e.type !== 'kisland') return null;
+  if (e.kind !== 'free') return null;
+  const M = islandModel(e),
+    c = M.c;
+  const K = kitOf(e);
+  const kc = e.kcfg || (e.kcfg = { ...kitDefaults(), ...(K ? K.cfg : {}) });
+  Object.assign(kc, {
+    depth: c.D,
+    top: c.th,
+    baseH: c.H - (kc.legs || 100) - c.th,
+    noTop: true,
+    apron: 'none',
+    ends: 'none',
+    topCol: c.topCol
+  });
+  const L = c.L,
+    bD = c.backD || 600;
+  const runs = [
+    { a: W2(e, -L / 2, 0), b: W2(e, L / 2, 0), n: nrm(wv(e, 0, -1)), depth: c.D },
+    { a: W2(e, L / 2, 0), b: W2(e, -L / 2, 0), n: nrm(wv(e, 0, 1)), depth: bD }
+  ];
+  freeMods(e);
+  return { type: 'kitchen', id: e.id, island: e.id, runs, mods: e.mods, cfg: kc };
+}
+kitHooks.islandKit = islandKit;
 /** Geometry of the island in local coords: tops (polygons at heights), cabinet runs, panels, supports, seats. */
 function islandModel(e) {
   const c = icfg(e);
@@ -74414,6 +75676,7 @@ function islandModel(e) {
   const top = (poly, z, t = th, tag = 'Столешница') => M.tops.push({ poly, z, th: t, tag });
   const legsAt = (pts, z1, r = 25, kind = 'pipe') => pts.forEach(([x, y]) => M.legs.push({ x, y, z1, r, kind }));
   const edge = (a, b, h, out) => M.edges.push({ a, b, h, out });
+  if (c.free) return freeIsland(e, M, top, legsAt, edge);
   if (c.g === 'i' || e.kind === 'bar_cab') {
     const cabH = H;
     const x0 = -L / 2 - (c.wf ? 40 : c.endOv || 0),
@@ -74853,7 +76116,7 @@ function virtKits(e) {
   const M = islandModel(e),
     c = M.c;
   const K = kitOf(e);
-  const base = { ...kitDefaults(), ...(K ? K.cfg : {}) };
+  const base = { ...kitDefaults(), ...(K ? K.cfg : {}), ...(e.kind === 'free' && e.kcfg ? e.kcfg : {}) };
   const out = [];
   for (const r of M.runs) {
     if (!r.mods && !r.wing) continue;
@@ -74870,7 +76133,13 @@ function virtKits(e) {
     out.push({
       type: 'kitchen',
       runs: [{ a, b, n }],
-      mods: mods.map((m, i) => ({ id: i + 1, run: 0, kind: m.kind, w: +m.w })),
+      mods: mods.map((m, i) => ({
+        ...m,
+        id: i + 1,
+        run: 0,
+        w: +m.w,
+        hobT: c.hood === 'vent' && m.kind === 'b_hob' ? 'vent' : m.hobT
+      })),
       cfg: {
         ...base,
         depth: r.depth,
@@ -74878,6 +76147,7 @@ function virtKits(e) {
         baseH: cabH - (c.mobile ? 150 : base.legs) - c.th,
         top: c.th,
         noTop: true,
+        ends: 'none',
         apron: 'none',
         topCol: c.topCol,
         hob: 'ind'
@@ -74964,7 +76234,18 @@ function islandBuild(e) {
   const M = islandModel(e),
     c = M.c;
   const mb = MB();
-  for (const k of virtKits(e)) kitBuild(k, mb);
+  const VK = virtKits(e);
+  for (const k of VK) kitBuild(k, mb);
+  // sink cut-outs of the cabinets, in world coordinates
+  const holes = [];
+  for (const k of VK) {
+    const KL = kitLayout(k);
+    for (const it of KL.items) {
+      const hs = kitTopHoles(k, it);
+      const xf2 = kitXF(it.r);
+      for (const h of hs) holes.push(h.map(([x, y]) => xf2(x, y, 0).slice(0, 2)));
+    }
+  }
   const xf = (x, y, z) => {
     const q = W2(e, x, y);
     return [q.x, q.y, z];
@@ -74976,8 +76257,13 @@ function islandBuild(e) {
       const q = W2(e, x, y);
       return [q.x, q.y];
     });
-    const area = polyArea(poly.map(([x, y]) => P(x, y)));
-    slabXY(mb, area < 0 ? poly.slice().reverse() : poly, t.z, t.z + t.th, c.topCol);
+    const pp = poly.map(([x, y]) => P(x, y));
+    const inside = holes.filter(h => h.every(([x, y]) => inPoly(P(x, y), pp)));
+    if (inside.length) slabCut(mb, poly, inside, t.z, t.z + t.th, c.topCol);
+    else {
+      const area = polyArea(pp);
+      slabXY(mb, area < 0 ? poly.slice().reverse() : poly, t.z, t.z + t.th, c.topCol);
+    }
   }
   for (const p of M.panels) {
     mb.tag(p.tag);
@@ -74990,8 +76276,19 @@ function islandBuild(e) {
       polyArea(poly.map(([x, y]) => P(x, y))) < 0 ? poly.slice().reverse() : poly,
       p.z0,
       p.z1,
-      p.tag.includes('Экран') ? '#d8d0c2' : c.topCol
+      p.col === 'front' ? (e.kcfg && e.kcfg.fcol) || '#e7e2d8' : p.tag.includes('Экран') ? '#d8d0c2' : c.topCol
     );
+  }
+  for (const sh of M.endShelves || []) {
+    mb.tag('Открытые полки на торце острова');
+    const box = (xa, ya, xb, yb, z0, z1, col) => {
+      const q = [xf(xa, ya, 0), xf(xb, ya, 0), xf(xb, yb, 0), xf(xa, yb, 0)].map(a => [a[0], a[1]]);
+      slabXY(mb, polyArea(q.map(([x, y]) => P(x, y))) < 0 ? q.reverse() : q, z0, z1, col);
+    };
+    const fc = (e.kcfg && e.kcfg.ccol) || '#e7e2d8';
+    for (const z of [100, (c.H - c.th) / 2 - 9, c.H - c.th - 18]) box(sh.x0, sh.y0, sh.x1, sh.y1, z, z + 18, fc);
+    box(sh.outer, sh.y0, sh.outer + 18, sh.y1, 0, c.H - c.th, fc);
+    box(sh.x0, sh.y0, sh.x1, sh.y0 + 18, 0, 100, '#3d4248');
   }
   if (M.open) {
     mb.tag('Открытые полки (задняя сторона)');
@@ -75094,6 +76391,16 @@ function islandBuild(e) {
     const ch = [corner(-160, -130), corner(160, -130), corner(160, 130), corner(-160, 130)];
     slabXY(mb, polyArea(ch.map(([x, y]) => P(x, y))) < 0 ? ch.reverse() : ch, z0 + 60, ceil, '#c7ccd2');
   }
+  if (hob && c.hood === 'ceil') {
+    const q = W2(e, hob.x, hob.y),
+      ceil = S.ceil || 2700;
+    mb.tag('Вытяжка встроенная в потолок');
+    const s2 = nrm(wv(e, 1, 0)),
+      f2 = nrm(wv(e, 0, 1));
+    const corner = (u, v) => [q.x + s2.x * u + f2.x * v, q.y + s2.y * u + f2.y * v];
+    const quad = [corner(-500, -300), corner(500, -300), corner(500, 300), corner(-500, 300)];
+    slabXY(mb, polyArea(quad.map(([x, y]) => P(x, y))) < 0 ? quad.reverse() : quad, ceil - 30, ceil, '#c7ccd2');
+  }
   if (hob && c.hood === 'down') {
     const q = W2(e, hob.x, hob.y + 280);
     mb.tag('Вытяжка downdraft в столешнице');
@@ -75158,6 +76465,55 @@ XT.kisland = {
     const K = ISK[e.kind] || ISK.island;
     const M = islandModel(e);
     const g = (p, l, k, o) => [l, 'cfg.' + p, k, o];
+    if (K.free) {
+      const [F, Bk] = freeMods(e);
+      const rowsF = [
+        ['Вид', 'kind', 's', Object.entries(ISK).map(([k, v]) => [k, (v.g === 'b' ? 'Стойка: ' : 'Остров: ') + v.n])],
+        g('D', 'Глубина шкафов рабочей стороны, мм', 'n'),
+        g('backD', 'Глубина шкафов задней стороны, мм', 'n'),
+        g('H', 'Высота столешницы, мм', 'n'),
+        g('ov', 'Свес сзади (под колени), мм', 'n'),
+        g('endL', 'Левый торец', 's', Object.entries(ENDK)),
+        g('endR', 'Правый торец', 's', Object.entries(ENDK)),
+        g('endW', 'Ширина полок / свеса на торце, мм', 'n'),
+        g(
+          'topMat',
+          'Материал столешницы',
+          's',
+          Object.entries(TOPMAT).map(([k, v]) => [k, v.n])
+        ),
+        g('th', 'Толщина столешницы, мм', 'n'),
+        g('topCol', 'Цвет столешницы', 'c'),
+        ...(M.equip.some(q => q.k === 'b_hob') ? [g('hood', 'Вытяжка', 's', Object.entries(HOODS))] : []),
+        g('stools', 'Стулья (показывать и считать)', 'b'),
+        ['Поворот, °', 'rotd', 'n']
+      ];
+      const list = (a, side) =>
+        a.length
+          ? a.map(m => `${esc((KM[m.kind] || {}).n || m.kind)} ${m.w}${m.parts ? ' · свои детали' : ''}`).join('<br>')
+          : `<span class="hint">${side ? 'нет — сзади гладкая панель' : 'нет модулей'}</span>`;
+      return xGroups(e, [
+        [
+          'Остров из модулей',
+          `${fmt(c.L)} × ${fmt(c.D + (Bk.length ? c.backD || 600 : 18) + (c.ov || 0))} мм`,
+          xRows(e, rowsF)
+        ],
+        [
+          'Модули',
+          `${F.length} + ${Bk.length}`,
+          cR('Рабочая сторона', list(F, 0)) +
+            cR('Задняя сторона', list(Bk, 1)) +
+            `<dt></dt><dd><button class="btn pri" data-ixa="kd">Конструктор острова…</button></dd><dt></dt><dd class="hint" style="text-align:left">В конструкторе — модули обеих сторон из каталога кухни (техника, мойки, свои модули из деталей); торцы, свесы и столешница — здесь.</dd>`
+        ],
+        [
+          'Проверки',
+          '',
+          islandChecks(e)
+            .map(([l, m]) => `<dt></dt><dd class="${l}" style="text-align:left">${esc(m)}</dd>`)
+            .join('')
+        ]
+      ]);
+    }
     const rows = [
       ['Вид', 'kind', 's', Object.entries(ISK).map(([k, v]) => [k, (v.g === 'b' ? 'Стойка: ' : 'Остров: ') + v.n])],
       ...(K.R ? [g('R', 'Радиус по оси, мм', 'n'), g('A', 'Угол дуги, °', 'n')] : [g('L', 'Длина, мм', 'n')]),
@@ -75220,7 +76576,7 @@ XT.kisland = {
           )
           .join('') +
         cR('Сумма', `${fmt(mods.reduce((a, m) => a + +m.w, 0))} из ${fmt(c.L)} мм`) +
-        `<dt></dt><dd><button class="btn" data-ixa="add">+ Модуль</button> <button class="btn" data-ixa="auto">Заполнить автоматически</button></dd>`
+        `<dt></dt><dd><button class="btn" data-ixa="add">+ Модуль</button> <button class="btn" data-ixa="auto">Заполнить автоматически</button></dd><dt></dt><dd><button class="btn" data-ixa="free" title="Остров станет свободной сборкой: модули обеих сторон, торцы и свесы — по-своему, в конструкторе">Собрать по-своему (из модулей)…</button></dd>`
       : '';
     return xGroups(e, [
       [K.g === 'b' ? 'Барная стойка' : 'Остров', K.n, xRows(e, rows)],
@@ -75269,6 +76625,34 @@ XT.kisland = {
         (b.onclick = () => {
           pushUndo();
           const a = b.dataset.ixa;
+          if (a === 'kd') {
+            openKitchen(e.id);
+            return;
+          }
+          if (a === 'free') {
+            const c0 = icfg(e);
+            const M0 = islandModel(e);
+            const F0 = (M0.runs.find(r => r.front) || {}).mods || islandMods(e);
+            const B0 = (M0.runs.find(r => r.back) || {}).mods || [];
+            e.mods = [...F0.map(m => ({ ...m, run: 0 })), ...B0.map(m => ({ ...m, run: 1 }))].map((m, i) => ({
+              ...m,
+              id: i + 1
+            }));
+            e.cfg = {
+              D: c0.D,
+              backD: c0.backD || 600,
+              H: c0.H,
+              ov: c0.ov || 0,
+              topMat: c0.topMat,
+              hood: c0.hood,
+              endL: c0.wf ? 'wf' : 'panel',
+              endR: c0.wf ? 'wf' : 'panel'
+            };
+            e.kind = 'free';
+            after();
+            setTimeout(() => openKitchen(e.id), 0);
+            return;
+          }
           if (a === 'add') mods().push({ kind: 'b_door', w: 600 });
           else if (a === 'auto') e.mods = null;
           else if (a.startsWith('del:')) mods().splice(+a.slice(4), 1);
@@ -75865,6 +77249,7 @@ function drCSV(M) {
 
 
 
+
 /* корпусная мебель и кухня: комплект чертежей (A3) — общий вид с размерами, деталировка с кромкой и присадкой,
    карты раскроя ЛДСП / ХДФ / МДФ, схема сборки (аксонометрия с разнесением), спецификация материалов и фурнитуры */
 var FD_SHEET = {
@@ -75942,13 +77327,19 @@ function kitFurnUnits(e) {
   let n = 0;
   for (const it of L.items) {
     const k = it.m.kind;
-    if (k === 'gap' || k === 'wgap' || k === 'b_fridgeF') continue;
+    if (k === 'gap' || k === 'wgap' || (kmFS(k) && !it.m.parts)) continue;
     n++;
     const cc = kitUnitCfg(e, it);
-    const U = cabFurnUnit(cc, `М${n} · ${KM[k].n} ${it.m.w}`);
+    const U = cabFurnUnit(cc, `М${n} · ${KM[k].n} ${it.m.w}${it.m.parts ? ' (свои детали)' : ''}`);
     U.mod = it.m.id;
     U.it = it;
     U.no = n;
+    if (it.m.parts) {
+      // own parts: exactly as drawn in the constructor
+      U.parts = partsToCut(it.m.parts, it.row === 'low' ? 0 : c.wallZ);
+      out.push(U);
+      continue;
+    }
     if (it.row === 'low' && !it.tall) {
       U.parts = U.parts.filter(p => p.name !== 'Крыша');
       U.parts.push({
@@ -75967,7 +77358,7 @@ function kitFurnUnits(e) {
     for (const f of kitFrontsOf(e, it)) {
       const H_ = Math.round(f.z1 - f.z0),
         W_ = Math.round(f.x1 - f.x0);
-      if (f.kind === 'oven' || f.kind === 'mw') continue;
+      if (f.tech) continue;
       U.parts.push({
         name:
           f.kind === 'door'
@@ -75978,7 +77369,9 @@ function kitFurnUnits(e) {
                 ? 'Фасад подъёмный'
                 : f.kind === 'dw'
                   ? 'Фасад ПММ (на петлях ПММ)'
-                  : 'Панель глухая углового модуля',
+                  : f.kind === 'glass'
+                    ? 'Дверь стеклянная (рамка)'
+                    : 'Панель глухая углового модуля',
         L: H_,
         W: W_,
         t: 18,
@@ -76024,6 +77417,31 @@ function kitFurnUnits(e) {
         );
       }
     }
+    out.push(U);
+  }
+  const ends = kitEndParts(e);
+  if (ends.length) {
+    n++;
+    const U = cabFurnUnit(
+      {
+        w: 18,
+        h: 700,
+        d: 560,
+        t: 18,
+        sec: 1,
+        doors: false,
+        fills: [],
+        nf: [0],
+        back: 'none',
+        plinth: 0,
+        legs: false,
+        col: c.fcol,
+        fcol: c.fcol
+      },
+      `М${n} · Боковины декоративные`
+    );
+    U.parts = ends;
+    U.no = n;
     out.push(U);
   }
   return out;
@@ -76080,6 +77498,7 @@ function furnModel(kind, id) {
   let np = 0;
   for (const U of units)
     for (const p of U.parts) {
+      if (p.nocut) continue;
       const k = [p.name, p.L, p.W, p.t, p.mat, p.edge, drSig(p)].join('|');
       if (!pos.has(k))
         pos.set(k, {
@@ -77394,6 +78813,7 @@ function fdPrint() {
 
 
 
+
 var CWD = { id: null, run: 0, sel: null, zone: null, view: 'front', hits: [] };
 var CW3 = mini3D({
   meshes: e => cwMeshes(e),
@@ -77730,6 +79150,11 @@ function renderCasework() {
     <div class="sech">Быстрое наполнение</div><div style="display:flex;gap:4px;flex-wrap:wrap">${Object.entries(CW_SP)
       .map(([k, v]) => `<button class="btn" data-sp="${k}">${esc(v.n)}</button>`)
       .join('')}</div>
+    <div class="sech" style="margin-top:8px">Детали секции</div><div style="display:flex;gap:4px;flex-wrap:wrap">${
+      s.parts
+        ? `<span class="hint" style="width:100%">Свои детали: ${s.parts.length} — правка внизу, под чертежом.</span><button class="btn" id="cwPGen" title="Вернуть сборку по наполнению (свои детали удалятся)">Вернуть генератор</button>`
+        : `<button class="btn pri" id="cwPSplit" title="Боковины, крыша, дно, полки, задняя стенка — отдельными деталями: менять размеры, добавлять и удалять">Разобрать на детали</button>`
+    }</div>
     <div class="sech" style="margin-top:8px">Секция</div><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn" data-smv="-1">← левее</button><button class="btn" data-smv="1">правее →</button><button class="btn" id="cwSDup">Дублировать</button><button class="btn" id="cwSDel">Удалить</button></div>`;
   } else
     rh = `<div class="sech">Секции</div><p class="hint">Щёлкните секцию на развёртке или в 3D, чтобы настроить ширину, створки, фасад, ящики и наполнение.</p>${R ? R.secs.map(q => `<button class="btn" data-pick="${q.sec.id}" style="display:block;width:100%;margin:3px 0;text-align:left">С${q.gi} · ${Math.round(q.w)} мм · ${q.zones.map(z => (CW_ZK[z.k] || {}).n || z.k).join(' / ')}</button>`).join('') : ''}<button class="btn" id="cwSAdd">+ секция на стене ${CWD.run + 1}</button>`;
@@ -77750,6 +79175,21 @@ function renderCasework() {
         if (K && K.cnt && !z.n) z.n = K.def;
       }
     });
+    const ps = $('#cwPSplit');
+    if (ps)
+      ps.onclick = () => {
+        pushUndo();
+        const u = U.find(x => x.sec === s.id);
+        s.parts = partsFromCut((u ? u.parts : []).filter(p => p.grp !== 'Фасады'));
+        ch();
+      };
+    const pg = $('#cwPGen');
+    if (pg)
+      pg.onclick = () => {
+        pushUndo();
+        delete s.parts;
+        ch();
+      };
     $('#cwZAdd').onclick = () => {
       pushUndo();
       s.zones.push({ k: 'shelves', n: 2, h: 400 });
@@ -77842,6 +79282,26 @@ function renderCasework() {
       };
   }
   const ck = cwChecks(e, G);
+  const selS = G.secs.find(q => q.sec.id === CWD.sel);
+  if (selS && Array.isArray(selS.sec.parts)) {
+    // the parts editor of the selected section in the bottom area (taller while it is open)
+    const bt = $('#cwBottom');
+    bt.style.maxHeight = '340px';
+    partsEditor(
+      bt,
+      () => selS.sec.parts,
+      { w: selS.w, d: G.Dc, z0: G.zb, z1: G.zt, t: G.t, legs: G.zb, base: false },
+      () => {
+        changed();
+        renderCasework();
+      },
+      `Детали секции С${selS.gi} (${Math.round(selS.w)} мм) — X от левой кромки секции, Y от задней кромки корпуса`
+    );
+    $('#cwSum').textContent = `${CW_PR[c.product] || ''} · ${G.secs.length} секций · правка деталей секции С${selS.gi}`;
+    cwDraw2();
+    return;
+  }
+  $('#cwBottom').style.maxHeight = '190px';
   $('#cwBottom').innerHTML =
     `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline"><b>Проверки</b><span class="hint">ЛДСП, МДФ и стекло считаются по деталям; масса ≈ ${cwMass(e, U)} кг</span></div>` +
     (ck.map(([l, m]) => `<div class="${l}" style="font-size:11.5px;margin:3px 0">${esc(m)}</div>`).join('') ||
@@ -81759,6 +83219,7 @@ function drawSheet(sh, o = {}) {
 
 
 
+
 const MS = { keepLayers: null, keepAs: null, keepLv: null, keepSel: null };
 
 /* ---------- mode ---------- */
@@ -83016,7 +84477,7 @@ function itemPanel(sh, it) {
     h += `<label class="fl fx">${ip('src.allLv', 'b', it.src.allLv === false ? '' : 'checked')} все этажи</label>`;
     h += fl('Горизонтальный разрез на высоте, мм (0 — нет)', ip('src.cutZ'));
     if (it.src.ids) h += `<p class="hint">Только объекты: ${it.src.ids.length} шт.</p>`;
-    h += `<div class="btnrow"><button class="btn" data-ia="fit">Вписать</button><button class="btn pri" data-ia="dim3">Размер 3D</button></div>`;
+    h += `<div class="btnrow"><button class="btn" data-ia="fit">Вписать</button><button class="btn pri" data-ia="dim3">Размер 3D</button>${S.ents.some(x => x.type === 'molding') ? `<button class="btn" data-ia="mldim" title="Цепочки отступов молдингов на стенах, обращённых к виду, и размеры из редактора раскладки">${(it.dims3 || []).some(d => d.ml) ? 'Обновить размеры молдингов' : 'Размеры молдингов'}</button>` : ''}</div>`;
     if ((it.dims3 || []).length)
       h += `<div class="shdims">${it.dims3.map((d, i) => `<div>${Math.round(dim3Geo(d).val)} мм · ${d.pl.toUpperCase()}${d.m !== 'al' ? ' · ось ' + d.m.toUpperCase() : ''}<button class="x" data-idel="${i}" aria-label="Удалить размер">×</button></div>`).join('')}</div>`;
   }
@@ -83337,6 +84798,20 @@ function bindPanel(el) {
         if (a === 'ms') return enterMS(it);
         if (a === 'dim3') return startCmd('dim3', mkDim3());
         pushUndo();
+        if (a === 'mldim') {
+          const f = vpDirOf(it);
+          const fl = Math.hypot(...f) || 1;
+          const fn = f.map(v => v / fl);
+          it.dims3 = (it.dims3 || []).filter(d => !d.ml);
+          let n = 0;
+          for (const m of S.ents)
+            if (m.type === 'molding' && visible(m) && mlFacing(m, fn)) {
+              const ds = mlSheetDims(m);
+              it.dims3.push(...ds);
+              n += ds.length;
+            }
+          log(n ? `Размеры молдингов: ${n} на виде` : 'Нет молдингов на стенах, обращённых к этому виду', !n);
+        }
         if (a === 'fit') {
           if (it.src.k === 'plan') {
             const bx = levelBox(it.src.lv);
@@ -87918,6 +89393,7 @@ defineTools({
 
 
 
+
 /** Molding sections added to the project's profiles when missing (X — off the wall, Y — across). */
 const ML_PROFILES = [
   {
@@ -88017,8 +89493,118 @@ var ML_CORNER = {
   miter: 'Прямые углы (запил 45°)',
   round: 'Скруглённые углы',
   inset: 'Фигурные (вогнутые) углы',
-  arch: 'Арочный верх'
+  arch: 'Арочный верх',
+  elem: 'Угловые элементы (без запила)'
 };
+/** Corner elements of a frame (the moulding stops at them, no mitre cut). */
+var ML_CE = { square: 'квадрат с розеткой', rosette: 'розетка', leaf: 'уголок с листом' };
+/** Stucco decor on the wall face. */
+var ML_DECOR = {
+  rosette: 'Розетка круглая',
+  oval: 'Медальон овальный',
+  ring: 'Кольцо (венок)',
+  shield: 'Картуш',
+  leaf: 'Лист аканта',
+  console: 'Консоль (кронштейн)',
+  corner: 'Угловой элемент'
+};
+/** Default sizes of a decor element (w × h, mm). */
+const ML_DECOR_SZ = {
+  rosette: [200, 200],
+  oval: [300, 200],
+  ring: [260, 260],
+  shield: [240, 320],
+  leaf: [160, 300],
+  console: [120, 220],
+  corner: [120, 120]
+};
+/** Points of an arc through a, m, b (face or wall coordinates); a straight line when they are in line. */
+function mlArc3(a, m, b, n = 24) {
+  const ax = a[0],
+    ay = a[1],
+    bx = m[0],
+    by = m[1],
+    cx = b[0],
+    cy = b[1];
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(d) < 1e-6) return [a.slice(), b.slice()];
+  const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
+  const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+  const r = Math.hypot(ax - ux, ay - uy);
+  const t0 = Math.atan2(ay - uy, ax - ux),
+    tm = Math.atan2(by - uy, bx - ux),
+    t1 = Math.atan2(cy - uy, cx - ux);
+  const norm = t => ((t % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  // go from t0 to t1 through tm
+  let sw = norm(t1 - t0);
+  if (norm(tm - t0) > sw) sw -= 2 * Math.PI;
+  const k = Math.max(4, Math.min(64, Math.ceil((Math.abs(sw) * r) / 40)));
+  return Array.from({ length: k + 1 }, (_, i) => {
+    const t = t0 + (sw * i) / k;
+    return [ux + Math.cos(t) * r, uy + Math.sin(t) * r];
+  });
+}
+/** A smooth curve through the points (Catmull–Rom), sampled. */
+function mlSpline(pts, k = 10) {
+  if (pts.length < 3) return pts.map(p => p.slice());
+  const out = [pts[0].slice()];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p0 = pts[Math.max(0, i - 1)],
+      p1 = pts[i],
+      p2 = pts[i + 1],
+      p3 = pts[Math.min(pts.length - 1, i + 2)];
+    for (let j = 1; j <= k; j++) {
+      const t = j / k,
+        t2 = t * t,
+        t3 = t2 * t;
+      const f = (a, b, c, d) =>
+        0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  return out;
+}
+const mlPathLen = path => {
+  let L = 0;
+  for (let k = 1; k < path.length; k++) L += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1]);
+  return L;
+};
+/** A frame with corner elements: four straight pieces between the corners and the corner elements themselves. */
+function mlFrameElems(out, s0, z0, s1, z1, ce, cs, pw) {
+  const g = cs / 2 + 2;
+  const sides = [
+    [
+      [s0 + g, z0],
+      [s1 - g, z0]
+    ],
+    [
+      [s1, z0 + g],
+      [s1, z1 - g]
+    ],
+    [
+      [s1 - g, z1],
+      [s0 + g, z1]
+    ],
+    [
+      [s0, z1 - g],
+      [s0, z0 + g]
+    ]
+  ];
+  for (const p of sides)
+    if (mlPathLen(p) > 20)
+      out.push({ path: p, closed: false, len: mlPathLen(p), corners: 0, frame: true, piece: true });
+  for (const [x, z] of [
+    [s0, z0],
+    [s1, z0],
+    [s1, z1],
+    [s0, z1]
+  ])
+    out.push({ decor: true, t: 'ce_' + (ce || 'square'), s: x, z, w: cs, h: cs, len: 0, path: [[x, z]] });
+  // the frame as a whole (for the editor; not drawn)
+  out.push({ hidden: true, box: [s0, z0, s1, z1], ce, cs, len: 0, path: [] });
+}
+/** Number of frames of a layout (a frame with corner elements is four pieces). */
+const mlFrames = L => L.filter(x => x.frame && !x.piece).length + L.filter(x => x.hidden && x.box).length;
 
 /** Wall, its frame and the face side of a molding. */
 function mlWall(e) {
@@ -88100,6 +89686,10 @@ function mlLayout(e) {
     for (let i = 0; i < n; i++) {
       const a = s0 + m + i * (W + g);
       if (hitsOp(a, zA, a + W, zB)) continue;
+      if (e.corner === 'elem') {
+        mlFrameElems(out, a, zA, a + W, zB, e.ce, +e.cs || 80, pw);
+        continue;
+      }
       const path = mlFramePath(a, zA, a + W, zB, e.corner, +e.R || 60);
       let len = 0;
       for (let k = 1; k < path.length; k++) len += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1]);
@@ -88139,6 +89729,31 @@ function mlLayout(e) {
   };
   if (e.mode === 'custom') {
     for (const it of e.items || []) {
+      if (it.k === 'f' && it.c === 'elem') {
+        if (!(it.s1 - it.s0 > 20 && it.z1 - it.z0 > 20)) continue;
+        mlFrameElems(out, it.s0, it.z0, it.s1, it.z1, it.ce, +it.cs || 80, pw);
+        continue;
+      }
+      if (it.k === 'a' || it.k === 's') {
+        const path = it.k === 'a' ? mlArc3(it.a, it.m, it.b) : mlSpline(it.pts || []);
+        const len = mlPathLen(path);
+        if (len > 10) out.push({ path, closed: false, len, corners: 0, rail: true, curve: true });
+        continue;
+      }
+      if (it.k === 'o') {
+        out.push({
+          decor: true,
+          t: it.t || 'rosette',
+          s: it.s,
+          z: it.z,
+          w: +it.w || 200,
+          h: +it.h || 200,
+          len: 0,
+          path: [[it.s, it.z]]
+        });
+        continue;
+      }
+      if (it.k === 'd') continue;
       if (it.k === 'f') {
         if (!(it.s1 - it.s0 > 20 && it.z1 - it.z0 > 20)) continue;
         const path = mlFramePath(it.s0, it.z0, it.s1, it.z1, it.c || 'miter', it.R ?? 60);
@@ -88166,6 +89781,98 @@ function mlLayout(e) {
   return out;
 }
 
+/** A stucco element as a low relief: discs, ellipses, plates (mb in the face frame: x along, y up, z off). */
+function mlDecorMesh(mb, it, col, dk) {
+  const { s, z, w, h } = it;
+  const t = it.t.replace(/^ce_/, 'ce');
+  const ell = (rx, ry, z0, z1, n = 28) => {
+    const q = Array.from({ length: n }, (_, i) => [
+      s + Math.cos((i / n) * 2 * Math.PI) * rx,
+      z + Math.sin((i / n) * 2 * Math.PI) * ry,
+      z0
+    ]);
+    prism3(mb, q, [0, 0, z1 - z0], col);
+  };
+  const box = (x0, y0, x1, y1, z0, z1) => mb.box(x0, y0, z0, x1, y1, z1, col);
+  mb.tag(t.startsWith('ce') ? 'Угловой элемент рамки' : 'Лепной декор: ' + (ML_DECOR[it.t] || ''));
+  mb.smooth(true);
+  if (t === 'rosette' || t === 'cerosette') {
+    const r = w / 2;
+    ell(r, r, 0, dk * 0.5);
+    ell(r * 0.78, r * 0.78, dk * 0.5, dk * 0.9);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * 2 * Math.PI;
+      const q = Array.from({ length: 12 }, (_, j) => [
+        s + Math.cos(a) * r * 0.55 + Math.cos((j / 12) * 2 * Math.PI) * r * 0.16,
+        z + Math.sin(a) * r * 0.55 + Math.sin((j / 12) * 2 * Math.PI) * r * 0.16,
+        dk * 0.9
+      ]);
+      prism3(mb, q, [0, 0, dk * 0.35], col);
+    }
+    ell(r * 0.25, r * 0.25, dk * 0.9, dk * 1.5);
+  } else if (t === 'oval' || t === 'shield') {
+    ell(w / 2, h / 2, 0, dk * 0.5);
+    ell(w * 0.42, h * 0.42, dk * 0.5, dk * 0.8);
+    ell(w * 0.3, h * 0.3, dk * 0.8, dk * 1.1);
+    if (t === 'shield') {
+      box(s - w * 0.5, z + h * 0.36, s + w * 0.5, z + h * 0.5, 0, dk);
+      box(s - w * 0.5, z - h * 0.5, s + w * 0.5, z - h * 0.38, 0, dk);
+    }
+  } else if (t === 'ring') {
+    const n = 24,
+      r0 = w / 2,
+      r1 = w * 0.36;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * 2 * Math.PI,
+        a1 = ((i + 1) / n) * 2 * Math.PI;
+      prism3(
+        mb,
+        [
+          [s + Math.cos(a0) * r1, z + Math.sin(a0) * r1, 0],
+          [s + Math.cos(a0) * r0, z + Math.sin(a0) * r0, 0],
+          [s + Math.cos(a1) * r0, z + Math.sin(a1) * r0, 0],
+          [s + Math.cos(a1) * r1, z + Math.sin(a1) * r1, 0]
+        ],
+        [0, 0, dk * (i % 2 ? 0.8 : 1.1)],
+        col
+      );
+    }
+  } else if (t === 'leaf') {
+    prism3(
+      mb,
+      [
+        [s, z - h / 2, 0],
+        [s + w / 2, z - h * 0.1, 0],
+        [s + w * 0.2, z + h / 2, 0],
+        [s - w * 0.2, z + h / 2, 0],
+        [s - w / 2, z - h * 0.1, 0]
+      ],
+      [0, 0, dk * 0.7],
+      col
+    );
+    box(s - 6, z - h / 2, s + 6, z + h * 0.45, dk * 0.7, dk * 1.1);
+  } else if (t === 'console') {
+    box(s - w / 2, z + h / 2 - 30, s + w / 2, z + h / 2, 0, w * 0.9);
+    box(s - w * 0.4, z - h / 2, s + w * 0.4, z + h / 2 - 30, 0, w * 0.45);
+    ell(w * 0.32, w * 0.32, w * 0.45, w * 0.6);
+  } else {
+    // corner elements: a square plate (with a boss), or a leaf corner
+    box(s - w / 2, z - h / 2, s + w / 2, z + h / 2, 0, dk);
+    if (t === 'celeaf')
+      prism3(
+        mb,
+        [
+          [s - w * 0.3, z - h * 0.3, dk],
+          [s + w * 0.35, z - h * 0.1, dk],
+          [s - w * 0.1, z + h * 0.35, dk]
+        ],
+        [0, 0, dk * 0.5],
+        col
+      );
+    else ell(w * 0.3, h * 0.3, dk, dk * 1.45, 20);
+  }
+  mb.smooth(false);
+}
 XT.molding = {
   layer: 'Отделка',
   prims: e => {
@@ -88227,7 +89934,7 @@ XT.molding = {
       ctx.fillStyle = col;
       const L = mlLayout(e);
       ctx.fillText(
-        `Молдинги: ${L.filter(x => x.frame).length} рамок${L.some(x => x.rail) ? (e.mode === 'custom' ? ` + ${L.filter(x => x.rail).length} лин.` : ' + поясок') : ''} · ${pr.name}`,
+        `Молдинги: ${mlFrames(L)} рамок${L.some(x => x.rail) ? (e.mode === 'custom' ? ` + ${L.filter(x => x.rail).length} лин.` : ' + поясок') : ''} · ${pr.name}`,
         0,
         0
       );
@@ -88268,7 +89975,9 @@ XT.molding = {
       }
       return out;
     };
-    for (const it of mlLayout(e))
+    const LL = mlLayout(e);
+    for (const it of LL) {
+      if (it.decor || it.hidden || it.path.length < 2) continue;
       sweepProfile(
         mb,
         pts,
@@ -88276,7 +89985,15 @@ XT.molding = {
         dens(it.path).map(([s, z]) => P(s, z)),
         Y => Y
       );
-    return meshGroup(mb.meshes(), { edges: false });
+    }
+    // stucco decor: relief on the face (local x — along the wall, y — up, z — off the wall)
+    const dk = Math.max(...pr.pts.map(p => p[0]));
+    const mr = MB((s, z, d) => {
+      const p = A ? arcPt(A, s, sd * (M.w.th / 2 + d)) : add(add(M.o, mul(M.wi.u, s)), mul(M.n, d));
+      return [p.x, p.y, z + (M.w.z || 0)];
+    });
+    for (const it of LL) if (it.decor) mlDecorMesh(mr, it, e.col || pr.color, Math.max(10, dk));
+    return meshGroup([...mb.meshes(), ...mr.meshes()], { edges: false });
   },
   group: e => `Молдинги · ${mlProf(e.prof).name}`,
   panel: e =>
@@ -88289,7 +90006,12 @@ XT.molding = {
           ['', '<button class="btn" data-mled>Редактор раскладки на стене…</button>', 'r'],
           ['Сечение', 'prof', 's', (mlEnsureProfiles(), profOpts('trim'))],
           ['Углы рамок', 'corner', 's', Object.entries(ML_CORNER)],
-          ['Радиус угла', 'R', 'n'],
+          ...(e.corner === 'elem'
+            ? [
+                ['Угловой элемент', 'ce', 's', Object.entries(ML_CE)],
+                ['Размер углового элемента', 'cs', 'n']
+              ]
+            : [['Радиус угла', 'R', 'n']]),
           ['Рамок в ряду (0 — авто)', 'n', 'n'],
           ['Между рамками', 'gapF', 'n'],
           ['Отступ от краёв участка', 'margin', 'n'],
@@ -88304,7 +90026,7 @@ XT.molding = {
             'Итого',
             (() => {
               const L = mlLayout(e);
-              return `${L.filter(x => x.frame).length} рамок · ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(2)} м`;
+              return `${mlFrames(L)} рамок${L.some(x => x.decor) ? ` · декор ${L.filter(x => x.decor).length} шт` : ''} · ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(2)} м`;
             })(),
             'r'
           ]
@@ -88336,7 +90058,31 @@ XT.molding = {
       r.q = Math.ceil((r.L * 1.1) / 2000);
       r.ids.push(e.id);
     });
-    const fr = L.filter(x => x.frame).length;
+    const fr = mlFrames(L);
+    const dec = {};
+    for (const x of L) if (x.decor) dec[x.t] = (dec[x.t] || 0) + 1;
+    for (const [t, q] of Object.entries(dec))
+      put(
+        S_,
+        'mld' + t,
+        {
+          name: t.startsWith('ce_')
+            ? `Угловой элемент рамки: ${ML_CE[t.slice(3)] || ''}`
+            : `Лепной декор: ${ML_DECOR[t] || t}`,
+          u: 'шт'
+        },
+        r => {
+          r.q += q;
+          r.ids.push(e.id);
+        }
+      );
+    const curv = L.filter(x => x.curve).reduce((a, x) => a + x.len, 0);
+    if (curv)
+      put(S_, 'mlcurve' + pr.id, { name: `${pr.name} — гибкий, на дуги и кривые (с запасом 10 %)`, u: 'м' }, r => {
+        r.L = (r.L || 0) + curv;
+        r.q = Math.round(((r.L * 1.1) / 1000) * 10) / 10;
+        r.ids.push(e.id);
+      });
     if (fr)
       put(S_, 'mlf', { name: `Рамки из молдинга (${ML_CORNER[e.corner] || ''})`, u: 'шт' }, r => {
         r.q += fr;
@@ -88462,6 +90208,39 @@ defineTools({
     icon: '<rect x="3" y="3" width="14" height="14" rx="0.5"/><rect x="5.5" y="5.5" width="9" height="4"/><rect x="5.5" y="11" width="9" height="3.5"/>'
   }
 });
+/**
+ * Chain dimensions of a layout in face coordinates (x from the left end of the face, z from the floor):
+ * under every row of frames — from the wall ends through the edges of the frames; at the left of the frames —
+ * the heights of the frames and rails from the floor to the top. Items: k 'f' (x0,x1,z0,z1), 'l' (a,b).
+ */
+function mlChains(items, L, H) {
+  const out = [];
+  const fr = items.filter(it => it.k === 'f');
+  const uniq = v => {
+    const s = [...v].sort((a, b) => a - b),
+      o = [];
+    for (const x of s) if (!o.length || x - o[o.length - 1] > 2) o.push(x);
+    return o;
+  };
+  const rows = new Map();
+  for (const f of fr) {
+    const k = Math.round(f.z0 / 40);
+    if (!rows.has(k)) rows.set(k, []);
+    rows.get(k).push(f);
+  }
+  for (const list of rows.values()) {
+    const z = Math.min(...list.map(f => f.z0));
+    const xs = uniq([0, L, ...list.flatMap(f => [f.x0, f.x1])]);
+    for (let i = 0; i + 1 < xs.length; i++) out.push({ a: [xs[i], z], b: [xs[i + 1], z], off: -32 });
+  }
+  if (fr.length || items.some(it => it.k === 'l')) {
+    const x = fr.length ? Math.min(...fr.map(f => f.x0)) : 0;
+    const hz = items.filter(it => it.k === 'l' && Math.abs(it.a[1] - it.b[1]) < 2).map(it => it.a[1]);
+    const zs = uniq([0, H, ...fr.flatMap(f => [f.z0, f.z1]), ...hz]);
+    for (let i = 0; i + 1 < zs.length; i++) out.push({ a: [x, zs[i]], b: [x, zs[i + 1]], off: 36 });
+  }
+  return out;
+}
 
 // ===== elements/zone-tools.js =====
 /**
@@ -95082,6 +96861,8 @@ const solidEditorState = ED;
 
 
 
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -95246,6 +97027,12 @@ function xBoot() {
     openCasework,
     openKitchen,
     cwCreate,
+    kitLayout,
+    KD,
+    openMoldingEditor,
+    XT,
+    renderKitchen,
+    pipeInWallZone,
     openCatalog,
     openProfiles,
     openSanLib,
@@ -98104,6 +99891,7 @@ function wallTie(e) {
 
 
 
+
 /* ---------- geometry of the face ---------- */
 /** Elevation frame of a molding: wall length, height, openings, and s ↔ x (x — left to right as seen from the face). */
 function mleFace(e) {
@@ -98129,6 +99917,23 @@ function mleItems(e, F) {
   // the current generated layout as editable items
   const out = [];
   for (const it of mlLayout(e)) {
+    if (it.hidden && it.box) {
+      const a = F.X(it.box[0]),
+        b = F.X(it.box[2]);
+      out.push({
+        k: 'f',
+        x0: Math.min(a, b),
+        x1: Math.max(a, b),
+        z0: it.box[1],
+        z1: it.box[3],
+        c: 'elem',
+        R: 0,
+        ce: it.ce,
+        cs: it.cs
+      });
+      continue;
+    }
+    if (it.piece || it.decor || it.hidden) continue;
     const xs = it.path.map(p => F.X(p[0])),
       zs = it.path.map(p => p[1]);
     if (it.frame)
@@ -98147,21 +99952,77 @@ function mleItems(e, F) {
 }
 /** Stored item (s along the wall) → face item (x), and back. */
 function mleToX(it, F) {
+  const px = p => [F.X(p[0]), p[1]];
   if (it.k === 'f') {
     const a = F.X(it.s0),
       b = F.X(it.s1);
-    return { k: 'f', x0: Math.min(a, b), x1: Math.max(a, b), z0: it.z0, z1: it.z1, c: it.c || 'miter', R: it.R ?? 60 };
+    return {
+      k: 'f',
+      x0: Math.min(a, b),
+      x1: Math.max(a, b),
+      z0: it.z0,
+      z1: it.z1,
+      c: it.c || 'miter',
+      R: it.R ?? 60,
+      ce: it.ce,
+      cs: it.cs
+    };
   }
-  return { k: 'l', a: [F.X(it.a[0]), it.a[1]], b: [F.X(it.b[0]), it.b[1]] };
+  if (it.k === 'a') return { k: 'a', a: px(it.a), b: px(it.b), m: px(it.m) };
+  if (it.k === 's') return { k: 's', pts: (it.pts || []).map(px) };
+  if (it.k === 'o') return { k: 'o', t: it.t, x: F.X(it.s), z: it.z, w: it.w, h: it.h };
+  if (it.k === 'd') return { k: 'd', a: px(it.a), b: px(it.b), off: it.off ?? -40 };
+  return { k: 'l', a: px(it.a), b: px(it.b) };
 }
 function mleToS(it, F) {
   const r = v => Math.round(v * 10) / 10;
+  const ps = p => [r(F.X(p[0])), r(p[1])];
   if (it.k === 'f') {
     const a = F.X(it.x0),
       b = F.X(it.x1);
-    return { k: 'f', s0: r(Math.min(a, b)), s1: r(Math.max(a, b)), z0: r(it.z0), z1: r(it.z1), c: it.c, R: it.R };
+    return {
+      k: 'f',
+      s0: r(Math.min(a, b)),
+      s1: r(Math.max(a, b)),
+      z0: r(it.z0),
+      z1: r(it.z1),
+      c: it.c,
+      R: it.R,
+      ce: it.ce,
+      cs: it.cs
+    };
   }
-  return { k: 'l', a: [r(F.X(it.a[0])), r(it.a[1])], b: [r(F.X(it.b[0])), r(it.b[1])] };
+  if (it.k === 'a') return { k: 'a', a: ps(it.a), b: ps(it.b), m: ps(it.m) };
+  if (it.k === 's') return { k: 's', pts: it.pts.map(ps) };
+  if (it.k === 'o') return { k: 'o', t: it.t, s: r(F.X(it.x)), z: r(it.z), w: r(it.w), h: r(it.h) };
+  if (it.k === 'd') return { k: 'd', a: ps(it.a), b: ps(it.b), off: it.off };
+  return { k: 'l', a: ps(it.a), b: ps(it.b) };
+}
+/** Points of an item (for snapping, moving, mirroring, range). */
+function mlePts(it) {
+  if (it.k === 'f')
+    return [
+      [it.x0, it.z0],
+      [it.x1, it.z1]
+    ];
+  if (it.k === 'a') return [it.a, it.m, it.b];
+  if (it.k === 's') return it.pts;
+  if (it.k === 'o')
+    return [
+      [it.x, it.z],
+      [it.x - it.w / 2, it.z - it.h / 2],
+      [it.x + it.w / 2, it.z + it.h / 2]
+    ];
+  return [it.a, it.b];
+}
+/** Moves an item by dx, dz (from its copy o). */
+function mleShift(it, o, dx, dz) {
+  const sh = p => [p[0] + dx, p[1] + dz];
+  if (o.k === 'f') Object.assign(it, { x0: o.x0 + dx, x1: o.x1 + dx, z0: o.z0 + dz, z1: o.z1 + dz });
+  else if (o.k === 'a') Object.assign(it, { a: sh(o.a), b: sh(o.b), m: sh(o.m) });
+  else if (o.k === 's') it.pts = o.pts.map(sh);
+  else if (o.k === 'o') Object.assign(it, { x: o.x + dx, z: o.z + dz });
+  else Object.assign(it, { a: sh(o.a), b: sh(o.b) });
 }
 
 /* ---------- generator ---------- */
@@ -98208,7 +100069,7 @@ function mleGenerate(F, g, pw) {
   const ops = F.ops.map(o => ({ ...o, X0: o.x0 - og, X1: o.x1 + og, Z0: o.z0 - og, Z1: o.z1 + og }));
   const MIN = 120;
   const frame = (x0, z0, x1, z1) => {
-    if (x1 - x0 >= MIN && z1 - z0 >= MIN) out.push({ k: 'f', x0, x1, z0, z1, c: g.c, R: g.R });
+    if (x1 - x0 >= MIN && z1 - z0 >= MIN) out.push({ k: 'f', x0, x1, z0, z1, c: g.c, R: g.R, ce: g.ce, cs: g.cs });
   };
   // a cell, possibly cut around the openings that cross it
   const cell = (x0, z0, x1, z1) => {
@@ -98278,8 +100139,20 @@ function mleGenerate(F, g, pw) {
 }
 
 /* ---------- the dialog ---------- */
-const MLE = { e: null, F: null, items: [], sel: -1, tool: 'sel', drag: null, k: 1, gen: null };
-const MLE_TOOLS = { sel: 'Выбор', f: 'Рамка', l: 'Линия' };
+const MLE = {
+  e: null,
+  F: null,
+  items: [],
+  sel: -1,
+  tool: 'sel',
+  drag: null,
+  k: 1,
+  gen: null,
+  spl: null,
+  decor: 'rosette',
+  anno: false
+};
+const MLE_TOOLS = { sel: 'Выбор', f: 'Рамка', l: 'Линия', a: 'Дуга', s: 'Сплайн', o: 'Декор', d: 'Размер' };
 
 function openMoldingEditor(e) {
   const F = mleFace(e);
@@ -98289,6 +100162,8 @@ function openMoldingEditor(e) {
   MLE.items = mleItems(e, F);
   MLE.sel = -1;
   MLE.tool = 'sel';
+  MLE.spl = null;
+  MLE.anno = !!e.anno;
   const pr = mlProf(e.prof);
   MLE.pw = Math.max(...pr.pts.map(p => p[1]));
   MLE.gen = Object.assign(
@@ -98307,6 +100182,8 @@ function openMoldingEditor(e) {
       wrapOff: 60,
       c: e.corner || 'miter',
       R: +e.R || 60,
+      ce: e.ce || 'square',
+      cs: +e.cs || 80,
       railExt: 0
     },
     e.gen || {}
@@ -98321,6 +100198,7 @@ function openMoldingEditor(e) {
    <div class="seg" id="mleTools">${Object.entries(MLE_TOOLS)
      .map(([k, n]) => `<button data-t="${k}">${n}</button>`)
      .join('')}</div>
+   <label class="chk mle-anno" title="Цепочки размеров: отступы рамок от краёв стены и между собой, высоты от пола"><input type="checkbox" id="mleAnno" ${MLE.anno ? 'checked' : ''}> Размеры отступов</label>
    <button class="btn" id="mleDup" title="Копия выбранного правее">Копия</button>
    <button class="btn" id="mleMir" title="Отразить всю раскладку по ширине стены">Отразить</button>
    <button class="btn" id="mleDel" title="Удалить выбранное (Delete)">Удалить</button>
@@ -98331,6 +100209,11 @@ function openMoldingEditor(e) {
    <div class="mle-view"><svg id="mleSvg"></svg><div class="mle-tip" id="mleTip"></div></div>
    <div class="mle-side">
     <section><h4>Выбранное</h4><div id="mleSel"></div></section>
+    <section id="mleDecS"><h4>Лепной декор</h4><label>Элемент <select id="mleDecK">${Object.entries(ML_DECOR)
+      .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
+      .join(
+        ''
+      )}</select></label><p class="hint">Инструмент «Декор» — щелчок по стене ставит выбранный элемент; размеры — в «Выбранном».</p></section>
     <section><h4>Генератор</h4>
      <label>Колонки по зонам <input type="text" id="mgCols" placeholder="авто"></label>
      <p class="hint">Ширины в мм через пробел, «*» — остаток поровну, «2*» — две доли. Зоны снизу вверх через «|»: <code>* 400 *&nbsp;|&nbsp;600 * 600</code>.</p>
@@ -98345,6 +100228,9 @@ function openMoldingEditor(e) {
        .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
        .join('')}</select></label></div>
      <div class="two"><label>Радиус <input type="number" id="mgR"></label><label class="chk"><input type="checkbox" id="mgWrap"> обрамить проёмы</label></div>
+     <div class="two"><label>Угловой элемент <select id="mgCe">${Object.entries(ML_CE)
+       .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
+       .join('')}</select></label><label>Его размер <input type="number" id="mgCs"></label></div>
      <button class="btn" id="mgGo">Заполнить стену</button>
      <p class="hint">Генератор заменяет раскладку; дальше её можно править руками: тянуть рамки и углы, дорисовывать, удалять.</p>
     </section>
@@ -98373,6 +100259,23 @@ function openMoldingEditor(e) {
   bindG('mgC', 'c');
   bindG('mgR', 'R', 1);
   bindG('mgWrap', 'wrap');
+  bindG('mgCe', 'ce');
+  bindG('mgCs', 'cs', 1);
+  const dk = m.querySelector('#mleDecK');
+  dk.value = MLE.decor;
+  dk.onchange = () => {
+    MLE.decor = dk.value;
+    const it = MLE.items[MLE.sel];
+    if (it && it.k === 'o') {
+      it.t = dk.value;
+      [it.w, it.h] = ML_DECOR_SZ[it.t] || [200, 200];
+    }
+    mleRender();
+  };
+  m.querySelector('#mleAnno').onchange = ev => {
+    MLE.anno = ev.target.checked;
+    mleRender();
+  };
   m.querySelector('#mgGo').onclick = () => {
     MLE.items = mleGenerate(
       F,
@@ -98408,25 +100311,24 @@ function openMoldingEditor(e) {
     const it = MLE.items[MLE.sel];
     if (!it) return;
     const c = JSON.parse(JSON.stringify(it));
-    const w = it.k === 'f' ? it.x1 - it.x0 + 100 : Math.abs(it.b[0] - it.a[0]) + 100 || 300;
-    if (c.k === 'f') {
-      c.x0 += w;
-      c.x1 += w;
-    } else {
-      c.a[0] += w;
-      c.b[0] += w;
-    }
+    const xs = mlePts(it).map(p => p[0]);
+    const w = Math.max(...xs) - Math.min(...xs) + 100 || 300;
+    mleShift(c, JSON.parse(JSON.stringify(it)), w, 0);
     MLE.items.push(c);
     MLE.sel = MLE.items.length - 1;
     mleRender();
   };
   m.querySelector('#mleMir').onclick = () => {
     const L = F.L;
+    const mx = p => [L - p[0], p[1]];
     for (const it of MLE.items)
       if (it.k === 'f') [it.x0, it.x1] = [L - it.x1, L - it.x0];
+      else if (it.k === 'o') it.x = L - it.x;
+      else if (it.k === 's') it.pts = it.pts.map(mx);
       else {
-        it.a[0] = L - it.a[0];
-        it.b[0] = L - it.b[0];
+        it.a = mx(it.a);
+        it.b = mx(it.b);
+        if (it.m) it.m = mx(it.m);
       }
     mleRender();
   };
@@ -98441,8 +100343,15 @@ function openMoldingEditor(e) {
       mleDelete();
       ev.preventDefault();
       ev.stopPropagation();
+    } else if (ev.key === 'Enter' && MLE.spl) {
+      mleEndSpline();
+      ev.preventDefault();
+      ev.stopPropagation();
     } else if (ev.key === 'Escape') {
-      if (MLE.tool !== 'sel' || MLE.sel >= 0) {
+      if (MLE.spl) {
+        MLE.spl = null;
+        mleRender();
+      } else if (MLE.tool !== 'sel' || MLE.sel >= 0) {
         MLE.tool = 'sel';
         MLE.sel = -1;
         mleRender();
@@ -98473,7 +100382,18 @@ function mleApply() {
   e.mode = 'custom';
   e.items = MLE.items.map(it => mleToS(it, F));
   e.gen = { ...MLE.gen };
-  const ss = e.items.flatMap(it => (it.k === 'f' ? [it.s0, it.s1] : [it.a[0], it.b[0]]));
+  e.anno = MLE.anno;
+  const ss = e.items.flatMap(it =>
+    it.k === 'f'
+      ? [it.s0, it.s1]
+      : it.k === 'o'
+        ? [it.s - it.w / 2, it.s + it.w / 2]
+        : it.k === 's'
+          ? it.pts.map(p => p[0])
+          : it.k === 'a'
+            ? [it.a[0], it.b[0], it.m[0]]
+            : [it.a[0], it.b[0]]
+  );
   if (ss.length) {
     e.s0 = Math.max(0, Math.floor(Math.min(...ss)));
     e.s1 = Math.min(Math.round(F.L), Math.ceil(Math.max(...ss)));
@@ -98481,7 +100401,7 @@ function mleApply() {
   changed();
   const L = mlLayout(e);
   log(
-    `Молдинги: ${L.filter(x => x.frame).length} рамок, ${L.filter(x => !x.frame).length} линий, ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(2)} м`
+    `Молдинги: ${mlFrames(L)} рамок, ${L.filter(x => x.rail).length} линий и кривых, декор ${L.filter(x => x.decor).length} шт, ${(L.reduce((a, x) => a + x.len, 0) / 1000).toFixed(2)} м`
   );
 }
 
@@ -98498,6 +100418,56 @@ function mleView() {
     oy = (H + F.H * k) / 2;
   return { W, H, k, sx: x => ox + x * k, sy: z => oy - z * k, wx: px => (px - ox) / k, wz: py => (oy - py) / k };
 }
+/** SVG path (screen) of a line item: frame, line, arc or spline. */
+function mleItemD(it, V) {
+  const { sx, sy } = V;
+  const pl = pts => pts.map((p, j) => `${j ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join('');
+  if (it.k === 'f') {
+    if (it.c === 'elem') {
+      const g = (+it.cs || 80) / 2 + 2;
+      return (
+        pl([
+          [it.x0 + g, it.z0],
+          [it.x1 - g, it.z0]
+        ]) +
+        pl([
+          [it.x1, it.z0 + g],
+          [it.x1, it.z1 - g]
+        ]) +
+        pl([
+          [it.x1 - g, it.z1],
+          [it.x0 + g, it.z1]
+        ]) +
+        pl([
+          [it.x0, it.z1 - g],
+          [it.x0, it.z0 + g]
+        ])
+      );
+    }
+    return pl(mlFramePath(it.x0, it.z0, it.x1, it.z1, it.c, it.R)) + 'Z';
+  }
+  if (it.k === 'a') return pl(mlArc3(it.a, it.m, it.b));
+  if (it.k === 's') return pl(mlSpline(it.pts));
+  return pl([it.a, it.b]);
+}
+/** SVG of a decor element (or a corner element of a frame) at x, z of size w × h. */
+function mleDecorSvg(t, x, z, w, h, V, cls) {
+  const { sx, sy, k } = V;
+  const cx = sx(x),
+    cy = sy(z),
+    rx = (w * k) / 2,
+    ry = (h * k) / 2;
+  if (t === 'rosette' || t === 'ce_rosette' || t === 'ring')
+    return `<g class="${cls}"><circle cx="${cx}" cy="${cy}" r="${rx}"/><circle cx="${cx}" cy="${cy}" r="${rx * (t === 'ring' ? 0.72 : 0.55)}"/>${t === 'ring' ? '' : `<circle cx="${cx}" cy="${cy}" r="${rx * 0.18}"/>`}</g>`;
+  if (t === 'oval' || t === 'shield')
+    return `<g class="${cls}"><ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"/><ellipse cx="${cx}" cy="${cy}" rx="${rx * 0.65}" ry="${ry * 0.65}"/>${t === 'shield' ? `<path d="M${cx - rx} ${cy - ry * 0.8}H${cx + rx}M${cx - rx} ${cy + ry * 0.8}H${cx + rx}"/>` : ''}</g>`;
+  if (t === 'leaf')
+    return `<g class="${cls}"><path d="M${cx} ${cy + ry}L${cx + rx} ${cy + ry * 0.2}L${cx + rx * 0.4} ${cy - ry}L${cx - rx * 0.4} ${cy - ry}L${cx - rx} ${cy + ry * 0.2}Z M${cx} ${cy + ry}V${cy - ry * 0.9}"/></g>`;
+  if (t === 'console')
+    return `<g class="${cls}"><path d="M${cx - rx} ${cy - ry}H${cx + rx}V${cy - ry + 30 * k}H${cx - rx}Z M${cx - rx * 0.8} ${cy - ry + 30 * k}V${cy + ry}H${cx + rx * 0.8}V${cy - ry + 30 * k}"/><circle cx="${cx}" cy="${cy + ry * 0.4}" r="${rx * 0.5}"/></g>`;
+  // corner elements: a square with a boss or a leaf
+  return `<g class="${cls}"><rect x="${cx - rx}" y="${cy - ry}" width="${rx * 2}" height="${ry * 2}"/>${t === 'ce_leaf' ? `<path d="M${cx - rx * 0.6} ${cy + ry * 0.6}Q${cx + rx * 0.6} ${cy + ry * 0.4} ${cx + rx * 0.4} ${cy - rx * 0.6}Q${cx - rx * 0.2} ${cy - ry * 0.2} ${cx - rx * 0.6} ${cy + ry * 0.6}Z"/>` : `<circle cx="${cx}" cy="${cy}" r="${rx * 0.5}"/>`}</g>`;
+}
 function mleRender() {
   const svg = $('#mleSvg');
   if (!svg) return;
@@ -98508,9 +100478,7 @@ function mleRender() {
   svg.setAttribute('viewBox', `0 0 ${V.W} ${V.H}`);
   const { sx, sy, k } = V;
   let s = '';
-  // wall, floor and ceiling
   s += `<rect x="${sx(0)}" y="${sy(F.H)}" width="${F.L * k}" height="${F.H * k}" class="mle-wall"/>`;
-  // grid every 100 mm when it is wide enough to read
   if (k * 100 > 9) {
     let g = '';
     for (let x = 100; x < F.L; x += 100) g += `M${sx(x).toFixed(1)} ${sy(0)}V${sy(F.H)}`;
@@ -98522,27 +100490,72 @@ function mleRender() {
   const pwk = Math.max(2, MLE.pw * k);
   MLE.items.forEach((it, i) => {
     const on = i === MLE.sel;
-    let d;
-    if (it.k === 'f') {
-      const path = mlFramePath(it.x0, it.z0, it.x1, it.z1, it.c, it.R);
-      d = path.map((p, j) => `${j ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(p[1]).toFixed(1)}`).join('') + 'Z';
-    } else d = `M${sx(it.a[0])} ${sy(it.a[1])}L${sx(it.b[0])} ${sy(it.b[1])}`;
+    if (it.k === 'o') {
+      s += mleDecorSvg(it.t, it.x, it.z, it.w, it.h, V, `mle-dec${on ? ' on' : ''}`).replace(
+        '<g ',
+        `<g data-i="${i}" `
+      );
+      s += `<rect x="${sx(it.x - it.w / 2)}" y="${sy(it.z + it.h / 2)}" width="${it.w * k}" height="${it.h * k}" class="mle-hit" data-i="${i}"/>`;
+      return;
+    }
+    if (it.k === 'd') {
+      s += mleDimSvg(
+        V,
+        it.a[0],
+        it.a[1],
+        it.b[0],
+        it.b[1],
+        it.off ?? -40,
+        Math.round(Math.hypot(it.b[0] - it.a[0], it.b[1] - it.a[1])),
+        false,
+        on ? 'on' : 'user'
+      );
+      s += `<path d="M${sx(it.a[0])} ${sy(it.a[1])}L${sx(it.b[0])} ${sy(it.b[1])}" class="mle-hitl" data-i="${i}"/>`;
+      return;
+    }
+    const d = mleItemD(it, V);
     s += `<path d="${d}" class="mle-pb${on ? ' on' : ''}" stroke-width="${pwk.toFixed(1)}" data-i="${i}"/><path d="${d}" class="mle-ax${on ? ' on' : ''}" data-i="${i}"/>`;
+    if (it.k === 'f' && it.c === 'elem') {
+      const cs = +it.cs || 80;
+      for (const [x, z] of [
+        [it.x0, it.z0],
+        [it.x1, it.z0],
+        [it.x1, it.z1],
+        [it.x0, it.z1]
+      ])
+        s += mleDecorSvg('ce_' + (it.ce || 'square'), x, z, cs, cs, V, `mle-dec${on ? ' on' : ''}`).replace(
+          '<g ',
+          `<g data-i="${i}" `
+        );
+    }
   });
-  // handles and dimensions of the selection
+  // the chains of offsets (when switched on)
+  if (MLE.anno)
+    for (const d of mlChains(MLE.items, F.L, F.H))
+      s += mleDimSvg(
+        V,
+        d.a[0],
+        d.a[1],
+        d.b[0],
+        d.b[1],
+        d.off,
+        Math.round(Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1])),
+        false,
+        'anno'
+      );
   const it = MLE.items[MLE.sel];
   if (it) {
-    const hs = mleHandles(it);
-    for (const [hk, x, z] of hs)
+    for (const [hk, x, z] of mleHandles(it))
       s += `<rect x="${sx(x) - 5}" y="${sy(z) - 5}" width="10" height="10" class="mle-h" data-h="${hk}"/>`;
     if (it.k === 'f') {
       s += mleDimSvg(V, it.x0, it.z0, it.x1, it.z0, -22, Math.round(it.x1 - it.x0));
       s += mleDimSvg(V, it.x1, it.z0, it.x1, it.z1, -22, Math.round(it.z1 - it.z0));
-      // distances to the neighbours: wall ends / floor
-      s += mleDimSvg(V, 0, it.z0, it.x0, it.z0, 40, Math.round(it.x0), true);
-      s += mleDimSvg(V, it.x1, it.z1, F.L, it.z1, -40, Math.round(F.L - it.x1), true);
-      s += mleDimSvg(V, it.x0, 0, it.x0, it.z0, -40, Math.round(it.z0), true);
-    } else
+      if (!MLE.anno) {
+        s += mleDimSvg(V, 0, it.z0, it.x0, it.z0, 40, Math.round(it.x0), true);
+        s += mleDimSvg(V, it.x1, it.z1, F.L, it.z1, -40, Math.round(F.L - it.x1), true);
+        s += mleDimSvg(V, it.x0, 0, it.x0, it.z0, -40, Math.round(it.z0), true);
+      }
+    } else if (it.k === 'l')
       s += mleDimSvg(
         V,
         it.a[0],
@@ -98552,22 +100565,35 @@ function mleRender() {
         18,
         Math.round(Math.hypot(it.b[0] - it.a[0], it.b[1] - it.a[1]))
       );
+    else if (it.k === 'o') {
+      s += mleDimSvg(V, 0, it.z, it.x, it.z, 0, Math.round(it.x), true);
+      s += mleDimSvg(V, it.x, 0, it.x, it.z, 0, Math.round(it.z), true);
+    }
+  }
+  if (MLE.spl && MLE.spl.length) {
+    const pts = MLE.spl.concat(MLE.splCur ? [MLE.splCur] : []);
+    s += `<path d="${mleItemD({ k: 's', pts }, V)}" class="mle-ghost"/>`;
+    for (const p of MLE.spl) s += `<circle cx="${sx(p[0])}" cy="${sy(p[1])}" r="3.5" class="mle-sp"/>`;
   }
   if (MLE.drag && MLE.drag.ghost) s += MLE.drag.ghost;
-  // overall dimensions
   s += mleDimSvg(V, 0, 0, F.L, 0, -30, Math.round(F.L), true);
   s += mleDimSvg(V, 0, F.H, 0, 0, -30, Math.round(F.H), true);
   svg.innerHTML = s;
   mleSelPanel();
   const L = MLE.items;
+  const tips = {
+    f: 'Рамка: протяните прямоугольник. Привязка к рамкам, проёмам и краям стены.',
+    l: 'Линия: протяните от точки до точки; почти горизонтальная или вертикальная выпрямляется.',
+    a: 'Дуга: протяните хорду от начала до конца, затем тяните среднюю ручку — изгиб.',
+    s: 'Сплайн: щелчками ставьте точки кривой; Enter или двойной щелчок — готово, Esc — отмена.',
+    o: 'Декор: щелчок по стене ставит элемент, выбранный справа («Лепной декор»).',
+    d: 'Размер: протяните от точки до точки — размер останется на раскладке и попадёт на развёртку.'
+  };
   $('#mleTip').textContent =
-    MLE.tool === 'f'
-      ? 'Рамка: протяните прямоугольник. Привязка к рамкам, проёмам и краям стены.'
-      : MLE.tool === 'l'
-        ? 'Линия: протяните от точки до точки; почти горизонтальная или вертикальная выпрямляется.'
-        : `Рамок ${L.filter(x => x.k === 'f').length}, линий ${L.filter(x => x.k === 'l').length}. Тяните рамку или её углы; Delete — удалить; Esc — снять выбор.`;
+    tips[MLE.tool] ||
+    `Рамок ${L.filter(x => x.k === 'f').length}, линий и кривых ${L.filter(x => x.k === 'l' || x.k === 'a' || x.k === 's').length}, декора ${L.filter(x => x.k === 'o').length}, размеров ${L.filter(x => x.k === 'd').length}. Тяните элементы и ручки; Delete — удалить; Esc — снять выбор.`;
 }
-function mleDimSvg(V, x0, z0, x1, z1, off, txt, faint) {
+function mleDimSvg(V, x0, z0, x1, z1, off, txt, faint, cls = '') {
   const a = [V.sx(x0), V.sy(z0)],
     b = [V.sx(x1), V.sy(z1)];
   const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -98580,9 +100606,10 @@ function mleDimSvg(V, x0, z0, x1, z1, off, txt, faint) {
     B = [b[0] + nx * off, b[1] + ny * off];
   const ang = (Math.atan2(uy, ux) * 180) / Math.PI;
   const rot = ang > 90 || ang < -90 ? ang + 180 : ang;
-  const mx = (A[0] + B[0]) / 2 + nx * 4 * Math.sign(off),
-    my = (A[1] + B[1]) / 2 + ny * 4 * Math.sign(off);
-  return `<g class="mle-dim${faint ? ' faint' : ''}"><path d="M${a[0]} ${a[1]}L${A[0]} ${A[1]}M${b[0]} ${b[1]}L${B[0]} ${B[1]}M${A[0]} ${A[1]}L${B[0]} ${B[1]}"/><text x="${mx}" y="${my}" transform="rotate(${rot} ${mx} ${my})" dominant-baseline="${off > 0 ? 'text-before-edge' : 'text-after-edge'}">${txt}</text></g>`;
+  const sg = Math.sign(off) || 1;
+  const mx = (A[0] + B[0]) / 2 + nx * 4 * sg,
+    my = (A[1] + B[1]) / 2 + ny * 4 * sg;
+  return `<g class="mle-dim${faint ? ' faint' : ''}${cls ? ' ' + cls : ''}"><path d="M${a[0]} ${a[1]}L${A[0]} ${A[1]}M${b[0]} ${b[1]}L${B[0]} ${B[1]}M${A[0]} ${A[1]}L${B[0]} ${B[1]}"/><path class="tk" d="M${A[0] - 3} ${A[1] + 3}L${A[0] + 3} ${A[1] - 3}M${B[0] - 3} ${B[1] + 3}L${B[0] + 3} ${B[1] - 3}"/><text x="${mx}" y="${my}" transform="rotate(${rot} ${mx} ${my})" dominant-baseline="${sg > 0 ? 'text-before-edge' : 'text-after-edge'}">${txt}</text></g>`;
 }
 function mleHandles(it) {
   if (it.k === 'f')
@@ -98596,12 +100623,20 @@ function mleHandles(it) {
       ['z0', (it.x0 + it.x1) / 2, it.z0],
       ['z1', (it.x0 + it.x1) / 2, it.z1]
     ];
+  if (it.k === 'a')
+    return [
+      ['a', it.a[0], it.a[1]],
+      ['m', it.m[0], it.m[1]],
+      ['b', it.b[0], it.b[1]]
+    ];
+  if (it.k === 's') return it.pts.map((p, i) => ['p' + i, p[0], p[1]]);
+  if (it.k === 'o') return [['ow', it.x + it.w / 2, it.z + it.h / 2]];
   return [
     ['a', it.a[0], it.a[1]],
     ['b', it.b[0], it.b[1]]
   ];
 }
-/** Snap values: wall ends, floor / top, openings, other items (and the profile width off them). */
+/** Snap values: wall ends, floor / top, openings, other items. */
 function mleSnapLines(skip) {
   const F = MLE.F;
   const xs = [0, F.L],
@@ -98612,12 +100647,9 @@ function mleSnapLines(skip) {
   }
   MLE.items.forEach((it, i) => {
     if (i === skip) return;
-    if (it.k === 'f') {
-      xs.push(it.x0, it.x1);
-      zs.push(it.z0, it.z1);
-    } else {
-      xs.push(it.a[0], it.b[0]);
-      zs.push(it.a[1], it.b[1]);
+    for (const p of mlePts(it)) {
+      xs.push(p[0]);
+      zs.push(p[1]);
     }
   });
   return { xs, zs };
@@ -98634,17 +100666,33 @@ function mleSnap(v, list, tol) {
   }
   return best != null ? best : Math.round(v / 10) * 10;
 }
+/** Finishes the spline being drawn. */
+function mleEndSpline() {
+  const pts = MLE.spl || [];
+  MLE.spl = null;
+  MLE.splCur = null;
+  if (pts.length >= 2) {
+    MLE.items.push({ k: 's', pts });
+    MLE.sel = MLE.items.length - 1;
+  }
+  mleRender();
+}
 function mleBindSvg(svg) {
-  // points are kept on the wall face
   const pt = ev => {
     const r = svg.getBoundingClientRect();
     const V = MLE.V;
     const cl = (v, a, b) => Math.max(a, Math.min(b, v));
     return [cl(V.wx(ev.clientX - r.left), 0, MLE.F.L), cl(V.wz(ev.clientY - r.top), 0, MLE.F.H)];
   };
+  const snapPt = (x, z, skip = -1) => {
+    const tol = 8 / MLE.V.k;
+    const S_ = mleSnapLines(skip);
+    return [mleSnap(x, S_.xs, tol), mleSnap(z, S_.zs, tol)];
+  };
+  svg.ondblclick = () => {
+    if (MLE.spl) mleEndSpline();
+  };
   svg.onpointerdown = ev => {
-    const V = MLE.V;
-    const tol = 8 / V.k;
     const [x, z] = pt(ev);
     svg.setPointerCapture(ev.pointerId);
     const h = ev.target.dataset && ev.target.dataset.h;
@@ -98652,32 +100700,69 @@ function mleBindSvg(svg) {
       MLE.drag = { kind: 'h', h, it0: JSON.parse(JSON.stringify(MLE.items[MLE.sel])) };
       return;
     }
-    if (MLE.tool === 'f' || MLE.tool === 'l') {
-      const S_ = mleSnapLines(-1);
-      MLE.drag = { kind: MLE.tool, p0: [mleSnap(x, S_.xs, tol), mleSnap(z, S_.zs, tol)] };
+    if (MLE.tool === 's') {
+      const p = snapPt(x, z);
+      if (!MLE.spl) MLE.spl = [];
+      const last = MLE.spl[MLE.spl.length - 1];
+      if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 5) MLE.spl.push(p);
+      mleRender();
       return;
     }
-    const i = ev.target.dataset && ev.target.dataset.i != null ? +ev.target.dataset.i : -1;
+    if (MLE.tool === 'o') {
+      const p = snapPt(x, z);
+      const [w, hh] = ML_DECOR_SZ[MLE.decor] || [200, 200];
+      MLE.items.push({ k: 'o', t: MLE.decor, x: p[0], z: p[1], w, h: hh });
+      MLE.sel = MLE.items.length - 1;
+      mleRender();
+      return;
+    }
+    if (MLE.tool === 'f' || MLE.tool === 'l' || MLE.tool === 'a' || MLE.tool === 'd') {
+      MLE.drag = { kind: MLE.tool, p0: snapPt(x, z) };
+      return;
+    }
+    const g = ev.target.closest && ev.target.closest('[data-i]');
+    const i = g ? +g.dataset.i : -1;
     MLE.sel = i;
     if (i >= 0) MLE.drag = { kind: 'move', p0: [x, z], it0: JSON.parse(JSON.stringify(MLE.items[i])) };
     mleRender();
   };
   svg.onpointermove = ev => {
+    const V = MLE.V;
+    if (MLE.spl && !MLE.drag) {
+      MLE.splCur = snapPt(...pt(ev));
+      mleRender();
+      return;
+    }
     const D = MLE.drag;
     if (!D) return;
-    const V = MLE.V;
     const tol = 8 / V.k;
     let [x, z] = pt(ev);
-    const S_ = mleSnapLines(D.kind === 'f' || D.kind === 'l' ? -1 : MLE.sel);
-    if (D.kind === 'f' || D.kind === 'l') {
+    const S_ = mleSnapLines(D.kind === 'move' || D.kind === 'h' ? MLE.sel : -1);
+    if (D.kind === 'f' || D.kind === 'l' || D.kind === 'a' || D.kind === 'd') {
       x = mleSnap(x, S_.xs, tol);
       z = mleSnap(z, S_.zs, tol);
-      if (D.kind === 'l') {
-        // nearly horizontal / vertical lines straighten
+      if (D.kind !== 'f') {
         if (Math.abs(z - D.p0[1]) < Math.abs(x - D.p0[0]) * 0.18) z = D.p0[1];
         else if (Math.abs(x - D.p0[0]) < Math.abs(z - D.p0[1]) * 0.18) x = D.p0[0];
-        D.cur = { k: 'l', a: D.p0.slice(), b: [x, z] };
+      }
+      if (D.kind === 'l' || D.kind === 'd') {
+        D.cur =
+          D.kind === 'd' ? { k: 'd', a: D.p0.slice(), b: [x, z], off: -40 } : { k: 'l', a: D.p0.slice(), b: [x, z] };
         D.ghost = `<path d="M${V.sx(D.p0[0])} ${V.sy(D.p0[1])}L${V.sx(x)} ${V.sy(z)}" class="mle-ghost"/>`;
+      } else if (D.kind === 'a') {
+        // the middle point off the chord by a quarter of its length (up for a horizontal chord)
+        const dx = x - D.p0[0],
+          dz = z - D.p0[1],
+          L = Math.hypot(dx, dz) || 1;
+        let nx = -dz / L,
+          nz = dx / L;
+        if (nz < 0 || (Math.abs(nz) < 1e-6 && nx > 0)) {
+          nx = -nx;
+          nz = -nz;
+        }
+        const m = [(D.p0[0] + x) / 2 + nx * L * 0.25, (D.p0[1] + z) / 2 + nz * L * 0.25];
+        D.cur = { k: 'a', a: D.p0.slice(), b: [x, z], m };
+        D.ghost = `<path d="${mleItemD(D.cur, V)}" class="mle-ghost"/>`;
       } else {
         D.cur = {
           k: 'f',
@@ -98686,7 +100771,9 @@ function mleBindSvg(svg) {
           z0: Math.min(D.p0[1], z),
           z1: Math.max(D.p0[1], z),
           c: MLE.gen.c,
-          R: MLE.gen.R
+          R: MLE.gen.R,
+          ce: MLE.gen.ce,
+          cs: MLE.gen.cs
         };
         const c = D.cur;
         D.ghost = `<rect x="${V.sx(c.x0)}" y="${V.sy(c.z1)}" width="${(c.x1 - c.x0) * V.k}" height="${(c.z1 - c.z0) * V.k}" class="mle-ghost"/><text x="${V.sx(c.x1) + 6}" y="${V.sy(c.z1) - 6}" class="mle-gt">${Math.round(c.x1 - c.x0)} × ${Math.round(c.z1 - c.z0)}</text>`;
@@ -98700,22 +100787,16 @@ function mleBindSvg(svg) {
       let dx = x - D.p0[0],
         dz = z - D.p0[1];
       const o = D.it0;
-      // snap the moved item's edges
-      const ex = o.k === 'f' ? [o.x0, o.x1] : [o.a[0], o.b[0]],
-        ez = o.k === 'f' ? [o.z0, o.z1] : [o.a[1], o.b[1]];
-      const sdx = ex
-        .map(v => mleSnap(v + dx, S_.xs, tol) - (v + dx))
-        .find(d => Math.abs(d) > 1e-9 && Math.abs(d) < tol);
-      const sdz = ez
-        .map(v => mleSnap(v + dz, S_.zs, tol) - (v + dz))
-        .find(d => Math.abs(d) > 1e-9 && Math.abs(d) < tol);
+      const P0 = mlePts(o);
+      const sdx = P0.map(p => mleSnap(p[0] + dx, S_.xs, tol) - (p[0] + dx)).find(
+        d => Math.abs(d) > 1e-9 && Math.abs(d) < tol
+      );
+      const sdz = P0.map(p => mleSnap(p[1] + dz, S_.zs, tol) - (p[1] + dz)).find(
+        d => Math.abs(d) > 1e-9 && Math.abs(d) < tol
+      );
       dx = sdx != null ? dx + sdx : Math.round(dx / 10) * 10;
       dz = sdz != null ? dz + sdz : Math.round(dz / 10) * 10;
-      if (o.k === 'f') Object.assign(it, { x0: o.x0 + dx, x1: o.x1 + dx, z0: o.z0 + dz, z1: o.z1 + dz });
-      else {
-        it.a = [o.a[0] + dx, o.a[1] + dz];
-        it.b = [o.b[0] + dx, o.b[1] + dz];
-      }
+      mleShift(it, o, dx, dz);
     } else if (D.kind === 'h') {
       x = mleSnap(x, S_.xs, tol);
       z = mleSnap(z, S_.zs, tol);
@@ -98725,6 +100806,10 @@ function mleBindSvg(svg) {
         if (h.includes('x1')) it.x1 = Math.max(x, it.x0 + 60);
         if (h.includes('z0')) it.z0 = Math.min(z, it.z1 - 60);
         if (h.includes('z1')) it.z1 = Math.max(z, it.z0 + 60);
+      } else if (it.k === 's') it.pts[+h.slice(1)] = [x, z];
+      else if (it.k === 'o') {
+        it.w = Math.max(30, 2 * Math.abs(x - it.x));
+        it.h = Math.max(30, 2 * Math.abs(z - it.z));
       } else it[h] = [x, z];
     }
     mleRender();
@@ -98732,7 +100817,7 @@ function mleBindSvg(svg) {
   svg.onpointerup = () => {
     const D = MLE.drag;
     MLE.drag = null;
-    if (D && (D.kind === 'f' || D.kind === 'l') && D.cur) {
+    if (D && D.cur && D.kind !== 'move' && D.kind !== 'h') {
       const c = D.cur;
       const big =
         c.k === 'f' ? c.x1 - c.x0 >= 60 && c.z1 - c.z0 >= 60 : Math.hypot(c.b[0] - c.a[0], c.b[1] - c.a[1]) >= 40;
@@ -98751,19 +100836,45 @@ function mleSelPanel() {
   if (!el) return;
   const it = MLE.items[MLE.sel];
   if (!it) {
-    el.innerHTML = '<p class="hint">Щёлкните рамку или линию на стене, чтобы задать её размеры числами.</p>';
+    el.innerHTML =
+      '<p class="hint">Щёлкните рамку, линию, дугу, сплайн, декор или размер на стене, чтобы задать числа.</p>';
     return;
   }
   const num = (id, l, v) => `<label>${l}<input type="number" id="${id}" value="${Math.round(v)}"></label>`;
+  const two = (a, b) => `<div class="two">${a}${b}</div>`;
   if (it.k === 'f')
-    el.innerHTML = `<div class="two">${num('msX', 'От левого края', it.x0)}${num('msZ', 'От пола', it.z0)}</div>
-    <div class="two">${num('msW', 'Ширина', it.x1 - it.x0)}${num('msH', 'Высота', it.z1 - it.z0)}</div>
-    <div class="two"><label>Углы<select id="msC">${Object.entries(ML_CORNER)
-      .map(([k, n]) => `<option value="${k}" ${k === it.c ? 'selected' : ''}>${esc(n)}</option>`)
-      .join('')}</select></label>${num('msR', 'Радиус', it.R || 0)}</div>`;
+    el.innerHTML =
+      two(num('msX', 'От левого края', it.x0), num('msZ', 'От пола', it.z0)) +
+      two(num('msW', 'Ширина', it.x1 - it.x0), num('msH', 'Высота', it.z1 - it.z0)) +
+      `<div class="two"><label>Углы<select id="msC">${Object.entries(ML_CORNER)
+        .map(([k, n]) => `<option value="${k}" ${k === it.c ? 'selected' : ''}>${esc(n)}</option>`)
+        .join(
+          ''
+        )}</select></label>${it.c === 'elem' ? num('msCs', 'Угловой элемент, мм', +it.cs || 80) : num('msR', 'Радиус', it.R || 0)}</div>` +
+      (it.c === 'elem'
+        ? `<label>Вид углового элемента<select id="msCe">${Object.entries(ML_CE)
+            .map(([k, n]) => `<option value="${k}" ${k === (it.ce || 'square') ? 'selected' : ''}>${esc(n)}</option>`)
+            .join('')}</select></label>`
+        : '');
+  else if (it.k === 'o')
+    el.innerHTML =
+      `<label>Элемент<select id="msT">${Object.entries(ML_DECOR)
+        .map(([k, n]) => `<option value="${k}" ${k === it.t ? 'selected' : ''}>${esc(n)}</option>`)
+        .join('')}</select></label>` +
+      two(num('msOx', 'Центр: от края', it.x), num('msOz', 'от пола', it.z)) +
+      two(num('msOw', 'Ширина', it.w), num('msOh', 'Высота', it.h));
+  else if (it.k === 's')
+    el.innerHTML = `<p class="hint">Сплайн: ${it.pts.length} точек, длина ${Math.round(mlSpline(it.pts).reduce((a, p, i, A) => (i ? a + Math.hypot(p[0] - A[i - 1][0], p[1] - A[i - 1][1]) : 0), 0))} мм. Тяните точки ручками.</p><button class="btn" id="msSpAdd">+ точка в середине</button>`;
+  else if (it.k === 'a')
+    el.innerHTML =
+      two(num('msAx', 'Начало: от края', it.a[0]), num('msAz', 'от пола', it.a[1])) +
+      two(num('msBx', 'Конец: от края', it.b[0]), num('msBz', 'от пола', it.b[1])) +
+      two(num('msMx', 'Вершина: от края', it.m[0]), num('msMz', 'от пола', it.m[1]));
   else
-    el.innerHTML = `<div class="two">${num('msAx', 'Начало: от края', it.a[0])}${num('msAz', 'от пола', it.a[1])}</div>
-    <div class="two">${num('msBx', 'Конец: от края', it.b[0])}${num('msBz', 'от пола', it.b[1])}</div>`;
+    el.innerHTML =
+      two(num('msAx', 'Начало: от края', it.a[0]), num('msAz', 'от пола', it.a[1])) +
+      two(num('msBx', 'Конец: от края', it.b[0]), num('msBz', 'от пола', it.b[1])) +
+      (it.k === 'd' ? num('msOff', 'Отступ размерной линии, мм экрана', it.off ?? -40) : '');
   const on = (id, f) => {
     const i = el.querySelector('#' + id);
     if (i)
@@ -98786,10 +100897,409 @@ function mleSelPanel() {
   on('msH', v => (it.z1 = it.z0 + Math.max(60, v)));
   on('msC', v => (it.c = v));
   on('msR', v => (it.R = Math.max(0, v)));
+  on('msCs', v => (it.cs = Math.max(20, v)));
+  on('msCe', v => (it.ce = v));
+  on('msT', v => {
+    it.t = v;
+    [it.w, it.h] = ML_DECOR_SZ[v] || [it.w, it.h];
+  });
+  on('msOx', v => (it.x = v));
+  on('msOz', v => (it.z = v));
+  on('msOw', v => (it.w = Math.max(20, v)));
+  on('msOh', v => (it.h = Math.max(20, v)));
   on('msAx', v => (it.a[0] = v));
   on('msAz', v => (it.a[1] = v));
   on('msBx', v => (it.b[0] = v));
   on('msBz', v => (it.b[1] = v));
+  on('msMx', v => (it.m[0] = v));
+  on('msMz', v => (it.m[1] = v));
+  on('msOff', v => (it.off = v));
+  const sa = el.querySelector('#msSpAdd');
+  if (sa)
+    sa.onclick = () => {
+      const n = it.pts.length;
+      const i = Math.floor((n - 1) / 2);
+      const a = it.pts[i],
+        b = it.pts[i + 1];
+      it.pts.splice(i + 1, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 60]);
+      mleRender();
+    };
+}
+
+/**
+ * Dimensions of a molding for a 3D view on a sheet (an elevation): the chains of offsets and the molding's own
+ * dimensions, as 3D dimensions (sheet-render dim3Geo): {a, b, pl, m, off, ml}.
+ */
+function mlSheetDims(e) {
+  const F = mleFace(e);
+  if (!F) return [];
+  const items = mleItems(e, F);
+  const w = F.w,
+    wi = F.wi;
+  const n = mul(wi.n, F.side);
+  const o = add(w.a, mul(wi.n, (F.side * w.th) / 2));
+  const W = (x, z) => {
+    const p = add(add(o, mul(wi.u, F.X(x))), mul(n, 5));
+    return [p.x, p.y, z + (+w.z || 0)];
+  };
+  const pl = Math.abs(wi.u.x) >= Math.abs(wi.u.y) ? 'xz' : 'yz';
+  const N = pl === 'xz' ? [0, 1, 0] : [1, 0, 0];
+  // the face's x direction in the world
+  const ex = (() => {
+    const a = W(0, 0),
+      b = W(1, 0);
+    return [b[0] - a[0], b[1] - a[1], 0];
+  })();
+  const out = [];
+  const add3 = (a2, b2, want) => {
+    const A = W(...a2),
+      B = W(...b2);
+    const D = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+    const k = D[0] * N[0] + D[1] * N[1] + D[2] * N[2];
+    let dir = [D[0] - N[0] * k, D[1] - N[1] * k, D[2] - N[2] * k];
+    const l = Math.hypot(...dir);
+    if (l < 1) return;
+    dir = dir.map(v => v / l);
+    let oo = [N[1] * dir[2] - N[2] * dir[1], N[2] * dir[0] - N[0] * dir[2], N[0] * dir[1] - N[1] * dir[0]];
+    const lo = Math.hypot(...oo) || 1;
+    oo = oo.map(v => v / lo);
+    out.push({
+      a: A,
+      b: B,
+      pl,
+      m: 'al',
+      off: Math.round(want[0] * oo[0] + want[1] * oo[1] + want[2] * oo[2]),
+      ml: e.id,
+      h: 2.5
+    });
+  };
+  const lx = Math.hypot(ex[0], ex[1]) || 1;
+  const left = [-ex[0] / lx, -ex[1] / lx, 0];
+  for (const d of mlChains(items, F.L, F.H)) {
+    const horiz = Math.abs(d.b[1] - d.a[1]) < 1;
+    add3(d.a, d.b, horiz ? [0, 0, -140] : left.map(v => v * 160));
+  }
+  for (const d of items.filter(i => i.k === 'd')) add3(d.a, d.b, [0, 0, (d.off ?? -40) < 0 ? -200 : 200]);
+  return out;
+}
+/** Does a molding face the view direction f (looking along f)? */
+function mlFacing(e, f) {
+  const F = mleFace(e);
+  if (!F) return false;
+  const n = mul(F.wi.n, F.side);
+  return n.x * f[0] + n.y * f[1] < -0.3;
+}
+
+// ===== interior/parts-editor.js =====
+/**
+ * interior/parts-editor.js
+ *
+ * Own parts of furniture: a module of a kitchen or island, or a section of a wardrobe, can be built (or rebuilt)
+ * from separate parts — sides, bottom, top, shelves, partitions, rails, back, fronts, plinth, end panels, any panel,
+ * an appliance envelope. Every part is a box in the local frame of its module:
+ *   x — from the left edge of the module, y — from the wall (the back) into the room, z — from the floor;
+ *   w, d, h — sizes along x, y, z. The thickness of a panel is its smallest size.
+ * The same list is the 3D model, the elevation and the parts list / cutting of the drawings.
+ */
+
+
+
+/** Kinds of parts: name, material, and where a new one goes in the module U = {w, d, z0, z1, t, legs, front}. */
+const PART_K = {
+  side: { n: 'Боковина', mat: 'ldsp' },
+  bottom: { n: 'Дно', mat: 'ldsp' },
+  top: { n: 'Крыша', mat: 'ldsp' },
+  shelf: { n: 'Полка', mat: 'ldsp' },
+  part: { n: 'Перегородка', mat: 'ldsp' },
+  rail: { n: 'Царга / планка', mat: 'ldsp' },
+  back: { n: 'Задняя стенка', mat: 'hdf' },
+  front: { n: 'Фасад', mat: 'front' },
+  plinth: { n: 'Цоколь', mat: 'ldsp' },
+  end: { n: 'Боковина декоративная', mat: 'front' },
+  panel: { n: 'Своя деталь', mat: 'ldsp' },
+  tech: { n: 'Техника (габарит)', mat: 'tech' }
+};
+/** Materials: the first three go to the cutting maps (furniture-drawings FD_SHEET), the rest do not. */
+const PART_MAT = {
+  ldsp: 'ЛДСП',
+  front: 'Фасадная (МДФ / ЛДСП 18)',
+  hdf: 'ХДФ 3 мм',
+  glass: 'Стекло',
+  metal: 'Металл',
+  tech: 'Техника — не в раскрой'
+};
+const CUT_MAT = { ldsp: 1, front: 1, hdf: 1 };
+let PID = 1;
+const nid = parts => Math.max(PID++, ...parts.map(p => +p.id || 0)) + 1;
+const r1 = v => Math.round(v * 10) / 10;
+
+/** Box [x0,y0,z0,x1,y1,z1] of a part. */
+const partBox = p => [p.x, p.y, p.z, p.x + p.w, p.y + p.d, p.z + p.h];
+/** Thickness: the smallest size. */
+const partT = p => Math.min(p.w, p.d, p.h);
+
+/** A new part of kind k placed sensibly in the module U; `side` — 'L' / 'R' for verticals. */
+function partPreset(k, U, parts = []) {
+  const t = U.t || 16,
+    W = U.w,
+    D = U.d,
+    z0 = U.z0,
+    z1 = U.z1;
+  const P_ = (x, y, z, w, d, h, extra = {}) => ({
+    id: nid(parts),
+    k,
+    n: PART_K[k].n,
+    mat: PART_K[k].mat,
+    x: r1(x),
+    y: r1(y),
+    z: r1(z),
+    w: r1(w),
+    d: r1(d),
+    h: r1(h),
+    ...extra
+  });
+  const hasL = parts.some(p => p.k === 'side' && p.x < W / 2);
+  switch (k) {
+    case 'side':
+      return hasL
+        ? P_(W - t, 0, z0, t, D, z1 - z0, { n: 'Боковина правая' })
+        : P_(0, 0, z0, t, D, z1 - z0, { n: 'Боковина левая' });
+    case 'bottom':
+      return P_(t, 0, z0, W - 2 * t, D, t);
+    case 'top':
+      return P_(t, 0, z1 - t, W - 2 * t, D, t);
+    case 'shelf': {
+      const n = parts.filter(p => p.k === 'shelf').length + 1;
+      const zz = z0 + ((z1 - z0) * n) / (n + 1);
+      return P_(t, 0, zz - t / 2, W - 2 * t, D - 20, t);
+    }
+    case 'part':
+      return P_(W / 2 - t / 2, 0, z0 + t, t, D - 20, z1 - z0 - 2 * t);
+    case 'rail':
+      return P_(t, D - 100, z1 - t, W - 2 * t, 100, t, { n: 'Царга передняя' });
+    case 'back':
+      return P_(2, -3, z0 + 2, W - 4, 3, z1 - z0 - 4);
+    case 'front':
+      return P_(1.5, D, z0 + 1.5, W - 3, 18, z1 - z0 - 3, { n: 'Фасад распашной' });
+    case 'plinth':
+      return P_(0, D - 60, 0, W, 16, Math.max(40, U.legs || 100));
+    case 'end':
+      return P_(W - 18, 0, 0, 18, D + 18, z1);
+    case 'tech':
+      return P_(t, 40, z0 + t, W - 2 * t, D - 60, Math.max(100, (z1 - z0) / 2), { n: 'Техника' });
+    default:
+      return P_(t, 0, (z0 + z1) / 2, W - 2 * t, D, t);
+  }
+}
+/** A plain carcass: two sides, bottom, top (or two rails for a base unit under a worktop), back, plinth. */
+function partCarcass(U, base) {
+  const out = [];
+  const add = (k, extra) => {
+    const p = partPreset(k, U, out);
+    Object.assign(p, extra || {});
+    out.push(p);
+    return p;
+  };
+  add('side');
+  add('side');
+  add('bottom');
+  if (base) {
+    add('rail', { n: 'Царга передняя' });
+    const b = add('rail', { n: 'Царга задняя' });
+    b.y = 0;
+  } else add('top');
+  add('back');
+  if (base && U.legs) add('plinth');
+  return out;
+}
+
+/** The parts of a module as parts of the drawings (sizes, material, edge, box relative to zBase). */
+function partsToCut(parts, zBase = 0, grpOf, all = false) {
+  const out = [];
+  for (const p of parts || []) {
+    if (!CUT_MAT[p.mat] && !all) continue;
+    const s = [p.w, p.d, p.h].sort((a, b) => b - a);
+    const t = p.mat === 'hdf' ? 3 : Math.round(s[2]);
+    out.push({
+      name: p.n || PART_K[p.k]?.n || 'Деталь',
+      L: Math.round(s[0]),
+      W: Math.round(s[1]),
+      t,
+      mat: p.mat,
+      edge: p.edge != null ? p.edge : p.mat === 'front' ? 'по периметру 2 мм' : p.mat === 'hdf' ? '' : 'Д1 0,4 мм',
+      box: [p.x, p.y, p.z - zBase, p.x + p.w, p.y + p.d, p.z + p.h - zBase],
+      qty: 1,
+      grp: grpOf ? grpOf(p) : p.mat === 'front' ? 'Фасады' : 'Корпус',
+      own: true,
+      ownMat: p.mat,
+      col: p.col,
+      nocut: !CUT_MAT[p.mat]
+    });
+  }
+  return out;
+}
+/** Generated parts of a carcass (with boxes) as own parts to edit. */
+function partsFromCut(list) {
+  const kOf = n =>
+    /Боковин|Стойка/.test(n)
+      ? 'side'
+      : /Перегородк/.test(n)
+        ? 'part'
+        : /Крыша/.test(n)
+          ? 'top'
+          : /^Дно/.test(n)
+            ? 'bottom'
+            : /Полк/.test(n)
+              ? 'shelf'
+              : /Задн/.test(n)
+                ? 'back'
+                : /Цокол/.test(n)
+                  ? 'plinth'
+                  : /Царг|Планк/.test(n)
+                    ? 'rail'
+                    : /Фасад/.test(n)
+                      ? 'front'
+                      : 'panel';
+  let id = 1;
+  const out = [];
+  for (const p of list)
+    if (p.box) {
+      const b = p.box;
+      for (let q = 0; q < (p.qty || 1); q++)
+        out.push({
+          id: id++,
+          k: kOf(p.name),
+          n: p.name,
+          mat: p.mat === 'hdf' ? 'hdf' : p.mat === 'front' ? 'front' : 'ldsp',
+          x: r1(b[0]),
+          y: r1(b[1]),
+          z: r1(b[2]),
+          w: r1(b[3] - b[0]),
+          d: r1(b[4] - b[1]),
+          h: r1(b[5] - b[2])
+        });
+    }
+  return out;
+}
+/** Colour of a part in 3D and on the elevation. */
+function partCol(p, c) {
+  if (p.col) return p.col;
+  return {
+    ldsp: c.ccol || c.col || '#f2f2f0',
+    front: c.fcol || '#e7e2d8',
+    hdf: '#d8d0c2',
+    glass: '#bcd6e0',
+    metal: '#9aa1a9',
+    tech: '#2b2f35'
+  }[p.mat];
+}
+/** Draws the parts with B(x0,y0,z0,x1,y1,z1,col,op) of the module. */
+function partsMesh(mb, parts, c, B) {
+  for (const p of parts || []) {
+    mb.tag(
+      `${p.n || PART_K[p.k]?.n || 'Деталь'} (${PART_MAT[p.mat] || ''}${CUT_MAT[p.mat] ? ' ' + Math.round(partT(p)) + ' мм' : ''})`
+    );
+    const b = partBox(p);
+    B(b[0], b[1], b[2], b[3], b[4], b[5], partCol(p, c), p.mat === 'glass' ? 0.45 : undefined);
+  }
+}
+
+/**
+ * The editor: a list of parts with their sizes, buttons to add parts of each kind.
+ * el — container; get() — the parts array (edited in place); U — the module frame; done() — after every change.
+ */
+function partsEditor(el, get, U, done, title = 'Детали модуля') {
+  const parts = get();
+  const num = (i, k, v) =>
+    `<input type="number" data-pe="${i}:${k}" value="${Math.round(v * 10) / 10}" style="width:62px" aria-label="${k}">`;
+  el.innerHTML = `<div class="pe">
+   <div class="pehead"><b>${esc(title)}</b><span class="hint">X — от левого края, Y — от стены, Z — от пола; Ш × Г × В — размеры по осям. Толщина — наименьший размер.</span></div>
+   <div class="peadd">${Object.entries(PART_K)
+     .map(([k, v]) => `<button class="btn" data-pa="${k}">+ ${esc(v.n)}</button>`)
+     .join(
+       ''
+     )}<button class="btn" data-pa="@carcass" title="Две боковины, дно, крыша (или царги), задняя стенка, цоколь">Собрать корпус</button><button class="btn" data-pa="@clear">Очистить</button></div>
+   <div class="tblwrap"><table class="mtbl petbl"><thead><tr><th>№</th><th>Название</th><th>Тип</th><th>Материал</th><th>X</th><th>Y</th><th>Z</th><th>Ш</th><th>Г</th><th>В</th><th>Толщ.</th><th></th></tr></thead><tbody>${parts
+     .map(
+       (p, i) =>
+         `<tr data-pi="${i}"><td class="n">${i + 1}</td><td><input data-pe="${i}:n" value="${esc(p.n || '')}" aria-label="Название детали"></td><td><select data-pe="${i}:k">${Object.entries(
+           PART_K
+         )
+           .map(([k, v]) => `<option value="${k}" ${k === p.k ? 'selected' : ''}>${esc(v.n)}</option>`)
+           .join('')}</select></td><td><select data-pe="${i}:mat">${Object.entries(PART_MAT)
+           .map(([k, v]) => `<option value="${k}" ${k === p.mat ? 'selected' : ''}>${esc(v)}</option>`)
+           .join(
+             ''
+           )}</select></td><td>${num(i, 'x', p.x)}</td><td>${num(i, 'y', p.y)}</td><td>${num(i, 'z', p.z)}</td><td>${num(i, 'w', p.w)}</td><td>${num(i, 'd', p.d)}</td><td>${num(i, 'h', p.h)}</td><td>${num(i, 't', partT(p))}</td><td style="white-space:nowrap"><button class="btn" data-pd="${i}" title="Копия детали">⧉</button><button class="btn" data-px="${i}" aria-label="Удалить деталь">×</button></td></tr>`
+     )
+     .join('')}</tbody></table></div>
+   ${parts.length ? '' : '<p class="hint">Деталей нет — добавьте их кнопками выше или соберите корпус.</p>'}</div>`;
+  // the caller re-renders (the editor included) after a change
+  const ch = () => done();
+  el.querySelectorAll('[data-pa]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        const k = b.dataset.pa,
+          ps = get();
+        if (k === '@clear') ps.length = 0;
+        else if (k === '@carcass') ps.push(...partCarcass(U, U.base));
+        else ps.push(partPreset(k, U, ps));
+        ps.forEach((p, i) => (p.id = i + 1));
+        ch();
+      })
+  );
+  el.querySelectorAll('[data-pe]').forEach(
+    i =>
+      (i.onchange = () => {
+        pushUndo();
+        const [ix, key] = i.dataset.pe.split(':');
+        const p = get()[+ix];
+        if (!p) return;
+        if (key === 'n') p.n = i.value;
+        else if (key === 'k') {
+          p.k = i.value;
+          if (!p.n || Object.values(PART_K).some(v => v.n === p.n)) p.n = PART_K[p.k].n;
+          p.mat = PART_K[p.k].mat;
+        } else if (key === 'mat') p.mat = i.value;
+        else if (key === 't') {
+          // the thinnest size becomes the new thickness
+          const v = Math.max(1, parseFloat(i.value) || 1);
+          const ax = ['w', 'd', 'h'].reduce((a, b) => (p[b] < p[a] ? b : a));
+          p[ax] = v;
+        } else {
+          const v = parseFloat(i.value);
+          if (!isFinite(v)) return;
+          p[key] = ['w', 'd', 'h'].includes(key) ? Math.max(1, v) : v;
+        }
+        ch();
+      })
+  );
+  el.querySelectorAll('[data-pd]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        const ps = get(),
+          p = ps[+b.dataset.pd];
+        const c = { ...p, id: ps.length + 1 };
+        // a copy goes next to the original along its thin axis (a shelf above a shelf, a side beside a side)
+        const ax = ['w', 'd', 'h'].reduce((a, b2) => (p[b2] < p[a] ? b2 : a));
+        if (ax === 'h') c.z = r1(p.z + Math.min(300, (U.z1 - U.z0) / 4));
+        else if (ax === 'w') c.x = r1(Math.min(U.w - p.w, p.x + 300));
+        else c.y = r1(p.y + 50);
+        ps.splice(+b.dataset.pd + 1, 0, c);
+        ps.forEach((q, i) => (q.id = i + 1));
+        ch();
+      })
+  );
+  el.querySelectorAll('[data-px]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        get().splice(+b.dataset.px, 1);
+        ch();
+      })
+  );
 }
 
 // ===== io/cad-doc.js =====
