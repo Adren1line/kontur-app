@@ -5241,6 +5241,96 @@ label.ck {
   color: inherit;
 }
 
+/* ---------- base palette (RAL Classic + metals) ---------- */
+#palPop {
+  position: fixed;
+  z-index: 2000;
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(440px, calc(100vh - 16px));
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+#palPop .palh {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+#palPop #palInfo {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#palPop #palX {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+#palPop .palb {
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+}
+#palPop .palg {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+#palPop .palrow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+  gap: 4px;
+}
+#palPop .palsw {
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 5px;
+  cursor: pointer;
+}
+#palPop .palsw:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+#palPop .palsw.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+#palPop .palf {
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+}
+html[data-form='phone'] #palPop {
+  left: 0 !important;
+  right: 0;
+  top: auto !important;
+  bottom: 0;
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 14px 14px 0 0;
+}
+html[data-form='phone'] #palPop .palrow {
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+}
+[data-skin='mac'] #palPop {
+  background: rgba(250, 250, 252, 0.97);
+}
+
 /* ---------- own parts of furniture modules (v41) ---------- */
 .pe {
   display: flex;
@@ -5487,6 +5577,32 @@ html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix .tl {
 }
 html:not([data-form='phone'])[data-tlab='labels'] #tools .tfix .tlab {
   grid-column: 1/-1;
+}
+
+/* «Потолок» in the 3D bar: each kind is a check — ticked = shown */
+#v3gTop [data-top]:not([data-top='all'])::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.7;
+}
+#v3gTop [data-top].on:not([data-top='all'])::before {
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5' fill='none' stroke='white' stroke-width='1.8'/%3E%3C/svg%3E") center/10px no-repeat;
+  border-color: var(--accent);
+  opacity: 1;
+}
+#v3gTop [data-top].on {
+  background: none;
+  color: inherit;
+}
+#v3gTop [data-top='all'] {
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
 }
 
 /* ===== phones, tablets, touch (ui/responsive.js sets html[data-form][data-touch][data-orient]) ===== */
@@ -6498,7 +6614,7 @@ html[data-form='phone'] .modal table.cards td::before {
       <div id="v3bar">
         <div class="v3grp"><button class="v3g" title="Направление взгляда">Вид ▾</button><div class="v3menu" hidden><button data-a="iso">Изометрия</button><button data-a="top">Сверху</button><button data-a="front" title="Вид спереди (с юга)">Спереди</button><button data-a="right" title="Вид справа (с востока)">Справа</button><button data-a="left" title="Вид слева (с запада)">Слева</button><button data-a="back" title="Вид сзади (с севера)">Сзади</button><button data-a="sel" title="Приблизить выделенное (двойной щелчок по объекту — центр вращения)">К выделенному</button></div></div><button data-a="fit" title="Показать всё">Всё</button>
         <span class="sp"></span>
-        <button data-a="cut" id="v3cut" title="Стены перед камерой срезаются, потолок скрыт. Щелчок — полные / срез / низкие">Стены: полные</button><button data-a="cuth" id="v3cuth" title="Высота среза стен" hidden>Срез: 400</button>
+        <button data-a="cut" id="v3cut" title="Стены перед камерой срезаются, потолок скрыт. Щелчок — полные / срез / низкие">Стены: полные</button><button data-a="cuth" id="v3cuth" title="Высота среза стен" hidden>Срез: 400</button><div class="v3grp"><button class="v3g" id="v3top" title="Скрыть крышу, чистовой потолок или перекрытие, чтобы заглянуть в помещение сверху">Потолок ▾</button><div class="v3menu" hidden id="v3gTop"><button data-top="roof" class="on" title="Кровля и скаты">Крыша</button><button data-top="ceil" class="on" title="Натяжной, ГКЛ, реечный, отделка по плите">Чистовой потолок</button><button data-top="slab" class="on" title="Несущая плита над этажом">Перекрытие</button><button data-top="all" title="Скрыть всё над помещением или вернуть">Скрыть всё / показать всё</button></div></div>
         <span class="sp"></span>
         <div class="v3grp"><button class="v3g" title="Тени, рёбра, гладкость, фазы, состав по категориям">Показ ▾</button><div class="v3menu" hidden id="v3gShow"><button data-a="shadow" class="on">Тени</button><button data-a="edges" class="on">Рёбра</button><button data-a="tq" id="v3tq">Гладкость: авто</button><button data-a="cats" id="v3catsBtn">Состав…</button></div></div><div class="v3grp"><button class="v3g" title="Перемещение и поворот объекта, труба в 3D, рабочая плоскость">Правка ▾</button><div class="v3menu" hidden><button data-a="move" title="Перетаскивание выбранного объекта">Переместить</button><button data-a="rot" title="Поворот выбранного объекта">Повернуть</button><button data-a="pipe3" title="Нарисовать трубу прямо в 3D: щелчок по точке подключения прибора или по поверхности; Shift — вертикальный участок (подъём/опуск)">Труба</button><button data-a="wp" id="v3wp" title="Рабочая плоскость для рисования в 3D, когда курсор не над объектом">Плоскость: пол</button></div></div>
       </div>
@@ -6694,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '41.1';
+const APP_VER = '42';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -8648,7 +8764,9 @@ function parseDXF(text) {
   const loops = [],
     segs = [],
     points = [],
-    texts = [];
+    texts = [],
+    raw = [],
+    centers = [];
   const poly = (vs, closed) => {
     const out = [];
     for (let k = 0; k < vs.length; k++) {
@@ -8671,6 +8789,7 @@ function parseDXF(text) {
       }
       const closed = (num(e, 70) & 1) === 1;
       const pts = poly(vs, closed);
+      raw.push({ pts: closed ? pts.concat([pts[0]]) : pts, arc: false, vs: vs.map(v => P(v.x, v.y)) });
       if (closed || dist(pts[0], pts[pts.length - 1]) < 1e-6) loops.push(pts);
       else segs.push(pts);
     } else if (e.t === 'POLYLINE') {
@@ -8681,23 +8800,34 @@ function parseDXF(text) {
       k = j;
       const closed = (num(e, 70) & 1) === 1;
       const pts = poly(vs, closed);
+      if (pts.length > 1)
+        raw.push({ pts: closed ? pts.concat([pts[0]]) : pts, arc: false, vs: vs.map(v => P(v.x, v.y)) });
       if (pts.length > 1) {
         if (closed) loops.push(pts);
         else segs.push(pts);
       }
-    } else if (e.t === 'LINE') segs.push([P(num(e, 10), num(e, 20)), P(num(e, 11), num(e, 21))]);
-    else if (e.t === 'ARC') {
+    } else if (e.t === 'LINE') {
+      const l = [P(num(e, 10), num(e, 20)), P(num(e, 11), num(e, 21))];
+      segs.push(l);
+      raw.push({ pts: l, arc: false });
+    } else if (e.t === 'ARC') {
       const c = P(num(e, 10), num(e, 20)),
         r = num(e, 40);
       let a0 = num(e, 50) * D2R,
         a1 = num(e, 51) * D2R;
       const sw = sweepOf(a0, a1);
       const N = Math.max(2, Math.ceil(sw / (Math.PI / 16)));
-      segs.push(Array.from({ length: N + 1 }, (_, q) => polar(c, a0 + (sw * q) / N, r)));
+      const ap = Array.from({ length: N + 1 }, (_, q) => polar(c, a0 + (sw * q) / N, r));
+      segs.push(ap);
+      raw.push({ pts: ap, arc: true });
+      centers.push(c);
     } else if (e.t === 'CIRCLE') {
       const c = P(num(e, 10), num(e, 20)),
         r = num(e, 40);
-      loops.push(Array.from({ length: 32 }, (_, q) => polar(c, (q / 32) * TAU, r)));
+      const cp = Array.from({ length: 32 }, (_, q) => polar(c, (q / 32) * TAU, r));
+      loops.push(cp);
+      raw.push({ pts: cp.concat([cp[0]]), arc: true, circ: true });
+      centers.push(c);
     } else if (e.t === 'POINT') points.push({ p: P(num(e, 10), num(e, 20)), layer: lay });
     else if (e.t === 'TEXT' || e.t === 'MTEXT') {
       let s = str(e, 1)
@@ -8778,7 +8908,16 @@ function parseDXF(text) {
     an: named,
     points: points.map(p => [Math.round(p.p.x * sc * 100) / 100, Math.round(p.p.y * sc * 100) / 100]),
     loops: loops.length,
-    unit: sc
+    unit: sc,
+    // every line of the drawing as it is (polylines, lines, arcs), for display and snaps: {p:[[x,y]…], arc?, v?: true vertices}
+    lines: raw.map(r => {
+      const R2 = q => [Math.round(q.x * sc * 100) / 100, Math.round(q.y * sc * 100) / 100];
+      const o = { p: r.pts.map(R2) };
+      if (r.arc) o.arc = 1;
+      if (r.vs) o.v = r.vs.map(R2);
+      return o;
+    }),
+    centers: centers.map(c => [Math.round(c.x * sc * 100) / 100, Math.round(c.y * sc * 100) / 100])
   };
 }
 
@@ -16933,6 +17072,7 @@ function init3D() {
     );
   try {
     cutLabels();
+    topLabels();
   } catch (err) {}
   new ResizeObserver(() => {
     const w = host.clientWidth,
@@ -17056,10 +17196,42 @@ function cutSet(obj, k, z0) {
   obj.position.z = u.cut0.pz * k + z0 * (1 - k);
   obj.updateMatrixWorld && obj.updateMatrixWorld(true);
 }
+/* ---------- «Потолок»: what is above the room is hidden by kind — roof, finished ceiling, floor slab above ---------- */
+const TOPK = { roof: 'Крыша', ceil: 'Чистовой потолок', slab: 'Перекрытие' };
+/** Hidden kinds of the top of the room in 3D (true = hidden). */
+function topCfg() {
+  if (!S.x.top) S.x.top = {};
+  return S.x.top;
+}
+/** Kind of an element for the «Потолок» switch: roof, finished ceiling, slab over the level (or null). */
+function topKind(e) {
+  if (e.type === 'roof') return 'roof';
+  if (e.type === 'ceil') return 'ceil';
+  if (e.type === 'slab' && (+e.z || 0) >= (S.ceil || 2700) - 60) return 'slab';
+  return null;
+}
+function topLabels() {
+  const T = topCfg(),
+    n = Object.keys(TOPK).filter(k => T[k]).length;
+  const b = $('#v3top');
+  if (b) {
+    b.textContent = n ? `Потолок: скрыто ${n} из 3 ▾` : 'Потолок ▾';
+    b.classList.toggle('on', n > 0);
+  }
+  document
+    .querySelectorAll('#v3gTop [data-top]:not([data-top="all"])')
+    .forEach(x => x.classList.toggle('on', !T[x.dataset.top]));
+}
 // id → k (height factor) or 'hide'
 function cutPlan() {
   const C = cutCfg(),
     res = new Map();
+  const TH = topCfg();
+  if (TH.roof || TH.ceil || TH.slab)
+    for (const e of S.ents) {
+      const k = topKind(e);
+      if (k && TH[k]) res.set(e.id, 'hide');
+    }
   if (C.mode === 'off' || !V3.inited) return res;
   const cam = V3.cam.position,
     T = V3.ctl.target;
@@ -17151,6 +17323,7 @@ function applyCut(X) {
   if (V3.cutLbl !== cutCfg().mode + cutCfg().h) {
     V3.cutLbl = cutCfg().mode + cutCfg().h;
     cutLabels();
+    topLabels();
   }
 }
 // section caps on cut walls: every layer of the wall in its own colour (darker), openings and niches respected
@@ -18461,7 +18634,7 @@ function initBuild() {
       document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.toggle('open', x === g && open));
       return;
     }
-    if (e.target.closest('.v3menu button')) {
+    if (e.target.closest('.v3menu button') && !e.target.closest('[data-top]')) {
       menus.forEach(x => (x.hidden = true));
       document.querySelectorAll('#v3bar .v3g').forEach(x => x.classList.remove('open'));
     }
@@ -18496,6 +18669,25 @@ function initBuild() {
       save();
       req3();
       log(C.mode === 'off' ? 'Стены в 3D: полные' : `Стены в 3D: ${CUTM[C.mode]} до ${C.h} мм, потолок скрыт`);
+      return;
+    }
+    const tb = e.target.closest('button[data-top]');
+    if (tb) {
+      const T = topCfg(),
+        k = tb.dataset.top;
+      if (k === 'all') {
+        const any = Object.keys(TOPK).some(x => !T[x]);
+        for (const x of Object.keys(TOPK)) T[x] = any;
+      } else T[k] = !T[k];
+      topLabels();
+      save();
+      req3();
+      const hid = Object.keys(TOPK).filter(x => T[x]);
+      log(
+        hid.length
+          ? 'Скрыто в 3D: ' + hid.map(x => TOPK[x].toLowerCase()).join(', ')
+          : 'Крыша, потолок и перекрытие видны'
+      );
       return;
     }
     const w = e.target.closest('button[data-a="wp"]');
@@ -20191,7 +20383,7 @@ function openUI() {
     `<select id="${id}">${opts.map(([k, n]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
   const th = THEMES[themeState.UI.theme] || THEMES.dark;
   const col = (id, v, def, label) =>
-    `<label>${label}<span class="colrow"><input type="color" id="${id}" value="${hexOk(v) ? v : def}"><button class="btn" data-rst="${id}">авто</button></span></label>`;
+    `<label>${label}<span class="colrow"><input type="color" data-nopal id="${id}" value="${hexOk(v) ? v : def}"><button class="btn" data-rst="${id}">авто</button></span></label>`;
   const d = miniDlg(
     'uidlg',
     'Настройки интерфейса',
@@ -20956,7 +21148,7 @@ function renderLayers() {
     const row = document.createElement('div');
     row.className = 'lrow' + (L.name === S.cur ? ' cur' : '');
     row.title = 'Щелчок — сделать текущим (или перенести выбранное), двойной по имени — переименовать';
-    row.innerHTML = `<button class="ib ${L.on ? '' : 'off'}" data-a="on" aria-label="Видимость">${ICON.eye}</button><button class="ib ${L.lock ? 'on' : ''}" data-a="lock" aria-label="Блокировка">${L.lock ? ICON.lock : ICON.unlock}</button><label class="sw" style="--c:${L.color}"><input type="color" value="${L.color}" aria-label="Цвет слоя"></label><span class="lname">${esc(L.name)}</span><span class="cnt">${counts.get(L.name) || 0}</span>`;
+    row.innerHTML = `<button class="ib ${L.on ? '' : 'off'}" data-a="on" aria-label="Видимость">${ICON.eye}</button><button class="ib ${L.lock ? 'on' : ''}" data-a="lock" aria-label="Блокировка">${L.lock ? ICON.lock : ICON.unlock}</button><label class="sw" style="--c:${L.color}"><input type="color" data-nopal value="${L.color}" aria-label="Цвет слоя"></label><span class="lname">${esc(L.name)}</span><span class="cnt">${counts.get(L.name) || 0}</span>`;
     row.querySelector('[data-a=on]').onclick = ev => {
       ev.stopPropagation();
       setLayerOn(L, !L.on);
@@ -22804,6 +22996,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -23362,6 +23555,51 @@ function xSpec() {
     'Коллектор водоснабжения',
     'Сантехника'
   ];
+  // colours of the elements: RAL Classic and NCS for paint colours, the name for metals
+  const DRAFT = new Set([
+    'line',
+    'pline',
+    'arc',
+    'circle',
+    'text',
+    'mtext',
+    'dim',
+    'leader',
+    'hatch',
+    'tag',
+    'note',
+    'img',
+    'rev',
+    'sec',
+    'cam'
+  ]);
+  const used = palUsed(
+    S.ents.filter(e => visible(e) && !DRAFT.has(e.type) && !/^(Размеры|Текст|Аннотации)$/.test(e.layer || ''))
+  );
+  const SC = 'Цвета и покрытия (RAL Classic / NCS)';
+  // colours from the palette — by their code; the others are gathered under the nearest RAL
+  const grp = new Map();
+  for (const [hex, set] of used) {
+    const I = palInfo(hex),
+      k = I.kind === 'metal' ? 'm' + I.key : (I.exact ? 'r' : 'a') + I.ral;
+    if (!grp.has(k)) grp.set(k, { I, hexes: [], ents: new Set() });
+    const G = grp.get(k);
+    G.hexes.push(hex);
+    for (const e of set) G.ents.add(e);
+  }
+  for (const [k, G] of [...grp.entries()].sort(
+    (a, b) => a[0].slice(1).localeCompare(b[0].slice(1)) || a[0].localeCompare(b[0])
+  )) {
+    const where = [...new Set([...G.ents].map(e => e.layer || '—'))].join(', ');
+    const name =
+      G.I.kind === 'metal'
+        ? 'Металл: ' + G.I.name
+        : palLabel(G.hexes[0]) + (G.I.exact ? '' : ' — цвет не из палитры, указан ближайший');
+    put(SC, 'col' + k, { name: name + ' — ' + where, u: 'шт' }, r => {
+      r.q += G.ents.size;
+      for (const e of G.ents) r.ids.push(e.id);
+    });
+  }
   return [...sec.entries()]
     .sort((a, b) => ((order.indexOf(a[0]) + 99) % 99) - ((order.indexOf(b[0]) + 99) % 99))
     .map(([t, m]) => [t, [...m.values()]]);
@@ -24208,7 +24446,173 @@ function ctBind(el, t, commit, rer) {
 /* profiles dialog */
 let prSel = null,
   prPick = null,
-  prView = null;
+  prView = null,
+  prHover = null;
+/* ---------- snaps on the section: the DXF is just a set of lines — points are taken only from its geometry ---------- */
+const PRSN = {
+  end: 'Конец',
+  pt: 'Точка DXF',
+  cen: 'Центр дуги',
+  int: 'Пересечение',
+  mid: 'Середина',
+  near: 'На линии'
+};
+/** Applies a point transform to the drawing lines and arc centers of a profile. */
+function prMapGeo(p, f) {
+  if (p.lines)
+    p.lines = p.lines.map(l => {
+      const o = { ...l, p: l.p.map(f) };
+      if (l.v) o.v = l.v.map(f);
+      return o;
+    });
+  if (p.centers) p.centers = p.centers.map(f);
+  delete p._snapC;
+}
+/** The lines of a section: those of the DXF, or the outline when the profile has none. */
+function prLines(p) {
+  return p.lines && p.lines.length ? p.lines : [{ p: p.pts.concat([p.pts[0]]), v: p.pts.concat([p.pts[0]]) }];
+}
+/** Snap candidates of a profile (cached by its geometry): [{k, q}] and the straight pieces for «on the line». */
+function prSnapSet(p) {
+  const key = JSON.stringify([
+    p.pts.length,
+    p.pts[0],
+    (p.lines || []).length,
+    p.lines && p.lines[0] && p.lines[0].p[0]
+  ]);
+  if (p._snapC && p._snapC.key === key) return p._snapC;
+  const pts = [],
+    segs = [];
+  const add = (k, q) => {
+    if (!pts.some(o => o.k === k && Math.abs(o.q[0] - q[0]) < 0.01 && Math.abs(o.q[1] - q[1]) < 0.01))
+      pts.push({ k, q });
+  };
+  for (const l of prLines(p)) {
+    const P_ = l.p;
+    for (let i = 0; i + 1 < P_.length; i++) segs.push([P_[i], P_[i + 1]]);
+    if (l.arc) {
+      if (!l.circ) {
+        add('end', P_[0]);
+        add('end', P_[P_.length - 1]);
+        add('mid', P_[Math.floor(P_.length / 2)]);
+      }
+    } else {
+      const V = l.v || P_;
+      V.forEach(q => add('end', q));
+      // the middle of every straight piece between true vertices
+      let j = 0;
+      for (let i = 0; i + 1 < V.length; i++) {
+        while (j < P_.length && (Math.abs(P_[j][0] - V[i][0]) > 0.01 || Math.abs(P_[j][1] - V[i][1]) > 0.01)) j++;
+        const n = P_[j + 1];
+        if (n && Math.abs(n[0] - V[i + 1][0]) < 0.01 && Math.abs(n[1] - V[i + 1][1]) < 0.01)
+          add('mid', [(V[i][0] + n[0]) / 2, (V[i][1] + n[1]) / 2]);
+      }
+    }
+  }
+  for (const q of p.extra || []) add('pt', q);
+  for (const q of p.centers || []) add('cen', q);
+  // intersections of the pieces (ends that only touch are already ends)
+  const S_ = segs.length > 900 ? segs.slice(0, 900) : segs;
+  for (let i = 0; i < S_.length; i++)
+    for (let j = i + 1; j < S_.length; j++) {
+      const [a, b] = S_[i],
+        [c, d] = S_[j];
+      const r = [b[0] - a[0], b[1] - a[1]],
+        s2 = [d[0] - c[0], d[1] - c[1]],
+        den = r[0] * s2[1] - r[1] * s2[0];
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((c[0] - a[0]) * s2[1] - (c[1] - a[1]) * s2[0]) / den,
+        u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+      if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) continue;
+      const q = [a[0] + r[0] * t, a[1] + r[1] * t];
+      if (pts.some(o => o.k === 'end' && Math.abs(o.q[0] - q[0]) < 0.05 && Math.abs(o.q[1] - q[1]) < 0.05)) continue;
+      add('int', q);
+    }
+  Object.defineProperty(p, '_snapC', {
+    enumerable: false,
+    writable: true,
+    configurable: true,
+    value: { key, pts, segs }
+  });
+  return p._snapC;
+}
+/** The snap under the cursor (screen px): points first, then the nearest point on a line. */
+function prSnap(p, sx, sy) {
+  if (!prView) return null;
+  const C = prSnapSet(p),
+    V = prView,
+    R = 12;
+  const pri = { end: 0, pt: 0, cen: 1, int: 1, mid: 2 };
+  let best = null,
+    bs = Infinity;
+  for (const o of C.pts) {
+    const s = V.to(o.q),
+      d = Math.hypot(s[0] - sx, s[1] - sy);
+    if (d > R) continue;
+    const sc = d + pri[o.k] * 3;
+    if (sc < bs) {
+      bs = sc;
+      best = o;
+    }
+  }
+  if (best) return best;
+  let nd = 8;
+  for (const [a, b] of C.segs) {
+    const A = V.to(a),
+      B = V.to(b),
+      dx = B[0] - A[0],
+      dy = B[1] - A[1],
+      L2 = dx * dx + dy * dy;
+    if (!L2) continue;
+    const t = Math.max(0, Math.min(1, ((sx - A[0]) * dx + (sy - A[1]) * dy) / L2));
+    const d = Math.hypot(A[0] + dx * t - sx, A[1] + dy * t - sy);
+    if (d < nd) {
+      nd = d;
+      best = { k: 'near', q: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] };
+    }
+  }
+  return best;
+}
+/** Snap marker in the usual CAD shapes. */
+function prMark(g, k, x, y) {
+  const r = 6;
+  g.save();
+  g.strokeStyle = '#ffd34d';
+  g.lineWidth = 2;
+  g.beginPath();
+  if (k === 'end') g.rect(x - r, y - r, 2 * r, 2 * r);
+  else if (k === 'mid') {
+    g.moveTo(x, y - r - 1);
+    g.lineTo(x + r + 1, y + r);
+    g.lineTo(x - r - 1, y + r);
+    g.closePath();
+  } else if (k === 'int') {
+    g.moveTo(x - r, y - r);
+    g.lineTo(x + r, y + r);
+    g.moveTo(x + r, y - r);
+    g.lineTo(x - r, y + r);
+  } else if (k === 'cen') {
+    g.arc(x, y, r, 0, TAU);
+    g.moveTo(x - 3, y);
+    g.lineTo(x + 3, y);
+    g.moveTo(x, y - 3);
+    g.lineTo(x, y + 3);
+  } else if (k === 'pt') {
+    g.moveTo(x, y - r - 1);
+    g.lineTo(x + r + 1, y);
+    g.lineTo(x, y + r + 1);
+    g.lineTo(x - r - 1, y);
+    g.closePath();
+  } else {
+    g.moveTo(x - r, y - r);
+    g.lineTo(x + r, y - r);
+    g.lineTo(x - r, y + r);
+    g.lineTo(x + r, y + r);
+    g.closePath();
+  }
+  g.stroke();
+  g.restore();
+}
 const prUsage = id =>
   S.ents.filter(
     e => e.type === 'door' && e.cfg && (e.cfg.frame.prof === id || e.cfg.ext.prof === id || e.cfg.casing.prof === id)
@@ -24250,6 +24654,7 @@ function renderProfiles() {
     )}</select></label><label>Цвет по умолчанию<input type="color" id="prCol" value="${p.color || '#e8e2d6'}"></label></div>
   <div class="hint">Сечение левой стойки в плане: <b style="color:var(--fg)">+X — к проёму</b>, <b style="color:var(--fg)">+Y — к лицевой стороне</b> (сторона А, где закрывается полотно). Габарит ${fmt(Math.max(...xs) - Math.min(...xs))} × ${fmt(Math.max(...ys) - Math.min(...ys))} мм, вершин ${p.pts.length}.</div>
   <canvas id="prc" aria-label="Сечение профиля"></canvas>
+  ${prPick ? `<div class="hint prsnap" id="prSnapInfo">Точка ${prPick}: подведите курсор — ■ конец, ▲ середина, ✕ пересечение, ◯ центр дуги, ◆ точка DXF, ⌛ на линии</div>` : ''}
   <div class="btnrow"><button class="btn" data-tf="mx">Отразить по X</button><button class="btn" data-tf="my">Отразить по Y</button><button class="btn" data-tf="r90">Повернуть на 90°</button><button class="btn" data-tf="org">Начало координат в точку ${p.kind === 'frame' ? 'B' : p.kind === 'ext' ? 'F' : 'W'}</button></div>
   <div class="sech">Точки стыковки</div>
   <div style="display:flex;flex-direction:column;gap:6px">${k.an
@@ -24258,31 +24663,43 @@ function renderProfiles() {
       return `<div class="anl"><b>${a}</b><span>${n}<small>${d}</small></span><input data-ax="${a}" value="${v ? fmt(v[0]) : ''}" placeholder="X" aria-label="${a} X"><input data-ay="${a}" value="${v ? fmt(v[1]) : ''}" placeholder="Y" aria-label="${a} Y"><button class="btn ${prPick === a ? 'on' : ''}" data-pick="${a}">${prPick === a ? 'Щёлкните на сечении' : 'Указать'}</button></div>`;
     })
     .join('')}</div>
-  <div class="hint">${profReady(p) ? '<span class="ok">Все точки стыковки заданы.</span>' : '<span class="warn">Задайте все точки — иначе элемент встанет по точке (0,0).</span>'} Точки привязываются к вершинам контура и к точкам из DXF. В DXF их можно подписать текстом рядом с точкой (POINT): B, L, E, C для коробки, F и C для добора, W для наличника — тогда они назначатся сами.</div>
+  <div class="hint">${profReady(p) ? '<span class="ok">Все точки стыковки заданы.</span>' : '<span class="warn">Задайте все точки — иначе элемент встанет по точке (0,0).</span>'} Точки ставятся только по привязкам: концы и середины линий, пересечения, центры дуг, точки DXF, ближайшая точка на линии. В DXF их можно подписать текстом рядом с точкой (POINT): B, L, E, C для коробки, F и C для добора, W для наличника — тогда они назначатся сами.</div>
   <div class="btnrow"><button class="btn" id="prDup">Дублировать</button><button class="btn" id="prDel" ${prUsage(p.id) || S.profiles.filter(x => x.kind === p.kind).length < 2 ? 'disabled' : ''}>Удалить</button></div>`;
   drawProfile(p);
   const c = $('#prc');
+  const at = ev => {
+    const r = c.getBoundingClientRect();
+    return [ev.clientX - r.left, ev.clientY - r.top];
+  };
+  c.onpointermove = ev => {
+    if (!prPick || !prView) return;
+    const [sx, sy] = at(ev);
+    prHover = prSnap(p, sx, sy);
+    drawProfile(p);
+    const inf = $('#prSnapInfo');
+    if (inf)
+      inf.textContent = prHover
+        ? `${PRSN[prHover.k]}: X ${fmt(prHover.q[0])}, Y ${fmt(prHover.q[1])}`
+        : 'Нет привязки рядом — подведите курсор к линии, концу, середине, пересечению или центру дуги';
+  };
+  c.onpointerleave = () => {
+    prHover = null;
+    drawProfile(p);
+  };
   c.onclick = ev => {
     if (!prPick || !prView) return;
-    const r = c.getBoundingClientRect();
-    const sx = ev.clientX - r.left,
-      sy = ev.clientY - r.top;
-    const V = prView;
-    let best = null,
-      bd = 10;
-    for (const q of p.pts.concat(p.extra || [])) {
-      const s = V.to(q);
-      const d = Math.hypot(s[0] - sx, s[1] - sy);
-      if (d < bd) {
-        bd = d;
-        best = q;
-      }
+    const [sx, sy] = at(ev);
+    const h = prSnap(p, sx, sy);
+    if (!h) {
+      log('Точка не поставлена: рядом нет привязки. Подведите курсор к линии сечения или введите X и Y вручную.', true);
+      return;
     }
-    const w = best || V.from(sx, sy);
     pushUndo();
     p.an = p.an || {};
-    p.an[prPick] = [Math.round(w[0] * 10) / 10, Math.round(w[1] * 10) / 10];
+    p.an[prPick] = [Math.round(h.q[0] * 100) / 100, Math.round(h.q[1] * 100) / 100];
+    log(`Точка ${prPick}: ${PRSN[h.k].toLowerCase()} (${fmt(h.q[0])}; ${fmt(h.q[1])})`);
     prPick = null;
+    prHover = null;
     changed();
     renderProfiles();
   };
@@ -24336,6 +24753,7 @@ function renderProfiles() {
           if (t !== 'r90') p.pts.reverse();
           for (const a in p.an) p.an[a] = f(p.an[a]);
           if (p.extra) p.extra = p.extra.map(f);
+          prMapGeo(p, f);
         } else {
           const k0 = p.kind === 'frame' ? 'B' : p.kind === 'ext' ? 'F' : 'W';
           const o = p.an && p.an[k0];
@@ -24344,6 +24762,7 @@ function renderProfiles() {
             p.pts = p.pts.map(g);
             for (const a in p.an) p.an[a] = g(p.an[a]);
             if (p.extra) p.extra = p.extra.map(g);
+            prMapGeo(p, g);
           }
         }
         changed();
@@ -24380,7 +24799,7 @@ function drawProfile(p) {
   g.scale(dpr, dpr);
   g.fillStyle = '#14171b';
   g.fillRect(0, 0, W, H);
-  const all = p.pts.concat(Object.values(p.an || {}), p.extra || []);
+  const all = p.pts.concat(Object.values(p.an || {}), p.extra || [], ...(p.lines || []).map(l => l.p));
   const xs = all.map(q => q[0]),
     ys = all.map(q => q[1]);
   const x0 = Math.min(...xs, 0),
@@ -24439,6 +24858,19 @@ function drawProfile(p) {
     const s = to(q);
     g.fillRect(s[0] - 2, s[1] - 2, 4, 4);
   }
+  // every line of the DXF (grooves, seals, inner contours) — what the points snap to
+  if (p.lines && p.lines.length) {
+    g.strokeStyle = 'rgba(217,221,227,.75)';
+    g.lineWidth = 1;
+    for (const l of p.lines) {
+      g.beginPath();
+      l.p.forEach((q, i) => {
+        const s2 = to(q);
+        i ? g.lineTo(s2[0], s2[1]) : g.moveTo(s2[0], s2[1]);
+      });
+      g.stroke();
+    }
+  }
   g.strokeStyle = '#8db6ff';
   for (const q of p.extra || []) {
     const s = to(q);
@@ -24454,6 +24886,13 @@ function drawProfile(p) {
     g.fill();
     g.font = '600 12px "IBM Plex Mono", monospace';
     g.fillText(a, s[0] + 7, s[1] - 7);
+  }
+  if (prPick && prHover) {
+    const s2 = to(prHover.q);
+    prMark(g, prHover.k, s2[0], s2[1]);
+    g.font = '600 11px "IBM Plex Sans", sans-serif';
+    g.fillStyle = '#ffd34d';
+    g.fillText(PRSN[prHover.k], s2[0] + 10, s2[1] + 16);
   }
 }
 
@@ -24492,7 +24931,9 @@ function initProfilesDialog() {
         color: '#e8e2d6',
         pts: r.pts,
         an: r.an,
-        extra: r.points
+        extra: r.points,
+        lines: r.lines,
+        centers: r.centers
       };
       if (/налич|casing/i.test(f.name)) p.kind = 'casing';
       else if (/добор|ext/i.test(f.name)) p.kind = 'ext';
@@ -25003,7 +25444,7 @@ function renderMEP() {
     <div class="tblwrap"><table class="mtbl"><thead><tr><th>№</th><th>Название</th><th>Автомат</th><th>Кабель</th><th>Цвет</th><th style="text-align:right">Устр.</th><th style="text-align:right">P, Вт</th><th style="text-align:right">I, А</th><th style="text-align:right">Кабель, м</th><th>Проверка</th><th></th></tr></thead><tbody>${S.elec.groups
       .map(gr => {
         const s = st.get(gr.n) || { P: 0, n: 0, L: 0, ids: [] };
-        return `<tr data-g="${gr.n}"><td class="n">${gr.n}</td><td><input data-k="name" value="${esc(gr.name)}" aria-label="Название группы"></td><td><select data-k="brk">${BREAKERS.map(b => `<option ${b === gr.brk ? 'selected' : ''}>${b}</option>`).join('')}</select></td><td><select data-k="cable">${CABLES.map(c => `<option ${c === gr.cable ? 'selected' : ''}>${c}</option>`).join('')}</select></td><td><input type="color" data-k="col" value="${gr.col}" aria-label="Цвет группы"></td><td class="n">${s.n}</td><td class="n">${Math.round(s.P)}</td><td class="n">${(s.P / 230).toFixed(1)}</td><td class="n">${(s.L / 1000).toFixed(1)}</td><td>${groupCheck(
+        return `<tr data-g="${gr.n}"><td class="n">${gr.n}</td><td><input data-k="name" value="${esc(gr.name)}" aria-label="Название группы"></td><td><select data-k="brk">${BREAKERS.map(b => `<option ${b === gr.brk ? 'selected' : ''}>${b}</option>`).join('')}</select></td><td><select data-k="cable">${CABLES.map(c => `<option ${c === gr.cable ? 'selected' : ''}>${c}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${gr.col}" aria-label="Цвет группы"></td><td class="n">${s.n}</td><td class="n">${Math.round(s.P)}</td><td class="n">${(s.P / 230).toFixed(1)}</td><td class="n">${(s.L / 1000).toFixed(1)}</td><td>${groupCheck(
           gr,
           s
         )
@@ -25069,7 +25510,7 @@ function renderMEP() {
     <div class="tblwrap"><table class="mtbl"><thead><tr><th>Обозначение</th><th>Название</th><th>Тип</th><th>Цвет</th><th style="text-align:right">Устройств</th><th style="text-align:right">Σ расход, м³/ч</th><th style="text-align:right">Воздуховоды, м</th><th></th></tr></thead><tbody>${S.vent.systems
       .map((s, i) => {
         const r = stat.get(s.id);
-        return `<tr data-s="${i}"><td><input data-k="id" value="${esc(s.id)}" style="width:80px" aria-label="Обозначение"></td><td><input data-k="name" value="${esc(s.name)}" aria-label="Название"></td><td><select data-k="kind">${VKINDS.map(k => `<option ${k === s.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td><input type="color" data-k="col" value="${s.col}" aria-label="Цвет"></td><td class="n">${r.n}</td><td class="n">${Math.round(r.q)}</td><td class="n">${(r.L / 1000).toFixed(1)}</td><td><button class="btn" data-del="${i}" ${r.n || r.L ? 'disabled title="Система используется"' : ''} aria-label="Удалить систему">×</button></td></tr>`;
+        return `<tr data-s="${i}"><td><input data-k="id" value="${esc(s.id)}" style="width:80px" aria-label="Обозначение"></td><td><input data-k="name" value="${esc(s.name)}" aria-label="Название"></td><td><select data-k="kind">${VKINDS.map(k => `<option ${k === s.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${s.col}" aria-label="Цвет"></td><td class="n">${r.n}</td><td class="n">${Math.round(r.q)}</td><td class="n">${(r.L / 1000).toFixed(1)}</td><td><button class="btn" data-del="${i}" ${r.n || r.L ? 'disabled title="Система используется"' : ''} aria-label="Удалить систему">×</button></td></tr>`;
       })
       .join('')}</tbody></table></div>
     <div class="btnrow" style="align-items:center"><button class="btn" id="mepAddS">+ Система</button><label class="fl" style="flex-direction:row;align-items:center;gap:8px">Предельная скорость, м/с <input type="number" step="0.5" id="mepV" value="${S.vent.vmax}" style="width:80px;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:5px 7px"></label></div>
@@ -94923,6 +95364,327 @@ function initPhotometry() {
   });
 }
 
+// ===== ui/palette.js =====
+/**
+ * ui/palette.js
+ *
+ * The base palette of the project: 120 RAL Classic colours with the nearest NCS and 8 metal finishes (128 in all).
+ * Every colour field of the program (element properties, furniture, kitchens) picks from it; «Другой цвет…» keeps the
+ * free picker. The specification lists the colours used with their RAL and NCS codes.
+ *
+ * RAL hex — sRGB approximations (Wikipedia, «List of RAL colours»); NCS — the nearest NCS S colour with its ΔE from the
+ * NCS S → RAL summary (coatingtech.fi). null — no NCS within that table (dark colours): shown as «нет данных».
+ */
+
+
+
+
+/** [RAL code, name, hex, [NCS, ΔE] | null] */
+const PAL_RAL = [
+  ['1000', 'Зелёно-бежевый', '#cdba88', ['S 2020-Y', 3.3]],
+  ['1001', 'Бежевый', '#d0b084', ['S 2020-Y20R', 0.9]],
+  ['1002', 'Песочно-жёлтый', '#d2aa6d', ['S 2030-Y10R', 1.9]],
+  ['1011', 'Коричнево-бежевый', '#af804f', ['S 4030-Y20R', 2.9]],
+  ['1013', 'Жемчужно-белый', '#e3d9c6', ['S 1005-Y10R', 0.7]],
+  ['1014', 'Слоновая кость', '#ddc49a', ['S 1515-Y20R', 2.4]],
+  ['1015', 'Светлая слоновая кость', '#e6d2b5', ['S 1010-Y30R', 1.6]],
+  ['1019', 'Серо-бежевый', '#a48f7a', ['S 4010-Y30R', 1.4]],
+  ['1020', 'Оливково-жёлтый', '#a08f65', ['S 4020-Y', 3.6]],
+  ['1024', 'Охра жёлтая', '#ba8f4c', ['S 3040-Y10R', 2.2]],
+  ['1034', 'Пастельно-жёлтый', '#eb9c52', ['S 1050-Y30R', 2.7]],
+  ['2001', 'Красно-оранжевый', '#be4e20', ['S 2070-Y70R', 2.4]],
+  ['3003', 'Рубиново-красный', '#8d1d2c', ['S 2570-R', 2.4]],
+  ['3004', 'Пурпурно-красный', '#701f29', ['S 5040-R', 2.1]],
+  ['3005', 'Винно-красный', '#5e2028', ['S 6030-R', 1.5]],
+  ['3007', 'Чёрно-красный', '#402225', ['S 7020-R10B', 4.6]],
+  ['3009', 'Оксидно-красный', '#703731', ['S 6030-Y80R', 1.7]],
+  ['3011', 'Коричнево-красный', '#7e292c', ['S 4050-R', 2.8]],
+  ['3012', 'Бежево-красный', '#cb8d73', ['S 3030-Y60R', 3.2]],
+  ['3013', 'Томатно-красный', '#9c322e', ['S 3560-Y80R', 3.3]],
+  ['3014', 'Розовый антик', '#d47479', ['S 2050-R', 4.1]],
+  ['3015', 'Светло-розовый', '#e1a6ad', ['S 1030-R10B', 3.6]],
+  ['3017', 'Розовый', '#d3545f', ['S 1060-R', 5.8]],
+  ['4001', 'Красно-сиреневый', '#8a5a83', ['S 4030-R40B', 2.0]],
+  ['4004', 'Бордово-фиолетовый', '#691639', ['S 5040-R20B', 1.2]],
+  ['4005', 'Сине-сиреневый', '#83639d', ['S 3040-R60B', 3.1]],
+  ['4007', 'Пурпурно-фиолетовый', '#4a203b', ['S 7020-R30B', 1.6]],
+  ['4009', 'Пастельно-фиолетовый', '#a38995', ['S 4010-R30B', 3.0]],
+  ['5000', 'Фиолетово-синий', '#384c70', ['S 5030-R80B', 4.1]],
+  ['5001', 'Зелёно-синий', '#1f4764', ['S 6030-B', 2.7]],
+  ['5003', 'Сапфирово-синий', '#2a3756', null],
+  ['5004', 'Чёрно-синий', '#1d1f2a', null],
+  ['5007', 'Бриллиантово-синий', '#41678d', ['S 4040-R90B', 3.2]],
+  ['5008', 'Серо-синий', '#313c48', null],
+  ['5009', 'Лазурно-синий', '#2e5978', ['S 5030-B', 2.7]],
+  ['5011', 'Стальной синий', '#232c3f', ['S 7020-R90B', 4.3]],
+  ['5013', 'Кобальтово-синий', '#232d53', ['S 7020-R70B', 2.4]],
+  ['5014', 'Голубино-синий', '#6c7c98', ['S 4020-R80B', 2.8]],
+  ['5018', 'Бирюзово-синий', '#21888f', ['S 3040-B40G', 3.1]],
+  ['5020', 'Океанская синь', '#0b4151', ['S 6530-B30G', 4.6]],
+  ['5021', 'Водная синь', '#07737a', ['S 4050-B40G', 3.2]],
+  ['5023', 'Отдалённо-синий', '#4d668e', ['S 4030-R80B', 4.0]],
+  ['5024', 'Пастельно-синий', '#6a93b0', ['S 3030-B', 1.8]],
+  ['6000', 'Патина зелёная', '#327662', ['S 4030-B90G', 5.5]],
+  ['6002', 'Лиственно-зелёный', '#276235', ['S 5040-G20Y', 0.9]],
+  ['6003', 'Оливково-зелёный', '#4b573e', ['S 7010-G50Y', 2.2]],
+  ['6004', 'Сине-зелёный', '#0e4243', ['S 7020-B50G', 1.4]],
+  ['6005', 'Зелёный мох', '#0f4336', ['S 7020-G', 1.0]],
+  ['6006', 'Серо-оливковый', '#40433b', null],
+  ['6008', 'Коричнево-зелёный', '#35382e', null],
+  ['6009', 'Пихтовый зелёный', '#26392f', null],
+  ['6011', 'Резедово-зелёный', '#68825b', ['S 4030-G30Y', 3.0]],
+  ['6012', 'Чёрно-зелёный', '#31403d', null],
+  ['6013', 'Тростниково-зелёный', '#797c5a', ['S 5020-G70Y', 4.0]],
+  ['6015', 'Чёрно-оливковый', '#3d403a', null],
+  ['6019', 'Пастельно-зелёный', '#b7d9b1', ['S 1020-G20Y', 3.3]],
+  ['6020', 'Хромовая зелень', '#354733', null],
+  ['6021', 'Бледно-зелёный', '#86a47c', ['S 3020-G30Y', 3.1]],
+  ['6022', 'Коричнево-оливковый', '#3e3c32', null],
+  ['6027', 'Светло-зелёный', '#81c0bb', ['S 1030-B30G', 6.7]],
+  ['6028', 'Сосновый зелёный', '#2d5546', ['S 6020-G', 3.4]],
+  ['6033', 'Мятно-бирюзовый', '#478a84', ['S 4030-B70G', 1.7]],
+  ['6034', 'Пастельно-бирюзовый', '#7fb0b2', ['S 2030-B60G', 2.2]],
+  ['7000', 'Серая белка', '#7e8b92', ['S 4010-R90B', 3.0]],
+  ['7001', 'Серебристо-серый', '#8f999f', ['S 4005-R80B', 1.4]],
+  ['7002', 'Оливково-серый', '#817f68', ['S 5010-G90Y', 1.0]],
+  ['7003', 'Серый мох', '#7a7b6d', ['S 6005-G80Y', 2.6]],
+  ['7004', 'Сигнальный серый', '#9ea0a1', ['S 4000-N', 1.5]],
+  ['7005', 'Мышино-серый', '#6b716f', ['S 6000-N', 2.0]],
+  ['7006', 'Бежево-серый', '#756f61', ['S 6005-Y20R', 1.3]],
+  ['7009', 'Зелёно-серый', '#5b6259', ['S 7005-G20Y', 2.2]],
+  ['7010', 'Брезентово-серый', '#575d57', ['S 7000-N', 2.4]],
+  ['7011', 'Железно-серый', '#555d61', null],
+  ['7012', 'Базальтово-серый', '#596163', ['S 6502-B', 1.7]],
+  ['7013', 'Коричнево-серый', '#555548', ['S 7005-Y20R', 2.2]],
+  ['7015', 'Сланцево-серый', '#51565c', ['S 7005-R80B', 1.3]],
+  ['7016', 'Антрацитово-серый', '#373f43', ['S 7010-B90G', 5.0]],
+  ['7021', 'Чёрно-серый', '#2e3234', null],
+  ['7022', 'Серая умбра', '#4b4d46', null],
+  ['7023', 'Серый бетон', '#818479', ['S 5005-G50Y', 1.3]],
+  ['7024', 'Графитовый серый', '#474a50', ['S 7010-B10G', 4.1]],
+  ['7026', 'Гранитовый серый', '#374447', null],
+  ['7030', 'Каменно-серый', '#939388', ['S 4502-Y', 0.6]],
+  ['7031', 'Сине-серый', '#5d6970', ['S 6010-B10G', 1.2]],
+  ['7032', 'Галечный серый', '#b9b9a8', ['S 3005-G80Y', 1.3]],
+  ['7033', 'Цементно-серый', '#818979', ['S 5005-G20Y', 1.8]],
+  ['7034', 'Жёлто-серый', '#939176', ['S 4010-G90Y', 3.4]],
+  ['7035', 'Светло-серый', '#cbd0cc', ['S 2002-G50Y', 1.2]],
+  ['7036', 'Платиново-серый', '#9a9697', ['S 4500-N', 1.5]],
+  ['7037', 'Пыльно-серый', '#7c7f7e', ['S 5500-N', 1.2]],
+  ['7038', 'Агатовый серый', '#b4b8b0', ['S 3000-N', 2.6]],
+  ['7039', 'Кварцевый серый', '#6b695f', ['S 6502-Y', 2.2]],
+  ['7040', 'Серое окно', '#9da3a6', ['S 3502-B', 1.5]],
+  ['7044', 'Серый шёлк', '#bdbdb2', ['S 2502-Y', 1.5]],
+  ['7047', 'Телегрей 4', '#cfd0cf', ['S 2000-N', 1.8]],
+  ['8000', 'Зелёно-коричневый', '#887142', ['S 5030-Y10R', 2.7]],
+  ['8001', 'Охра коричневая', '#9c6b30', ['S 4040-Y30R', 2.4]],
+  ['8002', 'Сигнальный коричневый', '#7b5141', ['S 6020-Y60R', 1.7]],
+  ['8003', 'Глиняный коричневый', '#80542f', ['S 6030-Y30R', 3.3]],
+  ['8004', 'Медно-коричневый', '#8f4e35', ['S 4040-Y70R', 3.7]],
+  ['8007', 'Оленье-коричневый', '#6f4a2f', ['S 6030-Y50R', 4.9]],
+  ['8008', 'Оливково-коричневый', '#6f4f28', ['S 6030-Y20R', 3.1]],
+  ['8011', 'Орехово-коричневый', '#5a3a29', null],
+  ['8014', 'Сепия коричневая', '#49392d', null],
+  ['8015', 'Каштаново-коричневый', '#633a34', ['S 7020-R', 5.1]],
+  ['8016', 'Махагон коричневый', '#4c2f26', ['S 7010-R10B', 6.8]],
+  ['8017', 'Шоколадно-коричневый', '#44322d', null],
+  ['8019', 'Серо-коричневый', '#3f3a3a', null],
+  ['8022', 'Чёрно-коричневый', '#211f20', null],
+  ['8024', 'Бежево-коричневый', '#79553c', ['S 6020-Y50R', 0.5]],
+  ['8025', 'Бледно-коричневый', '#755c49', ['S 6010-Y50R', 3.6]],
+  ['8028', 'Земельно-коричневый', '#4e3b2b', ['S 7010-Y70R', 3.6]],
+  ['9001', 'Кремово-белый', '#efebdc', ['S 0804-Y50R', 1.2]],
+  ['9002', 'Светло-серый белый', '#ddded4', ['S 1002-Y', 1.2]],
+  ['9003', 'Сигнальный белый', '#f4f8f4', ['S 0502-R50B', 1.7]],
+  ['9005', 'Чёрный янтарь', '#0a0a0d', null],
+  ['9010', 'Белый', '#f7f9ef', ['S 0502-Y', 1.3]],
+  ['9011', 'Графитно-чёрный', '#1c1c1c', null],
+  ['9016', 'Транспортный белый', '#f7fbf5', ['S 0500-N', 1.2]],
+  ['9018', 'Папирусно-белый', '#cfd3cd', ['S 1502-G', 1.9]]
+];
+/** Metal finishes: a base colour, no paint code. [key, name, hex] */
+const PAL_MET = [
+  ['chrome', 'Хром', '#c9cdd1'],
+  ['steel', 'Нержавеющая сталь, сатин', '#a9adb0'],
+  ['nickel', 'Никель брашированный', '#b7b2a6'],
+  ['brass', 'Латунь', '#c2a35a'],
+  ['bronze', 'Бронза', '#8a6a43'],
+  ['copper', 'Медь', '#b06f4c'],
+  ['gold', 'Золото матовое', '#d1b06b'],
+  ['gun', 'Графит (оружейный металл)', '#4a4c4f']
+];
+const PAL_GRP = [
+  ['9', 'Белые и чёрные'],
+  ['7', 'Серые'],
+  ['1', 'Бежевые и жёлтые'],
+  ['8', 'Коричневые'],
+  ['23', 'Красные и розовые'],
+  ['4', 'Фиолетовые'],
+  ['5', 'Синие'],
+  ['6', 'Зелёные']
+];
+const H2 = h => {
+  const n = parseInt(String(h).replace('#', '').slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+/** CIE Lab of an sRGB hex (D65). */
+function lab(h) {
+  const c = H2(h).map(v => {
+    v /= 255;
+    return v > 0.04045 ? Math.pow((v + 0.055) / 1.055, 2.4) : v / 12.92;
+  });
+  const X = (c[0] * 0.4124 + c[1] * 0.3576 + c[2] * 0.1805) / 0.95047,
+    Y = c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722,
+    Z = (c[0] * 0.0193 + c[1] * 0.1192 + c[2] * 0.9505) / 1.08883;
+  const f = t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+}
+const dE = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+let PAL_LAB = null;
+/** The palette entry of a colour: exact match → {kind, ...}; otherwise the nearest RAL with exact:false. */
+function palInfo(hex) {
+  if (!hex || typeof hex !== 'string' || !/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  const h = hex.toLowerCase();
+  const m = PAL_MET.find(x => x[2] === h);
+  if (m) return { kind: 'metal', key: m[0], name: m[1], hex: h, exact: true };
+  const r = PAL_RAL.find(x => x[2] === h);
+  if (r) return { kind: 'ral', ral: r[0], name: r[1], ncs: r[3], hex: h, exact: true };
+  if (!PAL_LAB) PAL_LAB = PAL_RAL.map(x => lab(x[2]));
+  const L = lab(h);
+  let bi = 0,
+    bd = Infinity;
+  PAL_LAB.forEach((q, i) => {
+    const d = dE(L, q);
+    if (d < bd) {
+      bd = d;
+      bi = i;
+    }
+  });
+  const n = PAL_RAL[bi];
+  return { kind: 'ral', ral: n[0], name: n[1], ncs: n[3], hex: h, exact: false, dE: Math.round(bd * 10) / 10 };
+}
+/** «RAL 9016 Транспортный белый · NCS S 0500-N» — or the metal name; «≈» when the colour is not from the palette. */
+function palLabel(hex, short) {
+  const I = palInfo(hex);
+  if (!I) return '';
+  if (I.kind === 'metal') return I.name;
+  const ncs = I.ncs ? 'NCS ' + I.ncs[0] + (I.ncs[1] > 5 ? ' (ближайший)' : '') : 'NCS — нет данных';
+  return (I.exact ? '' : '≈ ') + 'RAL ' + I.ral + (short ? '' : ' ' + I.name) + ' · ' + ncs;
+}
+
+/* ---------- the picker: every colour field opens the palette instead of the system dialog ---------- */
+let palFor = null;
+function palClose() {
+  const p = $('#palPop');
+  if (p) p.hidden = true;
+  palFor = null;
+}
+function palSet(inp, hex) {
+  inp.value = hex;
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  inp.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function palOpen(inp) {
+  let p = $('#palPop');
+  if (!p) {
+    p = document.createElement('div');
+    p.id = 'palPop';
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-label', 'Палитра');
+    document.body.appendChild(p);
+    p.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-hex]');
+      if (b && palFor) {
+        const inp2 = palFor;
+        palClose();
+        palSet(inp2, b.dataset.hex);
+        return;
+      }
+      if (ev.target.closest('#palOther') && palFor) {
+        const inp2 = palFor;
+        palClose();
+        inp2.dataset.palFree = '1';
+        try {
+          inp2.showPicker ? inp2.showPicker() : inp2.click();
+        } catch (_) {
+          inp2.click();
+        }
+        setTimeout(() => delete inp2.dataset.palFree, 400);
+        return;
+      }
+      if (ev.target.closest('#palX')) palClose();
+    });
+    p.addEventListener('pointerover', ev => {
+      const b = ev.target.closest('[data-hex]');
+      const i = $('#palInfo');
+      if (b && i) i.textContent = palLabel(b.dataset.hex);
+    });
+  }
+  palFor = inp;
+  const cur = (inp.value || '').toLowerCase();
+  const sw = (hex, t) =>
+    `<button type="button" class="palsw${hex === cur ? ' on' : ''}" data-hex="${hex}" style="background:${hex}" title="${esc(t)}" aria-label="${esc(t)}"></button>`;
+  let h = `<div class="palh"><b>Палитра</b><span id="palInfo">${esc(palLabel(cur) || 'RAL Classic · NCS · металлы')}</span><button type="button" id="palX" aria-label="Закрыть">×</button></div><div class="palb">`;
+  for (const [d, n] of PAL_GRP) {
+    const L = PAL_RAL.filter(x => d.includes(x[0][0])).sort((a, b) => lab(b[2])[0] - lab(a[2])[0]);
+    if (!L.length) continue;
+    if (n) h += `<div class="palg">${n}</div>`;
+    h += `<div class="palrow">${L.map(x => sw(x[2], 'RAL ' + x[0] + ' ' + x[1])).join('')}</div>`;
+  }
+  h += `<div class="palg">Металлы</div><div class="palrow">${PAL_MET.map(x => sw(x[2], x[1])).join('')}</div></div><div class="palf"><button type="button" class="btn" id="palOther">Другой цвет…</button></div>`;
+  p.innerHTML = h;
+  p.hidden = false;
+  // next to the field; on a phone — a sheet at the bottom (CSS)
+  const r = inp.getBoundingClientRect(),
+    W = Math.min(360, innerWidth - 16);
+  p.style.left = Math.max(8, Math.min(innerWidth - W - 8, r.left)) + 'px';
+  const below = r.bottom + 6,
+    hgt = Math.min(440, innerHeight - 16);
+  p.style.top = (below + hgt < innerHeight ? below : Math.max(8, r.top - hgt - 6)) + 'px';
+}
+/** Wires the palette to every colour field of the page. Called once by app/boot.js. */
+function initPalette() {
+  document.addEventListener(
+    'click',
+    ev => {
+      const inp = ev.target.closest && ev.target.closest('input[type=color]');
+      if (!inp || inp.dataset.palFree || inp.disabled || inp.hasAttribute('data-nopal')) return;
+      ev.preventDefault();
+      palFor === inp ? palClose() : palOpen(inp);
+    },
+    true
+  );
+  document.addEventListener(
+    'pointerdown',
+    ev => {
+      if (!palFor) return;
+      if (ev.target.closest && (ev.target.closest('#palPop') || ev.target === palFor)) return;
+      palClose();
+    },
+    true
+  );
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && palFor) palClose();
+  });
+}
+/** Colours used in the project: hex → [elements]; scans the element, its cfg and their nested objects. */
+function palUsed(ents) {
+  const M = new Map();
+  const walk = (o, e, d) => {
+    if (!o || d > 3) return;
+    for (const k in o) {
+      const v = o[k];
+      if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) {
+        const h = v.toLowerCase();
+        if (!M.has(h)) M.set(h, new Set());
+        M.get(h).add(e);
+      } else if (v && typeof v === 'object' && k !== 'pts' && k !== 'segs') walk(v, e, d + 1);
+    }
+  };
+  for (const e of ents || S.ents) walk(e, e, 0);
+  return M;
+}
+
 // ===== ui/solid-editor.js =====
 /**
  * ui/solid-editor.js
@@ -96926,6 +97688,7 @@ const solidEditorState = ED;
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -97175,6 +97938,7 @@ initCatalog();
 initSpec();
 initWallTypesDialog();
 initProfilesDialog();
+initPalette();
 initMepDialog();
 initImport();
 initSanitaryLib();
