@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '44';
+const APP_VER = '44.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15589,7 +15589,15 @@ function drawDev(e, color, o = {}) {
         circ(p, 0.8 * r);
       }
       if (k === 'lpendL') {
-        poly([L(-1.2 * r, -0.25 * r), L(1.2 * r, -0.25 * r), L(1.2 * r, 0.25 * r), L(-1.2 * r, 0.25 * r)]);
+        // the point is the feed at one end; the body runs to the other side
+        const ms = e.lc && e.lc.side === 'R' ? -1 : 1;
+        poly([
+          L(-ms * 0.3 * r, -0.25 * r),
+          L(ms * 2.4 * r, -0.25 * r),
+          L(ms * 2.4 * r, 0.25 * r),
+          L(-ms * 0.3 * r, 0.25 * r)
+        ]);
+        circ(p, 0.16 * r, true);
       }
       devTag(e, L(0.95 * r, -0.75 * r), r, col);
     }
@@ -65140,12 +65148,12 @@ const LCD = {
   lspotS: { dia: 80, h: 110, cct: 3000, beam: 36, col: '#f4f8f4', refl: 'black' },
   lspotG: { dia: 110, cut: 120, cct: 3000, beam: 36, shape: 'round' },
   lspotH: { dia: 70, cut: 72, cct: 3000, beam: 36 },
-  lchand: { arms: 6, drop: 500, dia: 700, col: '#c2a35a', shade: '#f2efe6' },
+  lchand: { style: 'globes', arms: 8, drop: 500, dia: 800, col: '#c2a35a', shade: '#f2efe6' },
   lpend: { shape: 'dome', drop: 700, dia: 350, n: 1, col: '#1c1c1c' },
   lpendL: { L: 1200, drop: 700, col: '#1c1c1c' },
   lring: { dia: 800, sec: 40, h: 50, drop: 700, col: '#1c1c1c', lit: 'down' },
   lsurf: { dia: 360, h: 60 },
-  lwall: { sw: 'group', shape: 'cyl', col: '#d8d2c6' }
+  lwall: { sw: 'group', shape: 'updown', col: '#1c1c1c' }
 };
 function lcOf(e) {
   const d = LCD[e.kind];
@@ -65167,7 +65175,29 @@ function ceilKindAt(p) {
   for (const c of S.ents) if (c.type === 'ceil' && c.pts && inPoly(p, c.pts)) return c;
   return null;
 }
-function lightMesh(e, mb) {
+/** Solid of revolution about a vertical axis: prof = [[radius, z], ...] from one end to the other. */
+function lathe(mb, prof, cx, cy, col, N = 40, op) {
+  sanLoft(
+    mb,
+    prof.map(([r, zz]) => seRing(cx, cy, Math.max(0.05, r), Math.max(0.05, r), 2, 2, zz, N)),
+    col,
+    false,
+    false,
+    op
+  );
+}
+/** Sphere as a lathe (opal globes, joints). */
+function globe(mb, cx, cy, cz, R, col, N = 40, op) {
+  const P = [];
+  for (let i = 0; i <= 16; i++) {
+    const t = -Math.PI / 2 + (i / 16) * Math.PI;
+    P.push([R * Math.cos(t), cz + R * Math.sin(t)]);
+  }
+  lathe(mb, P, cx, cy, col, N, op);
+}
+const OPAL = '#f6f3ec';
+function lightMesh(e, mb0) {
+  let mb = mb0;
   const k = e.kind,
     c = lcOf(e),
     z = e.z || 0;
@@ -65305,17 +65335,45 @@ function lightMesh(e, mb) {
     );
     mb.lod('');
   } else if (k === 'lspotG') {
-    const r = c.dia / 2;
+    const r = c.dia / 2,
+      sq = c.shape === 'square',
+      ex = sq ? 8 : 2,
+      ra = r * 0.6,
+      ri = ra * 0.56,
+      N = 56;
+    const R_ = (rad, zz, e2) => seRing(0, 0, rad, rad, e2 ?? ex, e2 ?? ex, zz, N);
     mb.tag('Гипсовый корпус (заподлицо, под шпаклёвку)');
-    const sq = c.shape === 'square';
-    const O = seRing(0, 0, r, r, sq ? 8 : 2, sq ? 8 : 2, z, 40),
-      I = seRing(0, 0, r - 12, r - 12, sq ? 6 : 2, sq ? 6 : 2, z, 40),
-      I2 = seRing(0, 0, r - 22, r - 22, 2, 2, z + 60, 40);
-    sanStrip(mb, O, I, '#f7f6f2');
-    sanLoft(mb, [I, I2], '#f1f0ea', false, false);
-    sanLoft(mb, [O, ringAt(O, z + 70)], '#e9e7e1', false, true);
+    // the face flush with the ceiling, then a soft fillet into the trumpet-shaped funnel
+    sanStrip(mb, R_(r, z), R_(ra + 5, z), '#f7f6f2');
+    const funnel = [R_(ra + 5, z), R_(ra + 2.2, z + 0.8), R_(ra + 0.6, z + 2.6), R_(ra, z + 5)];
+    for (let i = 1; i <= 6; i++) {
+      const t = i / 6,
+        ease = 1 - (1 - t) * (1 - t);
+      funnel.push(R_(ra - (ra - ri) * ease, z + 5 + 40 * t, sq ? Math.max(2, ex - (ex - 2) * t) : 2));
+    }
+    sanLoft(mb, funnel, '#f3f2ed', false, false);
+    mb.tag('Антибликовая труба');
+    sanLoft(mb, [R_(ri, z + 45, 2), R_(ri - 1.5, z + 47, 2), R_(ri - 1.5, z + 68, 2)], '#1d1f22', false, false);
     mb.tag('Модуль LED (утоплен)');
-    mb.cyl(0, 0, z + 56, z + 60, r - 24, lamp, 28);
+    mb.cyl(0, 0, z + 66, z + 68, ri - 1.5, lamp, 40);
+    mb.lod('n');
+    mb.tag('Кольцо линзы');
+    sanStrip(mb, R_(ri - 1.5, z + 65.6, 2), R_(ri - 6, z + 65.6, 2), '#2a2c30');
+    mb.tag('Гипсовое тело над потолком');
+    sanLoft(mb, [R_(r, z), R_(r, z + 62), R_(r - 6, z + 70), R_(ri + 12, z + 70)], '#e9e7e1', false, false);
+    mb.tag('Радиатор модуля');
+    mb.cyl(0, 0, z + 70, z + 100, ri + 6, '#9aa1a9', 32);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU;
+      mb.obox(
+        [Math.cos(a) * (ri + 6), Math.sin(a) * (ri + 6), z + 88],
+        [Math.cos(a) * (ri + 13), Math.sin(a) * (ri + 13), z + 88],
+        2,
+        24,
+        '#a7adb3'
+      );
+    }
+    mb.lod('');
   } else if (k === 'lspotH') {
     const r = c.dia / 2;
     mb.tag('Термокольцо скрытого монтажа');
@@ -65332,66 +65390,142 @@ function lightMesh(e, mb) {
     mb.tag('Корпус');
     mb.cyl(0, 0, z + 30, z + 90, r - 4, '#9aa1a9', 24);
   } else if (k === 'lchand') {
-    const n = Math.max(3, c.arms | 0),
+    const st = c.style || 'globes',
+      n = Math.max(3, c.arms | 0 || 6),
       drop = +c.drop || 500,
-      R = (+c.dia || 700) / 2;
+      R = (+c.dia || 700) / 2,
+      col = c.col,
+      zc = z - drop;
     mb.tag('Чашка крепления');
-    sanLoft(
-      mb,
-      [
-        seRing(0, 0, 60, 60, 2, 2, z, 32),
-        seRing(0, 0, 55, 55, 2, 2, z - 25, 32),
-        seRing(0, 0, 15, 15, 2, 2, z - 40, 32)
-      ],
-      c.col,
-      false,
-      true
-    );
-    mb.tag('Штанга');
-    mb.cyl(0, 0, z - drop, z - 40, 7, c.col, 16);
-    const zc = z - drop;
-    mb.tag('Центральная чаша');
-    sanLoft(
-      mb,
-      [
-        seRing(0, 0, 10, 10, 2, 2, zc + 40, 28),
-        seRing(0, 0, 70, 70, 2, 2, zc, 28),
-        seRing(0, 0, 50, 50, 2, 2, zc - 50, 28),
-        seRing(0, 0, 8, 8, 2, 2, zc - 80, 28)
-      ],
-      c.col,
-      true,
-      true
-    );
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU,
-        ca = Math.cos(a),
-        sa = Math.sin(a);
-      mb.tag('Рожки');
-      mb.sweep(
-        roundPath(
-          [
-            [ca * 50, sa * 50, zc - 20],
-            [ca * R * 0.55, sa * R * 0.55, zc - 40],
-            [ca * R, sa * R, zc + 20],
-            [ca * R, sa * R, zc + 70]
-          ],
-          80
-        ).pts,
-        6,
-        c.col,
-        12
-      );
-      mb.tag('Плафоны');
-      sanLoft(
+    if (st === 'rings' || st === 'cluster') {
+      const cr = st === 'cluster' ? Math.max(130, R * 0.6) : 70;
+      lathe(
         mb,
-        [seRing(ca * R, sa * R, 22, 22, 2, 2, zc + 70, 24), seRing(ca * R, sa * R, 60, 60, 2, 2, zc + 170, 24)],
-        c.shade,
-        false,
-        false
+        [
+          [0.1, z - 24],
+          [cr - 3, z - 24],
+          [cr, z - 21],
+          [cr, z]
+        ],
+        0,
+        0,
+        col,
+        56
       );
-      mb.tag('Лампы');
-      mb.cyl(ca * R, sa * R, zc + 75, zc + 130, 18, lamp, 16);
+    } else
+      lathe(
+        mb,
+        [
+          [0.1, z - 30],
+          [50, z - 30],
+          [56, z - 24],
+          [60, z - 6],
+          [60, z]
+        ],
+        0,
+        0,
+        col,
+        48
+      );
+    if (st === 'globes') {
+      // branching chandelier: a stem, a hub and straight thin arms with opal globes at two levels
+      mb.tag('Штанга');
+      mb.cyl(0, 0, zc + 18, z - 30, 6, col, 20);
+      mb.tag('Центральный узел');
+      globe(mb, 0, 0, zc, 20, col, 32);
+      const gR = Math.max(45, Math.min(90, R * 0.16));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + (i % 2 ? TAU / n / 2 : 0) * 0,
+          up = i % 2 ? -0.32 : 0.42,
+          rr = i % 2 ? R * 0.78 : R,
+          ca = Math.cos(a),
+          sa = Math.sin(a);
+        const end = [ca * rr, sa * rr, zc + rr * up];
+        mb.tag('Рожки');
+        mb.tube([ca * 18, sa * 18, zc], end, 4, col, 14);
+        mb.tag('Держатели плафонов');
+        const ux = end[0] - ca * 14,
+          uy = end[1] - sa * 14;
+        mb.tube([ux, uy, end[2]], end, 9, col, 20);
+        mb.lod('n');
+        mb.tube([ux - ca * 3, uy - sa * 3, end[2]], [ux, uy, end[2]], 11, col, 20);
+        mb.lod('');
+        mb.tag('Плафоны (опал)');
+        globe(mb, end[0] + ca * gR, end[1] + sa * gR, end[2], gR, OPAL, 40);
+      }
+    } else if (st === 'rings') {
+      // three horizontal LED rings at staggered heights, each on three thin wires
+      const rs = [R, R * 0.7, R * 0.42],
+        hs = [0, 110, 220];
+      rs.forEach((rr, j) => {
+        const zt = zc + hs[j],
+          w = 14,
+          h = 26,
+          zb = zt - h,
+          N = 96,
+          rg = (rad, zz) => seRing(0, 0, rad, rad, 2, 2, zz, N);
+        mb.tag('Кольца');
+        sanLoft(
+          mb,
+          [
+            rg(rr + w - 3, zb),
+            rg(rr + w, zb + 3),
+            rg(rr + w, zt - 3),
+            rg(rr + w - 3, zt),
+            rg(rr - w + 3, zt),
+            rg(rr - w, zt - 3),
+            rg(rr - w, zb + 3),
+            rg(rr - w + 3, zb),
+            rg(rr + w - 3, zb)
+          ],
+          col,
+          false,
+          false
+        );
+        mb.tag('Рассеиватель (опал)');
+        sanStrip(mb, rg(rr + w - 3, zb - 0.6), rg(rr - w + 3, zb - 0.6), lamp);
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * TAU + j * 0.7;
+          mb.tag('Тросы');
+          mb.tube(
+            [Math.cos(a) * rr, Math.sin(a) * rr, zt],
+            [Math.cos(a) * 30, Math.sin(a) * 30, z - 21],
+            0.8,
+            '#9aa1a9',
+            6
+          );
+        }
+      });
+    } else {
+      // cluster: opal globes of three sizes at different heights under a round canopy
+      const cnt = Math.max(3, n),
+        cr = Math.max(130, R * 0.6) - 30;
+      for (let i = 0; i < cnt; i++) {
+        const a = i * 2.39996,
+          rr = cr * Math.sqrt((i + 0.5) / cnt),
+          x = Math.cos(a) * rr,
+          y = Math.sin(a) * rr,
+          gR = [55, 72, 45][i % 3],
+          zg = zc + 240 - ((i * 173) % 480);
+        mb.tag('Подвесы (кабель)');
+        mb.cyl(x, y, zg + gR + 30, z - 24, 1.6, '#1d1f22', 8);
+        mb.tag('Держатели плафонов');
+        lathe(
+          mb,
+          [
+            [2, zg + gR + 30],
+            [8, zg + gR + 26],
+            [12, zg + gR + 8],
+            [12, zg + gR - 2]
+          ],
+          x,
+          y,
+          col,
+          24
+        );
+        mb.tag('Плафоны (опал)');
+        globe(mb, x, y, zg, gR, OPAL, 40);
+      }
     }
   } else if (k === 'lpend') {
     const drop = +c.drop || 700,
@@ -65446,8 +65580,14 @@ function lightMesh(e, mb) {
   } else if (k === 'lpendL') {
     const L = +c.L || 1200,
       drop = +c.drop || 700,
+      ms = c.side === 'R' ? -1 : 1,
+      off = ms * (L / 2 - 90),
       zb = z - drop - 70,
       zt = z - drop;
+    // the insertion point is the feed: the hanger at one end with the power cable; the body runs to the other side
+    const MB0 = mb;
+    mb = MB((x, y, zz) => [x + off, y, zz]);
+    mb.smooth(true);
     mb.tag('Чашки крепления');
     for (const sx of [-1, 1]) {
       const x = sx * (L / 2 - 90);
@@ -65473,7 +65613,7 @@ function lightMesh(e, mb) {
     }
     mb.lod('n');
     mb.tag('Кабель питания');
-    mb.cyl(-L / 2 + 90 + 14, 0, zt, z - 12, 2.2, Dk, 10);
+    mb.cyl(-ms * (L / 2 - 90) + 14, 0, zt, z - 12, 2.2, Dk, 10);
     mb.lod('');
     mb.tag('Корпус линейного светильника');
     mb.rbox(-L / 2 + 3, -30, zb, L / 2 - 3, 30, zt, 4, c.col, 3);
@@ -65483,6 +65623,15 @@ function lightMesh(e, mb) {
     mb.tag('Рассеиватель (опал)');
     mb.box(-L / 2 + 6, -24, zb - 0.5, L / 2 - 6, 24, zb + 6, '#1f2124');
     mb.rbox(-L / 2 + 8, -21, zb + 1, L / 2 - 8, 21, zb + 8, 6, lamp, 3);
+    for (const m of mb.meshes()) {
+      MB0.tag(m.tag);
+      MB0.lod(m.lod);
+      MB0.smooth(!!m.smooth);
+      MB0.raw(m.color, m.op, m.pos);
+    }
+    MB0.lod('');
+    MB0.smooth(true);
+    mb = MB0;
   } else if (k === 'lring') {
     const R = (+c.dia || 800) / 2,
       w = (+c.sec || 40) / 2,
@@ -65554,44 +65703,120 @@ function lightMesh(e, mb) {
       true
     );
   } else if (k === 'lwall') {
-    mb.tag('Основание бра');
-    mb.box(-55, -14, z - 55, 55, 0, z + 55, c.col);
-    mb.tag('Кронштейн');
-    mb.sweep(
-      roundPath(
+    const st = { cyl: 'updown', cone: 'arm' }[c.shape] || c.shape || 'updown',
+      col = c.col;
+    if (st === 'updown') {
+      // up-down cylinder on a short arm
+      mb.tag('Основание бра');
+      mb.rbox(-32, -10, z - 50, 32, 0, z + 50, 5, col, 3);
+      mb.tag('Кронштейн');
+      mb.rbox(-12, -60, z - 12, 12, -10, z + 12, 4, col, 3);
+      mb.tag('Корпус бра');
+      lathe(
+        mb,
         [
-          [0, -14, z],
-          [0, -110, z],
-          [0, -160, z + 60]
+          [30, z - 85],
+          [42, z - 82],
+          [44, z - 78],
+          [44, z + 78],
+          [42, z + 82],
+          [30, z + 85]
         ],
-        40
-      ).pts,
-      7,
-      CH,
-      12
-    );
-    mb.tag('Плафон');
-    if (c.shape === 'cone')
-      sanLoft(
-        mb,
-        [seRing(0, -170, 30, 30, 2, 2, z + 70, 28), seRing(0, -170, 90, 90, 2, 2, z + 190, 28)],
-        '#f2efe6',
-        false,
-        false
+        0,
+        -104,
+        col,
+        48
       );
-    else
-      sanLoft(
-        mb,
-        [seRing(0, -170, 60, 60, 2, 2, z + 50, 28), seRing(0, -170, 60, 60, 2, 2, z + 190, 28)],
-        '#f2efe6',
-        false,
-        false
+      mb.tag('Свет вверх и вниз');
+      mb.cyl(0, -104, z - 82, z - 76, 30, lamp, 40);
+      mb.cyl(0, -104, z + 76, z + 82, 30, lamp, 40);
+    } else if (st === 'globe') {
+      mb.tag('Основание бра');
+      mb.sweep(
+        [
+          [0, 0, z],
+          [0, -10, z]
+        ],
+        55,
+        col,
+        48
       );
-    mb.tag('Лампа');
-    mb.cyl(0, -170, z + 70, z + 140, 22, lamp, 16);
+      mb.sweep(
+        [
+          [0, -10, z],
+          [0, -14, z]
+        ],
+        50,
+        col,
+        48
+      );
+      mb.tag('Кронштейн');
+      mb.tube([0, -14, z], [0, -130, z], 6, col, 16);
+      mb.tag('Держатель плафона');
+      mb.sweep(
+        [
+          [0, -122, z + 6],
+          [0, -122, z + 26]
+        ],
+        16,
+        col,
+        24
+      );
+      mb.tag('Плафон (опал)');
+      globe(mb, 0, -122, z + 26 + 85, 85, OPAL, 48);
+    } else if (st === 'arm') {
+      // swing-arm reading light: wall plate, knuckle, two arm sections and a dome shade
+      mb.tag('Основание бра');
+      mb.rbox(-30, -14, z - 70, 30, 0, z + 70, 6, col, 3);
+      mb.tag('Шарнир');
+      mb.cyl(0, -34, z - 30, z + 30, 12, col, 24);
+      mb.rbox(-8, -26, z - 8, 8, -14, z + 8, 3, col, 2);
+      mb.tag('Рычаг');
+      mb.tube([0, -34, z + 10], [180, -150, z + 10], 6, col, 16);
+      mb.cyl(180, -150, z - 6, z + 26, 10, col, 24);
+      mb.tube([180, -150, z + 18], [150, -330, z + 18], 5, col, 16);
+      mb.tag('Плафон');
+      const sx = 150,
+        sy = -340,
+        top = z + 30;
+      lathe(
+        mb,
+        [
+          [8, top],
+          [30, top - 6],
+          [70, top - 60],
+          [90, top - 120],
+          [88, top - 122],
+          [68, top - 62],
+          [28, top - 10],
+          [6, top - 4]
+        ],
+        sx,
+        sy,
+        col,
+        48
+      );
+      mb.tag('Лампа');
+      mb.cyl(sx, sy, top - 100, top - 40, 22, lamp, 24);
+      mb.lod('n');
+      mb.tag('Выключатель на плафоне');
+      mb.cyl(sx + 8, sy, top, top + 8, 5, '#2a2c30', 16);
+      mb.lod('');
+    } else {
+      // linear wall bar with light up and down
+      mb.tag('Основание бра');
+      for (const x of [-150, 150]) mb.rbox(x - 12, -40, z - 12, x + 12, 0, z + 12, 4, col, 3);
+      mb.tag('Корпус бра');
+      mb.rbox(-240, -70, z - 22, 240, -40, z + 22, 6, col, 3);
+      mb.tag('Рассеиватель (опал)');
+      mb.box(-232, -66, z - 23, 232, -44, z - 21, lamp);
+      mb.box(-232, -66, z + 21, 232, -44, z + 23, lamp);
+    }
     if (c.sw === 'own') {
+      mb.lod('n');
       mb.tag('Выключатель на корпусе');
-      mb.box(30, -22, z - 45, 46, -14, z - 25, '#3a3f45');
+      mb.rbox(36, -14, z - 46, 48, -6, z - 26, 2, '#2a2c30', 2);
+      mb.lod('');
     }
   }
   mb.smooth(false);
@@ -65658,7 +65883,21 @@ function devCfgPanel(e) {
   }
   if (k === 'lchand')
     R.push(
-      ['Рожков', 'lc.arms', 'n'],
+      [
+        'Вид',
+        'lc.style',
+        's',
+        [
+          ['globes', 'ветви с опаловыми шарами'],
+          ['rings', 'три светящихся кольца'],
+          ['cluster', 'гроздь шаров на подвесах']
+        ]
+      ],
+      [
+        (c.style || 'globes') === 'rings' ? 'Рожков (не используется)' : c.style === 'cluster' ? 'Шаров' : 'Ветвей',
+        'lc.arms',
+        'n'
+      ],
       ['Длина подвеса, мм', 'lc.drop', 'n'],
       ['Диаметр, мм', 'lc.dia', 'n'],
       ['Цвет металла', 'lc.col', 'c'],
@@ -65704,6 +65943,15 @@ function devCfgPanel(e) {
     );
   if (k === 'lpendL')
     R.push(
+      [
+        'Вывод питания',
+        'lc.side',
+        's',
+        [
+          ['L', 'с одного конца (точка установки — у левого троса)'],
+          ['R', 'с другого конца']
+        ]
+      ],
       ['Длина, мм', 'lc.L', 'n'],
       ['Длина подвеса, мм', 'lc.drop', 'n'],
       ['Цвет', 'lc.col', 'c'],
@@ -65721,14 +65969,17 @@ function devCfgPanel(e) {
         ]
       ],
       [
-        'Плафон',
+        'Вид',
         'lc.shape',
         's',
         [
-          ['cyl', 'цилиндр'],
-          ['cone', 'конус']
+          ['updown', 'цилиндр — свет вверх и вниз'],
+          ['globe', 'опаловый шар на кронштейне'],
+          ['arm', 'на поворотном рычаге (для чтения)'],
+          ['linear', 'линейное, свет вверх и вниз']
         ]
       ],
+      ['Цвет', 'lc.col', 'c'],
       ['Высота, мм', 'z', 'n'],
       ['Мощность, Вт', 'pw', 'n']
     );
@@ -66822,7 +67073,19 @@ function ceilExtras(c, mb) {
             '#9aa1a9'
           );
       }
-      if (k === 'lchand' || k === 'lpend' || k === 'lpendL' || k === 'lring' || k === 'lsurf') {
+      if (k === 'lpendL') {
+        // linear pendant: a board along the whole fixture, from the feed end to the other hanger
+        const lc = d.lc || {},
+          Lh = (+lc.L || 1200) - 180,
+          ms = lc.side === 'R' ? -1 : 1,
+          ca = Math.cos(d.rot || 0),
+          sa = Math.sin(d.rot || 0);
+        const A = [d.p.x - ca * ms * 120, d.p.y - sa * ms * 120],
+          B = [d.p.x + ca * ms * (Lh + 120), d.p.y + sa * ms * (Lh + 120)];
+        mb.tag('Закладная под линейный подвес (фанера 18 мм на брусе)');
+        mb.obox([A[0], A[1], z + 11], [B[0], B[1], z + 11], 200, 18, '#c9a46a');
+        mb.obox([A[0], A[1], (z + 20 + top) / 2], [B[0], B[1], (z + 20 + top) / 2], 50, top - z - 20, '#b88a5a');
+      } else if (k === 'lchand' || k === 'lpend' || k === 'lring' || k === 'lsurf') {
         mb.tag('Закладная под люстру/подвес (фанера 18 мм на брусе)');
         mb.box(d.p.x - 180, d.p.y - 180, z + 2, d.p.x + 180, d.p.y + 180, z + 20, '#c9a46a');
         mb.box(d.p.x - 180, d.p.y - 25, z + 20, d.p.x + 180, d.p.y + 25, top, '#b88a5a');
