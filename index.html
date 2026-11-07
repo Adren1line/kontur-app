@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '46.1';
+const APP_VER = '47';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -31503,8 +31503,15 @@ XT.pipe = {
       }
       if (M.lib.t === 'weld' && run.joints.length) {
         mb.tag('Муфты');
-        for (const j of run.joints)
-          mb.tube(V3m(A, u, Math.max(0, j - e.d)), V3m(A, u, Math.min(run.L, j + e.d)), r + 3, fcol, 14);
+        for (const j of run.joints) {
+          const a0 = Math.max(0, j - e.d),
+            a1 = Math.min(run.L, j + e.d);
+          mb.tube(V3m(A, u, a0), V3m(A, u, a1), r + 3, fcol, 18);
+          mb.lod('n');
+          mb.tube(V3m(A, u, a0), V3m(A, u, a0 + 3), r + 4, fcol, 18);
+          mb.tube(V3m(A, u, a1 - 3), V3m(A, u, a1), r + 4, fcol, 18);
+          mb.lod('');
+        }
       }
     }
     if (!flex)
@@ -31519,7 +31526,11 @@ XT.pipe = {
         const d0 = V3n(V3s(p0, p1)),
           d1 = V3n(V3s(q0, q1));
         mb.tag(b.v && b.v.els ? `Отводы ${b.v.els.join('+')}°` : `Отвод ${Math.round(b.deg)}°`);
-        mb.sweep([V3m(p0, d0, ext), ...seg, V3m(q0, d1, ext)], r + 2, fcol, 14);
+        mb.sweep([V3m(p0, d0, ext), ...seg, V3m(q0, d1, ext)], r + 2, fcol, 18);
+        mb.lod('n');
+        mb.tube(V3m(p0, d0, ext), V3m(p0, d0, ext - 3), r + 3.2, fcol, 18);
+        mb.tube(V3m(q0, d1, ext), V3m(q0, d1, ext - 3), r + 3.2, fcol, 18);
+        mb.lod('');
       }
     {
       const th = insTh(e);
@@ -31562,13 +31573,27 @@ XT.pipe = {
       const ro = o.d / 2;
       const c = [t.p.x, t.p.y, z];
       mb.tag(pkind(o) === 'sewer' ? `Тройник Ø${o.d}×${e.d} (45°)` : `Тройник Ø${o.d}×${e.d}`);
-      mb.tube(
-        V3m(c, u, -o.d * 0.9),
-        V3m(c, u, o.d * 0.9),
-        ro + (pkind(o) === 'sewer' ? 4 : 3),
-        rgbHex(hex2rgb(pipeCol(o, PSYS[o.sys] || sy)).map(x => x * 0.8)),
-        16
-      );
+      const tc = rgbHex(hex2rgb(pipeCol(o, PSYS[o.sys] || sy)).map(x => x * 0.8)),
+        tr = ro + (pkind(o) === 'sewer' ? 4 : 3);
+      mb.tube(V3m(c, u, -o.d * 0.9), V3m(c, u, o.d * 0.9), tr, tc, 20);
+      // the branch outlet of the tee towards the branch pipe, with socket bands
+      {
+        const z0b = zs[0],
+          zLb = zs[zs.length - 1];
+        const near0 = dist(e.pts[0], t.p) <= dist(e.pts[e.pts.length - 1], t.p);
+        const q0 = near0 ? e.pts[0] : e.pts[e.pts.length - 1],
+          q1 = near0 ? e.pts[1] : e.pts[e.pts.length - 2];
+        const bz0 = near0 ? z0b : zLb,
+          bz1 = near0 ? zs[1] : zs[zs.length - 2];
+        const bd = V3n([q1.x - q0.x, q1.y - q0.y, bz1 - bz0]);
+        const L_ = ro + e.d * 0.8;
+        mb.tube(c, V3m(c, bd, L_), r + 3, tc, 20);
+        mb.lod('n');
+        mb.tube(V3m(c, bd, L_ - 4), V3m(c, bd, L_), r + 4.2, tc, 20);
+        mb.tube(V3m(c, u, -o.d * 0.9), V3m(c, u, -o.d * 0.9 + 4), tr + 1.2, tc, 20);
+        mb.tube(V3m(c, u, o.d * 0.9 - 4), V3m(c, u, o.d * 0.9), tr + 1.2, tc, 20);
+        mb.lod('');
+      }
     }
     return meshGroup(mb.meshes(), {});
   },
@@ -62029,17 +62054,94 @@ function radBuild(e, mb) {
     B(W / 2 - 70, y0 + D, z0 + H - 90, W / 2 - 20, y0 + D + 6, z0 + H - 40, '#3a3f45');
   }
   if (!M.el && k !== 'conv') {
-    mb.tag('Терморегулятор и запорный клапан');
     const xv = c.conn === 'bottom' ? W / 2 - 50 : W / 2 + 40;
     const zv = c.conn === 'bottom' ? z0 - 60 : z0 + H - 50;
+    const yv = y0 + D / 2,
+      CH = '#c9cdd1';
     mb.smooth(true);
-    mb.cyl(xv, y0 + D / 2, zv, zv + 60, 14, '#c7ccd2', 12);
-    if (c.valve === 'thermo') mb.cyl(xv, y0 + D / 2, zv + 60, zv + 140, 26, '#f4f4f2', 16);
-    mb.cyl(c.conn === 'bottom' ? W / 2 - 100 : -W / 2 - 40, y0 + D / 2, zv, zv + 60, 14, '#c7ccd2', 12);
+    // valve body with a union nut, the thermostatic head with ribs and a scale
+    mb.tag('Клапан термостатический');
+    mb.cyl(xv, yv, zv, zv + 52, 12, CH, 24);
+    mb.cyl(xv, yv, zv + 10, zv + 26, 15, CH, 6);
+    mb.tube([xv, yv, zv + 12], [xv, 0, zv + 12], 10, CH, 20);
+    if (c.conn !== 'bottom') mb.tube([xv, yv, zv + 12], [W / 2 - 4, yv, zv + 12], 10, CH, 20);
+    else mb.tube([xv, yv, zv + 26], [xv, yv, z0 + 4], 10, CH, 20);
+    if (c.valve === 'thermo') {
+      mb.tag('Термоголовка');
+      const prof = [
+        [24, zv + 52],
+        [26, zv + 60],
+        [26, zv + 118],
+        [24, zv + 128],
+        [16, zv + 134],
+        [0.1, zv + 135]
+      ];
+      for (let i = 0; i + 1 < prof.length; i++)
+        mb.cyl(xv, yv, prof[i][1], prof[i + 1][1], prof[i][0], '#f4f8f4', 40, undefined, prof[i + 1][0]);
+      mb.lod('n');
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        mb.box(
+          xv + Math.cos(a) * 25.5 - 1.5,
+          yv + Math.sin(a) * 25.5 - 1.5,
+          zv + 70,
+          xv + Math.cos(a) * 25.5 + 1.5,
+          yv + Math.sin(a) * 25.5 + 1.5,
+          zv + 112,
+          '#e3e6e9'
+        );
+      }
+      mb.box(xv - 1, yv - 26.6, zv + 120, xv + 1, yv - 25.8, zv + 126, '#c0392b');
+      mb.lod('');
+    } else {
+      mb.tag('Колпачок клапана');
+      mb.cyl(xv, yv, zv + 52, zv + 80, 14, CH, 24, undefined, 12);
+    }
+    mb.tag('Клапан запорный (обратка)');
+    const xr = c.conn === 'bottom' ? W / 2 - 100 : -W / 2 - 40;
+    mb.cyl(xr, yv, zv, zv + 50, 12, CH, 24);
+    mb.cyl(xr, yv, zv + 10, zv + 26, 15, CH, 6);
+    mb.cyl(xr, yv, zv + 50, zv + 66, 10, CH, 20, undefined, 8);
+    if (c.conn !== 'bottom') mb.tube([xr, yv, zv + 12], [-W / 2 + 4, yv, zv + 12], 10, CH, 20);
+    else mb.tube([xr, yv, zv + 26], [xr, yv, z0 + 4], 10, CH, 20);
+    mb.lod('n');
+    mb.cyl(xr, yv, zv + 66, zv + 68, 5, '#7d848c', 6);
+    mb.lod('');
     mb.smooth(false);
     mb.tag('Кронштейны');
-    for (const x of W > 1600 ? [-W / 2 + 150, 0, W / 2 - 150] : [-W / 2 + 120, W / 2 - 120])
-      B(x - 15, 0, z0 + H - 80, x + 15, y0, z0 + H - 50, '#9ea4aa');
+    for (const x of W > 1600 ? [-W / 2 + 150, 0, W / 2 - 150] : [-W / 2 + 120, W / 2 - 120]) {
+      mb.rbox(x - 22, 0, z0 + H - 110, x + 22, 4, z0 + H - 40, 2, '#a9adb0', 2);
+      mb.rbox(x - 6, 0, z0 + H - 80, x + 6, y0 + 2, z0 + H - 64, 2, '#a9adb0', 2);
+      mb.rbox(x - 10, y0 - 2, z0 + H - 92, x + 10, y0 + 2, z0 + H - 50, 2, '#a9adb0', 2);
+      mb.lod('n');
+      for (const zz of [z0 + H - 98, z0 + H - 52]) mb.tube([x, 4, zz], [x, 6, zz], 4, '#7d848c', 12);
+      mb.lod('');
+    }
+  }
+  if (k === 'panel') {
+    // top grille and side covers of a panel radiator
+    const np = c.type === '33' ? 3 : c.type === '11' ? 1 : 2;
+    if (np > 1) {
+      mb.tag('Верхняя решётка');
+      mb.rbox(-W / 2, y0, z0 + H - 2, W / 2, y0 + D, z0 + H + 1.5, 1, col, 2);
+      mb.lod('n');
+      for (let x = -W / 2 + 18; x < W / 2 - 14; x += 14)
+        mb.box(x, y0 + 8, z0 + H + 1.4, x + 7, y0 + D - 8, z0 + H + 1.8, '#9aa1a9');
+      mb.lod('');
+      mb.tag('Боковые панели');
+      for (const sx of [-1, 1])
+        mb.rbox(
+          (sx * W) / 2 - (sx > 0 ? 2 : 0),
+          y0,
+          z0 + 6,
+          (sx * W) / 2 + (sx > 0 ? 0 : 2),
+          y0 + D,
+          z0 + H - 4,
+          1,
+          col,
+          2
+        );
+    }
   }
 }
 
@@ -96429,6 +96531,250 @@ function initPhotometry() {
   });
 }
 
+// ===== mep/hvac/vent-terminals.js =====
+/**
+ * mep/hvac/vent-terminals.js
+ *
+ * Shaped ventilation devices: round ceiling diffuser (stepped cones), ceiling and wall grilles with angled louvres,
+ * supply valve with a round grille, air handling unit with service panels and spigots, inline duct fan. Local axes:
+ * x, y in plan (wall devices: y < 0 is the room), z up; z of the device — the ceiling or the mounting height.
+ */
+
+
+
+
+
+const VTW = '#eef0f2',
+  VG = '#c9ced4',
+  VD = '#3a3d41';
+function vLathe(mb, prof, cx, cy, col, N = 48) {
+  sanLoft(
+    mb,
+    prof.map(([r, z]) => seRing(cx, cy, Math.max(0.05, r), Math.max(0.05, r), 2, 2, z, N)),
+    col,
+    false,
+    false
+  );
+}
+function sizeOf(e) {
+  const s = String(e.size || '').toLowerCase();
+  const m = s.match(/(\d+)\s*[x×х*]\s*(\d+)/);
+  if (m) return { w: +m[1], h: +m[2], d: Math.max(+m[1], +m[2]) };
+  const d = parseFloat(s) || 160;
+  return { w: d, h: d, d };
+}
+/** Louvres between u0..u1 across, along a..b, in a frame; plane: 'ceil' (z down) or 'wall' (y towards the room). */
+function louvres(mb, e, W, H, z, wall) {
+  const n = Math.max(3, Math.round(H / 28)),
+    step = H / n;
+  for (let i = 0; i < n; i++) {
+    const c = -H / 2 + (i + 0.5) * step;
+    if (wall) mb.obox([-W / 2, -6, z + c + 5], [W / 2, -6, z + c + 5], 2, 18, VG);
+    else mb.obox([-W / 2, c + 5, z - 14], [W / 2, c + 5, z - 14], 2, 18, VG);
+  }
+}
+function frame(mb, W, H, z, wall, fw = 25) {
+  const col = VTW;
+  if (wall) {
+    mb.rbox(-W / 2 - fw, -12, z - H / 2 - fw, -W / 2, 0, z + H / 2 + fw, 3, col, 2);
+    mb.rbox(W / 2, -12, z - H / 2 - fw, W / 2 + fw, 0, z + H / 2 + fw, 3, col, 2);
+    mb.rbox(-W / 2 - 1, -12, z + H / 2, W / 2 + 1, 0, z + H / 2 + fw, 3, col, 2);
+    mb.rbox(-W / 2 - 1, -12, z - H / 2 - fw, W / 2 + 1, 0, z - H / 2, 3, col, 2);
+    mb.box(-W / 2, -2, z - H / 2, W / 2, 0, z + H / 2, VD);
+  } else {
+    mb.rbox(-W / 2 - fw, -H / 2 - fw, z - 12, -W / 2, H / 2 + fw, z, 3, col, 2);
+    mb.rbox(W / 2, -H / 2 - fw, z - 12, W / 2 + fw, H / 2 + fw, z, 3, col, 2);
+    mb.rbox(-W / 2 - 1, H / 2, z - 12, W / 2 + 1, H / 2 + fw, z, 3, col, 2);
+    mb.rbox(-W / 2 - 1, -H / 2 - fw, z - 12, W / 2 + 1, -H / 2, z, 3, col, 2);
+    mb.box(-W / 2, -H / 2, z - 1, W / 2, H / 2, z + 1, VD);
+  }
+}
+const BUILD = {
+  vdiff(mb, e, z) {
+    const r = sizeOf(e).d / 2;
+    mb.tag('Диффузор: наружный конус');
+    vLathe(
+      mb,
+      [
+        [r + 50, z],
+        [r + 50, z - 4],
+        [r + 46, z - 8],
+        [r + 30, z - 12],
+        [r + 12, z - 14]
+      ],
+      0,
+      0,
+      VTW,
+      64
+    );
+    mb.tag('Диффузор: конусы');
+    for (const [a, b, dz] of [
+      [r + 8, r - 10, 22],
+      [r - 16, r - 34, 30],
+      [Math.max(14, r - 40), Math.max(6, r - 58), 36]
+    ])
+      vLathe(
+        mb,
+        [
+          [a, z - dz + 8],
+          [a - 2, z - dz + 6],
+          [b, z - dz],
+          [b - 2, z - dz + 2]
+        ],
+        0,
+        0,
+        VTW,
+        64
+      );
+    mb.tag('Диффузор: центральный диск');
+    vLathe(
+      mb,
+      [
+        [0.1, z - 40],
+        [Math.max(10, r - 64), z - 40],
+        [Math.max(8, r - 66), z - 37],
+        [0.1, z - 37]
+      ],
+      0,
+      0,
+      VTW,
+      48
+    );
+    mb.lod('n');
+    mb.tag('Патрубок');
+    vLathe(
+      mb,
+      [
+        [r, z],
+        [r, z + 90],
+        [r - 2, z + 92]
+      ],
+      0,
+      0,
+      '#b8bec6',
+      40
+    );
+    mb.lod('');
+  },
+  vgrille(mb, e, z) {
+    const s = sizeOf(e);
+    mb.tag('Решётка: рамка');
+    frame(mb, s.w, s.h, z, false);
+    mb.tag('Решётка: ламели');
+    louvres(mb, e, s.w, s.h, z, false);
+    mb.lod('n');
+    mb.tag('Камера статического давления');
+    mb.box(-s.w / 2, -s.h / 2, z + 2, s.w / 2, s.h / 2, z + 200, '#b8bec6');
+    mb.lod('');
+  },
+  vwall(mb, e, z) {
+    const s = sizeOf(e);
+    mb.tag('Решётка: рамка');
+    frame(mb, s.w, s.h, z, true);
+    mb.tag('Решётка: ламели');
+    louvres(mb, e, s.w, s.h, z, true);
+  },
+  vvalve(mb, e, z) {
+    mb.tag('Клапан: панель');
+    mb.rbox(-75, -14, z - 75, 75, 0, z + 75, 8, VTW, 3);
+    mb.tag('Клапан: круглая решётка');
+    for (const r of [56, 44, 32, 20])
+      mb.sweep(
+        [
+          [0, -14, z],
+          [0, -20, z]
+        ],
+        r,
+        VTW,
+        48
+      );
+    mb.lod('n');
+    for (const r of [50, 38, 26])
+      mb.sweep(
+        [
+          [0, -14, z],
+          [0, -18.5, z]
+        ],
+        r,
+        VD,
+        48
+      );
+    for (const a of [0, Math.PI / 2])
+      mb.obox([-Math.cos(a) * 56, -19, z - Math.sin(a) * 56], [Math.cos(a) * 56, -19, z + Math.sin(a) * 56], 4, 3, VTW);
+    mb.lod('');
+    mb.tag('Клапан: ручка регулировки');
+    mb.sweep(
+      [
+        [0, -20, z],
+        [0, -32, z]
+      ],
+      12,
+      VG,
+      24
+    );
+  },
+  vunit(mb, e, z) {
+    const s = sizeOf(e),
+      zb = z - 380,
+      zt = z - 60;
+    mb.tag('Установка: корпус');
+    mb.rbox(-s.w / 2, -s.h / 2, zb, s.w / 2, s.h / 2, zt, 6, '#b9c0c8', 3);
+    mb.tag('Сервисные панели');
+    for (const x of [-s.w / 4, s.w / 4])
+      mb.rbox(x - s.w / 4 + 12, -s.h / 2 - 2, zb + 20, x + s.w / 4 - 12, -s.h / 2 + 2, zt - 20, 3, '#c8ced5', 2);
+    mb.lod('n');
+    for (const x of [-s.w / 4, s.w / 4]) {
+      mb.rbox(x - 25, -s.h / 2 - 12, zb + 140, x + 25, -s.h / 2 - 2, zb + 160, 4, VD, 2);
+      for (const zz of [zb + 40, zt - 40])
+        mb.sweep(
+          [
+            [x + s.w / 4 - 30, -s.h / 2 - 2, zz],
+            [x + s.w / 4 - 30, -s.h / 2 - 5, zz]
+          ],
+          7,
+          VD,
+          16
+        );
+    }
+    mb.lod('');
+    mb.tag('Патрубки');
+    for (const sx of [-1, 1]) {
+      mb.tube([(sx * s.w) / 2, 0, (zb + zt) / 2], [sx * (s.w / 2 + 70), 0, (zb + zt) / 2], 80, '#c9ced4', 32);
+      mb.tube([sx * (s.w / 2 + 2), 0, (zb + zt) / 2], [sx * (s.w / 2 + 14), 0, (zb + zt) / 2], 86, '#a9b0b8', 32);
+    }
+    mb.tag('Подвесы');
+    for (const sx of [-1, 1]) mb.cyl(sx * (s.w / 2 - 40), 0, zt, z, 5, VD, 10);
+  },
+  vfan(mb, e, z) {
+    const r = Math.max(70, sizeOf(e).d / 2),
+      zc = z - 300;
+    mb.tag('Вентилятор: корпус');
+    mb.tube([-170, 0, zc], [170, 0, zc], r + 40, '#9aa1a9', 40);
+    mb.tag('Фланцы');
+    for (const sx of [-1, 1]) mb.tube([sx * 170, 0, zc], [sx * 182, 0, zc], r + 46, '#868d95', 40);
+    mb.tag('Патрубки');
+    for (const sx of [-1, 1]) mb.tube([sx * 182, 0, zc], [sx * 260, 0, zc], r, '#c9ced4', 32);
+    mb.lod('n');
+    mb.tag('Клеммная коробка');
+    mb.rbox(-50, -r - 70, zc - 40, 50, -r - 30, zc + 40, 4, '#5d646c', 2);
+    mb.lod('');
+    mb.tag('Подвес');
+    mb.cyl(0, 0, zc + r + 40, z, 6, VD, 10);
+  }
+};
+/** Registers the shaped models of the ventilation devices. Called once by app/boot.js. */
+function initVentTerminals() {
+  for (const k of Object.keys(BUILD))
+    if (DEVK[k])
+      DEVK[k].mesh = e => {
+        const mb = MB();
+        mb.smooth(true);
+        BUILD[k](mb, e, e.z || 0);
+        mb.smooth(false);
+        return meshGroup(mb.meshes(), { edges: true });
+      };
+}
+
 // ===== ui/palette.js =====
 /**
  * ui/palette.js
@@ -98754,6 +99100,7 @@ const solidEditorState = ED;
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -99004,6 +99351,7 @@ initSpec();
 initWallTypesDialog();
 initProfilesDialog();
 initPalette();
+initVentTerminals();
 initMepDialog();
 initImport();
 initSanitaryLib();
