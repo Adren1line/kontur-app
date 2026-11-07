@@ -6810,7 +6810,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '44.1';
+const APP_VER = '45';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -31937,6 +31937,9 @@ defineTools({
 
 
 
+
+
+
 /* ---------- plumbing fixtures with connection ports ---------- */
 const CER = '#f3f4f6',
   CHR = '#c7ccd2',
@@ -32075,24 +32078,134 @@ const FIXK = {
       { ell: [0, e.cfg.d * 0.55, e.cfg.w * 0.36, e.cfg.d * 0.33] }
     ],
     build(mb, e) {
-      const c = e.cfg;
-      if (c.type === 'cab') {
+      const c = e.cfg,
+        w = c.w,
+        d = c.d,
+        h = c.h,
+        ty = c.type;
+      const by = d * 0.52,
+        a = w * 0.36,
+        b = d * 0.33;
+      mb.smooth(true);
+      if (ty === 'cab') {
+        // vanity: carcass on a recessed plinth, two drawers with a handle groove
         mb.tag('Тумба');
-        mb.box(-c.w / 2 + 10, 10, c.type === 'cab' ? 250 : 0, c.w / 2 - 10, c.d - 20, c.h - 60, c.cabCol);
+        mb.rbox(-w / 2 + 10, 12, 250, w / 2 - 10, d - 26, h - 17, 3, c.cabCol, 2);
+        const zs = [250, (250 + h - 17) / 2, h - 17];
+        for (let i = 0; i < 2; i++) {
+          const z0 = zs[i] + (i ? 1.5 : 0),
+            z1 = zs[i + 1] - (i ? 0 : 1.5);
+          mb.tag('Фасады ящиков');
+          mb.rbox(-w / 2 + 10, d - 26, z0, w / 2 - 10, d - 8, z1, 2, c.cabCol, 2);
+          mb.lod('n');
+          mb.tag('Паз-ручка');
+          mb.box(-w / 2 + 14, d - 9.5, z1 - 24, w / 2 - 14, d - 7.8, z1 - 8, '#3a3d41');
+          mb.lod('');
+        }
       }
-      mb.tag('Раковина');
-      mb.box(-c.w / 2, 0, c.h - 60, c.w / 2, c.d, c.h, CER);
-      mb.tag('Смеситель');
-      if (c.mixer === 'deck') {
-        mb.cyl(0, 70, c.h, c.h + 180, 16, CHR, 14);
-        mb.box(-12, 70, c.h + 160, 12, 200, c.h + 180, CHR);
+      if (ty === 'top') {
+        // countertop with a vessel basin
+        mb.tag('Столешница');
+        mb.rbox(-w / 2, 0, h - 30, w / 2, d, h, 3, c.topCol || '#b48a5c', 2);
+        const R = Math.min(a, b) * 1.15;
+        mb.tag('Раковина накладная');
+        plathe(
+          mb,
+          [
+            [0.1, h],
+            [R * 0.55, h],
+            [R * 0.9, h + 40],
+            [R, h + 105],
+            [R - 3, h + 120],
+            [R - 9, h + 118],
+            [R - 11, h + 104],
+            [R * 0.86, h + 60],
+            [R * 0.5, h + 22],
+            [18, h + 14]
+          ],
+          0,
+          by,
+          CER,
+          56
+        );
+        mb.tag('Донный клапан');
+        plathe(
+          mb,
+          [
+            [0.1, h + 14.5],
+            [18, h + 14.5],
+            [19, h + 16],
+            [17, h + 17],
+            [0.1, h + 17]
+          ],
+          0,
+          by,
+          PCHR,
+          32
+        );
       } else {
-        mb.box(-80, 0, c.h + 180, 80, 15, c.h + 240, CHR);
-        mb.box(-10, 0, c.h + 200, 10, 190, c.h + 215, CHR);
+        mb.tag('Раковина');
+        // ceramic top with the bowl opening, a front and side skirt, the bowl down to the drain
+        const R2 = 22,
+          outer = [];
+        const corner = (cx, cy, a0) => {
+          for (let i = 0; i <= 6; i++) {
+            const t = a0 + (i / 6) * (Math.PI / 2);
+            outer.push([cx + Math.cos(t) * R2, cy + Math.sin(t) * R2]);
+          }
+        };
+        outer.push([-w / 2, 0], [w / 2, 0]);
+        corner(w / 2 - R2, d - R2, 0);
+        corner(-w / 2 + R2, d - R2, Math.PI / 2);
+        const ringB = (aa, bb, z) => seRing(0, by, aa, bb, 3, 3, z, 48);
+        const hole = ringB(a, b, 0).map(p => [p[0], p[1]]);
+        slabCut(mb, outer, [hole], h - 16, h, CER);
+        mb.rbox(-w / 2, d - 16, h - 60, w / 2, d, h, 6, CER, 3);
+        mb.rbox(-w / 2, 0, h - 60, -w / 2 + 16, d, h, 6, CER, 3);
+        mb.rbox(w / 2 - 16, 0, h - 60, w / 2, d, h, 6, CER, 3);
+        sanLoft(
+          mb,
+          [
+            ringB(a, b, h),
+            ringB(a * 0.98, b * 0.97, h - 25),
+            ringB(a * 0.9, b * 0.85, h - 70),
+            ringB(a * 0.66, b * 0.6, h - 115),
+            ringB(a * 0.32, b * 0.3, h - 135),
+            ringB(20, 20, h - 138)
+          ],
+          CER,
+          false,
+          false
+        );
+        mb.tag('Донный клапан');
+        plathe(
+          mb,
+          [
+            [0.1, h - 137.5],
+            [20, h - 137.5],
+            [21, h - 136],
+            [19, h - 135],
+            [0.1, h - 135]
+          ],
+          0,
+          by,
+          PCHR,
+          32
+        );
+        mb.lod('n');
+        mb.tag('Перелив');
+        mb.box(-16, by - b * 0.97 - 1, h - 46, 16, by - b * 0.97 + 1.2, h - 38, '#2a2c30');
+        mb.lod('');
       }
-      mb.tag('Сифон');
-      mb.tube([0, c.d * 0.55, c.h - 60], [0, c.d * 0.55, c.h - 260], 20, CHR, 10);
-      mb.tube([0, c.d * 0.55, c.h - 260], [0, 0, 450], 20, CHR, 10);
+      if (!c.mixModel || !FIXK.sink.mixHook || !FIXK.sink.mixHook(mb, e)) {
+        if (c.mixer === 'deck') {
+          deckMixer(mb, 0, ty === 'top' ? 40 : 52, h, 'basin', PCHR, ty === 'top' ? 300 : 160);
+          for (const sx of [-1, 1])
+            angleValve(mb, sx * 60, 550, sx * 8, ty === 'top' ? 40 : 52, h - (ty === 'top' ? 30 : 16), sx);
+        } else wallMixer(mb, 0, h + 200);
+      }
+      bottleTrap(mb, 0, by, ty === 'top' ? h - 30 : h - 138, 450);
+      mb.smooth(false);
     },
     panel: e => [
       ['Ширина', 'cfg.w', 'n'],
@@ -32149,14 +32262,91 @@ const FIXK = {
       }
     ],
     build(mb, e) {
-      const c = e.cfg;
+      const c = e.cfg,
+        w = c.w,
+        d = c.d,
+        h = c.h,
+        y0 = 60,
+        cy = y0 + d / 2 + 12,
+        A = w / 2 - 50,
+        B = d / 2 - 58,
+        st = '#c3c8ce';
+      mb.smooth(true);
       mb.tag('Мойка');
-      mb.box(-c.w / 2, 60, c.h - 200, c.w / 2, c.d + 60, c.h, '#c3c8ce');
-      mb.tag('Смеситель');
-      mb.cyl(0, 100, c.h, c.h + 300, 18, CHR, 14);
-      mb.box(-12, 100, c.h + 280, 12, 300, c.h + 300, CHR);
+      const ring = (aa, bb, z, n) => seRing(0, cy, aa, bb, n || 10, n || 10, z, 64);
+      const outer = seRing(0, y0 + d / 2, w / 2, d / 2, 12, 12, 0, 64).map(p => [p[0], p[1]]);
+      slabCut(mb, outer, [ring(A, B, 0).map(p => [p[0], p[1]])], h, h + 1.5, st);
+      sanLoft(
+        mb,
+        [ring(A, B, h), ring(A, B, h - 185), ring(A - 10, B - 10, h - 198), ring(A - 30, B - 30, h - 200)],
+        st,
+        false,
+        false
+      );
+      sanLoft(mb, [ring(A - 30, B - 30, h - 200), ring(46, 46, h - 200, 2)], st, false, false);
+      mb.tag('Корзинчатый вентиль');
+      plathe(
+        mb,
+        [
+          [46, h - 200],
+          [44, h - 202],
+          [36, h - 214],
+          [0.1, h - 214]
+        ],
+        0,
+        cy,
+        '#aeb3b8',
+        40
+      );
+      mb.lod('n');
+      for (const [dx, dy] of [
+        [1, 0],
+        [0, 1]
+      ])
+        mb.box(
+          -dx * 34 - dy * 2,
+          cy - dy * 34 - dx * 2,
+          h - 213,
+          dx * 34 + dy * 2,
+          cy + dy * 34 + dx * 2,
+          h - 211,
+          '#7d8388'
+        );
+      mb.lod('');
+      deckMixer(mb, 0, y0 + 28, h + 1.5, 'kitchen');
+      for (const sx of [-1, 1]) angleValve(mb, sx * 80, 450, sx * 8, y0 + 28, h - 10, sx);
       mb.tag('Сифон');
-      mb.tube([0, c.d / 2 + 60, c.h - 200], [0, 0, 350], 22, CHR, 10);
+      const zt = h - 214;
+      mb.tube([0, cy, zt], [0, cy, zt - 90], 20, '#e9ebee', 24);
+      plathe(
+        mb,
+        [
+          [0.1, zt - 230],
+          [34, zt - 230],
+          [40, zt - 222],
+          [40, zt - 110],
+          [32, zt - 90],
+          [20, zt - 86]
+        ],
+        0,
+        cy,
+        '#e9ebee',
+        40
+      );
+      mb.tag('Гофра сифона');
+      gofra(
+        mb,
+        [
+          [0, cy, zt - 150],
+          [0, cy - 70, zt - 150],
+          [0, 70, 350],
+          [0, 0, 350]
+        ],
+        20,
+        '#e3e5e8',
+        60
+      );
+      mb.smooth(false);
     },
     panel: e => [
       ['Ширина', 'cfg.w', 'n'],
@@ -32190,28 +32380,62 @@ const FIXK = {
     ],
     build(mb, e) {
       const c = e.cfg;
+      mb.smooth(true);
       mb.tag('Скрытая часть (корпус)');
-      mb.box(-90, -90, c.z - 110, 90, -5, c.z + 110, '#9aa1a9');
-      mb.tag(c.thermo ? 'Панель термостата' : 'Панель смесителя');
-      mb.box(-80, 0, c.z - 150, 80, 10, c.z + 150, CHR);
+      mb.box(-70, -90, c.z - 110, 70, -12, c.z + 110, '#9aa1a9');
+      showerPanel(mb, c.z, c.thermo);
+      const sq = c.tropSq === true;
       if (c.trop === 'ceil') {
-        mb.tag('Тропический душ (потолок)');
-        mb.cyl(0, 450, S.ceil - 200, S.ceil, 12, CHR, 10);
-        mb.cyl(0, 450, S.ceil - 215, S.ceil - 200, c.tropD / 2, CHR, 28);
+        const zc = S.ceil;
+        mb.tag('Потолочный кронштейн');
+        plathe(
+          mb,
+          [
+            [0.1, zc],
+            [38, zc],
+            [38, zc - 5],
+            [34, zc - 8],
+            [11, zc - 9]
+          ],
+          0,
+          450,
+          PCHR,
+          40
+        );
+        mb.cyl(0, 450, zc - 200, zc - 8, 10, PCHR, 20);
+        rainHead(mb, 0, 450, zc - 200, c.tropD, sq);
       } else if (c.trop === 'wall') {
-        mb.tag('Тропический душ (кронштейн)');
-        mb.box(-10, 0, 2050, 10, 400, 2070, CHR);
-        mb.cyl(0, 450, 2030, 2045, c.tropD / 2, CHR, 28);
+        mb.tag('Настенный кронштейн');
+        mb.sweep(
+          [
+            [0, 0, 2060],
+            [0, 8, 2060]
+          ],
+          32,
+          PCHR,
+          40
+        );
+        mb.rbox(-14, 6, 2052, 14, 460, 2070, 6, PCHR, 3);
+        rainHead(mb, 0, 450, 2052, c.tropD, sq);
       }
-      if (c.hand) {
-        mb.tag('Ручной душ');
-        mb.box(-25, 0, c.z + 250, 25, 30, c.z + 300, CHR);
-        mb.tube([60, 40, c.z + 200], [60, 40, c.z + 450], 18, CHR, 10);
-      }
+      if (c.hand) handShowerSet(mb, 130, c.z - 30, c.z + 330);
       if (c.spout) {
         mb.tag('Излив');
-        mb.box(-15, 0, c.z - 300, 15, 160, c.z - 270, CHR);
+        mb.sweep(
+          [
+            [0, 0, c.z - 285],
+            [0, 8, c.z - 285]
+          ],
+          30,
+          PCHR,
+          40
+        );
+        mb.rbox(-16, 6, c.z - 296, 16, 175, c.z - 274, 8, PCHR, 3);
+        mb.lod('n');
+        mb.box(-11, 160, c.z - 296.6, 11, 170, c.z - 296, PDARK);
+        mb.lod('');
       }
+      mb.smooth(false);
     },
     panel: e => [
       ['Высота панели', 'cfg.z', 'n'],
@@ -32227,6 +32451,7 @@ const FIXK = {
         ]
       ],
       ['Диаметр лейки', 'cfg.tropD', 'n'],
+      ['Квадратная лейка', 'cfg.tropSq', 'b'],
       ['Ручной душ', 'cfg.hand', 'b'],
       ['Излив (для ванны)', 'cfg.spout', 'b']
     ],
@@ -32814,6 +33039,7 @@ XT.fix = {
  *
  * Sanitary model library: GROHE/TECE installations, WC pans, catalogue editor.
  */
+
 
 
 
@@ -34005,15 +34231,23 @@ function buildFloorWC(mb, e) {
   mb.tag('Крышка бачка');
   sanLoft(mb, [tr(P.H - 25, 4), tr(P.H, 4)], CER, true, true);
   mb.smooth(false);
-  mb.tag('Кнопка смыва');
-  mb.cyl(0, tcy, P.H, P.H + 5, 26, CHR, 24);
-  mb.box(-1.5, tcy - 26, P.H + 5, 1.5, tcy + 26, P.H + 6, '#7c838b');
+  dualButton(mb, 0, tcy, P.H, CHR);
   if (g.ok === 'v') {
     mb.tag('Выпуск в пол Ø110');
     mb.tube([0, P.vOutY, 60], [0, P.vOutY, -20], 55, '#f2f3f5', 16);
   } else {
-    mb.tag('Отвод / манжета Ø110');
-    mb.tube([0, 140, P.hOutZ], [0, 0, P.hOutZ], 55, '#f2f3f5', 16);
+    mb.tag('Гофра унитаза Ø110');
+    gofra(
+      mb,
+      [
+        [0, 150, P.hOutZ],
+        [0, 70, P.hOutZ],
+        [0, 0, P.hOutZ]
+      ],
+      55,
+      '#f2f3f5',
+      30
+    );
   }
   mb.tag('Кран угловой ½″');
   mb.box(g.vx - 14, 0, P.inZ - 14, g.vx + 14, 40, P.inZ + 14, CHR);
@@ -35907,6 +36141,13 @@ FIXK.hyg = {
 };
 
 /* ---- sink: optional catalogue mixer instead of the generic one ---- */
+FIXK.sink.mixHook = (mb, e) => {
+  const c = e.cfg;
+  const { M, Z } = mixerGeo(e, { model: c.mixModel, size: c.mixSize });
+  if (!M) return false;
+  drawMixerFull(mb, M, Z, 0, c.type === 'top' ? 40 : 52, c.h, c.h + (+c.mixZ || 250), null);
+  return true;
+};
 const _sinkPorts = FIXK.sink.ports,
   _sinkPanel = FIXK.sink.panel,
   _sinkSpec = FIXK.sink.spec;
@@ -89122,6 +89363,7 @@ defineTools({
 
 
 
+
 /* ---------- washing machine ---------- */
 const WM_K = {
   front: { n: 'фронтальная', w: 600, d: 600, h: 850 },
@@ -89215,8 +89457,19 @@ Object.assign(FIXK.washer, {
     // hoses to the wall
     mb.tag('Заливной шланг');
     mb.tube([w - 80, 30, 600], [w - 80, 20, 500], 8, '#d8dce0', 8);
-    mb.tag('Сливной шланг');
-    mb.tube([-w + 120, 30, 600], [-w + 120, 20, 450], 10, '#7d858e', 8);
+    mb.tag('Сливной шланг (гофра)');
+    gofra(
+      mb,
+      [
+        [-w + 120, 40, 300],
+        [-w + 120, 40, 640],
+        [-180, 30, 640],
+        [-180, 0, 600]
+      ],
+      11,
+      '#8f979f',
+      50
+    );
   },
   panel: e => [
     ['Исполнение', 'cfg.type', 's', Object.entries(WM_K).map(([k, v]) => [k, v.n])],
@@ -111431,6 +111684,493 @@ defineTools({
     help: 'Электровывод: точка у стены или на потолке. Напряжение 230 / 24 / 48 В, мощность, назначение и блок питания — в свойствах. Для 24/48 В блоки питания подбираются автоматически (в щите, в щитке БП или рядом с потребителем).'
   }
 });
+
+// ===== mep/plumbing/plumb-parts.js =====
+/**
+ * mep/plumbing/plumb-parts.js
+ *
+ * Shaped plumbing parts shared by the fixtures: corrugated hose, angle valve with a braided hose, bottle trap,
+ * deck and wall mixers (basin / kitchen), a dual flush button, a thermostat panel with knobs, overhead and hand
+ * showers, a wall outlet with holder and hose. Local axes of a fixture: x along the wall, y out of the wall
+ * (0 = finished face), z up. Small parts (ribs, knurls, nozzles, aerators) are near-only (mb.lod('n')).
+ */
+
+
+
+
+const PCHR = '#c9cdd1',
+  PDARK = '#1c1d1f',
+  PGREY = '#9aa1a9';
+
+/** Solid of revolution about a vertical axis at (cx, cy): prof = [[r, z], ...]. */
+function plathe(mb, prof, cx, cy, col, N = 36) {
+  sanLoft(
+    mb,
+    prof.map(([r, z]) => seRing(cx, cy, Math.max(0.05, r), Math.max(0.05, r), 2, 2, z, N)),
+    col,
+    false,
+    false
+  );
+}
+/** Points along a polyline every step mm (for ribbed hoses). */
+function plResample(pts, step) {
+  const out = [pts[0]];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i],
+      b = pts[i + 1],
+      L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+      n = Math.max(1, Math.round(L / step));
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+    }
+  }
+  return out;
+}
+/**
+ * Corrugated hose (гофра): a smooth hose from afar, ribs near the camera. pts — a path (rounded here), r — outer radius.
+ */
+function gofra(mb, pts, r, col, bend = 40) {
+  const P = roundPath(pts, bend).pts;
+  mb.lod('f');
+  mb.sweep(P, r * 0.94, col, 16);
+  mb.lod('n');
+  mb.sweep(P, r * 0.86, col, 16);
+  const Q = plResample(P, r * 0.55);
+  for (let i = 0; i + 1 < Q.length; i += 2) {
+    const a = Q[i],
+      b = Q[i + 1];
+    mb.sweep([a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]], r, col, 16);
+  }
+  mb.lod('');
+}
+/** Angle valve on the wall at (x, z) with a braided hose up to (tx, ty, tz). */
+function angleValve(mb, x, z, tx, ty, tz, handle) {
+  mb.tag('Угловой вентиль');
+  mb.sweep(
+    [
+      [x, 0, z],
+      [x, 3, z]
+    ],
+    24,
+    PCHR,
+    32
+  );
+  mb.tube([x, 3, z], [x, 34, z], 9, PCHR, 20);
+  mb.cyl(x, 34, z - 2, z + 22, 9.5, PCHR, 20);
+  mb.lod('n');
+  mb.tube([x, 34, z], [x + (handle || 1) * 26, 34, z], 4, PCHR, 12);
+  mb.rbox(
+    x + (handle || 1) * 22 - 7,
+    28,
+    z - 7,
+    x + (handle || 1) * 22 + 7,
+    40,
+    z + 7,
+    3,
+    handle > 0 ? '#2f6fd6' : '#d64545',
+    2
+  );
+  mb.lod('');
+  mb.tag('Гибкая подводка (оплётка)');
+  const P = roundPath(
+    [
+      [x, 34, z + 22],
+      [x, 34, z + 70],
+      [tx, ty, tz - 60],
+      [tx, ty, tz]
+    ],
+    40
+  ).pts;
+  mb.sweep(P, 5.2, '#b9bdc1', 12);
+  mb.lod('n');
+  mb.cyl(x, 34, z + 22, z + 40, 7, PCHR, 16);
+  mb.lod('');
+}
+/** Chrome bottle trap under a basin: tail from the drain at (x, y, zTop), outlet into the wall at zOut. */
+function bottleTrap(mb, x, y, zTop, zOut) {
+  mb.tag('Сифон бутылочный');
+  mb.tube([x, y, zTop], [x, y, zTop - 120], 15, PCHR, 24);
+  const zb = zTop - 120;
+  plathe(
+    mb,
+    [
+      [0.1, zb - 140],
+      [24, zb - 140],
+      [30, zb - 132],
+      [30, zb - 20],
+      [24, zb],
+      [16, zb + 4]
+    ],
+    x,
+    y,
+    PCHR,
+    40
+  );
+  mb.lod('n');
+  plathe(
+    mb,
+    [
+      [30.5, zb - 70],
+      [31.5, zb - 66],
+      [31.5, zb - 58],
+      [30.5, zb - 54]
+    ],
+    x,
+    y,
+    PCHR,
+    40
+  );
+  mb.lod('');
+  mb.tube([x, y, zb - 40], [x, y - 20, zb - 40], 15, PCHR, 20);
+  mb.sweep(
+    roundPath(
+      [
+        [x, y - 20, zb - 40],
+        [x, 26, zb - 40],
+        [x, 26, zOut],
+        [x, 0, zOut]
+      ],
+      30
+    ).pts,
+    16,
+    PCHR,
+    20
+  );
+  mb.tag('Отражатель на стене');
+  mb.sweep(
+    [
+      [x, 0, zOut],
+      [x, 6, zOut]
+    ],
+    34,
+    PCHR,
+    32
+  );
+}
+/**
+ * Deck mixer: round body on the deck at (x, y, z). kind 'basin' — a short spout forward; 'kitchen' — a tall body
+ * with a U-spout and a side lever.
+ */
+function deckMixer(mb, x, y, z, kind, col = PCHR, H) {
+  mb.tag('Смеситель');
+  if (kind === 'kitchen') {
+    const h = H || 330,
+      reach = 220;
+    plathe(
+      mb,
+      [
+        [0.1, z],
+        [30, z],
+        [30, z + 4],
+        [26, z + 8],
+        [24, z + 140],
+        [20, z + 150],
+        [12, z + 155]
+      ],
+      x,
+      y,
+      col,
+      40
+    );
+    const P = roundPath(
+      [
+        [x, y, z + 150],
+        [x, y, z + h],
+        [x, y + reach, z + h],
+        [x, y + reach, z + h - 70]
+      ],
+      70
+    ).pts;
+    mb.sweep(P, 11, col, 24);
+    mb.lod('n');
+    mb.tag('Аэратор');
+    mb.cyl(x, y + reach, z + h - 76, z + h - 70, 10.5, PCHR, 24);
+    mb.cyl(x, y + reach, z + h - 77, z + h - 76, 8, PDARK, 20);
+    mb.lod('');
+    mb.tag('Рычаг');
+    mb.tube([x + 24, y, z + 95], [x + 40, y, z + 95], 12, col, 24);
+    mb.rbox(x + 36, y - 6, z + 90, x + 46, y + 6, z + 170, 4, col, 3);
+  } else {
+    const h = H || 160,
+      reach = 115;
+    plathe(
+      mb,
+      [
+        [0.1, z],
+        [26, z],
+        [26, z + 3],
+        [23, z + 7],
+        [22, h * 0.75 + z],
+        [22, z + h - 12],
+        [20, z + h - 4],
+        [14, z + h]
+      ],
+      x,
+      y,
+      col,
+      40
+    );
+    mb.tag('Излив');
+    mb.sweep(
+      roundPath(
+        [
+          [x, y, z + h - 35],
+          [x, y + reach - 18, z + h - 35],
+          [x, y + reach, z + h - 50]
+        ],
+        18
+      ).pts,
+      10,
+      col,
+      20
+    );
+    mb.lod('n');
+    mb.tag('Аэратор');
+    mb.cyl(x, y + reach, z + h - 57, z + h - 50, 10, PCHR, 20);
+    mb.cyl(x, y + reach, z + h - 58, z + h - 57, 7.5, PDARK, 20);
+    mb.lod('');
+    mb.tag('Рычаг');
+    mb.cyl(x, y, z + h, z + h + 10, 14, col, 28);
+    mb.rbox(x - 7, y - 85, z + h + 4, x + 7, y + 4, z + h + 13, 4, col, 3);
+  }
+}
+/** Wall mixer for a basin: round plate, lever on top, spout. */
+function wallMixer(mb, x, z, col = PCHR) {
+  mb.tag('Смеситель настенный');
+  mb.sweep(
+    [
+      [x, 0, z],
+      [x, 8, z]
+    ],
+    34,
+    col,
+    40
+  );
+  mb.sweep(
+    [
+      [x, 8, z],
+      [x, 11, z]
+    ],
+    31,
+    col,
+    40
+  );
+  mb.tag('Излив');
+  mb.rbox(x - 12, 10, z - 9, x + 12, 190, z + 9, 6, col, 3);
+  mb.lod('n');
+  mb.box(x - 8, 178, z - 9.6, x + 8, 186, z - 9, PDARK);
+  mb.lod('');
+  mb.tag('Рычаг');
+  mb.sweep(
+    [
+      [x, 0, z + 70],
+      [x, 10, z + 70]
+    ],
+    22,
+    col,
+    32
+  );
+  mb.tube([x, 10, z + 70], [x, 26, z + 70], 10, col, 20);
+  mb.rbox(x - 6, 22, z + 66, x + 6, 100, z + 76, 4, col, 3);
+}
+/** Dual flush button on a tank lid at (x, y, z): a ring with two keys (small and large). */
+function dualButton(mb, x, y, z, col = PCHR) {
+  mb.tag('Кнопка смыва (двойная)');
+  plathe(
+    mb,
+    [
+      [0.1, z - 1],
+      [27, z - 1],
+      [27, z + 2],
+      [25.5, z + 3.5],
+      [24, z + 3.5]
+    ],
+    x,
+    y,
+    col,
+    40
+  );
+  mb.rbox(x - 22, y - 21, z + 1, x - 4, y + 21, z + 5, 4, col, 3);
+  mb.rbox(x - 2, y - 21, z + 1, x + 22, y + 21, z + 6, 4, col, 3);
+  mb.lod('n');
+  mb.box(x - 3.6, y - 20, z + 1.5, x - 2.4, y + 20, z + 4, PDARK);
+  mb.lod('');
+}
+/** Concealed shower control on the wall face at height z: thermostat (two knobs) or a single lever. */
+function showerPanel(mb, z, thermo, col = PCHR) {
+  mb.tag(thermo ? 'Панель термостата' : 'Панель смесителя');
+  mb.rbox(-80, 0, z - 150, 80, 8, z + 150, 10, col, 4);
+  if (thermo) {
+    for (const [zz, temp] of [
+      [z + 70, true],
+      [z - 70, false]
+    ]) {
+      mb.tag(temp ? 'Ручка температуры' : 'Переключатель потоков');
+      mb.sweep(
+        [
+          [0, 8, zz],
+          [0, 14, zz]
+        ],
+        34,
+        col,
+        40
+      );
+      mb.sweep(
+        [
+          [0, 14, zz],
+          [0, 46, zz]
+        ],
+        28,
+        col,
+        40
+      );
+      mb.sweep(
+        [
+          [0, 46, zz],
+          [0, 50, zz]
+        ],
+        25,
+        col,
+        40
+      );
+      mb.lod('n');
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * TAU;
+        mb.box(
+          Math.cos(a) * 28 - 1,
+          18,
+          zz + Math.sin(a) * 28 - 1,
+          Math.cos(a) * 28 + 1,
+          42,
+          zz + Math.sin(a) * 28 + 1,
+          '#b3b8bd'
+        );
+      }
+      if (temp) mb.box(-2, 50, zz + 14, 2, 51, zz + 22, '#c0392b');
+      else mb.box(-10, 50, zz - 2, 10, 51, zz + 2, PDARK);
+      mb.lod('');
+    }
+  } else {
+    mb.tag('Рычаг');
+    mb.sweep(
+      [
+        [0, 8, z],
+        [0, 20, z]
+      ],
+      30,
+      col,
+      40
+    );
+    mb.tube([0, 20, z], [0, 40, z], 12, col, 20);
+    mb.rbox(-7, 36, z - 6, 7, 50, z + 110, 4, col, 3);
+  }
+}
+/** Overhead shower head: a thin disc / square plate with a rounded edge and nozzles. */
+function rainHead(mb, cx, cy, zTop, D, square, col = PCHR) {
+  mb.tag('Верхний душ');
+  const r = D / 2;
+  if (square) mb.rbox(cx - r, cy - r, zTop - 9, cx + r, cy + r, zTop, 4, col, 3);
+  else
+    plathe(
+      mb,
+      [
+        [0.1, zTop],
+        [r - 4, zTop],
+        [r, zTop - 4],
+        [r - 1, zTop - 8],
+        [r - 4, zTop - 9],
+        [0.1, zTop - 9]
+      ],
+      cx,
+      cy,
+      col,
+      64
+    );
+  mb.lod('n');
+  mb.tag('Форсунки');
+  for (let ring = 1; ring * 18 < r - 10; ring++) {
+    const rr = ring * 18,
+      n = Math.round((TAU * rr) / 18);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU,
+        px = cx + Math.cos(a) * rr,
+        py = cy + Math.sin(a) * rr;
+      mb.box(px - 1.4, py - 1.4, zTop - 9.6, px + 1.4, py + 1.4, zTop - 9, '#3a3d41');
+    }
+  }
+  mb.lod('');
+}
+/** Wall outlet (elbow), a holder and a hand shower hanging on it, with a hose loop. */
+function handShowerSet(mb, x, zOut, zHold, col = PCHR) {
+  mb.tag('Шланговое подключение');
+  mb.sweep(
+    [
+      [x, 0, zOut],
+      [x, 6, zOut]
+    ],
+    26,
+    col,
+    32
+  );
+  mb.sweep(
+    roundPath(
+      [
+        [x, 6, zOut],
+        [x, 30, zOut],
+        [x, 30, zOut - 30]
+      ],
+      14
+    ).pts,
+    9,
+    col,
+    20
+  );
+  mb.tag('Держатель');
+  mb.sweep(
+    [
+      [x + 110, 0, zHold],
+      [x + 110, 6, zHold]
+    ],
+    24,
+    col,
+    32
+  );
+  mb.rbox(x + 102, 6, zHold - 14, x + 118, 46, zHold + 14, 5, col, 3);
+  mb.tag('Ручной душ');
+  const hx = x + 110,
+    hy = 50,
+    zc = zHold + 95;
+  mb.tube([hx, hy, zHold - 110], [hx, hy, zHold + 45], 12, col, 24);
+  mb.sweep(roundPath([[hx, hy, zHold + 45], [hx, hy, zc - 30], [hx, hy - 2, zc]], 20).pts, 10, col, 20);
+  // the head faces into the room
+  mb.sweep([[hx, hy - 8, zc], [hx, hy + 6, zc]], 42, col, 48);
+  mb.sweep([[hx, hy + 6, zc], [hx, hy + 9, zc]], 39, col, 48);
+  mb.lod('n');
+  for (let ring = 1; ring <= 2; ring++)
+    for (let i = 0; i < ring * 9; i++) {
+      const a = (i / (ring * 9)) * TAU,
+        rr = ring * 12;
+      mb.box(hx + Math.cos(a) * rr - 1.3, hy + 9, zc + Math.sin(a) * rr - 1.3, hx + Math.cos(a) * rr + 1.3, hy + 9.6, zc + Math.sin(a) * rr + 1.3, '#3a3d41');
+    }
+  mb.lod('');
+  mb.tag('Шланг');
+  mb.sweep(
+    roundPath(
+      [
+        [x, 30, zOut - 30],
+        [x, 40, zOut - 420],
+        [x + 60, 50, zOut - 520],
+        [hx, hy, zHold - 300],
+        [hx, hy, zHold - 110]
+      ],
+      90
+    ).pts,
+    7,
+    '#b9bdc1',
+    14
+  );
+}
 
 // ===== mep/plumbing/sewer-gen.js =====
 /**
