@@ -6946,7 +6946,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '53';
+const APP_VER = '54';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -25676,7 +25676,7 @@ const WSDEF = [
     n: 'Архитектура',
     ab: 'Арх.',
     g: [
-      ['Стены и проёмы', ['wall', 'joinwalls', 'portal', 'door', 'window', 'vitrage']],
+      ['Стены и проёмы', ['wall', 'joinwalls', 'portal', 'door', 'window', 'vitrage', 'gpart']],
       ['Этажи и плиты', ['level', 'slab', 'ceilslab', 'shole', 'roof']],
       ['Лестницы', ['stair', 'rail']]
     ]
@@ -25717,7 +25717,7 @@ const WSDEF = [
     ab: 'Сант.',
     g: [
       ['Трубы', ['pipe', 'sewergen', 'watergen']],
-      ['Приборы', ['fix', 'washer', 'towel', 'boiler', 'wheater', 'drain']]
+      ['Приборы', ['fix', 'washer', 'towel', 'boiler', 'wheater', 'drain', 'gshower']]
     ]
   },
   {
@@ -25788,6 +25788,7 @@ const TLBL = {
   door: 'Дверь',
   window: 'Окно',
   vitrage: 'Витраж',
+  gpart: 'Стекло',
   level: 'Этажи',
   slab: 'Перекрытие',
   ceilslab: 'Плита',
@@ -25837,6 +25838,7 @@ const TLBL = {
   boiler: 'Бойлер',
   wheater: 'Проточный',
   drain: 'Трап',
+  gshower: 'Душевая',
   rad: 'Радиатор',
   ufh: 'Тёплый пол',
   duct: 'Воздуховод',
@@ -50954,6 +50956,7 @@ XT.node = {
 
 
 
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -51347,8 +51350,12 @@ function validate() {
                 ? openingChecks
                 : e.type === 'lcalc'
                   ? lcalcChecks
-                  : null;
-      if (X) for (const [l, m] of X(e)) if (l !== 'info') add_(e, l, m, e.p || (e.runs && e.runs[0].a));
+                  : e.type === 'glass'
+                    ? glassChecks
+                    : null;
+      if (X)
+        for (const [l, m] of X(e))
+          if (l !== 'info') add_(e, l, m, e.p || (e.runs && e.runs[0].a) || (e.pts && e.pts[0]));
     }
     for (const e of S.ents)
       if (e.type === 'ac') for (const [l, m] of acChecks(e)) if (l !== 'info' && !/люк/.test(m)) add_(e, l, m, e.p);
@@ -104951,6 +104958,1274 @@ function closerSet(mb, lm, l, M, c, open) {
   mb.cyl(E[0], E[1], zA + 1, zA + 20, 9, '#8f9396', 16);
   mb.cyl(B[0], B[1], zA + 10, zt + 4, 7, '#8f9396', 16);
 }
+
+// ===== elements/glass.js =====
+/**
+ * elements/glass.js
+ *
+ * Glass constructions as one element type `glass`: shower screens and doors (use 'shower') and interior glass
+ * partitions (use 'part'), each as a frameless system on fittings (ЦС) or a profile system. Drawn as a polyline
+ * along the floor; each segment is split into fixed panels and a door (hinged, pivot, sliding, in a frame).
+ * The plan symbol, the 3D model with profiles and fittings, the properties, the specification, the checks
+ * (tempering limits, hole distances, loads) and a cut-out in the floor layout (the profile or threshold line) come
+ * from here; catalogue and calculations — elements/glass-hw.js; the glass order drawing — elements/glass-view.js.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const ceilOf = () => S.ceil || 2700;
+/** The wall at a plan point (the end of a glass run against a wall): { framed } or null. */
+function glassWallAt(p) {
+  let best = null,
+    bd = Infinity;
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !w.a || !w.b) continue;
+    const d = dist(segPt(w.a, w.b, p), p) - w.th / 2;
+    if (d < 120 && d < bd) {
+      bd = d;
+      best = w;
+    }
+  }
+  return best ? { w: best, framed: isFramedType(typeOf(best)) } : null;
+}
+const glassCalcOf = e => glassCalc(e, ceilOf(), glassWallAt);
+/** Checks for the Checks tab: [[lvl, msg]]. */
+const glassChecks = e => glassCalcOf(e).issues;
+TN.glass = 'Стекло';
+
+/* ---------- plan ---------- */
+function drawGlass(e, color, o, ghost, col) {
+  const c = glassCfg(e);
+  const stroke = ghost ? C.ghost : o.sel ? C.sel : col || '#4aa3c7';
+  let R;
+  try {
+    R = glassCalcOf(e);
+  } catch (err) {
+    return;
+  }
+  const t = Math.max(+c.t, 1.6 / view.k);
+  ctx.save();
+  ctx.lineCap = 'butt';
+  for (const p of R.panels) {
+    const off = p.kind === 'door' && (p.door || {}).type === 'slide' ? 35 : 0;
+    const nx = -p.u.y,
+      ny = p.u.x;
+    const a = w2s({ x: p.a.x + nx * off, y: p.a.y + ny * off }),
+      b = w2s({ x: p.b.x + nx * off, y: p.b.y + ny * off });
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = Math.max(1.5, t * view.k);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = ghost ? C.ghost : '#7fb8cf';
+    if (p.kind === 'door') {
+      const D = p.door || {};
+      if (D.type === 'slide') {
+        // arrow of the slide
+        const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          dx = (b.x - a.x) * 0.25,
+          dy = (b.y - a.y) * 0.25;
+        ctx.beginPath();
+        ctx.moveTo(m.x - dx, m.y - dy);
+        ctx.lineTo(m.x + dx, m.y + dy);
+        ctx.stroke();
+        continue;
+      }
+      // the swing: a quarter arc from the hinge side, to the chosen side (and both for a pivot)
+      const hs = p.hs || 'L';
+      const P0 = hs === 'L' ? p.a : p.b,
+        P1 = hs === 'L' ? p.b : p.a;
+      const sides = D.type === 'pivot' || D.swing === 'both' ? [1, -1] : [D.swing === 'in' ? -1 : 1];
+      for (const sg of sides) {
+        const r = p.w;
+        const ux = (P1.x - P0.x) / r,
+          uy = (P1.y - P0.y) / r;
+        const open = { x: P0.x - uy * r * sg * (hs === 'L' ? 1 : -1), y: P0.y + ux * r * sg * (hs === 'L' ? 1 : -1) };
+        const s0 = w2s(P0),
+          s1 = w2s(open),
+          s2 = w2s(P1);
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(s0.x, s0.y);
+        ctx.lineTo(s1.x, s1.y);
+        ctx.stroke();
+        const R_ = r * view.k;
+        const a0 = Math.atan2(s2.y - s0.y, s2.x - s0.x),
+          a1 = Math.atan2(s1.y - s0.y, s1.x - s0.x);
+        let d = a1 - a0;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        ctx.beginPath();
+        ctx.arc(s0.x, s0.y, R_, a0, a0 + d, d < 0);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // hinges / axis
+      const hp = w2s(P0);
+      ctx.fillStyle = stroke;
+      ctx.fillRect(hp.x - 2.5, hp.y - 2.5, 5, 5);
+    }
+  }
+  // profiles at walls and the bottom line
+  if (c.fixW !== 'clamp' && GL_PROF[c.fixW] && R.panels.length) {
+    ctx.fillStyle = ghost ? C.ghost : '#8b9198';
+    for (const p of [R.panels[0], R.panels[R.panels.length - 1]]) {
+      for (const [q, ed] of [
+        [p.a, p.edgeL],
+        [p.b, p.edgeR]
+      ]) {
+        if (ed !== 'wall') continue;
+        const s = w2s(q),
+          r = Math.max(2, (GL_PROF[c.fixW].w / 2) * view.k);
+        ctx.fillRect(s.x - r, s.y - r, 2 * r, 2 * r);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+/* ---------- 3D ---------- */
+function glMerge(mb, sub) {
+  for (const m of sub.meshes()) {
+    mb.tag(m.tag || '');
+    mb.raw(m.color, m.op, m.pos);
+  }
+}
+function buildGlass(e) {
+  const R = glassCalcOf(e);
+  const c = R.c;
+  const mb = MB();
+  const G = GL_KIND[c.gk] || GL_KIND.clear;
+  const met = GL_FIN_COL[c.fin] || '#d4d8dc';
+  const t = +c.t;
+  const z0 = +c.z || 0;
+  for (const p of R.panels) {
+    const off = p.kind === 'door' && (p.door || {}).type === 'slide' ? 35 : 0;
+    const nx = -p.u.y,
+      ny = p.u.x;
+    const mapP = (s, y, z) => [p.a.x + p.u.x * s + nx * (y + off), p.a.y + p.u.y * s + ny * (y + off), z];
+    const mbP = MB(mapP);
+    mbP.tag(`Стекло ${GL_T[c.t] || c.t + ' мм'}, ${G.n.toLowerCase()}`);
+    mbP.box(0, -t / 2, p.z, p.w, t / 2, p.z + p.h, G.col, G.op);
+    // edges of the glass: a thin brighter line reads the panel
+    mbP.tag('Фурнитура');
+    if (p.kind === 'door') {
+      const D = p.door || {};
+      if (D.type !== 'slide' && D.type !== 'pivot') {
+        const hx = p.hs === 'R' ? p.w : 0;
+        for (const n of p.notches.filter(q => q.kind === 'петля'))
+          mbP.rbox(
+            hx - (p.hs === 'R' ? 44 : -44) - 22,
+            -12,
+            p.z + n.y - 32,
+            hx - (p.hs === 'R' ? 44 : -44) + 22,
+            12,
+            p.z + n.y + 32,
+            3,
+            met
+          );
+      }
+      if (D.type === 'pivot') {
+        mbP.box(30, -10, p.z - 10, 90, 10, p.z, met);
+        mbP.box(30, -10, p.z + p.h, 90, 10, p.z + p.h + 10, met);
+      }
+      // handle
+      const hl = c.handle === 'pull450' ? 450 : c.handle === 'towel' ? 600 : c.handle === 'pull300' ? 300 : 0;
+      const hx = p.hs === 'L' ? p.w - 60 : 60;
+      const zh = 1050;
+      if (hl) {
+        for (const sg of [1, -1]) {
+          mbP.sweep(
+            [
+              [hx, sg * (t / 2), zh - hl / 2],
+              [hx, sg * 45, zh - hl / 2],
+              [hx, sg * 45, zh + hl / 2],
+              [hx, sg * (t / 2), zh + hl / 2]
+            ],
+            7,
+            met,
+            10
+          );
+        }
+      } else if (c.handle === 'knob')
+        for (const sg of [1, -1])
+          mbP.sweep(
+            [
+              [hx, sg * (t / 2), zh],
+              [hx, sg * 40, zh]
+            ],
+            18,
+            met,
+            14
+          );
+      if (D.type === 'slide') {
+        mbP.sweep(
+          [
+            [-p.w * 0.1, 30, p.z + p.h + 60],
+            [p.w * 1.1, 30, p.z + p.h + 60]
+          ],
+          12.5,
+          met,
+          14
+        );
+        for (const s of [80, p.w - 80]) mbP.rbox(s - 25, -8, p.z + p.h - 40, s + 25, 40, p.z + p.h + 70, 6, met);
+      }
+    } else {
+      // clamps on the wall edges
+      for (const hl of p.holes.filter(q => q.x <= 30 || q.x >= p.w - 30)) {
+        const sx = hl.x < p.w / 2 ? 0 : p.w;
+        mbP.rbox(sx - 22, -14, p.z + hl.y - 22, sx + 22, 14, p.z + hl.y + 22, 3, met);
+      }
+      for (const hl of p.holes.filter(q => q.kind === 'штанга')) {
+        // stabiliser bar to the wall, across the glass
+        mbP.sweep(
+          [
+            [hl.x, 0, p.z + hl.y],
+            [hl.x, 600, p.z + hl.y]
+          ],
+          9.5,
+          met,
+          12
+        );
+      }
+    }
+    // profiles
+    for (const [fx, zb, zt] of [
+      [c.fixB, z0, z0 + (GL_PROF[c.fixB] || {}).h],
+      [
+        c.fixT,
+        p.z + p.h - ((GL_PROF[c.fixT] || {}).d || 0),
+        p.z + p.h - ((GL_PROF[c.fixT] || {}).d || 0) + (GL_PROF[c.fixT] || {}).h
+      ]
+    ]) {
+      const P_ = GL_PROF[fx];
+      if (!P_ || p.kind === 'door') continue;
+      mbP.tag(`Профиль ${P_.n}`);
+      mbP.box(0, -P_.w / 2, zb, p.w, P_.w / 2, zt, c.sys === 'prof' && c.fin === 'black' ? '#2a2c2f' : met);
+    }
+    glMerge(mb, mbP);
+  }
+  // wall profiles
+  if (GL_PROF[c.fixW] && R.panels.length) {
+    const P_ = GL_PROF[c.fixW];
+    for (const p of [R.panels[0], R.panels[R.panels.length - 1]])
+      for (const [q, ed] of [
+        [p.a, p.edgeL],
+        [p.b, p.edgeR]
+      ]) {
+        if (ed !== 'wall') continue;
+        mb.tag(`Профиль ${P_.n} пристенный`);
+        mb.box(q.x - P_.w / 2, q.y - P_.w / 2, z0, q.x + P_.w / 2, q.y + P_.w / 2, z0 + p.z - z0 + p.h, met);
+      }
+  }
+  // threshold
+  if (c.thr === 'glass' || c.thr === 'alu' || c.thr === 'step')
+    for (const p of R.panels) {
+      const hh = c.thr === 'glass' ? 50 : c.thr === 'step' ? 40 : 15;
+      const ww = c.thr === 'step' ? 60 : c.thr === 'glass' ? t : 30;
+      const nx = -p.u.y,
+        ny = p.u.x;
+      const mbT = MB((s, y, z) => [p.a.x + p.u.x * s + nx * y, p.a.y + p.u.y * s + ny * y, z]);
+      mbT.tag(GL_THR[c.thr]);
+      mbT.box(
+        0,
+        -ww / 2,
+        z0,
+        p.w,
+        ww / 2,
+        z0 + hh,
+        c.thr === 'glass' ? G.col : c.thr === 'step' ? '#d9d6cf' : met,
+        c.thr === 'glass' ? G.op : 1
+      );
+      glMerge(mb, mbT);
+    }
+  return meshGroup(mb.meshes(), { edges: false });
+}
+
+/* ---------- properties ---------- */
+function glassPanelHtml(e) {
+  const c = glassCfg(e);
+  e.cfg = { ...c, ...(e.cfg || {}) };
+  const R = glassCalcOf(e);
+  const sh = c.use === 'shower';
+  const opt = o => Object.entries(o);
+  const segRows = [];
+  for (let i = 0; i < e.pts.length - 1; i++) {
+    const L = dist(e.pts[i], e.pts[i + 1]);
+    const D = (e.doors || {})[i] || {};
+    segRows.push(
+      [
+        `Участок ${i + 1} · ${Math.round(L)} мм — дверь`,
+        `doors.${i}.type`,
+        's',
+        [['', 'нет (глухая панель)'], ...opt(GL_DOOR)]
+      ],
+      ...(D.type
+        ? [
+            ['Ширина двери, мм', `doors.${i}.w`, 'n'],
+            [
+              'Положение',
+              `doors.${i}.pos`,
+              's',
+              [
+                ['r', 'в конце участка'],
+                ['l', 'в начале участка'],
+                ['c', 'посередине'],
+                ['full', 'на весь участок']
+              ]
+            ],
+            ...(D.type === 'hinge' || D.type === 'frame'
+              ? [
+                  [
+                    'Петли',
+                    `doors.${i}.hs`,
+                    's',
+                    [
+                      ['', 'авто (к стене)'],
+                      ['L', 'слева'],
+                      ['R', 'справа']
+                    ]
+                  ],
+                  [
+                    'Открывание',
+                    `doors.${i}.swing`,
+                    's',
+                    [
+                      ['out', 'наружу'],
+                      ['in', 'внутрь'],
+                      ['both', 'в обе стороны (180°)']
+                    ]
+                  ]
+                ]
+              : [])
+          ]
+        : [])
+    );
+  }
+  const st = `<dt></dt><dd class="hint" style="text-align:left">Панелей ${R.panels.length}, стекло ${R.area.toFixed(2)} м² · ${R.mass.toFixed(0)} кг (${glassKgM2(c.t)} кг/м²) · кромка ${R.edges.toFixed(1)} м</dd>`;
+  const loads = R.loads.map(([a, b]) => cR(a, b)).join('');
+  const iss = R.issues
+    .filter(([l]) => l !== 'info')
+    .map(([l, m]) => `<dt></dt><dd class="${l === 'bad' ? 'bad' : 'warn'}" style="text-align:left">${m}</dd>`)
+    .join('');
+  return (
+    xGroups(e, [
+      [
+        sh ? 'Душевое ограждение' : 'Стеклянная перегородка',
+        `${GL_SYS[c.sys].split(' ')[0]} · ${GL_T[c.t] || c.t}`,
+        [
+          ['Назначение', 'cfg.use', 's', opt(GL_USE)],
+          ['Система', 'cfg.sys', 's', opt(GL_SYS)],
+          ['Стекло', 'cfg.t', 's', opt(GL_T)],
+          ['Вид стекла', 'cfg.gk', 's', Object.entries(GL_KIND).map(([k, v]) => [k, v.n])],
+          ['Высота стекла, мм (0 — до потолка)', 'cfg.h', 'n'],
+          ['Отметка низа, мм', 'cfg.z', 'n'],
+          ...(c.fixB === 'free' ? [['Зазор под стеклом, мм', 'cfg.gapB', 'n']] : []),
+          ['Макс. ширина глухой панели, мм', 'cfg.maxW', 'n'],
+          ['Цвет фурнитуры', 'cfg.fin', 's', opt(GL_FIN)]
+        ]
+      ],
+      [
+        'Крепление и профили',
+        GL_FIX[c.fixW].split(' (')[0],
+        [
+          ['К стене', 'cfg.fixW', 's', opt(GL_FIX).filter(([k]) => k !== 'free')],
+          ['Низ', 'cfg.fixB', 's', opt(GL_FIX).filter(([k]) => k !== 'clamp')],
+          ['Верх', 'cfg.fixT', 's', opt(GL_FIX).filter(([k]) => k !== 'clamp')],
+          [
+            'Стык стекло–стекло',
+            'cfg.fixG',
+            's',
+            [
+              ['clamp', 'коннекторы'],
+              ['pc', 'стыковочный профиль'],
+              ['sil', 'прозрачный силикон']
+            ]
+          ],
+          [
+            'Стабилизирующая штанга',
+            'cfg.bar',
+            's',
+            [
+              ['auto', 'по расчёту'],
+              ['on', 'есть'],
+              ['off', 'нет']
+            ]
+          ],
+          ['Порог', 'cfg.thr', 's', opt(GL_THR)],
+          ['Уплотнители', 'cfg.seal', 'b'],
+          ['Ручка', 'cfg.handle', 's', [['', 'без ручки'], ...opt(GL_HANDLE)]]
+        ]
+      ],
+      ['Двери', Object.values(e.doors || {}).filter(d => d && d.type).length + '', segRows],
+      [
+        'Нагрузки и проверки',
+        R.issues.filter(([l]) => l !== 'info').length ? 'есть замечания' : 'в норме',
+        st + loads + iss
+      ]
+    ]) +
+    `<div class="btnrow"><button class="btn pri" data-xa="gview" title="Панели с размерами, отверстия и вырезы с привязками, закалка или бронеплёнка, фурнитура и нагрузки">Чертёж стекла…</button></div>`
+  );
+}
+
+/* ---------- element type ---------- */
+XT.glass = {
+  layer: 'Стекло',
+  prims: e => {
+    const r = [];
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
+    return r;
+  },
+  dist: (e, p) => {
+    let m = Infinity;
+    for (let i = 0; i < e.pts.length - 1; i++) m = Math.min(m, dist(segPt(e.pts[i], e.pts[i + 1], p), p));
+    return Math.max(0, m - 10);
+  },
+  keys: e => e.pts.map(p => ({ p, k: 'end' })),
+  sample: e => e.pts,
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  draw: drawGlass,
+  k3: e => [e.pts, e.cfg, e.doors, S.ceil],
+  build3: buildGlass,
+  group: e => {
+    const c = glassCfg(e);
+    return `${c.use === 'shower' ? 'Душевое ограждение' : 'Стеклянная перегородка'} · ${GL_T[c.t] || c.t}`;
+  },
+  panel: glassPanelHtml,
+  calc: e => glassCalcOf(e),
+  onSet(e, p, v) {
+    if (/^doors\.\d+\.type$/.test(p) && v) {
+      const i = +p.split('.')[1];
+      const d = e.doors[i];
+      const L = dist(e.pts[i], e.pts[i + 1]);
+      if (!d.w) d.w = Math.min(L, v === 'pivot' ? 900 : glassCfg(e).use === 'shower' ? 700 : 900);
+      if (!d.pos) d.pos = d.w >= L - 1 ? 'full' : 'r';
+    }
+    if (p === 'cfg.use') {
+      const sh = v === 'shower';
+      Object.assign(
+        e.cfg,
+        sh
+          ? {
+              sys: 'cs',
+              t: 8,
+              h: 2000,
+              fixB: 'free',
+              fixT: 'free',
+              fixW: 'clamp',
+              fixG: 'clamp',
+              fin: 'chrome',
+              handle: 'pull300'
+            }
+          : { sys: 'prof', t: 10, h: 0, fixB: 'u', fixT: 'u', fixW: 'u', fixG: 'pc', fin: 'black', handle: 'pull450' }
+      );
+    }
+    if (p === 'cfg.sys') {
+      if (v === 'prof')
+        Object.assign(e.cfg, {
+          fixB: e.cfg.fixB === 'free' ? 'u' : e.cfg.fixB,
+          fixT: e.cfg.fixT === 'free' ? 'u' : e.cfg.fixT,
+          fixW: e.cfg.fixW === 'clamp' ? 'u' : e.cfg.fixW
+        });
+      else Object.assign(e.cfg, { fixW: 'clamp', fixG: 'clamp' });
+    }
+  },
+  action(e, a) {
+    if (a === 'gview') openGlassView(e.id);
+  },
+  spec(e, put) {
+    const R = glassCalcOf(e);
+    const c = R.c;
+    const S_ = c.use === 'shower' ? 'Сантехника: душевые ограждения' : 'Перегородки стеклянные';
+    const G = GL_KIND[c.gk] || GL_KIND.clear;
+    const P_ = (k, name, q, u) => {
+      if (!q) return;
+      put(S_, k, { name, u }, r => {
+        r.q = Math.round((r.q + q) * 100) / 100;
+        r.ids.push(e.id);
+      });
+    };
+    for (const p of R.panels) {
+      const tm = p.temper.film
+        ? 'бронеплёнка (не закаливается)'
+        : /Триплекс/.test(GL_T[c.t] || '')
+          ? 'триплекс'
+          : 'закалка';
+      P_(
+        `gl|${c.t}|${c.gk}|${Math.round(p.w)}x${Math.round(p.h)}|${p.kind}|${tm}`,
+        `Стекло ${GL_T[c.t] || c.t + ' мм'}, ${G.n.toLowerCase()}, ${Math.round(p.w)}×${Math.round(p.h)} мм, ${p.kind === 'door' ? 'дверь' : 'глухая панель'}, ${tm}, полировка кромки`,
+        1,
+        'шт'
+      );
+    }
+    P_(`gla|${c.t}|${c.gk}`, `Стекло ${GL_T[c.t] || c.t + ' мм'}, ${G.n.toLowerCase()} — площадь`, R.area, 'м²');
+    const holes = R.panels.reduce((a, p) => a + p.holes.length, 0),
+      notches = R.panels.reduce((a, p) => a + p.notches.length, 0);
+    P_('glh', 'Сверление отверстий в стекле', holes, 'шт');
+    P_('gln', 'Фрезеровка вырезов в стекле (петли, оси, ручки)', notches, 'шт');
+    P_('gle', 'Полировка кромки стекла', R.edges, 'м');
+    for (const it of R.items) P_('hw|' + it.k + '|' + c.fin, it.n, it.q, it.u);
+  }
+};
+
+/** Floor layout: the line of a bottom profile or threshold is a joint the tiles are cut to. */
+function glassFloorCut(e, where) {
+  if (where !== 'floor' || e.type !== 'glass') return null;
+  const c = glassCfg(e);
+  const w = c.thr === 'step' ? 60 : c.thr === 'glass' || c.thr === 'alu' ? 30 : GL_PROF[c.fixB] ? GL_PROF[c.fixB].w : 0;
+  if (!w || e.pts.length !== 2) return null;
+  const [A, B] = e.pts;
+  const L = dist(A, B) || 1,
+    nx = (-(B.y - A.y) / L) * (w / 2),
+    ny = ((B.x - A.x) / L) * (w / 2);
+  return [
+    { x: A.x + nx, y: A.y + ny },
+    { x: B.x + nx, y: B.y + ny },
+    { x: B.x - nx, y: B.y - ny },
+    { x: A.x - nx, y: A.y - ny }
+  ];
+}
+XT.glass.cut = glassFloorCut;
+
+/* ---------- commands ---------- */
+function mkGlass(use) {
+  return () => {
+    const pts = [];
+    return {
+      name: use === 'shower' ? 'gshower' : 'gpart',
+      base: () => pts[pts.length - 1] || null,
+      prompt: () =>
+        `${use === 'shower' ? 'Душевое ограждение' : 'Стеклянная перегородка'}: ${pts.length ? 'следующая точка или Enter' : 'первая точка (от стены)'} [Профильная/Цельностеклянная]:`,
+      onInput(s) {
+        if (kw(s, 'п', 'профильная', 'p')) mkGlass.sys = 'prof';
+        else if (kw(s, 'ц', 'цельностеклянная', 'c')) mkGlass.sys = 'cs';
+        else return false;
+        log('Система: ' + GL_SYS[mkGlass.sys]);
+        return true;
+      },
+      onPoint(p) {
+        pts.push(p);
+      },
+      onEnter() {
+        if (pts.length > 1) {
+          const e = { type: 'glass', use, pts: pts.slice(), cfg: { use }, doors: {}, layer: ensureLayer('Стекло') };
+          if (mkGlass.sys) e.cfg.sys = mkGlass.sys;
+          Object.assign(e.cfg, glassCfg(e), e.cfg);
+          if (e.cfg.sys === 'prof' && use === 'shower') Object.assign(e.cfg, { fixB: 'u', fixW: 'u' });
+          // a door on the last segment by default
+          const i = pts.length - 2,
+            L = dist(pts[i], pts[i + 1]);
+          const dw = use === 'shower' ? 700 : 900;
+          if (L >= dw + 250) e.doors[i] = { type: use === 'shower' ? 'hinge' : 'pivot', w: dw, pos: 'r', swing: 'out' };
+          else if (L >= 500) e.doors[i] = { type: 'hinge', w: L, pos: 'full', swing: 'out' };
+          addEnt(e);
+          log('Стекло: панели, двери, профили и фурнитура — в свойствах; «Чертёж стекла…» — заказ на стекло');
+        }
+        return 'end';
+      },
+      preview(cur) {
+        if (pts.length) drawEnt({ type: 'glass', use, pts: [...pts, cur], cfg: { use }, doors: {} }, 'ghost');
+      }
+    };
+  };
+}
+
+defineTools({
+  gshower: {
+    command: { t: 'ДУШСТЕКЛО', m: mkGlass('shower'), a: ['gshower', 'душстекло', 'душевое', 'стекло душ'] },
+    title: 'Душевое ограждение из стекла: глухие панели и двери, ЦС или профильная система · ДУШСТЕКЛО',
+    icon: '<path d="M3 17V4h14"/><path d="M3 4l7 13" opacity=".55"/><path d="M14 4v9" stroke-dasharray="2 2"/><circle cx="12.5" cy="10" r=".9"/>',
+    help: 'Душевое ограждение: точки по линии стекла от стены. Двери, профили, петли, уплотнители и порог — в свойствах.'
+  },
+  gpart: {
+    command: { t: 'ПЕРЕГОРОДКАСТЕКЛО', m: mkGlass('part'), a: ['gpart', 'перегородкастекло', 'стекляннаяперегородка'] },
+    title: 'Стеклянная перегородка интерьерная: ЦС или профильная, двери, нащельники, уплотнители · ПЕРЕГОРОДКАСТЕКЛО',
+    icon: '<path d="M3 3h14v14H3z"/><path d="M8 3v14M13 3v14" opacity=".55"/><path d="M14.5 10h1.5"/>',
+    help: 'Стеклянная перегородка: точки по оси. Высота 0 — до потолка. Профили, двери, нащельники и уплотнители — в свойствах.'
+  }
+});
+
+// ===== elements/glass-hw.js =====
+/**
+ * elements/glass-hw.js
+ *
+ * Glass for bathrooms (shower screens and doors) and interior glass partitions: the catalogue (glass, systems,
+ * profiles, hinges, clamps, bars, seals, thresholds, handles), the panel split, the hardware a construction needs,
+ * the loads, and the glass processing rules.
+ *
+ * Processing and tempering rules (typical limits of glass processors; the order must be confirmed by the plant):
+ * - tempered glass: from 100×250 mm, with holes or cut-outs from 150×400 mm, up to 3200×7000 mm for 6–19 mm
+ *   (Press Glass, ESG); a long narrow panel — keep the sides within 1:10;
+ * - holes: Ø not less than the glass thickness + 2 mm (and ≥ 6 mm), not more than 1/3 of the narrow side; from the
+ *   edge to the hole rim ≥ 2 t (≥ 6 mm), between holes ≥ 2 t (≥ 10 mm), from the corner ≥ 6.5 t (Viracon,
+ *   EN 12150 practice);
+ * - cut-outs and notches: inner corners rounded R ≥ t (≥ 12.7 mm);
+ * - glass mass: 2.5 kg per m² per mm of thickness — 8 mm is 20 kg/m².
+ * A panel that cannot be tempered (too small or too narrow) is marked: it needs a safety (armour) film or laminated
+ * glass instead.
+ */
+/** Glass kinds. op — 3D opacity, col — tint. */
+const GL_KIND = {
+  clear: { n: 'Прозрачное', col: '#a9d6ef', op: 0.28 },
+  opti: { n: 'Осветлённое (Optiwhite)', col: '#d9f0f7', op: 0.22 },
+  satin: { n: 'Матовое (сатин)', col: '#e7eef0', op: 0.72 },
+  bronze: { n: 'Тонированное бронза', col: '#a0805a', op: 0.45 },
+  graphite: { n: 'Тонированное графит', col: '#5b6066', op: 0.5 },
+  fluted: { n: 'Рифлёное (флутс)', col: '#cfe3ea', op: 0.6 },
+  mirror: { n: 'Зеркальное (односторонняя видимость)', col: '#9aa6ad', op: 0.85 }
+};
+/** Thickness, mm → what it is. */
+const GL_T = {
+  6: 'Закалённое 6 мм',
+  8: 'Закалённое 8 мм',
+  10: 'Закалённое 10 мм',
+  12: 'Закалённое 12 мм',
+  8.8: 'Триплекс 4.4.1 (8,8 мм)',
+  10.8: 'Триплекс 5.5.1 (10,8 мм)'
+};
+const glassLam = t => +t === 8.8 || +t === 10.8;
+const glassKgM2 = t => 2.5 * +t;
+
+const GL_SYS = {
+  cs: 'Цельностеклянная (на фурнитуре)',
+  prof: 'Профильная (в алюминиевых профилях)'
+};
+const GL_USE = { shower: 'Душевое ограждение', part: 'Перегородка интерьерная' };
+/** How an edge of a panel is fixed. */
+const GL_FIX = {
+  free: 'Свободная кромка',
+  clamp: 'Коннекторы (точечные зажимы)',
+  emb: 'Профиль встроенный (в паз, вровень с отделкой)',
+  surf: 'Профиль накладной (на поверхность)',
+  u: 'Профиль П-образный (швеллер)',
+  clampP: 'Профиль зажимной (без силикона)'
+};
+/** Profile sizes: width across the glass × height, mm; groove depth. */
+const GL_PROF = {
+  emb: { w: 20, h: 24, d: 18, n: 'встроенный' },
+  surf: { w: 18, h: 20, d: 14, n: 'накладной' },
+  u: { w: 20, h: 20, d: 15, n: 'П-образный' },
+  clampP: { w: 40, h: 42, d: 30, n: 'зажимной' }
+};
+const GL_DOOR = {
+  hinge: 'Распашная на петлях',
+  pivot: 'Маятниковая на оси (пол–потолок)',
+  slide: 'Раздвижная (верхняя штанга с роликами)',
+  frame: 'В алюминиевой рамке на петлях'
+};
+const GL_HINGE = {
+  gw90: 'Петля стена–стекло 90°',
+  gg180: 'Петля стекло–стекло 180°',
+  gg90: 'Петля стекло–стекло 90°',
+  gg135: 'Петля стекло–стекло 135°'
+};
+const GL_SEAL = {
+  mag180: 'Уплотнитель магнитный 180°',
+  mag90: 'Уплотнитель магнитный 90°',
+  h: 'Уплотнитель стыковочный (H-профиль)',
+  bump: 'Уплотнитель-отбойник боковой',
+  sweep: 'Уплотнитель нижний с капельником',
+  brush: 'Уплотнитель щёточный',
+  pc: 'Профиль стыковочный поликарбонатный (стекло–стекло)',
+  cover: 'Нащельник (накладка на зазор)',
+  sil: 'Герметик силиконовый санитарный'
+};
+const GL_THR = {
+  none: 'Без порога (пол в одной плоскости, трап)',
+  alu: 'Порог алюминиевый 15 мм',
+  glass: 'Стеклянный барьер 50 мм',
+  step: 'Бортик (под плитку) 40 мм'
+};
+const GL_HANDLE = {
+  knob: 'Кноб Ø40',
+  pull300: 'Ручка-скоба 300 мм',
+  pull450: 'Ручка-скоба 450 мм',
+  towel: 'Ручка-полотенцедержатель 600 мм',
+  slot: 'Ручка врезная (вырез)'
+};
+const GL_FIN = { chrome: 'Хром', satin: 'Сатин', black: 'Чёрный матовый', bronze: 'Бронза', gold: 'Золото' };
+const GL_FIN_COL = { chrome: '#d4d8dc', satin: '#b9bcbf', black: '#2a2c2f', bronze: '#8a6a45', gold: '#c9a54c' };
+
+/* ---------- processing rules ---------- */
+const TEMP_MIN = [100, 250];
+const TEMP_MIN_HOLES = [150, 400];
+const TEMP_MAX = [3200, 7000];
+const ASPECT_MAX = 10;
+function holeRules(t) {
+  t = Math.round(+t);
+  return {
+    dMin: Math.max(6, t + 2),
+    edge: Math.max(6, 2 * t),
+    between: Math.max(10, 2 * t),
+    corner: 6.5 * t,
+    notchR: Math.max(t, 12.7)
+  };
+}
+/** Tempering check of a panel w×h with or without processing. */
+function temperCheck(w, h, t, processed) {
+  const a = Math.min(w, h),
+    b = Math.max(w, h);
+  const mn = processed ? TEMP_MIN_HOLES : TEMP_MIN;
+  const out = [];
+  let film = false;
+  if (glassLam(t)) return { ok: true, film: false, msgs: ['Триплекс — безопасное стекло без закалки'] };
+  if (a < mn[0] || b < mn[1]) {
+    film = true;
+    out.push(
+      `меньше минимума закалки ${mn[0]}×${mn[1]}${processed ? ' (с отверстиями/вырезами)' : ''} — закалить не получится, нужна бронеплёнка или триплекс`
+    );
+  }
+  if (b / Math.max(1, a) > ASPECT_MAX) {
+    film = true;
+    out.push(
+      `узкая панель 1:${(b / Math.max(1, a)).toFixed(1)} (больше 1:${ASPECT_MAX}) — при закалке поведёт или не возьмут в печь, нужна бронеплёнка`
+    );
+  }
+  if (a > TEMP_MAX[0] || b > TEMP_MAX[1]) out.push(`больше максимума закалки ${TEMP_MAX[0]}×${TEMP_MAX[1]}`);
+  return { ok: !out.length, film, msgs: out };
+}
+
+/* ---------- defaults ---------- */
+function glassCfg(e) {
+  const sh = (e.use || 'shower') === 'shower';
+  const d = {
+    use: sh ? 'shower' : 'part',
+    sys: sh ? 'cs' : 'prof',
+    t: sh ? 8 : 10,
+    gk: 'clear',
+    fin: sh ? 'chrome' : 'black',
+    h: sh ? 2000 : 0, // 0 — to the ceiling
+    z: sh ? 0 : 0,
+    gapB: sh ? 8 : 0,
+    fixB: sh ? 'free' : 'u',
+    fixT: sh ? 'free' : 'u',
+    fixW: sh ? 'clamp' : 'u',
+    fixG: sh ? 'clamp' : 'pc',
+    thr: sh ? 'none' : 'none',
+    seal: true,
+    handle: sh ? 'pull300' : 'pull450',
+    bar: 'auto'
+  };
+  return Object.assign(d, e.cfg || {});
+}
+/** Glass height (0 — to the ceiling of the level). */
+function glassH(e, c = glassCfg(e), ceil = 2700) {
+  const H = +c.h > 0 ? +c.h : ceil - (+c.z || 0) - (c.fixT !== 'free' && GL_PROF[c.fixT] ? 0 : 10);
+  return Math.max(300, H);
+}
+
+/**
+ * Panels of a glass run. Each segment of the polyline is split into panels: a door (hinged / pivot / sliding) and
+ * fixed panels around it. Returns [{ seg, a, b, w, h, z, kind: 'fix'|'door', door?, i }], a and b — plan points.
+ */
+function glassPanels(e, ceil) {
+  const c = glassCfg(e);
+  const H = glassH(e, c, ceil);
+  const z0 =
+    (+c.z || 0) + (c.fixB === 'free' ? +c.gapB || 0 : 0) + (c.thr === 'glass' ? 50 : c.thr === 'step' ? 40 : 0);
+  const out = [];
+  const gap = 4; // joint between neighbour panels / door gap
+  for (let i = 0; i < e.pts.length - 1; i++) {
+    const A = e.pts[i],
+      B = e.pts[i + 1];
+    const L = Math.hypot(B.x - A.x, B.y - A.y);
+    if (L < 50) continue;
+    const ux = (B.x - A.x) / L,
+      uy = (B.y - A.y) / L;
+    const at = s => ({ x: A.x + ux * s, y: A.y + uy * s });
+    const D = (e.doors || {})[i];
+    const parts = [];
+    if (D && D.w > 0) {
+      const w = Math.min(+D.w, L);
+      const pos = w >= L - 1 ? 'full' : D.pos || 'r';
+      if (pos === 'full') parts.push([0, L, 'door']);
+      else if (pos === 'l') parts.push([0, w, 'door'], [w + gap, L, 'fix']);
+      else if (pos === 'c') {
+        const s0 = (L - w) / 2;
+        parts.push([0, s0 - gap, 'fix'], [s0, s0 + w, 'door'], [s0 + w + gap, L, 'fix']);
+      } else parts.push([0, L - w - gap, 'fix'], [L - w, L, 'door']);
+      if (D.type === 'slide' && pos !== 'full') {
+        // a sliding door runs in front of the fixed panel with a 50 mm overlap
+        parts.length = 0;
+        if (pos === 'l') parts.push([0, w, 'door'], [w - 50, L, 'fix']);
+        else parts.push([0, L - w + 50, 'fix'], [L - w, L, 'door']);
+      }
+    } else parts.push([0, L, 'fix']);
+    for (const [s0, s1, kind] of parts) {
+      if (s1 - s0 < 30) continue;
+      // fixed panels split to the tempering maximum and to a handy width
+      const maxW = kind === 'fix' ? +c.maxW || 1600 : 1e9;
+      const n = Math.max(1, Math.ceil((s1 - s0) / maxW));
+      const pw = (s1 - s0 - gap * (n - 1)) / n;
+      for (let k = 0; k < n; k++) {
+        const a0 = s0 + k * (pw + gap),
+          a1 = a0 + pw;
+        out.push({
+          seg: i,
+          s0: a0,
+          s1: a1,
+          a: at(a0),
+          b: at(a1),
+          u: { x: ux, y: uy },
+          w: a1 - a0,
+          h: H - (kind === 'door' && c.use === 'shower' ? 0 : 0),
+          z: z0,
+          kind,
+          door: kind === 'door' ? D : null,
+          i: out.length
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Hardware, processing and loads of a glass run. walls — function(p) → the wall at a plan point (or null).
+ * Returns { panels, items: [{k, n, q, u}], holes, loads: [...], issues: [[lvl, msg]] }.
+ */
+function glassCalc(e, ceil, wallAt) {
+  const c = glassCfg(e);
+  const P_ = glassPanels(e, ceil);
+  const t = +c.t,
+    kg = glassKgM2(t);
+  const R = holeRules(t);
+  const items = new Map();
+  const add = (k, n, q, u = 'шт') => {
+    const it = items.get(k) || { k, n, q: 0, u };
+    it.q += q;
+    items.set(k, it);
+  };
+  const issues = [];
+  const loads = [];
+  const fin = GL_FIN[c.fin] || '';
+  for (const p of P_) {
+    p.holes = [];
+    p.notches = [];
+  }
+  for (const p of P_) {
+    p.m = (p.w * p.h * kg) / 1e6;
+    const segL = Math.hypot(e.pts[p.seg + 1].x - e.pts[p.seg].x, e.pts[p.seg + 1].y - e.pts[p.seg].y);
+    // the edges: wall at the start/end of the run, glass neighbour, or free
+    const startWall = p.seg === 0 && p.s0 < 1 && wallAt && wallAt(e.pts[0]);
+    const endWall = p.seg === e.pts.length - 2 && p.s1 > segL - 1 && wallAt && wallAt(e.pts[e.pts.length - 1]);
+    const near = (u, v) => Math.hypot(u.x - v.x, u.y - v.y) < 12;
+    const nbL = P_.find(q => q !== p && near(q.b, p.a));
+    const nbR = P_.find(q => q !== p && near(q.a, p.b));
+    p.nL = nbL || null;
+    p.nR = nbR || null;
+    p.edgeL = startWall ? 'wall' : nbL ? 'glass' : 'free';
+    p.edgeR = endWall ? 'wall' : nbR ? 'glass' : 'free';
+    if (p.kind === 'fix') {
+      // fixed panel: wall side, bottom, top
+      const nEdge = L => (L <= 1200 ? 2 : 3);
+      for (const [side, ed] of [
+        ['L', p.edgeL],
+        ['R', p.edgeR]
+      ]) {
+        if (ed === 'wall') {
+          if (c.fixW === 'clamp') {
+            const n = nEdge(p.h);
+            add('clampW', `Коннектор стена–стекло 90°, ${fin}`, n);
+            for (let k = 0; k < n; k++)
+              p.holes.push({
+                side,
+                x: side === 'L' ? 30 : p.w - 30,
+                y: 150 + (k * (p.h - 300)) / Math.max(1, n - 1),
+                d: Math.max(R.dMin, 14)
+              });
+          } else if (GL_PROF[c.fixW])
+            add('prof' + c.fixW, `Профиль ${GL_PROF[c.fixW].n} пристенный, ${fin}`, p.h / 1000, 'м');
+        } else if (ed === 'glass' && side === 'R' && p.nR && p.nR.kind === 'fix') {
+          if (c.fixG === 'clamp') {
+            const n = nEdge(p.h);
+            add('clampG', `Коннектор стекло–стекло, ${fin}`, n);
+          } else if (c.fixG === 'pc') add('pc', GL_SEAL.pc, p.h / 1000, 'м');
+          else add('silG', 'Стык стекло–стекло на прозрачном силиконе', p.h / 1000, 'м');
+        }
+      }
+      if (c.fixB !== 'free' && GL_PROF[c.fixB])
+        add('profB' + c.fixB, `Профиль ${GL_PROF[c.fixB].n} нижний, ${fin}`, p.w / 1000, 'м');
+      if (c.fixT !== 'free' && GL_PROF[c.fixT])
+        add('profT' + c.fixT, `Профиль ${GL_PROF[c.fixT].n} верхний, ${fin}`, p.w / 1000, 'м');
+      if (c.fixB === 'free' && c.fixW !== 'clamp' && !GL_PROF[c.fixW])
+        issues.push(['bad', `Панель ${p.i + 1}: ничем не закреплена — задайте профиль или коннекторы`]);
+      // clamps only, no bottom support: the clamps carry the weight
+      if (c.fixB === 'free' && c.fixW === 'clamp' && (p.edgeL === 'wall' || p.edgeR === 'wall')) {
+        const n = (p.edgeL === 'wall' ? nEdge(p.h) : 0) + (p.edgeR === 'wall' ? nEdge(p.h) : 0);
+        const per = p.m / Math.max(1, n);
+        loads.push([`Панель ${p.i + 1}`, `${p.m.toFixed(1)} кг на ${n} коннектора: ${per.toFixed(1)} кг на коннектор`]);
+        if (per > 25)
+          issues.push([
+            'warn',
+            `Панель ${p.i + 1}: ${per.toFixed(0)} кг на коннектор — больше 25 кг, поставьте нижний профиль или больше коннекторов`
+          ]);
+      }
+    } else {
+      const D = p.door || {};
+      const dt = D.type || 'hinge';
+      p.m = (p.w * p.h * kg) / 1e6;
+      if (dt === 'hinge' || dt === 'frame') {
+        // which side the hinges are on: next to a wall → wall hinges, next to glass → glass hinges
+        const hs = D.hs || (p.edgeL === 'wall' ? 'L' : p.edgeR === 'wall' ? 'R' : p.edgeL === 'glass' ? 'L' : 'R');
+        const onWall = (hs === 'L' ? p.edgeL : p.edgeR) === 'wall';
+        const n = p.m <= 40 && p.w <= 900 ? 2 : p.m <= 65 && p.w <= 1000 ? 3 : 4;
+        const off = 200;
+        const dd = p.h - 2 * off;
+        // on glass: the angle to the neighbour panel picks the hinge (180° in line, 90° / 135° at a corner)
+        let hk = onWall ? 'gw90' : D.hinge || 'gg180';
+        const nb = P_.find(
+          q =>
+            q !== p &&
+            q.kind === 'fix' &&
+            (hs === 'L' ? Math.hypot(q.b.x - p.a.x, q.b.y - p.a.y) < 10 : Math.hypot(q.a.x - p.b.x, q.a.y - p.b.y) < 10)
+        );
+        if (!onWall && !D.hinge && nb) {
+          const cr = Math.abs(nb.u.x * p.u.y - nb.u.y * p.u.x),
+            dt = nb.u.x * p.u.x + nb.u.y * p.u.y;
+          hk = cr < 0.2 ? 'gg180' : Math.abs(dt) < 0.2 ? 'gg90' : 'gg135';
+        }
+        if (nb && !onWall) {
+          nb.carry = true;
+          for (let k = 0; k < n; k++)
+            nb.notches.push({
+              side: hs === 'L' ? 'R' : 'L',
+              y: off + (k * dd) / Math.max(1, n - 1),
+              w: 50,
+              d: 30,
+              kind: 'петля'
+            });
+        }
+        add('h' + hk, `${GL_HINGE[hk]}, ${fin}`, n);
+        const M = p.m * 9.81 * (p.w / 2 / 1000);
+        const F = M / Math.max(0.3, dd / 1000);
+        loads.push([
+          `Дверь ${p.i + 1}`,
+          `${Math.round(p.w)}×${Math.round(p.h)} мм, ${p.m.toFixed(1)} кг на ${n} петлях; вырывающее усилие верхней петли ≈ ${Math.round(F)} Н (${(F / 9.81).toFixed(0)} кгс)`
+        ]);
+        if (n === 4)
+          issues.push([
+            'bad',
+            `Дверь ${p.i + 1}: ${p.m.toFixed(0)} кг / ширина ${Math.round(p.w)} — больше допустимого для петель (65 кг, 1000 мм). Уменьшите ширину или поставьте маятниковую ось`
+          ]);
+        if (p.w > 900 && n < 4) issues.push(['warn', `Дверь ${p.i + 1} шире 900 мм — нужны 3 петли (поставлено ${n})`]);
+        if (onWall && wallAt) {
+          const w = wallAt(hs === 'L' ? p.a : p.b);
+          if (w && w.framed && F > 150)
+            issues.push([
+              'warn',
+              `Дверь ${p.i + 1}: петли на каркасной стене — нужна закладная (брус или профиль-усиление), усилие ≈ ${Math.round(F)} Н`
+            ]);
+        }
+        if (!onWall) {
+          issues.push([
+            'info',
+            `Дверь ${p.i + 1} висит на стекле: соседняя панель несёт её вес — нужна стабилизирующая штанга`
+          ]);
+          p.needBar = true;
+        }
+        for (let k = 0; k < n; k++) {
+          const y = off + (k * dd) / Math.max(1, n - 1);
+          p.notches.push({ side: hs, y, w: 50, d: 30, kind: 'петля' });
+        }
+        p.hs = hs;
+        if (c.seal) {
+          const free = hs === 'L' ? p.edgeR : p.edgeL;
+          add(
+            free === 'wall' ? 'smag90' : 'smag180',
+            free === 'wall' ? GL_SEAL.mag90 : GL_SEAL.mag180,
+            p.h / 1000,
+            'м'
+          );
+          add('ssweep', GL_SEAL.sweep, p.w / 1000, 'м');
+          add('sbump', GL_SEAL.bump, p.h / 1000, 'м');
+        }
+      } else if (dt === 'pivot') {
+        add('piv', `Ось маятниковая пол–потолок (до 80 кг), ${fin}`, 1);
+        loads.push([`Дверь ${p.i + 1}`, `${p.m.toFixed(1)} кг на маятниковой оси`]);
+        if (p.m > 80) issues.push(['bad', `Дверь ${p.i + 1}: ${p.m.toFixed(0)} кг — больше 80 кг для оси`]);
+        p.notches.push(
+          { side: 'B', x: 60, w: 60, d: 25, kind: 'ось' },
+          { side: 'T', x: 60, w: 60, d: 25, kind: 'ось' }
+        );
+        if (c.seal) add('sbrush', GL_SEAL.brush, (p.w + 2 * p.h) / 1000, 'м');
+      } else if (dt === 'slide') {
+        add('rail', `Штанга-направляющая Ø25 с роликами, ${fin}`, (p.w * 2) / 1000, 'м');
+        add('roll', 'Ролик раздвижной двери (пара)', 1);
+        add('guide', 'Направляющая нижняя (флажок)', 1);
+        loads.push([`Дверь ${p.i + 1}`, `${p.m.toFixed(1)} кг на 2 роликах: ${(p.m / 2).toFixed(1)} кг на ролик`]);
+        if (p.m > 60)
+          issues.push([
+            'warn',
+            `Раздвижная дверь ${p.i + 1}: ${p.m.toFixed(0)} кг — проверьте ролики (обычно до 60–80 кг)`
+          ]);
+        p.holes.push({ x: 60, y: p.h - 40, d: 14 }, { x: p.w - 60, y: p.h - 40, d: 14 });
+        if (c.seal) add('sh', GL_SEAL.h, p.h / 1000, 'м');
+      }
+      if (c.handle) {
+        add('hd' + c.handle, `${GL_HANDLE[c.handle]}, ${fin}`, 1);
+        if (c.handle !== 'slot') {
+          const hx = p.hs === 'L' ? p.w - 60 : 60;
+          const hl = c.handle === 'pull450' ? 450 : c.handle === 'towel' ? 600 : c.handle === 'pull300' ? 300 : 0;
+          if (hl) p.holes.push({ x: hx, y: 1050 - p.z + hl / 2, d: 12 }, { x: hx, y: 1050 - p.z - hl / 2, d: 12 });
+          else p.holes.push({ x: hx, y: 1050 - p.z, d: 12 });
+        } else p.notches.push({ side: p.hs === 'L' ? 'R' : 'L', y: 1050 - p.z, w: 120, d: 25, kind: 'ручка' });
+      }
+    }
+  }
+  for (const p of P_) {
+    // tempering, processing
+    const processed = p.holes.length + p.notches.length > 0;
+    p.temper = temperCheck(p.w, p.h, t, processed);
+    for (const m of p.temper.msgs)
+      issues.push([p.temper.film ? 'warn' : 'info', `Панель ${p.i + 1} ${Math.round(p.w)}×${Math.round(p.h)}: ${m}`]);
+    // hole rules
+    for (const hl of p.holes) {
+      const ed = Math.min(hl.x - hl.d / 2, p.w - hl.x - hl.d / 2, hl.y - hl.d / 2, p.h - hl.y - hl.d / 2);
+      if (ed < R.edge - 0.1)
+        issues.push([
+          'warn',
+          `Панель ${p.i + 1}: отверстие Ø${hl.d} в ${Math.round(ed)} мм от кромки — нужно не меньше ${R.edge} мм (2 толщины)`
+        ]);
+      if (hl.d < R.dMin)
+        issues.push(['warn', `Панель ${p.i + 1}: отверстие Ø${hl.d} меньше допустимого Ø${R.dMin} для ${t} мм`]);
+      const cd =
+        Math.min(
+          Math.hypot(hl.x, hl.y),
+          Math.hypot(p.w - hl.x, hl.y),
+          Math.hypot(hl.x, p.h - hl.y),
+          Math.hypot(p.w - hl.x, p.h - hl.y)
+        ) -
+        hl.d / 2;
+      if (cd < R.corner - 0.1)
+        issues.push([
+          'warn',
+          `Панель ${p.i + 1}: отверстие ближе ${Math.round(cd)} мм к углу — нужно ≥ ${Math.round(R.corner)} мм (6,5 толщины)`
+        ]);
+    }
+    for (const n of p.notches)
+      if (n.y != null && (n.y - n.w / 2 < R.corner || p.h - n.y - n.w / 2 < R.corner))
+        issues.push(['warn', `Панель ${p.i + 1}: вырез под ${n.kind} ближе ${Math.round(R.corner)} мм к углу`]);
+    if (p.temper.film) add('film', 'Бронеплёнка (защитная плёнка) на незакаливаемые панели', (p.w * p.h) / 1e6, 'м²');
+  }
+  // stabiliser bars: a fixed panel with a free vertical edge and no top fixing, or a door on glass
+  const tall = P_.filter(
+    p => p.kind === 'fix' && c.fixT === 'free' && (p.edgeL === 'free' || p.edgeR === 'free' || p.carry)
+  );
+  const needBar = c.bar === 'on' || (c.bar === 'auto' && (tall.length || P_.some(p => p.needBar)));
+  if (needBar && c.bar !== 'off') {
+    const L = Math.min(1000, Math.max(300, (tall[0] || P_[0]).w));
+    add('bar', `Штанга стабилизирующая стена–стекло Ø19, ${fin}`, Math.max(1, tall.length || 1));
+    loads.push(['Штанга', `Ø19 до ${L} мм от стены; длиннее 1000 мм — штанга к потолку`]);
+    // the bar holds the edge away from the wall
+    for (const p of tall)
+      p.holes.push({
+        x: p.edgeL === 'wall' ? p.w - 60 : p.edgeR === 'wall' ? 60 : p.edgeR === 'free' ? p.w - 60 : 60,
+        y: p.h - 60,
+        d: 12,
+        kind: 'штанга'
+      });
+  }
+  if (c.use === 'shower' && c.fixB === 'free' && c.thr === 'none') add('sil', GL_SEAL.sil + ' (туба 280 мл)', 1);
+  if (c.thr === 'alu') add('thr', GL_THR.alu, P_.reduce((a, p) => a + p.w, 0) / 1000, 'м');
+  if (c.thr === 'glass') add('thrg', GL_THR.glass + ' (стекло 8 мм)', P_.reduce((a, p) => a + p.w, 0) / 1000, 'м');
+  if (c.use === 'part') {
+    // partitions: covers on the door gaps, brush seals, glass joints
+    for (const p of P_)
+      if (p.kind === 'door' && (p.door || {}).type !== 'slide') add('cover', GL_SEAL.cover, p.h / 1000, 'м');
+  }
+  let edges = 0;
+  for (const p of P_) edges += (2 * (p.w + p.h)) / 1000;
+  const area = P_.reduce((a, p) => a + (p.w * p.h) / 1e6, 0);
+  const mass = P_.reduce((a, p) => a + p.m, 0);
+  return { c, panels: P_, items: [...items.values()], issues, loads, edges, area, mass, rules: R };
+}
+
+// ===== elements/glass-view.js =====
+/**
+ * elements/glass-view.js
+ *
+ * «Чертёж стекла» — the order drawing of a glass construction: the plan of the run, every panel with its size,
+ * the holes and cut-outs with their distances from the edges, tempering or safety film, mass; the fittings list,
+ * the loads and the checks; the processing rules for the chosen thickness.
+ */
+
+
+
+
+
+const GVS = { id: null };
+const gvMm = v => Math.round(v).toLocaleString('ru-RU');
+
+function panelSvg(p, t) {
+  const k = Math.min(230 / p.w, 330 / p.h, 0.2);
+  const W = p.w * k + 90,
+    H = p.h * k + 70;
+  const X = x => 50 + x * k,
+    Y = y => 20 + (p.h - y) * k;
+  let s = `<svg class="gvsvg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" width="${W.toFixed(0)}">`;
+  const film = p.temper.film;
+  s += `<rect x="${X(0)}" y="${Y(p.h)}" width="${p.w * k}" height="${p.h * k}" fill="${film ? '#fde2e2' : '#e3f2f8'}" stroke="#1d3b47" stroke-width="1.4"/>`;
+  // notches
+  for (const n of p.notches) {
+    let x0, y0, w, h;
+    if (n.side === 'L' || n.side === 'R') {
+      w = n.d;
+      h = n.w;
+      x0 = n.side === 'L' ? 0 : p.w - n.d;
+      y0 = n.y - n.w / 2;
+    } else {
+      w = n.w;
+      h = n.d;
+      x0 = n.x - n.w / 2;
+      y0 = n.side === 'B' ? 0 : p.h - n.d;
+    }
+    s += `<rect x="${X(x0)}" y="${Y(y0 + h)}" width="${w * k}" height="${h * k}" rx="${Math.min(3, 12.7 * k)}" fill="#fff" stroke="#c0392b" stroke-width="1"/>`;
+    const ty = n.y != null ? n.y : n.side === 'B' ? n.d : p.h - n.d;
+    s += `<text x="${(n.side === 'R' ? X(p.w) - n.d * k - 4 : X(0) + n.d * k + 4).toFixed(1)}" y="${(Y(ty) + 3).toFixed(1)}" font-size="9" text-anchor="${n.side === 'R' ? 'end' : 'start'}" fill="#c0392b">${n.kind} ${gvMm(n.y != null ? n.y : n.x)}</text>`;
+  }
+  for (const h of p.holes) {
+    s += `<circle cx="${X(h.x)}" cy="${Y(h.y)}" r="${Math.max(2, (h.d / 2) * k)}" fill="#fff" stroke="#1d3b47"/>`;
+    const rt = h.x > p.w / 2;
+    s += `<text x="${X(h.x) + (rt ? -5 : 5)}" y="${Y(h.y) - 4}" font-size="8.5" text-anchor="${rt ? 'end' : 'start'}" fill="#1d3b47">Ø${h.d} · ${gvMm(h.x)}/${gvMm(h.y)}</text>`;
+  }
+  // sizes
+  s += `<g class="gvdim"><line x1="${X(0)}" y1="${Y(0) + 18}" x2="${X(p.w)}" y2="${Y(0) + 18}"/><text x="${(X(0) + X(p.w)) / 2}" y="${Y(0) + 14}" text-anchor="middle">${gvMm(p.w)}</text>`;
+  s += `<line x1="${X(0) - 22}" y1="${Y(0)}" x2="${X(0) - 22}" y2="${Y(p.h)}"/><text x="${X(0) - 26}" y="${(Y(0) + Y(p.h)) / 2}" text-anchor="middle" transform="rotate(-90 ${X(0) - 26} ${(Y(0) + Y(p.h)) / 2})">${gvMm(p.h)}</text></g>`;
+  if (film)
+    s += `<text x="${(X(0) + X(p.w)) / 2}" y="${(Y(0) + Y(p.h)) / 2}" font-size="11" text-anchor="middle" fill="#c0392b" font-weight="700">БРОНЕПЛЁНКА</text>`;
+  return s + '</svg>';
+}
+function runSvg(R) {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const p of R.panels)
+    for (const q of [p.a, p.b]) {
+      x0 = Math.min(x0, q.x);
+      y0 = Math.min(y0, q.y);
+      x1 = Math.max(x1, q.x);
+      y1 = Math.max(y1, q.y);
+    }
+  const k = Math.min(420 / Math.max(1, x1 - x0), 220 / Math.max(1, y1 - y0), 0.25);
+  const T = q => [40 + (q.x - x0) * k, 30 + (y1 - q.y) * k];
+  const W = (x1 - x0) * k + 80,
+    H = (y1 - y0) * k + 60;
+  let s = `<svg class="gvsvg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" width="${W.toFixed(0)}">`;
+  for (const p of R.panels) {
+    const [ax, ay] = T(p.a),
+      [bx, by] = T(p.b);
+    s += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${p.kind === 'door' ? '#0b7fab' : '#1d3b47'}" stroke-width="${p.kind === 'door' ? 3 : 2.2}"/>`;
+    s += `<text x="${(ax + bx) / 2}" y="${(ay + by) / 2 - 6}" font-size="11" text-anchor="middle" font-weight="700">${p.i + 1}</text>`;
+    for (const [q, ed] of [
+      [p.a, p.edgeL],
+      [p.b, p.edgeR]
+    ])
+      if (ed === 'wall') {
+        const [x, y] = T(q);
+        s += `<rect x="${x - 4}" y="${y - 4}" width="8" height="8" fill="#888"/>`;
+      }
+  }
+  return s + '</svg>';
+}
+function openGlassView(id) {
+  GVS.id = id;
+  let d = document.getElementById('gvdlg');
+  if (!d) {
+    d = document.createElement('div');
+    d.id = 'gvdlg';
+    d.className = 'modal';
+    d.style.zIndex = '60';
+    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертёж стекла" style="width:min(1300px,100%);height:min(920px,100%)"><div class="dlgh"><h3>Чертёж стекла</h3><span class="hint" id="gvTitle"></span><button class="btn pri" id="gvPrint">Печать / PDF</button><button class="x" id="gvClose" aria-label="Закрыть">×</button></div><div id="gvBody" class="gvbody"></div></div>`;
+    document.body.appendChild(d);
+    d.querySelector('#gvClose').onclick = () => (d.hidden = true);
+    d.querySelector('#gvPrint').onclick = printGlass;
+    const st = document.createElement('style');
+    st.textContent = GV_CSS;
+    document.head.appendChild(st);
+  }
+  d.hidden = false;
+  renderGlassView();
+}
+function renderGlassView() {
+  const e = byId(GVS.id);
+  const body = document.getElementById('gvBody');
+  if (!e || !body) return;
+  const R = glassCalcOf(e);
+  const c = R.c;
+  const G = GL_KIND[c.gk] || GL_KIND.clear;
+  document.getElementById('gvTitle').textContent =
+    `${GL_USE[c.use]} · ${GL_SYS[c.sys]} · ${GL_T[c.t] || c.t + ' мм'}, ${G.n.toLowerCase()}`;
+  const rr = R.rules;
+  const cards = R.panels
+    .map(
+      p =>
+        `<div class="gvcard${p.temper.film ? ' film' : ''}"><div class="gvct">${p.i + 1}. ${p.kind === 'door' ? 'Дверь — ' + (GL_DOOR[(p.door || {}).type] || '').toLowerCase() : 'Глухая панель'}</div>${panelSvg(p, c.t)}<div class="hint">${gvMm(p.w)}×${gvMm(p.h)} мм · ${p.m.toFixed(1)} кг · ${p.temper.film ? '<b class="bad">не закаливается — бронеплёнка</b>' : /Триплекс/.test(GL_T[c.t] || '') ? 'триплекс' : 'закалка'} · отверстий ${p.holes.length}, вырезов ${p.notches.length}</div></div>`
+    )
+    .join('');
+  const items = R.items
+    .map(it => `<tr><td>${esc(it.n)}</td><td>${it.u === 'шт' ? it.q : it.q.toFixed(2)} ${it.u}</td></tr>`)
+    .join('');
+  const loads = R.loads.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('');
+  const iss = R.issues.length
+    ? R.issues.map(([l, m]) => `<li class="${l}">${esc(m)}</li>`).join('')
+    : '<li class="ok">Замечаний нет</li>';
+  body.innerHTML = `<div class="gvtop"><section><h4>План</h4>${runSvg(R)}</section><section><h4>Итого</h4><dl><dt>Панелей</dt><dd>${R.panels.length}</dd><dt>Стекло</dt><dd>${R.area.toFixed(2)} м² · ${R.mass.toFixed(0)} кг</dd><dt>Кромка (полировка)</dt><dd>${R.edges.toFixed(1)} м</dd><dt>Отверстий / вырезов</dt><dd>${R.panels.reduce((a, p) => a + p.holes.length, 0)} / ${R.panels.reduce((a, p) => a + p.notches.length, 0)}</dd></dl>
+  <h4>Правила обработки для ${c.t} мм</h4><ul class="gvrules"><li>Закалка: от ${TEMP_MIN[0]}×${TEMP_MIN[1]} мм, с отверстиями и вырезами — от ${TEMP_MIN_HOLES[0]}×${TEMP_MIN_HOLES[1]} мм; стороны не уже 1:10. Меньше — бронеплёнка или триплекс.</li><li>Отверстие: Ø не меньше ${rr.dMin} мм и не больше 1/3 узкой стороны.</li><li>От кромки до отверстия — не меньше ${rr.edge} мм, между отверстиями — ${rr.between} мм, от угла — ${Math.round(rr.corner)} мм.</li><li>Внутренние углы вырезов — радиус не меньше ${Math.round(rr.notchR * 10) / 10} мм.</li><li>Масса стекла ${c.t} мм — ${(2.5 * c.t).toFixed(0)} кг/м².</li></ul></section></div>
+  <section><h4>Панели</h4><div class="gvcards">${cards}</div><p class="hint">Отверстия: Ø · X от левой кромки / Y от низа. Размеры уточняются по замеру и по каталогу выбранной фурнитуры.</p></section>
+  <div class="gvtop"><section><h4>Фурнитура и профили</h4><table class="gvtbl">${items}</table></section><section><h4>Нагрузки</h4><table class="gvtbl">${loads || '<tr><td>—</td></tr>'}</table><h4>Проверки</h4><ul class="gviss">${iss}</ul></section></div>`;
+}
+function printGlass() {
+  const body = document.getElementById('gvBody');
+  if (!body) return;
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Чертёж стекла</title><style>${GV_CSS}body{font:12px system-ui,sans-serif;margin:10mm;background:#fff}@page{size:A3 landscape;margin:10mm}</style></head><body><h2>${esc(document.getElementById('gvTitle').textContent)}</h2><div class="gvbody">${body.innerHTML}</div></body></html>`;
+  let f = document.getElementById('gvPrintFrame');
+  if (f) f.remove();
+  f = document.createElement('iframe');
+  f.id = 'gvPrintFrame';
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+  document.body.appendChild(f);
+  f.srcdoc = html;
+  f.onload = () => {
+    try {
+      f.contentWindow.focus();
+      f.contentWindow.print();
+    } catch (err) {
+      log('Печать недоступна в этом окне', true);
+    }
+  };
+}
+const GV_CSS = `.gvbody{display:flex;flex-direction:column;gap:14px;padding:14px;overflow:auto;background:#fff;color:#1b1d20;min-height:0}
+.gvbody h4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#555}
+.gvtop{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.gvbody dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0 0 10px;font-size:12px}.gvbody dt{color:#666}.gvbody dd{margin:0}
+.gvsvg{max-width:100%;height:auto;display:block;font-family:system-ui,sans-serif}
+.gvdim line{stroke:#333;stroke-width:.8}.gvdim text{font-size:10.5px;fill:#333}
+.gvcards{display:flex;flex-wrap:wrap;gap:12px}.gvcard{border:1px solid #ddd;border-radius:6px;padding:8px;background:#fafafa;font-size:11px}.gvcard.film{border-color:#e5a3a3;background:#fff6f6}
+.gvct{font-weight:600;margin-bottom:4px}.gvtbl{border-collapse:collapse;font-size:11.5px;width:100%}.gvtbl td{border:1px solid #ddd;padding:3px 8px}
+.gvrules,.gviss{margin:0;padding-left:18px;font-size:11.5px;line-height:1.45}.gviss .bad{color:#c0392b}.gviss .warn{color:#b26b00}.gviss .info{color:#555}.gviss .ok{color:#2e7d32}.bad{color:#c0392b}`;
 
 // ===== elements/layout-cut.js =====
 /**
