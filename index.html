@@ -6946,7 +6946,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '52';
+const APP_VER = '52.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -46096,7 +46096,9 @@ function wireEng3D(e) {
     paths = next;
   }
   mb.tag(`Гофра ПВХ Ø${R.gof}`);
-  const pieces = paths.flatMap(L => conduit(mb, L, R.gof));
+  // the conduit takes the wire's colour (purpose and load), as on the plan
+  const gcol = wireColor(e) || GOF_COL;
+  const pieces = paths.flatMap(L => conduit(mb, L, R.gof, gcol));
   drawConduitClips(mb, e, R);
   for (const d of R.drops) {
     if (d.ch && d.ch.mode !== 'cavity' && d.f) {
@@ -46106,8 +46108,8 @@ function wireEng3D(e) {
     }
   }
   const g = meshGroup(mb.meshes(), { edges: false });
-  const rgb = hex2rgb(GOF_COL);
-  for (const pc of pieces) lazyPart(g, () => conduitRibs(pc, R.gof), pc.c, pc.r, rgb, `Гофра ПВХ Ø${R.gof}`);
+  const rgb = hex2rgb(gcol);
+  for (const pc of pieces) lazyPart(g, () => conduitRibs(pc, R.gof, gcol), pc.c, pc.r, rgb, `Гофра ПВХ Ø${R.gof}`);
   return g;
 }
 /* ---------- issues, spec, auto-routing to the panel ---------- */
