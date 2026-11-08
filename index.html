@@ -3626,6 +3626,117 @@ label.ck {
   fill: #3b78e7;
 }
 
+/* ---------- ИИ-агенты (вкладка «Агент») ---------- */
+.stabs button {
+  padding-left: 3px;
+  padding-right: 3px;
+  letter-spacing: 0.03em;
+}
+#agent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#agent textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+.ag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ag-ck {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px;
+}
+.ag-h {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+.ag-ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ag-err {
+  color: var(--danger);
+}
+.ag-warn {
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+.ag-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ag-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: agPulse 1s ease-in-out infinite alternate;
+}
+@keyframes agPulse {
+  from {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-dot {
+    animation: none;
+  }
+}
+.ag-note {
+  border-left: 2px solid var(--line);
+  padding: 2px 0 2px 8px;
+  line-height: 1.35;
+}
+.ag-note.ag-bad {
+  border-left-color: var(--danger);
+}
+.ag-note.ag-warn {
+  border-left-color: #c98a16;
+}
+.ag-objs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ag-obj {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ag-obj > button:first-child {
+  flex: 1;
+  text-align: left;
+}
+.ag-src {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ag-src.ag-assumed {
+  color: #c98a16;
+}
+.ag-hist button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 2px;
+}
+
 /*
  * Скин «Калька». Интерфейс как чертёжный лист на кульмане: холодная калька, синие чернила, две толщины линий по
  * ГОСТ 2.303 — основная (2 px, чернила) для рамок и активного состояния, тонкая (1 px) для деления на ячейки.
@@ -6772,7 +6883,7 @@ html[data-form='phone'] .modal table.cards td::before {
   <div id="sideGrip" title="Тяните — ширина панели · двойной щелчок — по умолчанию"></div><button id="sideTog" title="Скрыть/показать панель" aria-label="Скрыть или показать правую панель">›</button>
   <aside id="side">
     <section class="sec" id="secWS"></section>
-    <div class="stabs"><button data-t="layers" class="on">Слои</button><button data-t="browser">Проект</button><button data-t="iss">Проверки</button></div>
+    <div class="stabs"><button data-t="layers" class="on">Слои</button><button data-t="browser">Проект</button><button data-t="iss">Проверки</button><button data-t="agent" title="ИИ-агенты: построение по заданию и проверка проекта">Агент</button></div>
     <section class="sec" id="secLayers">
       <div class="sech">Слои и категории <button id="bAddLayer">+ Слой</button></div>
       <div id="layers"></div>
@@ -6782,6 +6893,7 @@ html[data-form='phone'] .modal table.cards td::before {
       <div id="browser"></div>
     </section>
     <section class="sec" id="secIss" hidden><div class="sech">Проверки проекта</div><div id="issues"></div></section>
+    <section class="sec" id="secAgent" hidden><div class="sech">ИИ-агенты</div><div id="agent"></div></section>
     <section class="sec">
       <div class="sech">Свойства</div>
       <div id="props"></div>
@@ -6955,7 +7067,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '54.1';
+const APP_VER = '55';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -83478,6 +83590,7 @@ function cwGeneralInside(M) {
 
 
 
+
 function renderTools() {
   tb.innerHTML = '';
   const ws = WS.find(w => w.id === curWS) || WS[0];
@@ -83830,6 +83943,8 @@ function showTab(t) {
   $('#secLayers').hidden = t !== 'layers';
   $('#secBrowser').hidden = t !== 'browser';
   $('#secIss').hidden = t !== 'iss';
+  if ($('#secAgent')) $('#secAgent').hidden = t !== 'agent';
+  if (t === 'agent') renderAgent();
   if (t === 'browser') renderBrowser();
   if (t === 'iss') renderIssues();
   $('#side').classList.add('open');
@@ -96585,6 +96700,633 @@ function xMigrate() {
     if (!S.layers.some(l => l.name === L[0]) && S.ents.some(e => e.layer === L[0])) ensureLayer(L[0]);
 }
 
+// ===== agent/flow.js =====
+/**
+ * agent/flow.js
+ *
+ * Two agents and the order of their work.
+ * - Constructor: understands the task (shows its understanding and questions) → after «Верно, строить» builds the
+ *   plan as operations on the proposal layer → hands it to the checker.
+ * - Checker: read-only; compares the result with the task, the standards and the program's checks; returns notes and,
+ *   when the constructor may work, fixes for it (up to 3 rounds).
+ * Paid → both agents; not paid → only the checker (AG.paid; until payments exist it is always on).
+ * Runs and notes are kept in the project (S.x.agRuns).
+ */
+
+
+
+
+
+
+
+
+
+/** The user's standards (ТЗ, defaults the agents follow when the source does not say otherwise). */
+const AG_STD = `Нормы по умолчанию (если источник не говорит иначе):
+- Перегородки ГКЛ 100 или 120 мм (120 — фактически 125: профиль 75 + 2×ГКЛ 12,5 с каждой стороны), газоблок 100 или 150 мм.
+- Внутренние стены толще 150 мм — конструкции из ГКЛ (kind "gkl").
+- Двери: высота 2100 мм. Окна: подоконник 900–1000 мм, высота 1600–1800 мм.
+- Проёмы (двери, окна) ставь только по источнику (чертежу/ТЗ); не выдумывай их.
+- Высота потолка 2700 мм.
+- Всё, что принято без источника, помечай src:"assumed" и пиши why.`;
+
+const AG_OPS0 = `Операции (мм, точки [x,y]; у каждой создающей операции src: "dwg"|"tz"|"text"|"assumed", why — коротко, conf: "high"|"mid"|"low"):
+- {op:"wall", ref?, a:[x,y], b:[x,y], th?, h?, kind?:"gkl"|"gas"|"ext"|"load"}
+- {op:"door", wall:<ref|id>, at?:<мм от начала стены до центра>, p?:[x,y], w, h?:2100, swing?:"in"|"out"|"left"|"right"}
+- {op:"window", wall, at?|p?, w, h?:1700, sill?:950}
+- {op:"opening", wall, at?|p?, w, h?:2100}   — проём без полотна
+- {op:"room", ref?, name, p:[x,y]}           — помещение по точке внутри замкнутого контура
+- {op:"ceil", h}
+- {op:"fix", kind:"wc"|"sink"|"bath"|"shower"|"washer"…, p, rot?}
+- {op:"dev", kind, p, rot?, z?, group?}      — электроустановочное устройство
+- {op:"set", id, props:{…}}, {op:"move", id, dx, dy}, {op:"delete", id}
+ref — твоё имя объекта ("w1"), на него можно ссылаться в следующих операциях. Стены соединяй точно в точках (одинаковые координаты концов).`;
+
+/** Operations + the kinds of fixtures and devices this program knows (the model must use these keys). */
+function AG_OPS() {
+  const k = o =>
+    Object.keys(o)
+      .map(x => x + ' — ' + String((o[x] && o[x].n) || '').slice(0, 40))
+      .join('; ');
+  return AG_OPS0 + `\nПриборы (fix.kind): ${k(FIXK)}\nУстройства (dev.kind): ${k(DEVK)}`;
+}
+/** Runs of the project: { id, task, at, status:'review'|'accepted'|'rejected'|'checked', mode, und, notes, rounds }. */
+function agRuns() {
+  if (!S.x) S.x = {};
+  if (!S.x.agRuns) S.x.agRuns = [];
+  return S.x.agRuns;
+}
+const agRun = id => agRuns().find(r => r.id === id);
+
+/** Current state of the panel (one run at a time). */
+const AGS = { phase: 'idle', run: null, abort: null, msg: '', onChange: null };
+function agSet(phase, msg) {
+  AGS.phase = phase;
+  AGS.msg = msg || '';
+  if (AGS.onChange) AGS.onChange();
+}
+function agSig() {
+  AGS.abort = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  return AGS.abort && AGS.abort.signal;
+}
+function agStop() {
+  if (AGS.abort) AGS.abort.abort();
+  AGS.abort = null;
+}
+
+const agJ = v => JSON.stringify(v);
+
+/** Step 1 — the constructor tells what it understood (nothing is built). */
+async function agUnderstand(task, opts = {}) {
+  if (!AG.paid) throw { code: 'not_paid', message: 'Построение доступно по подписке; доступна проверка проекта.' };
+  const run = {
+    id: 'r' + Date.now().toString(36),
+    task: String(task || '').trim(),
+    at: new Date().toISOString(),
+    status: 'draft',
+    edit: !!opts.edit,
+    notes: [],
+    rounds: 0
+  };
+  if (!run.task) throw { code: 'empty', message: 'Опишите задание' };
+  AGS.run = run;
+  agSet('understanding', 'Разбираю задание…');
+  const prompt = `Ты — агент-конструктор программы проектирования «Контур». Тебе дали задание; сначала покажи, как ты его понял — ничего не строй.
+${AG_STD}
+
+Текущий проект (кратко): ${agJ(agSummary({ detail: 'brief' }))}
+Режим: ${run.edit ? 'правка готового проекта (можно менять существующие объекты)' : 'добавление новых объектов (существующие не трогать)'}.
+
+Задание пользователя:
+"""${run.task}"""
+
+Верни JSON: {"summary":["что я понял, по пунктам, с размерами"], "assumptions":["что принимаю без источника"], "questions":["что неясно — не больше 5"], "scope":"что будет построено одной строкой"}.
+Если задание не про проектирование в этой программе — верни {"offtopic":true}.`;
+  try {
+    const u = await agAskJSON(prompt, { what: 'understand', tier: 'default', signal: agSig() });
+    if (u && u.offtopic) throw { code: 'offtopic', message: 'Задание не относится к проекту.' };
+    run.und = {
+      summary: agList(u && u.summary),
+      assumptions: agList(u && u.assumptions),
+      questions: agList(u && u.questions),
+      scope: String((u && u.scope) || '')
+    };
+    agSet('confirm');
+    return run;
+  } catch (e) {
+    agSet('idle');
+    throw e;
+  }
+}
+const agList = v => (Array.isArray(v) ? v.map(String).filter(Boolean).slice(0, 30) : v ? [String(v)] : []);
+
+/** Step 2 — build after «Верно, строить» (corrections: the user's answers / changes to the understanding). */
+async function agBuild(corrections) {
+  const run = AGS.run;
+  if (!run || !run.und) throw { code: 'no_run', message: 'Сначала задание' };
+  if (corrections) run.corr = (run.corr ? run.corr + '\n' : '') + String(corrections);
+  agSet('building', 'Строю…');
+  const prompt = `Ты — агент-конструктор программы «Контур». Построй проект по заданию в виде списка операций.
+${AG_STD}
+
+${AG_OPS()}
+
+Текущий проект: ${agJ(agSummary())}
+Режим: ${run.edit ? 'правка готового проекта — можно set/move/delete существующих объектов' : 'только новые объекты; существующие не трогать'}.
+
+Задание:
+"""${run.task}"""
+Как ты его понял (подтверждено пользователем): ${agJ(run.und)}
+${run.corr ? 'Уточнения пользователя (главнее твоего понимания):\n"""' + run.corr + '"""' : ''}
+
+Верни JSON: {"ops":[…], "note":"одна строка — что построено"}.`;
+  try {
+    const r = await agAskJSON(prompt, { what: 'build', tier: 'default', signal: agSig() });
+    const ops = Array.isArray(r) ? r : (r && r.ops) || [];
+    const res = agApply(ops, { runId: run.id, allowForeign: run.edit });
+    run.applied = { created: res.created.length, changed: res.changed.length, deleted: res.deleted.length };
+    run.errors = res.errors.map(e => `#${e.i + 1} ${e.op && e.op.op}: ${e.msg}`);
+    run.note = String((r && r.note) || '');
+    if (!agRuns().includes(run)) agRuns().push(run);
+    await agCheckLoop(run);
+    run.status = 'review';
+    agSet('review');
+    return run;
+  } catch (e) {
+    agSet(run.applied ? 'review' : 'confirm');
+    throw e;
+  }
+}
+
+/** Issues of the program's checks for a set of ids (all when ids is null). */
+function agIssues(ids) {
+  const set = ids && new Set(ids);
+  return validate()
+    .filter(i => i.lvl !== 'info' && (!set || set.has(i.id)))
+    .slice(0, 60)
+    .map(i => ({ id: i.id, lvl: i.lvl, msg: i.msg }));
+}
+
+async function agCheck(run, mayFix) {
+  const ids = run.id ? agRunEnts(run.id).map(e => e.id) : null;
+  const prompt = `Ты — агент-проверяющий программы «Контур». Ты ничего не строишь сам: сверяешь проект с заданием, нормами и проверками программы.
+${AG_STD}
+
+Задание: """${run.task}"""
+${run.und ? 'Как его понял конструктор: ' + agJ(run.und) : ''}
+${run.corr ? 'Уточнения пользователя: """' + run.corr + '"""' : ''}
+Проект: ${agJ(agSummary())}
+${ids ? 'Объекты, созданные конструктором в этом прогоне (id): ' + agJ(ids) : ''}
+Замечания встроенных проверок: ${agJ(agIssues(ids))}
+${mayFix ? '\n' + AG_OPS() + '\nДля исправимых замечаний дай операции исправления (их выполнит конструктор).' : ''}
+
+Верни JSON: {"verdict":"ok"|"fix"|"bad", "notes":[{"id":<id объекта или null>,"lvl":"bad"|"warn"|"info","msg":"что не так и как должно быть"}]${mayFix ? ', "ops":[…]' : ''}}.`;
+  return agAskJSON(prompt, { what: 'check', tier: 'default', signal: agSig() });
+}
+
+async function agCheckLoop(run) {
+  for (let round = 0; round < 3; round++) {
+    agSet('checking', round ? `Проверка, круг ${round + 1}…` : 'Проверяю…');
+    const c = (await agCheck(run, AG.paid)) || {};
+    run.rounds = round + 1;
+    run.notes = (Array.isArray(c.notes) ? c.notes : []).slice(0, 60).map(n => ({
+      id: n && n.id != null ? n.id : null,
+      lvl: ['bad', 'warn', 'info'].includes(n && n.lvl) ? n.lvl : 'warn',
+      msg: String((n && n.msg) || '')
+    }));
+    run.verdict = c.verdict || (run.notes.some(n => n.lvl === 'bad') ? 'bad' : 'ok');
+    const fix = AG.paid && Array.isArray(c.ops) && c.ops.length ? c.ops : null;
+    if (!fix || run.verdict === 'ok') return;
+    agSet('building', 'Исправляю по замечаниям…');
+    const res = agApply(fix, { runId: run.id, allowForeign: run.edit });
+    run.fixed = (run.fixed || 0) + res.created.length + res.changed.length + res.deleted.length;
+    if (res.errors.length)
+      run.errors = (run.errors || []).concat(res.errors.map(e => `исправление #${e.i + 1}: ${e.msg}`));
+  }
+}
+
+/** Checker only (works without the subscription): the whole project against a task or just the standards. */
+async function agCheckProject(task) {
+  const run = {
+    id: '',
+    task: String(task || 'Проверь проект на ошибки и несоответствие нормам'),
+    at: new Date().toISOString(),
+    status: 'checked',
+    notes: [],
+    rounds: 0
+  };
+  AGS.run = run;
+  agSet('checking', 'Проверяю проект…');
+  try {
+    const c = (await agCheck(run, false)) || {};
+    run.id = 'c' + Date.now().toString(36);
+    run.notes = (Array.isArray(c.notes) ? c.notes : []).slice(0, 60).map(n => ({
+      id: n && n.id != null ? n.id : null,
+      lvl: ['bad', 'warn', 'info'].includes(n && n.lvl) ? n.lvl : 'warn',
+      msg: String((n && n.msg) || '')
+    }));
+    run.verdict = c.verdict || 'ok';
+    run.rounds = 1;
+    agRuns().push(run);
+    documentState.docVer++;
+    agSet('review');
+    return run;
+  } catch (e) {
+    agSet('idle');
+    throw e;
+  }
+}
+
+/** «Принять» — the whole run or some of its objects (ids). */
+function agAcceptRun(id, ids) {
+  const run = agRun(id);
+  if (ids && ids.length) {
+    const set = new Set(ids);
+    const L = agRunEnts(id).filter(e => set.has(e.id));
+    if (!L.length) return;
+    pushUndo();
+    for (const e of L) {
+      if (e._aiLayer) e.layer = e._aiLayer;
+      delete e._aiLayer;
+    }
+    changed();
+    if (run && !agRunEnts(id).some(e => e._aiLayer)) run.status = 'accepted';
+  } else {
+    agAccept(id);
+    if (run) run.status = 'accepted';
+  }
+  agSet('idle');
+}
+/** «Отклонить» — the whole run or some of its objects. */
+function agRejectRun(id, ids) {
+  const run = agRun(id);
+  if (ids && ids.length) {
+    const set = new Set(ids);
+    pushUndo();
+    S.ents = S.ents.filter(e => !(set.has(e.id) && e.ai && e.ai.run === id && e._aiLayer));
+    changed();
+    if (run && !agRunEnts(id).some(e => e._aiLayer)) run.status = agRunEnts(id).length ? 'accepted' : 'rejected';
+  } else {
+    agReject(id);
+    if (run) run.status = 'rejected';
+  }
+  agSet('idle');
+}
+/** «Переделать» — remove what the run proposed and build again with the comment. */
+async function agRedo(id, comment) {
+  const run = agRun(id);
+  if (!run) throw { code: 'no_run', message: 'Нет прогона' };
+  agReject(id);
+  run.status = 'draft';
+  AGS.run = run;
+  return agBuild('Переделать: ' + String(comment || 'исправь замечания проверки'));
+}
+
+/**
+ * Questions from the bot (Telegram / WhatsApp via CRM) or the panel: read-only answer about the program and this
+ * project. Off-topic → null (the bot stays silent). Never changes the project.
+ */
+async function agentAsk(question) {
+  const q = String(question || '').trim();
+  if (!q) return null;
+  const prompt = `Ты — справочный агент программы проектирования «Контур». Отвечаешь только на вопросы о программе и об этом проекте; ничего не меняешь.
+Если вопрос не о программе или проекте — верни {"ignore":true}.
+Проект: ${agJ(agSummary({ detail: 'brief' }))}
+Замечания проверок: ${agJ(agIssues(null).slice(0, 20))}
+Вопрос: """${q}"""
+Верни JSON {"answer":"коротко, по делу, на языке вопроса"} или {"ignore":true}.`;
+  const r = await agAskJSON(prompt, { what: 'ask', tier: 'quick' });
+  return r && !r.ignore && r.answer ? String(r.answer) : null;
+}
+
+// ===== agent/model.js =====
+/**
+ * agent/model.js
+ *
+ * The one door to the model for the agents. Inside claude.ai the page asks Claude through the artifact's
+ * `sample` capability (the viewer's own account, no key). Elsewhere — a key the user put in the settings
+ * (kept only in this browser) calls the Anthropic API directly. Later the product server takes this place:
+ * only this file changes. Tests and offline work plug in AG.mock.
+ *
+ * Every call asks for ONE JSON value: the agents never chat, they return plans and reports.
+ */
+const AG = {
+  /** Paid: both agents work; not paid: only the checker. No payments yet → always paid. */
+  paid: true,
+  /** (prompt, {tier}) → value — a test double instead of the model. */
+  mock: null,
+  /** Log of runs: what was asked, how big, how long (to choose the limits later). */
+  log: []
+};
+const AG_MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5', complex: 'claude-opus-5-5' };
+const AG_KEY = 'kontur.agent.apiKey';
+
+let agSamplerP = null;
+function agSampler() {
+  if (!agSamplerP)
+    agSamplerP = (async () => {
+      try {
+        return typeof window !== 'undefined' && window.claude && window.claude.use
+          ? await window.claude.use('sample')
+          : null;
+      } catch (_) {
+        return null;
+      }
+    })();
+  return agSamplerP;
+}
+function agApiKey(v) {
+  try {
+    if (v !== undefined) {
+      if (v) localStorage.setItem(AG_KEY, v);
+      else localStorage.removeItem(AG_KEY);
+    }
+    return localStorage.getItem(AG_KEY) || '';
+  } catch (_) {
+    return '';
+  }
+}
+/** Where the model is reachable from here: 'claude' | 'key' | 'mock' | null. */
+async function agWhere() {
+  if (AG.mock) return 'mock';
+  if (await agSampler()) return 'claude';
+  if (agApiKey()) return 'key';
+  return null;
+}
+/** Pulls one JSON value out of a reply (whole reply, a fenced block, or first { … last }). */
+function agParseJSON(t) {
+  const s = String(t || '').trim();
+  try {
+    return JSON.parse(s);
+  } catch (_) {}
+  const m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (m)
+    try {
+      return JSON.parse(m[1]);
+    } catch (_) {}
+  const a = s.search(/[[{]/),
+    b = Math.max(s.lastIndexOf('}'), s.lastIndexOf(']'));
+  if (a >= 0 && b > a) return JSON.parse(s.slice(a, b + 1));
+  throw { code: 'invalid_json', message: 'В ответе модели нет JSON', text: s };
+}
+/**
+ * Ask the model for one JSON value. opts: { tier: 'quick'|'default'|'complex', signal, what } (what — for the log).
+ * Rejects { code, message } — 'no_model' when nothing is reachable.
+ */
+async function agAskJSON(prompt, opts = {}) {
+  const tier = opts.tier || 'default';
+  const t0 = Date.now();
+  const rec = { what: opts.what || '', tier, bytes: prompt.length, ms: 0, ok: false, via: '' };
+  AG.log.push(rec);
+  if (AG.log.length > 200) AG.log.shift();
+  try {
+    let v;
+    if (AG.mock) {
+      rec.via = 'mock';
+      v = await AG.mock(prompt, { tier, what: opts.what });
+    } else {
+      const s = await agSampler();
+      if (s) {
+        rec.via = 'claude';
+        v = await s.json(prompt, { modelTier: tier, signal: opts.signal });
+      } else if (agApiKey()) {
+        rec.via = 'key';
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          signal: opts.signal,
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': agApiKey(),
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: AG_MODELS[tier] || AG_MODELS.default,
+            max_tokens: 16000,
+            messages: [{ role: 'user', content: prompt + '\n\nОтветь только одним значением JSON, без пояснений.' }]
+          })
+        });
+        const j = await r.json();
+        if (!r.ok) throw { code: 'upstream_error', message: (j.error && j.error.message) || 'HTTP ' + r.status };
+        rec.usage = j.usage;
+        v = agParseJSON((j.content || []).map(c => c.text || '').join(''));
+      } else
+        throw {
+          code: 'no_model',
+          message: 'Модель недоступна: откройте Контур в claude.ai или укажите ключ API в настройках агента'
+        };
+    }
+    rec.ok = true;
+    return v;
+  } catch (e) {
+    rec.err = (e && e.code) || 'error';
+    throw e && e.code ? e : { code: 'upstream_error', message: String((e && e.message) || e) };
+  } finally {
+    rec.ms = Date.now() - t0;
+  }
+}
+/** Viewer-facing text for an error code. */
+function agErrText(e) {
+  const c = (e && e.code) || '';
+  return (
+    {
+      no_model: 'Модель недоступна: откройте Контур в claude.ai или укажите ключ API (⚙ в панели агента).',
+      not_granted: 'Доступ к Claude для этой страницы не разрешён.',
+      sampling_disabled: 'Claude недоступен для этой учётной записи.',
+      rate_limited: 'Слишком много запросов или исчерпан лимит — попробуйте позже.',
+      invalid_json: 'Модель ответила не в том формате — попробуйте ещё раз или упростите задание.',
+      prompt_too_large: 'Проект слишком большой для одного запроса — сузьте задание.',
+      cancelled: 'Остановлено.',
+      refused: 'Модель отказалась выполнять это задание — переформулируйте.'
+    }[c] || 'Ошибка связи с моделью: ' + ((e && e.message) || c)
+  );
+}
+
+// ===== agent/panel.js =====
+/**
+ * agent/panel.js
+ *
+ * Tab «Агент» of the right panel: task → understanding (correct it) → «Верно, строить» → progress → report with
+ * «Принять» / «Переделать» / «Отклонить» for the whole run or per object. Checker-only mode without subscription.
+ */
+
+
+
+
+
+
+
+const AGP = { err: '', where: null, task: '', edit: false, key: false };
+const AG_SRC = { dwg: 'чертёж', tz: 'ТЗ', text: 'задание', assumed: 'допущение' };
+const AG_LVL = { bad: 'Ошибка', warn: 'Внимание', info: 'Подсказка' };
+const agEntName = e =>
+  ({ wall: 'Стена', door: 'Дверь', window: 'Окно', floorz: 'Помещение', fix: 'Прибор', dev: 'Устройство' })[e.type] ||
+  e.type;
+
+function agBox() {
+  return typeof document !== 'undefined' && document.getElementById ? document.getElementById('agent') : null;
+}
+function renderAgent() {
+  const el = agBox();
+  if (!el || el.closest('#secAgent').hidden) return;
+  if (AG.mock) AGP.where = 'mock';
+  const run = AGS.run;
+  const busy = ['understanding', 'building', 'checking'].includes(AGS.phase);
+  let h = '';
+  if (AGP.where === null)
+    h += `<div class="hint ag-warn">Модель недоступна. Откройте Контур в claude.ai или укажите ключ API.</div>`;
+  if (!AG.paid) h += `<div class="hint">Без подписки работает только проверка проекта.</div>`;
+  if (AGP.err) h += `<div class="hint ag-err" role="alert">${esc(AGP.err)}</div>`;
+
+  if (busy) {
+    h += `<div class="ag-busy"><span class="ag-dot"></span>${esc(AGS.msg || 'Работаю…')}</div><button class="btn" data-ag="stop">Стоп</button>`;
+  } else if (AGS.phase === 'confirm' && run && run.und) {
+    const u = run.und;
+    h += `<div class="ag-h">Как я понял</div>${run.und.scope ? `<div class="hint">${esc(u.scope)}</div>` : ''}`;
+    h += agUl(u.summary);
+    if (u.assumptions.length) h += `<div class="ag-h">Принимаю без источника</div>` + agUl(u.assumptions);
+    if (u.questions.length) h += `<div class="ag-h">Вопросы</div>` + agUl(u.questions);
+    h += `<label class="fl">Поправки и ответы<textarea id="agCorr" rows="3" placeholder="Например: стена кухни 150 газоблок; окно 1500"></textarea></label>
+      <div class="ag-row"><button class="btn pri" data-ag="build">Верно, строить</button><button class="btn" data-ag="reund" title="Учесть поправки и показать понимание заново">Уточнить</button><button class="btn" data-ag="cancel">Отмена</button></div>`;
+  } else if (AGS.phase === 'review' && run) {
+    h += agReport(run);
+  } else {
+    h += `<label class="fl">Задание<textarea id="agTask" rows="5" placeholder="Например: квартира 6×9 м, кухня-гостиная, спальня, санузел; перегородки ГКЛ 100">${esc(AGP.task)}</textarea></label>
+      <label class="fl ag-ck"><input type="checkbox" id="agEdit" ${AGP.edit ? 'checked' : ''}>Можно менять существующие объекты</label>
+      <div class="ag-row">${AG.paid ? '<button class="btn pri" data-ag="und">Понять задание</button>' : ''}<button class="btn" data-ag="check" title="Проверяющий агент: сверить проект с заданием и нормами (ничего не меняет)">Проверить проект</button></div>`;
+  }
+  h += agHistory();
+  h += `<details class="ag-set"${AGP.key ? ' open' : ''}><summary>Настройки</summary>
+    <label class="fl">Ключ API Anthropic (хранится только в этом браузере)<input type="password" id="agKey" value="${esc(agApiKey())}" autocomplete="off"></label>
+    <div class="hint">В claude.ai ключ не нужен. Связь: ${esc({ claude: 'Claude (claude.ai)', key: 'ключ API', mock: 'тест' }[AGP.where] || 'нет')}.</div></details>`;
+  el.innerHTML = h;
+}
+const agUl = L => (L && L.length ? `<ul class="ag-ul">${L.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : '');
+
+function agReport(run) {
+  const ents = run.id ? agRunEnts(run.id) : [];
+  const open = ents.filter(e => e._aiLayer);
+  let h = `<div class="ag-h">${run.status === 'checked' ? 'Проверка проекта' : 'Предложение агента'}</div>`;
+  if (run.note) h += `<div class="hint">${esc(run.note)}</div>`;
+  if (run.applied)
+    h += `<div class="hint">Создано ${run.applied.created}, изменено ${run.applied.changed}, удалено ${run.applied.deleted}${run.fixed ? ` · исправлено по проверке ${run.fixed}` : ''} · кругов проверки ${run.rounds}</div>`;
+  if (run.errors && run.errors.length)
+    h += `<details><summary>Не выполнено (${run.errors.length})</summary>${agUl(run.errors)}</details>`;
+  h += `<div class="ag-h">Замечания проверки ${run.notes.length ? '(' + run.notes.length + ')' : '— нет'}</div>`;
+  h += run.notes
+    .map(
+      n =>
+        `<div class="ag-note ag-${n.lvl}"><b>${AG_LVL[n.lvl]}</b> ${esc(n.msg)}${n.id != null && S.ents.some(e => e.id === +n.id) ? ` <button data-ag="show" data-id="${+n.id}">Показать</button>` : ''}</div>`
+    )
+    .join('');
+  if (open.length) {
+    h += `<div class="ag-h">Объекты (${open.length})</div><div class="ag-objs">${open
+      .slice(0, 80)
+      .map(
+        e =>
+          `<div class="ag-obj"><button data-ag="show" data-id="${e.id}" title="${esc((e.ai && e.ai.why) || '')}">${esc(agEntName(e))} #${e.id}</button><span class="ag-src ag-${(e.ai && e.ai.src) || 'assumed'}">${AG_SRC[(e.ai && e.ai.src) || 'assumed'] || ''}</span><button data-ag="acc1" data-id="${e.id}" title="Принять объект" aria-label="Принять объект">✓</button><button data-ag="rej1" data-id="${e.id}" title="Отклонить объект" aria-label="Отклонить объект">✕</button></div>`
+      )
+      .join('')}</div>`;
+    h += `<label class="fl">Комментарий для переделки<textarea id="agRedoTxt" rows="2"></textarea></label>
+      <div class="ag-row"><button class="btn pri" data-ag="acc">Принять</button><button class="btn" data-ag="redo">Переделать</button><button class="btn" data-ag="rej">Отклонить</button></div>`;
+  } else h += `<div class="ag-row"><button class="btn" data-ag="new">Новое задание</button></div>`;
+  return h;
+}
+function agHistory() {
+  const L = agRuns().slice(-8).reverse();
+  if (!L.length) return '';
+  const st = {
+    review: 'на проверке',
+    accepted: 'принято',
+    rejected: 'отклонено',
+    checked: 'проверка',
+    draft: 'черновик'
+  };
+  return `<details class="ag-hist"><summary>Прогоны (${agRuns().length})</summary>${L.map(
+    r =>
+      `<button data-ag="open" data-id="${esc(r.id)}" title="${esc(r.task)}">${esc(r.task.slice(0, 40))} · ${st[r.status] || r.status}${r.notes.length ? ' · ' + r.notes.length + ' зам.' : ''}</button>`
+  ).join('')}</details>`;
+}
+
+async function agDo(fn) {
+  AGP.err = '';
+  try {
+    await fn();
+  } catch (e) {
+    AGP.err =
+      e && e.code === 'not_paid'
+        ? e.message
+        : e && (e.code === 'empty' || e.code === 'offtopic')
+          ? e.message
+          : agErrText(e);
+  }
+  renderAgent();
+}
+function agClick(ev) {
+  const b = ev.target.closest('[data-ag]');
+  if (!b) return;
+  const a = b.dataset.ag,
+    id = b.dataset.id;
+  const v = s => (document.getElementById(s) || {}).value || '';
+  const run = AGS.run;
+  if (a === 'und') {
+    AGP.task = v('agTask');
+    AGP.edit = !!(document.getElementById('agEdit') || {}).checked;
+    agDo(() => agUnderstand(AGP.task, { edit: AGP.edit }));
+  } else if (a === 'reund') agDo(() => agUnderstand(AGP.task + '\nУточнения: ' + v('agCorr'), { edit: AGP.edit }));
+  else if (a === 'build') agDo(() => agBuild(v('agCorr')));
+  else if (a === 'check') {
+    AGP.task = v('agTask');
+    agDo(() => agCheckProject(AGP.task));
+  } else if (a === 'stop') agStop();
+  else if (a === 'cancel' || a === 'new') {
+    AGS.phase = 'idle';
+    AGS.run = null;
+    renderAgent();
+  } else if (a === 'acc' && run) {
+    agAcceptRun(run.id);
+    renderAgent();
+  } else if (a === 'rej' && run) {
+    agRejectRun(run.id);
+    renderAgent();
+  } else if (a === 'redo' && run) agDo(() => agRedo(run.id, v('agRedoTxt')));
+  else if ((a === 'acc1' || a === 'rej1') && run) {
+    (a === 'acc1' ? agAcceptRun : agRejectRun)(run.id, [+id]);
+    AGS.phase = agRunEnts(run.id).some(e => e._aiLayer) ? 'review' : 'idle';
+    if (AGS.phase === 'idle') AGS.run = null;
+    renderAgent();
+  } else if (a === 'show') selectAndShow(+id);
+  else if (a === 'open') {
+    const r = agRun(id);
+    if (r) {
+      AGS.run = r;
+      AGS.phase = 'review';
+      renderAgent();
+    }
+  }
+}
+
+function initAgent() {
+  const el = agBox();
+  if (!el) return;
+  AGS.onChange = renderAgent;
+  el.addEventListener('click', agClick);
+  el.addEventListener('change', ev => {
+    if (ev.target.id === 'agKey') {
+      agApiKey(ev.target.value.trim());
+      AGP.key = true;
+      agWhere().then(w => {
+        AGP.where = w;
+        renderAgent();
+      });
+    }
+  });
+  agWhere().then(w => {
+    AGP.where = w;
+    renderAgent();
+  });
+}
+
 // ===== drafting/vertex-edit.js =====
 /**
  * drafting/vertex-edit.js
@@ -103378,6 +104120,10 @@ const solidEditorState = ED;
 
 
 
+
+
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -103502,6 +104248,7 @@ function xBoot() {
   });
   /** test/debug handle used by tests/browser (not an API) */
   window.__kontur = {
+    agent: { AG, AGS, agentAsk, agUnderstand, agBuild, agCheckProject, agAcceptRun, agRejectRun, agRuns, agSummary },
     meta: () => ({ WSDEF, TT, TLBL, HELP, CMDHELP, CMDS, MENUS, TN, DEVK, FAMS, SHORT, WCAT, XT, GRP, GRPL }),
     CMDS,
     SHT,
@@ -103633,6 +104380,7 @@ initWallTypesDialog();
 initProfilesDialog();
 initPalette();
 initShortLabels();
+initAgent();
 initLayoutView();
 initVentTerminals();
 initJunctionBoxes();
@@ -103705,6 +104453,478 @@ initLibrary();
     if (window.claude && window.claude.use) filesState.downloads = await window.claude.use('downloads');
   } catch (_) {}
 })();
+
+// ===== agent/ops.js =====
+/**
+ * agent/ops.js
+ *
+ * Operations layer of the AI agent: validates and applies a JSON list of operations in ONE undo step, marks every
+ * created entity with e.ai (run, source, reason, confidence) and puts it on a proposal layer until it is accepted.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+const AG_LAYER = 'Предложение агента';
+const AG_FIXMAP = { wc: 'wcinst', toilet: 'wcinst' };
+const AG_WALLH = { gkl: 'Стены', gas: 'Стены', ext: 'Стены', load: 'Стены' };
+
+const agPt = (p, what) => {
+  if (!p || !Array.isArray(p) || p.length < 2 || !Number.isFinite(+p[0]) || !Number.isFinite(+p[1]))
+    throw new Error(`${what || 'точка'}: нужен [x,y] в мм`);
+  return P(+p[0], +p[1]);
+};
+const agNum = (v, what, def) => {
+  if (v == null) {
+    if (def != null) return def;
+    throw new Error(`${what}: нужно число`);
+  }
+  if (!Number.isFinite(+v)) throw new Error(`${what}: нужно число`);
+  return +v;
+};
+
+/** Wall type for kind + thickness: the closest of the suitable types. */
+function agPickWallType(kind, th) {
+  const tot = t => computeType(t).total;
+  const pool = (ids, fb) => {
+    const L = S.wtypes.filter(t => ids.includes(t.id));
+    return L.length ? L : S.wtypes.filter(t => fb(t));
+  };
+  let L;
+  if (kind === 'gas') L = pool(['wt_gb100', 'wt_gb'], t => t.kind === 'layers');
+  else if (kind === 'ext') L = pool(['wt_gb', 'wt_brick'], t => t.kind === 'layers');
+  else if (kind === 'load') L = pool(['wt_rc', 'wt_brick', 'wt_gb'], t => t.kind === 'layers');
+  else {
+    L = S.wtypes.filter(t => t.kind === 'knauf' && tot(t) > 0 && tot(t) <= 160);
+    const want = th == null ? 125 : th <= 120 ? 125 : th;
+    th = want;
+    // simple single-frame partitions first: С112 / С111 with the 75 profile
+    const pref = L.filter(t => t.sys === 'С112' && t.prof === 75);
+    if (pref.length && Math.abs(tot(pref[0]) - want) < 30) return pref[0];
+  }
+  if (!L.length) return S.wtypes[0] || null;
+  if (th == null) return L[0];
+  return L.reduce((b, t) => (Math.abs(tot(t) - th) < Math.abs(tot(b) - th) ? t : b));
+}
+
+function agHostPos(w, op) {
+  const wi = wallInfo(w),
+    len = dist(w.a, w.b);
+  let t;
+  if (op.at != null) t = agNum(op.at, 'at');
+  else if (op.p) t = dot(sub(agPt(op.p), w.a), wi.u);
+  else t = len / 2;
+  const half = agNum(op.w, 'w') / 2;
+  if (t - half < -1 || t + half > len + 1) throw new Error(`проём не помещается в стену (длина ${Math.round(len)})`);
+  return Math.round(t);
+}
+
+/** Position of a wall-mounted element at point p on the nearest face of wall w. */
+function agOnWall(w, p) {
+  const wi = wallInfo(w),
+    t = dot(sub(p, w.a), wi.u),
+    side = dot(sub(p, w.a), wi.n) >= 0 ? 1 : -1;
+  const q = add(add(w.a, mul(wi.u, t)), mul(wi.n, (side * w.th) / 2));
+  const nOut = mul(wi.n, side);
+  return { p: q, rot: Math.atan2(nOut.y, nOut.x) + Math.PI / 2, host: w.id, ht: t, hs: side };
+}
+
+const agWL = {
+  wall: { th: 1, h: 1, wt: 1 },
+  door: { w: 1, h: 1, sill: 1, t: 1, flip: 1, hand: 1 },
+  window: { w: 1, h: 1, sill: 1, t: 1, flip: 1, hand: 1 },
+  opening: { w: 1, h: 1, sill: 1, t: 1 },
+  floorz: { name: 1 },
+  fix: { z: 1, rot: 1, kind: 1 },
+  dev: { z: 1, rot: 1, kind: 1, group: 1 }
+};
+
+function agApply(ops, ctx) {
+  ctx = ctx || {};
+  const runId = ctx.runId || 'run_' + Date.now().toString(36);
+  const layer = ctx.layer || AG_LAYER;
+  const res = { created: [], changed: [], deleted: [], refs: {}, errors: [] };
+  if (!Array.isArray(ops) || !ops.length) return res;
+  pushUndo();
+  ensureLayer(layer);
+  const ref = v => {
+    if (typeof v === 'string' && v in res.refs) return S.ents.find(e => e.id === res.refs[v]);
+    const id = typeof v === 'string' && /^\d+$/.test(v) ? +v : v;
+    if (typeof id === 'number') return S.ents.find(e => e.id === id);
+    return null;
+  };
+  const host = (v, types) => {
+    const e = ref(v);
+    if (!e) throw new Error(`нет объекта «${v}»`);
+    if (!types.includes(e.type)) throw new Error(`объект «${v}» — ${e.type}, нужен ${types.join('/')}`);
+    return e;
+  };
+  const add_ = (op, e, lay) => {
+    e.id = S.nextId++;
+    e.ai = { run: runId, src: ['dwg', 'tz', 'text', 'assumed'].includes(op.src) ? op.src : 'assumed' };
+    if (op.why) e.ai.why = String(op.why);
+    if (op.conf) e.ai.conf = op.conf;
+    e._aiLayer = ensureLayer(lay);
+    e.layer = layer;
+    S.ents.push(e);
+    res.created.push(e.id);
+    if (op.ref) res.refs[op.ref] = e.id;
+    documentState.docVer++;
+    return e;
+  };
+  const guard = e => {
+    if (!e.ai && ctx.allowForeign !== true) throw new Error('чужой объект — нужно разрешение');
+  };
+  const note = id => {
+    if (!res.created.includes(id) && !res.changed.includes(id)) res.changed.push(id);
+  };
+
+  const run = {
+    wall(op) {
+      const a = agPt(op.a, 'a'),
+        b = agPt(op.b, 'b');
+      if (dist(a, b) < 1) throw new Error('нулевая длина стены');
+      const kind = op.kind;
+      if (kind != null && !AG_WALLH[kind]) throw new Error(`неизвестный kind «${kind}»`);
+      const t = agPickWallType(kind || 'gkl', op.th != null ? agNum(op.th, 'th') : null);
+      if (!t) throw new Error('нет типов стен');
+      add_(
+        op,
+        {
+          type: 'wall',
+          a,
+          b,
+          th: computeType(t).total,
+          h: agNum(op.h, 'h', S.ceil),
+          z: 0,
+          wt: t.id,
+          fa: { k: 'paint', ral: 'RAL 9010', col: '#f1efe8' },
+          fb: { k: 'paint', ral: 'RAL 9010', col: '#f1efe8' }
+        },
+        'Стены'
+      );
+    },
+    door(op) {
+      const w = host(op.wall, ['wall']);
+      const wd = agNum(op.w, 'w');
+      const e = {
+        type: 'door',
+        host: w.id,
+        t: agHostPos(w, { ...op, w: wd }),
+        w: wd,
+        h: agNum(op.h, 'h', 2100),
+        sill: 0,
+        flip: op.swing === 'out' || op.swing === 'right',
+        hand: op.swing === 'left' || op.swing === 'right',
+        cfg: defDoorCfg()
+      };
+      add_(op, e, 'Двери');
+    },
+    window(op) {
+      const w = host(op.wall, ['wall']);
+      const wd = agNum(op.w, 'w');
+      add_(
+        op,
+        {
+          type: 'window',
+          host: w.id,
+          t: agHostPos(w, { ...op, w: wd }),
+          w: wd,
+          h: agNum(op.h, 'h', 1700),
+          sill: agNum(op.sill, 'sill', 950),
+          flip: false,
+          hand: false,
+          cfg: defWinCfg(wd)
+        },
+        'Окна'
+      );
+    },
+    opening(op) {
+      const w = host(op.wall, ['wall']);
+      const wd = agNum(op.w, 'w');
+      add_(
+        op,
+        {
+          type: 'opening',
+          host: w.id,
+          t: agHostPos(w, { ...op, w: wd }),
+          ...opDefaults(),
+          w: wd,
+          h: agNum(op.h, 'h', 2100)
+        },
+        'Переходные элементы'
+      );
+    },
+    room(op) {
+      let pts = null;
+      if (op.p) pts = roomPolyAt(agPt(op.p));
+      if (!pts && Array.isArray(op.pts) && op.pts.length > 2) pts = op.pts.map(q => agPt(q));
+      if (!pts) throw new Error('нет замкнутого помещения в этой точке');
+      const pre = op.pre && typeof op.pre === 'string' ? op.pre : 'tile';
+      let layers;
+      try {
+        layers = floorLayersOf(pre);
+      } catch (err) {
+        layers = floorLayersOf('tile');
+      }
+      add_(
+        op,
+        {
+          type: 'floorz',
+          pts: pts.map(q => P(q.x, q.y)),
+          pre,
+          name: op.name || '',
+          ffl: 0,
+          wet: false,
+          layers,
+          slope: { mode: 'none', i: 1.5 }
+        },
+        'Полы'
+      );
+    },
+    ceil(op) {
+      const h = agNum(op.h, 'h');
+      if (h < 2000 || h > 6000) throw new Error('высота потолка вне 2000..6000');
+      S.ceil = h;
+    },
+    fix(op) {
+      const kind = AG_FIXMAP[op.kind] || op.kind;
+      if (!FIXK[kind]) throw new Error(`неизвестная сантехника «${op.kind}»`);
+      const p = agPt(op.p);
+      let rot = op.rot != null ? agNum(op.rot, 'rot') : 0,
+        h = null;
+      if (op.wall != null) {
+        const pl = agOnWall(host(op.wall, ['wall']), p);
+        if (op.rot == null) rot = pl.rot;
+        h = pl.host;
+      }
+      add_(op, { type: 'fix', kind, p, rot, host: h, z: 0, cfg: FIXK[kind].cfg() }, 'Сантехника');
+    },
+    dev(op) {
+      const d = DEVK[op.kind];
+      if (!d) throw new Error(`неизвестное устройство «${op.kind}»`);
+      let p = agPt(op.p),
+        rot = op.rot != null ? agNum(op.rot, 'rot') : 0,
+        h = null,
+        pl = null;
+      if (op.wall != null) pl = agOnWall(host(op.wall, ['wall']), p);
+      else if (d.mount === 'wall') {
+        pl = placeOnWall(p, 'wall');
+        if (!pl.host) pl = null;
+      }
+      if (pl) {
+        p = pl.p;
+        if (op.rot == null) rot = pl.rot;
+        h = pl.host;
+      }
+      add_(
+        op,
+        {
+          type: 'dev',
+          kind: op.kind,
+          p,
+          rot,
+          host: h,
+          ...(pl && pl.ht != null ? { ht: pl.ht, hs: pl.hs } : {}),
+          z: op.z != null ? agNum(op.z, 'z') : d.mount === 'ceil' ? S.ceil : d.z,
+          group: d.f === 'vterm' ? null : op.group != null ? agNum(op.group, 'group') : 1,
+          sys: null,
+          pw: d.pw || 0,
+          flow: 0,
+          size: ''
+        },
+        FAMS[d.f] ? FAMS[d.f].cat : 'Освещение'
+      );
+    },
+    set(op) {
+      const e = ref(op.id);
+      if (!e) throw new Error(`нет объекта «${op.id}»`);
+      guard(e);
+      const wl = agWL[e.type];
+      if (!wl) throw new Error(`тип ${e.type} не редактируется`);
+      if (!op.props || typeof op.props !== 'object') throw new Error('нужен props');
+      const NUMK = ['th', 'h', 'w', 'sill', 't', 'z', 'rot', 'group'];
+      for (const [k, v] of Object.entries(op.props)) {
+        if (!wl[k]) throw new Error(`свойство «${k}» нельзя менять у ${e.type}`);
+        if (NUMK.includes(k)) e[k] = agNum(v, k);
+        else if (k === 'wt') {
+          const t = S.wtypes.find(x => x.id === v || x.name === v);
+          if (!t) throw new Error(`нет типа стены «${v}»`);
+          e.wt = t.id;
+          e.th = computeType(t).total;
+        } else if (k === 'kind') {
+          if (e.type === 'fix' ? !FIXK[v] : !DEVK[v]) throw new Error(`неизвестный kind «${v}»`);
+          e.kind = v;
+        } else if (k === 'flip' || k === 'hand') e[k] = !!v;
+        else e[k] = String(v);
+      }
+      documentState.docVer++;
+      note(e.id);
+    },
+    move(op) {
+      const e = ref(op.id);
+      if (!e) throw new Error(`нет объекта «${op.id}»`);
+      guard(e);
+      const dx = agNum(op.dx, 'dx'),
+        dy = agNum(op.dy, 'dy');
+      if (e.host != null) throw new Error('объект на стене: меняйте положение через set t');
+      if (e.type === 'wall') {
+        e.a = P(e.a.x + dx, e.a.y + dy);
+        e.b = P(e.b.x + dx, e.b.y + dy);
+      } else if (e.p) e.p = P(e.p.x + dx, e.p.y + dy);
+      else if (e.pts) e.pts = e.pts.map(q => P(q.x + dx, q.y + dy));
+      else throw new Error(`тип ${e.type} не перемещается`);
+      documentState.docVer++;
+      note(e.id);
+    },
+    delete(op) {
+      const e = ref(op.id);
+      if (!e) throw new Error(`нет объекта «${op.id}»`);
+      guard(e);
+      const before = new Set(S.ents.map(x => x.id));
+      eraseIds([e.id]);
+      const left = new Set(S.ents.map(x => x.id));
+      for (const id of before) if (!left.has(id)) res.deleted.push(id);
+      documentState.docVer++;
+    }
+  };
+
+  ops.forEach((op, i) => {
+    try {
+      if (!op || typeof op !== 'object' || !run[op.op]) throw new Error(`неизвестная операция «${op && op.op}»`);
+      run[op.op](op);
+    } catch (err) {
+      res.errors.push({ i, op, msg: err.message || String(err) });
+    }
+  });
+  res.changed = res.changed.filter(id => !res.deleted.includes(id));
+  changed();
+  return res;
+}
+
+const agRunEnts = runId => S.ents.filter(e => e.ai && e.ai.run === runId);
+
+function agAccept(runId) {
+  const L = agRunEnts(runId);
+  if (!L.length) return [];
+  pushUndo();
+  for (const e of L)
+    if (e._aiLayer) {
+      e.layer = e._aiLayer;
+      delete e._aiLayer;
+    }
+  changed();
+  return L.map(e => e.id);
+}
+
+function agReject(runId) {
+  const L = agRunEnts(runId);
+  if (!L.length) return [];
+  pushUndo();
+  const ids = L.map(e => e.id);
+  eraseIds(ids);
+  changed();
+  return ids;
+}
+
+// ===== agent/summary.js =====
+/**
+ * agent/summary.js
+ *
+ * Compact JSON description of the current level for the AI agent prompt.
+ */
+
+
+
+
+const agR = v => Math.round(v);
+const agPtS = p => [agR(p.x), agR(p.y)];
+
+/** Wall material class from its wall type. */
+function agWallKind(w) {
+  const t = typeOf(w);
+  if (!t) return 'other';
+  if (t.kind === 'knauf') return 'gkl';
+  const ms = (t.layers || []).map(l => l.m || '').join('|');
+  if (/ПГП/.test(ms)) return 'gkl';
+  if (/Газобетон/.test(ms)) return 'gas';
+  if (/Кирпич/.test(ms)) return 'brick';
+  if (/Железобетон/.test(ms)) return 'concrete';
+  return 'other';
+}
+
+function agSummary(opts) {
+  const brief = !!(opts && opts.detail === 'brief');
+  const out = { units: 'mm', ceil: S.ceil, walls: [], openings: [], rooms: [], fixtures: [], devices: [], other: {} };
+  const fixN = {},
+    devN = {};
+  for (const e of S.ents) {
+    switch (e.type) {
+      case 'wall': {
+        const kind = agWallKind(e),
+          t = typeOf(e);
+        const th = agR(e.th || (t ? computeType(t).total : 0));
+        out.walls.push({
+          id: e.id,
+          a: agPtS(e.a),
+          b: agPtS(e.b),
+          th,
+          h: agR(e.h || S.ceil),
+          kind,
+          type: t ? t.name : '',
+          load: e.load != null ? !!e.load : kind === 'concrete' || (kind === 'brick' && th >= 250),
+          ext: e.ext != null ? !!e.ext : kind !== 'gkl' && kind !== 'other' && th >= 180
+        });
+        break;
+      }
+      case 'door':
+      case 'window':
+      case 'opening': {
+        const o = { id: e.id, type: e.type, wall: e.host, at: agR(e.t), w: agR(e.w), h: agR(e.h) };
+        if (e.type === 'window' || e.sill) o.sill = agR(e.sill || 0);
+        out.openings.push(o);
+        break;
+      }
+      case 'floorz':
+        out.rooms.push({
+          id: e.id,
+          name: e.name || '',
+          area_m2: Math.round((Math.abs(polyArea(e.pts)) / 1e6) * 100) / 100,
+          ...(brief ? {} : { pts: e.pts.map(agPtS) })
+        });
+        break;
+      case 'fix':
+        fixN[e.kind] = (fixN[e.kind] || 0) + 1;
+        if (!brief) out.fixtures.push({ id: e.id, kind: e.kind, p: agPtS(e.p) });
+        break;
+      case 'dev':
+        devN[e.kind] = (devN[e.kind] || 0) + 1;
+        if (!brief) out.devices.push({ id: e.id, kind: e.kind, p: agPtS(e.p), group: e.group ?? null });
+        break;
+      default:
+        out.other[e.type] = (out.other[e.type] || 0) + 1;
+    }
+  }
+  if (brief) {
+    out.fixtures = fixN;
+    out.devices = devN;
+  }
+  // objects the agent proposed and nobody accepted yet: the checker and the constructor see them as such
+  const agProp = new Set(S.ents.filter(e => e.ai && e._aiLayer).map(e => e.id));
+  if (agProp.size)
+    for (const k of ['walls', 'openings', 'rooms', 'fixtures', 'devices'])
+      if (Array.isArray(out[k])) for (const o of out[k]) if (agProp.has(o.id)) o.proposed = true;
+  return out;
+}
 
 // ===== core/csg.js =====
 /**
