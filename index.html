@@ -6946,7 +6946,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '52.1';
+const APP_VER = '53';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -37284,6 +37284,24 @@ function zonesSpec(w, put, fins) {
           r.ids.push(w.id);
         }
       );
+      if (L.wasteA > 0.005)
+        put(
+          fins,
+          `tlw|${z.k}|${L.W}x${L.H}`,
+          {
+            name: `${z.k === 'stone' ? 'Керамогранит' : 'Плитка'} ${L.W}×${L.H} — уходит в выброс при раскрое`,
+            u: 'м²'
+          },
+          r => {
+            r.q = Math.round((r.q + L.wasteA) * 100) / 100;
+            r.ids.push(w.id);
+          }
+        );
+      if (L.mitLen > 0)
+        put(fins, `tlm|${z.k}`, { name: 'Запил плитки под 45° (наружные углы, откосы)', u: 'м' }, r => {
+          r.q = Math.round((r.q + L.mitLen / 1000) * 100) / 100;
+          r.ids.push(w.id);
+        });
       put(
         fins,
         `tla|${z.k}|${L.W}x${L.H}`,
@@ -37733,6 +37751,8 @@ function bindZones(el, w) {
           }
         } else
           z.tile[kk] = ['w', 'h', 't', 'glue', 'j', 'kerf', 'waste', 'minCut'].includes(kk) ? parseFloat(v) || 0 : v;
+        if (kk === 'ax' && v === 'pt' && !isFinite(+z.tile.px)) z.tile.px = (z.x0 + z.x1) / 2;
+        if (kk === 'ay' && v === 'pt' && !isFinite(+z.tile.pz)) z.tile.pz = z.z0;
         z.th = +z.tile.t + +z.tile.glue;
         changed();
         return;
@@ -37779,6 +37799,8 @@ function initFinishing() {
  *
  * Tile/porcelain layout generator: formats, joints, patterns, cuts, grout and glue.
  */
+
+
 
 
 
@@ -37863,13 +37885,36 @@ function tileLayoutAt(w, z, c, ox, oz) {
       for (const q of rectSub(p, ops)) {
         const pw = q.x1 - q.x0,
           ph = q.z1 - q.z0;
-        out.push({ ...q, w: pw, h: ph, full: pw >= W - 0.5 && ph >= H - 0.5, cx: pw < W - 0.5, cz: ph < H - 0.5 });
+        out.push({
+          ...q,
+          w: pw,
+          h: ph,
+          full: pw >= W - 0.5 && ph >= H - 0.5,
+          cx: pw < W - 0.5,
+          cz: ph < H - 0.5,
+          tx,
+          tz,
+          orig: Math.round(tx) + ':' + Math.round(tz),
+          // the piece in the frame of its tile
+          loc: [
+            [q.x0 - tx, q.z0 - tz],
+            [q.x1 - tx, q.z0 - tz],
+            [q.x1 - tx, q.z1 - tz],
+            [q.x0 - tx, q.z1 - tz]
+          ],
+          A: pw * ph
+        });
       }
     }
   }
   return out;
 }
-function tileOrigins(lo, hi, size, j, mode) {
+/** Tile start for a manual point: the joint, the tile centre or the tile corner lies at v. */
+function tileAnchor(v, size, j, anc) {
+  return anc === 'center' ? v - size / 2 : anc === 'corner' ? v : v + j / 2;
+}
+function tileOrigins(lo, hi, size, j, mode, pv, anc) {
+  if (mode === 'pt' && isFinite(+pv)) return [tileAnchor(+pv, size, j, anc)];
   const c = (lo + hi) / 2;
   const m = {
     center: [c - size / 2],
@@ -37894,114 +37939,131 @@ function tileLayout(w, z) {
   const c = tileCfg(z);
   const { W, H } = tileDims(c),
     j = +c.j || 0;
-  const key = JSON.stringify([c, z.x0, z.x1, z.z0, z.z1, wallInfo(w).ops.map(o => [o.s0, o.s1, o.o.sill, o.o.h])]);
+  const mit = tileMiterLines(w, z, c);
+  const key = JSON.stringify([c, z.x0, z.x1, z.z0, z.z1, wallInfo(w).ops.map(o => [o.s0, o.s1, o.o.sill, o.o.h]), mit]);
   if (z._tl && z._tlk === key) return z._tl;
   let best = null;
-  for (const ox of tileOrigins(z.x0, z.x1, W, j, c.ax))
-    for (const oz of tileOrigins(z.z0, z.z1, H, j, c.ay === 'auto' ? 'auto' : c.ay)) {
+  for (const ox of tileOrigins(z.x0, z.x1, W, j, c.ax, c.px, c.anc))
+    for (const oz of tileOrigins(z.z0, z.z1, H, j, c.ay === 'auto' ? 'auto' : c.ay, c.pz, c.anc)) {
       const ps = tileLayoutAt(w, z, c, ox, oz);
       const m = minCutOf(ps);
       if (!best || m > best.m + 0.5) best = { ps, m, ox, oz };
     }
+  // numbering top-down, left to right (as the master reads the wall)
+  best.ps.sort((a, b) => b.z0 - a.z0 || a.x0 - b.x0);
+  // 45° mitre on the outer corners and the reveals: which piece edges get it
+  let mitLen = 0;
+  const mt = j + 1;
+  for (const p of best.ps) {
+    p.mit = [];
+    for (const m of mit) {
+      if (m.v && Math.abs(p.x0 - m.x) < mt && p.z1 > m.a && p.z0 < m.b) p.mit.push('l');
+      if (m.v && Math.abs(p.x1 - m.x) < mt && p.z1 > m.a && p.z0 < m.b) p.mit.push('r');
+      if (!m.v && Math.abs(p.z1 - m.z) < mt && p.x1 > m.a && p.x0 < m.b) p.mit.push('t');
+      if (!m.v && Math.abs(p.z0 - m.z) < mt && p.x1 > m.a && p.x0 < m.b) p.mit.push('b');
+    }
+    for (const s_ of p.mit) mitLen += s_ === 'l' || s_ === 'r' ? p.h : p.w;
+  }
   const st = tilePack(best.ps, c, W, H);
-  const L = { c, W, H, j, pieces: best.ps, ox: best.ox, oz: best.oz, minCut: best.m, ...st };
+  const L = { c, W, H, j, pieces: best.ps, ox: best.ox, oz: best.oz, minCut: best.m, mit, mitLen, ...st };
   Object.defineProperty(z, '_tl', { value: L, writable: true, configurable: true, enumerable: false });
   Object.defineProperty(z, '_tlk', { value: key, writable: true, configurable: true, enumerable: false });
   return L;
 }
-// how many tiles the cut pieces really need
+// how many tiles the cut pieces really need: the cutting of every piece (elements/layout-cut.js)
 function tilePack(ps, c, W, H) {
   const k = +c.kerf || 0;
-  const full = ps.filter(p => p.full).length,
-    cuts = ps.filter(p => !p.full);
-  let tilesCut = 0,
-    nCuts = 0;
+  const cuts = ps.filter(p => !p.full);
+  let nCuts = 0;
   for (const p of cuts) nCuts += (p.cx ? 1 : 0) + (p.cz ? 1 : 0);
-  if (c.reuse === 'factory') {
-    // a cut piece keeps factory edges toward the joints: one tile gives two pieces from its opposite edges at most
-    const pair = (arr, S, get) => {
-      const a = arr.slice().sort((p, q) => get(q) - get(p)),
-        used = new Array(a.length).fill(false);
-      let n = 0;
-      for (let i = 0; i < a.length; i++) {
-        if (used[i]) continue;
-        used[i] = true;
-        n++;
-        for (let jx = a.length - 1; jx > i; jx--)
-          if (!used[jx] && get(a[i]) + get(a[jx]) + k <= S) {
-            used[jx] = true;
-            break;
-          }
-      }
-      return n;
-    };
-    tilesCut =
-      pair(
-        cuts.filter(p => p.cx && !p.cz),
-        W,
-        p => p.w
-      ) +
-      pair(
-        cuts.filter(p => p.cz && !p.cx),
-        H,
-        p => p.h
-      ) +
-      pair(
-        cuts.filter(p => p.cx && p.cz),
-        W,
-        p => p.w
-      );
-  } else {
-    // offcuts reused: guillotine packing with kerf on every cut edge
-    const free = [];
-    for (const p of cuts.slice().sort((a, b) => b.w * b.h - a.w * a.h)) {
-      const need = f => ({ w: p.w + (p.w < f.w - 0.5 ? k : 0), h: p.h + (p.h < f.h - 0.5 ? k : 0) });
-      let bi = -1,
-        bs = Infinity;
-      for (let i = 0; i < free.length; i++) {
-        const f = free[i],
-          n = need(f);
-        if (n.w <= f.w + 0.01 && n.h <= f.h + 0.01 && f.w * f.h < bs) {
-          bs = f.w * f.h;
-          bi = i;
-        }
-      }
-      if (bi < 0) {
-        free.push({ w: W, h: H });
-        tilesCut++;
-        bi = free.length - 1;
-      }
-      const f = free.splice(bi, 1)[0],
-        n = need(f);
-      const rw = f.w - n.w,
-        rh = f.h - n.h;
-      if (rw * f.h >= f.w * rh) {
-        if (rw > 1) free.push({ w: rw, h: f.h });
-        if (rh > 1) free.push({ w: n.w, h: rh });
-      } else {
-        if (rw > 1) free.push({ w: rw, h: n.h });
-        if (rh > 1) free.push({ w: f.w, h: rh });
-      }
-    }
-  }
-  const total = full + tilesCut,
-    net = ps.reduce((a, p) => a + p.w * p.h, 0) / 1e6,
+  const R = cutLayout(ps, { W, H, kerf: k, mode: c.reuse === 'reuse' ? 'reuse' : 'factory' });
+  const total = R.total,
+    net = R.net / 1e6,
     order = Math.ceil(total * (1 + (+c.waste || 0) / 100));
   const used = (total * W * H) / 1e6;
   const mc = +c.minCut || 0;
   return {
-    full,
+    full: R.full,
     cutN: cuts.length,
-    tilesCut,
+    tilesCut: R.cutTiles,
     total,
     order,
     net,
     used,
     waste: used > 0 ? 1 - net / used : 0,
+    wasteA: R.wasteA / 1e6,
+    sheets: R.sheets,
     nCuts,
     slivers: cuts.filter(p => (p.cx && p.w < mc) || (p.cz && p.h < mc)).length,
     kerfLoss: nCuts * k
   };
+}
+/**
+ * Lines of the zone that get a 45° mitre (запил): the outer corners of the wall on this side, a free wall end,
+ * and the reveals of windows and doors inside the zone. c.miter: 'auto' (corners + reveals) / 'corners' / 'off'.
+ * Wall frame: x along the wall, z — height. [{ v: true, x, a, b } | { v: false, z, a, b }]
+ */
+function tileMiterLines(w, z, c = tileCfg(z)) {
+  const mode = c.miter || 'auto';
+  if (mode === 'off') return [];
+  const wi = wallInfo(w),
+    out = [];
+  const s = z.side > 0 ? 1 : -1;
+  for (const [end, x] of [
+    [0, 0],
+    [1, wi.L]
+  ]) {
+    if (Math.abs((end ? z.x1 : z.x0) - x) > 5) continue;
+    if (wallEndOuter(w, wi, end, s)) out.push({ v: true, x: end ? z.x1 : z.x0, a: z.z0, b: z.z1, corner: true });
+  }
+  if (mode === 'auto')
+    for (const r of zoneOpsRects(w)) {
+      const a = Math.max(r.z0, z.z0),
+        b = Math.min(r.z1, z.z1);
+      if (b > a) {
+        if (r.x0 > z.x0 + 1 && r.x0 < z.x1) out.push({ v: true, x: r.x0, a, b, rev: true });
+        if (r.x1 < z.x1 - 1 && r.x1 > z.x0) out.push({ v: true, x: r.x1, a, b, rev: true });
+      }
+      const xa = Math.max(r.x0, z.x0),
+        xb = Math.min(r.x1, z.x1);
+      if (xb > xa) {
+        if (r.z1 > z.z0 && r.z1 < z.z1 - 1) out.push({ v: false, z: r.z1, a: xa, b: xb, rev: true });
+        if (r.z0 > z.z0 + 1 && r.z0 < z.z1) out.push({ v: false, z: r.z0, a: xa, b: xb, rev: true });
+      }
+    }
+  return out;
+}
+/** True when the face of side s turns round an outer corner at the wall end (or the wall ends freely there). */
+function wallEndOuter(w, wi, end, s) {
+  const P0 = end ? w.b : w.a;
+  const tol = Math.max(w.th, 50);
+  for (const o of S.ents) {
+    if (o === w || o.type !== 'wall' || !o.a || !o.b) continue;
+    for (const [q, r] of [
+      [o.a, o.b],
+      [o.b, o.a]
+    ]) {
+      if (Math.hypot(q.x - P0.x, q.y - P0.y) > tol) continue;
+      const dx = r.x - q.x,
+        dy = r.y - q.y,
+        l = Math.hypot(dx, dy) || 1;
+      const along = (dx * wi.u.x + dy * wi.u.y) / l;
+      if (Math.abs(along) > 0.95) return false;
+      return ((dx * wi.n.x + dy * wi.n.y) / l) * s < 0;
+    }
+    // a wall abutting the end with its side (a T-joint seen from the end)
+    const ex = o.b.x - o.a.x,
+      ey = o.b.y - o.a.y,
+      L2 = ex * ex + ey * ey;
+    if (L2 > 1) {
+      const t = ((P0.x - o.a.x) * ex + (P0.y - o.a.y) * ey) / L2;
+      if (t > 0.02 && t < 0.98) {
+        const d = Math.abs((P0.x - o.a.x) * ey - (P0.y - o.a.y) * ex) / Math.sqrt(L2);
+        if (d < o.th / 2 + w.th / 2 + 5) return false;
+      }
+    }
+  }
+  return true;
 }
 function tileGrout(L) {
   const c = L.c;
@@ -38107,7 +38169,8 @@ function tilePanel(w, z, i) {
         ['center', 'по центру плитки'],
         ['joint', 'по центру шва'],
         ['left', 'от левого края'],
-        ['right', 'от правого края']
+        ['right', 'от правого края'],
+        ['pt', 'от точки' + (c.ax === 'pt' ? ' x=' + Math.round(+c.px || 0) : '')]
       ],
       c.ax
     )}
@@ -38117,19 +38180,41 @@ function tilePanel(w, z, i) {
         ['bottom', 'по вертикали: от низа'],
         ['top', 'от верха'],
         ['center', 'по центру'],
-        ['auto', 'авто']
+        ['auto', 'авто'],
+        ['pt', 'от точки' + (c.ay === 'pt' ? ' z=' + Math.round(+c.pz || 0) : '')]
       ],
       c.ay
-    )}${sel(
+    )}${
+      c.ax === 'pt' || c.ay === 'pt'
+        ? sel(
+            'anc',
+            [
+              ['joint', 'в точке — шов'],
+              ['center', 'в точке — центр плитки'],
+              ['corner', 'в точке — угол плитки']
+            ],
+            c.anc || 'joint'
+          )
+        : ''
+    }${sel(
       'reuse',
       [
-        ['factory', 'раскрой: только заводские кромки к шву'],
-        ['reuse', 'раскрой: использовать обрезки']
+        ['factory', 'Только заводские кромки'],
+        ['reuse', 'Обрезки с обработкой торцов']
       ],
       c.reuse
+    )}${sel(
+      'miter',
+      [
+        ['auto', 'Запил 45°: углы и откосы'],
+        ['corners', 'Запил 45°: только углы'],
+        ['off', 'Без запила']
+      ],
+      c.miter || 'auto'
     )}
     ${num('kerf', 'пропил, мм', 0.5)}${num('waste', 'запас, %', 1)}${num('minCut', 'мин. подрезка', 5)}</div>${tileSVG(w, z)}
-    <div class="zc">Плитка ${L.W}×${L.H}: целых ${L.full}, подрезок ${L.cutN} → на подрезки ${L.tilesCut} шт · итого ${L.total}, с запасом ${c.waste}% — <b>${L.order} шт</b> (${((L.order * L.W * L.H) / 1e6).toFixed(2)} м²) · площадь ${L.net.toFixed(2)} м² · отход ${(L.waste * 100).toFixed(1)}% · резов ${L.nCuts}, пропил ${L.kerfLoss.toFixed(0)} мм${L.slivers ? ` · <b class="bad">узких подрезок (< ${c.minCut} мм): ${L.slivers}</b>` : ''} · мин. подрезка ${isFinite(L.minCut) ? Math.round(L.minCut) : '—'} мм · затирка ≈${tileGrout(L).toFixed(1)} кг · клей ≈${tileGlue(L).toFixed(0)} кг</div>`;
+    <div class="btnrow" style="display:flex;gap:4px;margin:4px 0"><button class="btn" data-lay="view:wall:${w.id}:${i}" title="Контур, схема с размерами и раскрой каждой плитки: откуда взята деталь и что уходит в выброс">Раскладка детально</button><button class="btn" data-lay="org:wall:${w.id}:${i}" title="Указать точку начала раскладки на плане (с привязками)">Начало…</button></div>
+    <div class="zc">Плитка ${L.W}×${L.H}: целых ${L.full}, подрезок ${L.cutN} → на подрезки ${L.tilesCut} шт · итого ${L.total}, с запасом ${c.waste}% — <b>${L.order} шт</b> (${((L.order * L.W * L.H) / 1e6).toFixed(2)} м²) · площадь ${L.net.toFixed(2)} м² · в выброс ${L.wasteA.toFixed(2)} м² (${(L.waste * 100).toFixed(1)}%)${L.mitLen ? ` · запил 45° ${(L.mitLen / 1000).toFixed(2)} м` : ''} · резов ${L.nCuts}, пропил ${L.kerfLoss.toFixed(0)} мм${L.slivers ? ` · <b class="bad">узких подрезок (< ${c.minCut} мм): ${L.slivers}</b>` : ''} · мин. подрезка ${isFinite(L.minCut) ? Math.round(L.minCut) : '—'} мм · затирка ≈${tileGrout(L).toFixed(1)} кг · клей ≈${tileGlue(L).toFixed(0)} кг</div>`;
 }
 
 // ===== mep/plumbing/manifold.js =====
@@ -58411,6 +58496,8 @@ defineTools({
 
 
 
+
+
 /* ---------- catalogue ---------- */
 const COVER_MAT = {
   parquet: {
@@ -58589,7 +58676,15 @@ function coverCfg(z) {
     col2: c.col2 || fcShade(M.col, 0.72),
     stag: +c.stag || 300,
     seed: +c.seed || 7,
-    trans: c.trans || {}
+    trans: c.trans || {},
+    // manual start: the point, what lies on it (joint / tile centre / tile corner)
+    px: c.px,
+    py: c.py,
+    anc: c.anc || 'joint',
+    // cutting: factory edges only, or offcuts with finished edges (planks — the offcut starts the next row)
+    reuse: c.reuse || (M.wood ? 'reuse' : 'factory'),
+    kerf: c.kerf ?? (M.wood ? 0 : mat === 'stone' ? 3 : 2),
+    slopeCut: c.slopeCut !== false
   };
 }
 function fcShade(hex, k) {
@@ -59002,6 +59097,7 @@ function coverLayout(z) {
     const cc = coverCfg(z);
     key = JSON.stringify([
       z.pts,
+      z.slope,
       cc,
       cc.on && cc.mat !== 'carpet' ? coverTrans(z, cc).map(t => [t.o.id, t.rect, t.depth]) : 0,
       cuttersIn(z.pts, 'floor').map(k => k.q)
@@ -59053,6 +59149,18 @@ function coverLayout0(z) {
       return q[0] + q[1] < r[0] + r[1] ? p : b;
     }, poly[0]);
   }
+  if (c.org === 'pt' && isFinite(+c.px) && isFinite(+c.py)) {
+    O = P(+c.px, +c.py);
+    // grid-like patterns start the tile at the frame origin: put the joint / centre / corner on the point
+    if (['grid', 'checker', 'diag', 'half', 'third', 'deck'].includes(c.pat)) {
+      const sz = coverSize(c),
+        j = +c.joint || 0;
+      const W_ = sz.l,
+        H_ = sz.w;
+      const d = c.anc === 'center' ? [-W_ / 2, -H_ / 2] : c.anc === 'corner' ? [0, 0] : [j / 2, j / 2];
+      O = P(O.x - (d[0] * ca - d[1] * sa), O.y - (d[0] * sa + d[1] * ca));
+    }
+  }
   O = P(O.x + c.ox * ca - c.oy * sa, O.y + c.ox * sa + c.oy * ca);
   const T = (R.trans = coverTrans(z, c));
   const regions = [poly, ...T.filter(t => t.depth > 0).map(t => t.rect)].map(q => q.map(p => toF(p, O)));
@@ -59098,9 +59206,41 @@ function coverLayout0(z) {
     return true;
   };
   const toW = ([x, y]) => P(O.x + x * ca - y * sa, O.y + x * sa + y * ca);
+  let porig = 0;
   for (const pc of PC) {
+    porig++;
     const A0 = areaA(pc.p);
     if (A0 <= 0) continue;
+    // the frame of the tile itself: x along its longest edge, from its lowest corner
+    let le = 0,
+      th = 0;
+    for (let k = 0; k < pc.p.length; k++) {
+      const a = pc.p[k],
+        b = pc.p[(k + 1) % pc.p.length],
+        d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (d > le + 1e-6) {
+        le = d;
+        th = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      }
+    }
+    const tw = th + ang,
+      tc = Math.cos(tw),
+      ts = Math.sin(tw);
+    const p0w = toW(pc.p[0]);
+    const lr = pc.p.map(v => {
+      const q = toW(v),
+        dx = q.x - p0w.x,
+        dy = q.y - p0w.y;
+      return [dx * tc + dy * ts, -dx * ts + dy * tc];
+    });
+    const mx = Math.min(...lr.map(v => v[0])),
+      my = Math.min(...lr.map(v => v[1]));
+    const tf = { x: p0w.x, y: p0w.y, c: tc, s: ts, mx, my };
+    const src = lr.map(([x, y]) => [x - mx, y - my]);
+    const sb = src.reduce((b, [x, y]) => [Math.max(b[0], x), Math.max(b[1], y)], [0, 0]);
+    const rect = src.length === 4 && Math.abs(areaA(src) - sb[0] * sb[1]) < 1;
+    const skey =
+      (rect ? 'r' : 'p' + src.length) + ':' + Math.round(sb[0]) + 'x' + Math.round(sb[1]) + (pc.ins ? 'i' : '');
     let bx0 = 1e18,
       bx1 = -1e18,
       by0 = 1e18,
@@ -59135,7 +59275,22 @@ function coverLayout0(z) {
       const A = Math.abs(areaA(q));
       if (A < 50) continue;
       const full = A > A0 * 0.995;
-      R.pieces.push({ pts: q.map(toW), full, sh: pc.sh, ins: pc.ins, A, A0 });
+      const pts = q.map(toW);
+      R.pieces.push({
+        pts,
+        full,
+        sh: pc.sh,
+        ins: pc.ins,
+        A,
+        A0,
+        tf,
+        src,
+        sw: sb[0],
+        shh: sb[1],
+        rect,
+        skey,
+        orig: porig
+      });
       R.area += A;
       if (!used) {
         used = true;
@@ -59170,9 +59325,123 @@ function coverLayout0(z) {
     }
     R.pieces = np;
   }
+  // the floor falls to the drains: the tiles are cut on the valley lines of the envelope (конверт) or on the crease
+  R.slope = [];
+  if (c.slopeCut) {
+    const regs = slopeRegions(z);
+    if (regs) {
+      R.slope = regs.lines;
+      const np = [];
+      for (const pc of R.pieces) {
+        const q = pc.pts.map(p => [p.x, p.y]);
+        const hit = regs.polys
+          .map(rg => clipConvex(rg, areaA(q) < 0 ? q.slice().reverse() : q))
+          .filter(g => g.length >= 3 && Math.abs(areaA(g)) >= 50);
+        if (hit.length <= 1) {
+          np.push(pc);
+          continue;
+        }
+        for (const g of hit)
+          np.push({ ...pc, pts: g.map(([x, y]) => P(x, y)), full: false, A: Math.abs(areaA(g)), slope: true });
+        if (pc.full) {
+          R.full--;
+          R.cut++;
+        }
+      }
+      R.pieces = np;
+    }
+  }
+  for (const pc of R.pieces) {
+    const t = pc.tf;
+    pc.loc = pc.pts.map(p => {
+      const dx = p.x - t.x,
+        dy = p.y - t.y;
+      return [dx * t.c + dy * t.s - t.mx, -dx * t.s + dy * t.c - t.my];
+    });
+  }
+  // numbering: rows along the layout, from the top left
+  const key = p => {
+    const cx = p.pts.reduce((a, q) => a + q.x, 0) / p.pts.length,
+      cy = p.pts.reduce((a, q) => a + q.y, 0) / p.pts.length;
+    return [-(-(cx - O.x) * sa + (cy - O.y) * ca), (cx - O.x) * ca + (cy - O.y) * sa];
+  };
+  R.pieces.sort((a, b) => {
+    const A_ = key(a),
+      B_ = key(b);
+    return Math.round(A_[0] / 50) - Math.round(B_[0] / 50) || A_[1] - B_[1];
+  });
+  R.cutting = coverCutting(R, c);
   R.ang = ang;
   R.O = O;
   return R;
+}
+/** Cutting of the floor pieces by tile kinds (a pattern may have two: tile and insert). */
+function coverCutting(R, c) {
+  const groups = new Map();
+  for (const pc of R.pieces) {
+    if (!groups.has(pc.skey)) groups.set(pc.skey, []);
+    groups.get(pc.skey).push(pc);
+  }
+  const out = [];
+  for (const [k, ps] of groups) {
+    const f = ps[0];
+    const Rc = cutLayout(ps, {
+      W: f.sw,
+      H: f.shh,
+      kerf: +c.kerf || 0,
+      mode: c.reuse,
+      shaped: !f.rect,
+      siblings: true,
+      tileA: Math.abs(areaA(f.src))
+    });
+    out.push({ k, src: f.src, W: f.sw, H: f.shh, ins: !!f.ins, ...Rc });
+  }
+  return out;
+}
+/** Convex regions of the zone between the slope lines (one point drain — triangles to the corners; a drain line — two sides). */
+function slopeRegions(z) {
+  let St;
+  try {
+    St = zoneSurf(z);
+  } catch (err) {
+    return null;
+  }
+  const poly = z.pts.map(p => [p.x, p.y]);
+  if (areaA(poly) < 0) poly.reverse();
+  if (St.mode === 'env' && St.envs && St.envs.length === 1) {
+    const c = St.envs[0].c;
+    const polys = [],
+      lines = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i],
+        b = poly[(i + 1) % poly.length];
+      const t = [[c.x, c.y], a, b];
+      if (areaA(t) <= 0) return null; // not star-shaped from the drain: no envelope cuts
+      polys.push(t);
+      lines.push([P(c.x, c.y), P(a[0], a[1])]);
+    }
+    return { polys, lines, kind: 'env' };
+  }
+  if (St.mode === 'line' && St.line) {
+    const L = St.line,
+      dx = L.b.x - L.a.x,
+      dy = L.b.y - L.a.y,
+      l = Math.hypot(dx, dy) || 1;
+    const nx = -dy / l,
+      ny = dx / l;
+    const sd = p => (p[0] - L.a.x) * nx + (p[1] - L.a.y) * ny;
+    const ds = poly.map(sd);
+    if (Math.min(...ds) > -20 || Math.max(...ds) < 20) return null; // the drain at a wall: one plane, no crease
+    const far = 1e6;
+    const half = sg => {
+      const o = [L.a.x - (dx / l) * far, L.a.y - (dy / l) * far],
+        e = [L.a.x + (dx / l) * far, L.a.y + (dy / l) * far];
+      const q = [o, e, [e[0] + nx * far * sg, e[1] + ny * far * sg], [o[0] + nx * far * sg, o[1] + ny * far * sg]];
+      return areaA(q) < 0 ? q.reverse() : q;
+    };
+    return { polys: [half(1), half(-1)], lines: [[L.a, L.b]], kind: 'line' };
+  }
+  return null;
 }
 /** Summary: areas, waste, packs, glue / grout, plywood. */
 function coverStats(z) {
@@ -59182,9 +59451,30 @@ function coverStats(z) {
   const A = Math.abs(polyArea(z.pts)) / 1e6;
   const net = R.area / 1e6 || A;
   const wasteP = COVER_WASTE[c.pat] || 7;
-  const buy = Math.max(R.used / 1e6, net * (1 + wasteP / 100));
+  // tiles really needed (cutting of every piece) and what goes to waste
+  const CU = R.cutting || [];
+  const usedA = CU.reduce((a, g) => a + g.usedA, 0) / 1e6 || R.used / 1e6;
+  const wasteA = CU.reduce((a, g) => a + g.wasteA, 0) / 1e6;
+  const tiles = CU.reduce((a, g) => a + g.total, 0);
+  const buy = Math.max(usedA, net * (1 + wasteP / 100));
   const { w, l } = coverSize(c);
-  const out = { A, net, buy, wasteP, full: R.full, cut: R.cut, packs: M.pack ? Math.ceil(buy / M.pack) : 0, w, l, M };
+  const out = {
+    A,
+    net,
+    buy,
+    wasteP,
+    full: R.full,
+    cut: R.cut,
+    packs: M.pack ? Math.ceil(buy / M.pack) : 0,
+    w,
+    l,
+    M,
+    tiles,
+    usedA,
+    wasteA,
+    wastePct: usedA > 0 ? wasteA / usedA : 0,
+    slopeLen: (R.slope || []).reduce((a, L) => a + dist(L[0], L[1]), 0)
+  };
   if (!M.wood && c.joint > 0) out.grout = Math.round(net * ((w + l) / (w * l)) * c.joint * M.th * 1.6 * 10) / 10;
   if (!M.wood) out.glue = Math.round(net * (Math.max(w, l) >= 600 ? 6.5 : 4.5) * 10) / 10;
   if (c.mat === 'parquet' || c.mat === 'eng') out.pglue = Math.round(net * 1.2 * 10) / 10;
@@ -59388,9 +59678,35 @@ function coverPanel(z) {
       's',
       [
         ['center', 'от центра помещения'],
-        ['corner', 'от угла']
+        ['corner', 'от угла'],
+        ['pt', 'от точки (указать на плане)']
       ]
     ],
+    ...(c.org === 'pt'
+      ? [
+          [
+            'В точке',
+            'cover.anc',
+            's',
+            [
+              ['joint', 'шов'],
+              ['center', 'центр плитки'],
+              ['corner', 'угол плитки']
+            ]
+          ]
+        ]
+      : []),
+    [
+      'Раскрой',
+      'cover.reuse',
+      's',
+      [
+        ['factory', 'только заводские кромки'],
+        ['reuse', 'обрезки с обработкой торцов']
+      ]
+    ],
+    ['Пропил, мм', 'cover.kerf', 'n', '0.5'],
+    ['Подрезка под уклон к трапу', 'cover.slopeCut', 'b'],
     ['Сдвиг вдоль, мм', 'cover.ox', 'n'],
     ['Сдвиг поперёк, мм', 'cover.oy', 'n'],
     [M.wood ? 'Шов между планками, мм' : 'Межплиточный шов, мм', 'cover.joint', 'n', '0.5'],
@@ -59431,7 +59747,7 @@ function coverPanel(z) {
         ]
       : [])
   ];
-  const info = `<dt></dt><dd class="hint" style="text-align:left">${R.tooMany ? 'Слишком мелкий формат для такой площади — раскладка не строится' : `Целых ${st.full}, подрезанных ${st.cut}; укладка ${st.net.toFixed(2)} м², закупка ≈ ${st.buy.toFixed(2)} м² (запас ${st.wasteP}%)${st.packs ? `, ≈ ${st.packs} уп.` : ''}${st.grout ? `; затирка ≈ ${st.grout} кг` : ''}${st.glue ? `; клей ≈ ${st.glue} кг` : ''}${st.pglue ? `; клей для паркета ≈ ${st.pglue} кг` : ''}${st.plySheets ? `; фанера ${st.plySheets} л. 1525×1525 (${st.plyQuarters} квадратов), дюбели ≈ ${st.plyDowels}` : ''}`}</dd>`;
+  const info = `<dt></dt><dd class="hint" style="text-align:left">${R.tooMany ? 'Слишком мелкий формат для такой площади — раскладка не строится' : `Целых ${st.full}, подрезанных ${st.cut}; укладка ${st.net.toFixed(2)} м², плиток по раскрою ${st.tiles} шт, в выброс ${st.wasteA.toFixed(2)} м² (${(st.wastePct * 100).toFixed(1)}%)${st.slopeLen ? `, подрезка под уклон ${(st.slopeLen / 1000).toFixed(2)} м` : ''}; закупка ≈ ${st.buy.toFixed(2)} м² (запас ${st.wasteP}%)${st.packs ? `, ≈ ${st.packs} уп.` : ''}${st.grout ? `; затирка ≈ ${st.grout} кг` : ''}${st.glue ? `; клей ≈ ${st.glue} кг` : ''}${st.pglue ? `; клей для паркета ≈ ${st.pglue} кг` : ''}${st.plySheets ? `; фанера ${st.plySheets} л. 1525×1525 (${st.plyQuarters} квадратов), дюбели ≈ ${st.plyDowels}` : ''}`}</dd>`;
   const T = R.trans;
   const tr = T.length
     ? T.map(
@@ -59445,11 +59761,12 @@ function coverPanel(z) {
             .join('')}</select></dd>`
       ).join('')
     : cR('Проёмы рядом', 'нет');
+  const btns = `<dt></dt><dd style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn" data-lay="view:floor:${z.id}" title="Контур, схема с размерами и раскрой каждой плитки: откуда взята деталь и что уходит в выброс">Раскладка детально</button><button class="btn" data-lay="org:floor:${z.id}" title="Указать точку начала раскладки на плане (с привязками)">Начало…</button></dd>`;
   return [
     [
       'Покрытие и раскладка',
       c.on ? `${COVER_PAT[c.pat]} · ${c.size.replace('x', '×')}` : 'выкл',
-      xRows(z, rows) + info
+      xRows(z, rows) + info + btns
     ],
     ['Стыки в проёмах', `${T.length}`, tr]
   ];
@@ -59467,6 +59784,9 @@ function coverSpec(z, put) {
       r.ids.push(z.id);
     });
   };
+  if (st.wasteA > 0.005)
+    P_('cvw' + c.mat + c.size, `${M.n} ${c.size.replace('x', '×')}: уходит в выброс при раскрое`, st.wasteA, 'м²');
+  if (st.slopeLen > 0) P_('cvsl', 'Подрезка плитки под уклон к трапу (конверт), м', st.slopeLen / 1000, 'м');
   P_(
     'cv' + c.mat + c.size + c.pat,
     `${M.n} ${c.size.replace('x', '×')} мм, ${COVER_PAT[c.pat].toLowerCase()} (с запасом ${st.wasteP}%)`,
@@ -96601,6 +96921,676 @@ const CTPL = {
   }
 };
 
+// ===== elements/layout-view.js =====
+/**
+ * elements/layout-view.js
+ *
+ * «Раскладка детально» — the layout of a tiled wall zone or a floor covering on one page, the way a master reads
+ * it: the outline of the surface, the layout scheme with sizes and numbered cut pieces, and the cutting of every
+ * tile (which pieces it gives, where they lie in it, what goes to waste). A click on a piece lights it in the
+ * scheme and in its tile, and the other pieces cut from the same tile. Switches: factory edges only / offcuts
+ * with finished edges. The start of the layout can be set here with a click (snaps to corners, edge middles,
+ * openings, drains) or on the plan with the command «Начало раскладки» (НАЧАЛОРАСКЛАДКИ).
+ *
+ * The numbers are the same as in the specification: both read tileLayout() (walls) and coverStats() (floors).
+ */
+
+
+
+
+
+
+
+
+
+
+
+const LYV = { kind: null, id: null, i: 0, hl: null, pick: false };
+const lvN2 = v => (Math.round(v * 100) / 100).toLocaleString('ru-RU');
+const lvMm = v => Math.round(v).toLocaleString('ru-RU');
+
+/* ---------- the data of a layout, in one shape for walls and floors ---------- */
+/**
+ * { title, sub, outline: [[x,y]][], holes: [[x,y]][], pieces: [{ poly, no, lbl, full, sheet, grp, w, h, mit, slope }],
+ *   groups: [{ W, H, src, sheets, full, label }], lines: { mit: [[a,b]], slope: [[a,b]] }, origin: [x,y],
+ *   snaps: [[x,y]], stats: [[label, value]], cfg, reuse }
+ * Coordinates: wall — x along the wall, y — height; floor — plan x, y. Y goes up.
+ */
+function layoutData() {
+  if (LYV.kind === 'wall') {
+    const w = byId(LYV.id);
+    const z = w && (w.zones || [])[LYV.i];
+    if (!z) return null;
+    const L = tileLayout(w, z),
+      c = L.c;
+    const R = zoneRects(w, z);
+    const ops = zoneOpsRects(w)
+      .map(o => ({
+        x0: Math.max(o.x0, z.x0),
+        x1: Math.min(o.x1, z.x1),
+        z0: Math.max(o.z0, z.z0),
+        z1: Math.min(o.z1, z.z1)
+      }))
+      .filter(o => o.x1 > o.x0 && o.z1 > o.z0);
+    const rq = r => [
+      [r.x0, r.z0],
+      [r.x1, r.z0],
+      [r.x1, r.z1],
+      [r.x0, r.z1]
+    ];
+    const pieces = L.pieces.map(p => ({
+      poly: rq(p),
+      no: p.no,
+      lbl: p.full ? '' : String(p.no),
+      full: p.full,
+      sheet: p.sheet,
+      grp: 0,
+      w: p.w,
+      h: p.h,
+      mit: p.mit || [],
+      rot: p.rot
+    }));
+    const snaps = [];
+    for (const r of [{ x0: z.x0, x1: z.x1, z0: z.z0, z1: z.z1 }, ...ops])
+      for (const x of [r.x0, (r.x0 + r.x1) / 2, r.x1])
+        for (const y of [r.z0, (r.z0 + r.z1) / 2, r.z1]) snaps.push([x, y]);
+    const mat = z.k === 'stone' ? 'Керамогранит' : 'Плитка';
+    return {
+      title: `${mat} ${L.W}×${L.H}×${c.t} — стена №${w.id}, сторона ${z.side > 0 ? 'А' : 'Б'}, зона ${LYV.i + 1}`,
+      outline: [rq({ x0: z.x0, x1: z.x1, z0: z.z0, z1: z.z1 })],
+      holes: ops.map(rq),
+      area: R,
+      pieces,
+      groups: [
+        { W: L.W, H: L.H, src: rq({ x0: 0, x1: L.W, z0: 0, z1: L.H }), sheets: L.sheets || [], full: L.full, label: '' }
+      ],
+      lines: {
+        mit: (L.mit || []).map(m =>
+          m.v
+            ? [
+                [m.x, m.a],
+                [m.x, m.b]
+              ]
+            : [
+                [m.a, m.z],
+                [m.b, m.z]
+              ]
+        ),
+        slope: []
+      },
+      origin: [L.ox, L.oz],
+      originSet: c.ax === 'pt' || c.ay === 'pt',
+      snaps,
+      reuse: c.reuse === 'reuse' ? 'reuse' : 'factory',
+      col: z.col || '#e8e4dc',
+      jcol: c.jcol || '#cfd0cc',
+      stats: [
+        ['Площадь облицовки', lvN2(L.net) + ' м²'],
+        ['Плиток всего', `${L.total} шт (целых ${L.full}, на подрезки ${L.tilesCut})`],
+        ['С запасом ' + c.waste + '%', `<b>${L.order} шт</b> · ${lvN2((L.order * L.W * L.H) / 1e6)} м²`],
+        ['В выброс', `${lvN2(L.wasteA)} м² · ${(L.waste * 100).toFixed(1)}%`],
+        ['Подрезанных деталей', `${L.cutN} · резов ${L.nCuts} · пропил ${lvMm(L.kerfLoss)} мм`],
+        ...(L.mitLen ? [['Запил 45°', lvN2(L.mitLen / 1000) + ' м']] : []),
+        ...(L.slivers ? [['Узкие подрезки', `<b class="bad">${L.slivers} шт уже ${c.minCut} мм</b>`]] : []),
+        ['Мин. подрезка', isFinite(L.minCut) ? lvMm(L.minCut) + ' мм' : '—'],
+        ['Клей / затирка', `≈${tileGlue(L).toFixed(0)} кг / ≈${tileGrout(L).toFixed(1)} кг`]
+      ]
+    };
+  }
+  if (LYV.kind === 'floor') {
+    const z = byId(LYV.id);
+    if (!z || !z.pts) return null;
+    const R = coverLayout(z),
+      c = R.c,
+      st = coverStats(z),
+      M = COVER_MAT[c.mat] || COVER_MAT.stone;
+    const groups = (R.cutting || []).map((g, gi, a) => ({
+      W: g.W,
+      H: g.H,
+      src: g.src,
+      sheets: g.sheets,
+      full: g.full,
+      label: a.length > 1 ? (g.ins ? 'вставка ' : 'плитка ') + lvMm(g.W) + '×' + lvMm(g.H) : '',
+      pre: a.length > 1 ? String.fromCharCode(1040 + gi) : ''
+    }));
+    const gi = new Map((R.cutting || []).map((g, i) => [g.k, i]));
+    const pieces = R.pieces.map(p => {
+      const g = gi.get(p.skey) || 0;
+      const xs = (p.loc || []).map(v => v[0]),
+        ys = (p.loc || []).map(v => v[1]);
+      return {
+        poly: p.pts.map(q => [q.x, q.y]),
+        no: p.no,
+        lbl: p.full ? '' : (groups[g] ? groups[g].pre : '') + p.no,
+        full: p.full,
+        sheet: p.sheet,
+        grp: g,
+        w: xs.length ? Math.max(...xs) - Math.min(...xs) : 0,
+        h: ys.length ? Math.max(...ys) - Math.min(...ys) : 0,
+        slope: !!p.slope,
+        rot: p.rot
+      };
+    });
+    const snaps = [];
+    const pts = z.pts;
+    pts.forEach((p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      snaps.push([p.x, p.y], [(p.x + q.x) / 2, (p.y + q.y) / 2]);
+    });
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length,
+      cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+    snaps.push([cx, cy]);
+    for (const t of R.trans || []) snaps.push([(t.line[0].x + t.line[1].x) / 2, (t.line[0].y + t.line[1].y) / 2]);
+    for (const e of S.ents)
+      if (e.type === 'fix' && e.kind === 'fdrain' && e.p && inPoly(e.p, pts)) snaps.push([e.p.x, e.p.y]);
+    const sz = coverSize(c);
+    return {
+      title: `${M.n} ${lvMm(sz.w)}×${lvMm(sz.l)} — ${z.name || 'пол №' + z.id}, ${COVER_PAT[c.pat].toLowerCase()}`,
+      outline: [pts.map(p => [p.x, p.y])],
+      holes: (R.trans || []).filter(t => t.depth > 0).map(t => t.rect.map(p => [p.x, p.y])),
+      transIsArea: true,
+      pieces,
+      groups,
+      lines: {
+        mit: [],
+        slope: (R.slope || []).map(L => [
+          [L[0].x, L[0].y],
+          [L[1].x, L[1].y]
+        ])
+      },
+      origin: R.O ? [R.O.x, R.O.y] : null,
+      originSet: c.org === 'pt',
+      snaps,
+      reuse: c.reuse,
+      col: c.col,
+      jcol: M.wood ? '#6b4f33' : '#bcbab4',
+      stats: [
+        ['Площадь укладки', lvN2(st.net) + ' м²'],
+        ['Деталей', `целых ${st.full}, подрезанных ${st.cut}`],
+        ['Плиток по раскрою', `${st.tiles} шт · ${lvN2(st.usedA)} м²`],
+        ['Закупка с запасом ' + st.wasteP + '%', `<b>${lvN2(st.buy)} м²</b>${st.packs ? ` · ${st.packs} уп.` : ''}`],
+        ['В выброс', `${lvN2(st.wasteA)} м² · ${(st.wastePct * 100).toFixed(1)}%`],
+        ...(st.slopeLen ? [['Подрезка под уклон', lvN2(st.slopeLen / 1000) + ' м']] : []),
+        ...(st.glue ? [['Клей', '≈' + st.glue + ' кг']] : []),
+        ...(st.grout ? [['Затирка', '≈' + st.grout + ' кг']] : [])
+      ]
+    };
+  }
+  return null;
+}
+
+/* ---------- drawing ---------- */
+function lvFit(D) {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const q of D.outline.concat(D.holes))
+    for (const [x, y] of q) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+  return { x0, y0, x1, y1 };
+}
+const lvPts = (q, T) =>
+  q
+    .map(v =>
+      T(v)
+        .map(a => a.toFixed(1))
+        .join(',')
+    )
+    .join(' ');
+/** Outline with overall sizes. */
+function outlineSvg(D) {
+  const B = lvFit(D),
+    Wd = 520,
+    k = Math.min(Wd / Math.max(1, B.x1 - B.x0), 300 / Math.max(1, B.y1 - B.y0));
+  const H = (B.y1 - B.y0) * k + 70,
+    W = (B.x1 - B.x0) * k + 90;
+  const T = ([x, y]) => [50 + (x - B.x0) * k, 20 + (B.y1 - y) * k];
+  let s = `<svg class="lvsvg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" width="${W.toFixed(0)}">`;
+  for (const q of D.outline) s += `<polygon points="${lvPts(q, T)}" fill="#f4f2ee" stroke="#222" stroke-width="1.6"/>`;
+  for (const q of D.holes)
+    s += `<polygon points="${lvPts(q, T)}" fill="${D.transIsArea ? '#ece7dc' : '#fff'}" stroke="#222" stroke-width="1" ${D.transIsArea ? 'stroke-dasharray="4 3"' : ''}/>`;
+  // edge lengths of the outline
+  for (const q of D.outline)
+    q.forEach((a, i) => {
+      const b = q[(i + 1) % q.length],
+        L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 50) return;
+      const A = T(a),
+        Bp = T(b),
+        mx = (A[0] + Bp[0]) / 2,
+        my = (A[1] + Bp[1]) / 2;
+      const ang = (Math.atan2(Bp[1] - A[1], Bp[0] - A[0]) * 180) / Math.PI;
+      const rot = ang > 90 || ang < -90 ? ang + 180 : ang;
+      s += `<text x="${mx.toFixed(1)}" y="${(my - 4).toFixed(1)}" font-size="11" text-anchor="middle" transform="rotate(${rot.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)})" fill="#333">${lvMm(L)}</text>`;
+    });
+  return s + '</svg>';
+}
+/** The layout scheme: pieces, numbers, sizes, mitre and slope lines, the start point. */
+function schemeSvg(D) {
+  const B = lvFit(D),
+    Wd = 1000;
+  const k = Math.min(Wd / Math.max(1, B.x1 - B.x0), 620 / Math.max(1, B.y1 - B.y0));
+  const W = (B.x1 - B.x0) * k + 120,
+    H = (B.y1 - B.y0) * k + 110;
+  const T = ([x, y]) => [60 + (x - B.x0) * k, 30 + (B.y1 - y) * k];
+  LYV.T = { B, k, ox: 60, oy: 30 };
+  let s = `<svg class="lvsvg lvsch${LYV.pick ? ' picking' : ''}" id="lvScheme" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" width="${W.toFixed(0)}">`;
+  s += `<defs><pattern id="lvHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fbe3e0"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d9534f" stroke-width="1.4"/></pattern></defs>`;
+  for (const q of D.outline) s += `<polygon points="${lvPts(q, T)}" fill="${esc(D.jcol)}" stroke="none"/>`;
+  for (const p of D.pieces) {
+    const cls = p.full ? 'lvp full' : 'lvp cut' + (p.slope ? ' slope' : '');
+    s += `<polygon class="${cls}" ${p.full ? '' : `data-no="${p.grp}:${p.no}" data-sh="${p.grp}:${p.sheet}"`} points="${lvPts(p.poly, T)}" fill="${esc(D.col)}"/>`;
+  }
+  for (const q of D.outline) s += `<polygon points="${lvPts(q, T)}" fill="none" stroke="#111" stroke-width="1.6"/>`;
+  for (const q of D.holes)
+    s += D.transIsArea
+      ? `<polygon points="${lvPts(q, T)}" fill="none" stroke="#555" stroke-dasharray="4 3"/>`
+      : `<polygon points="${lvPts(q, T)}" fill="#fff" stroke="#111" stroke-width="1.2"/>`;
+  // numbers and sizes of the cut pieces
+  for (const p of D.pieces) {
+    if (p.full) continue;
+    const c = p.poly.reduce((a, v) => [a[0] + v[0] / p.poly.length, a[1] + v[1] / p.poly.length], [0, 0]);
+    const [X, Y] = T(c);
+    const bw = (Math.max(...p.poly.map(v => v[0])) - Math.min(...p.poly.map(v => v[0]))) * k;
+    const bh = (Math.max(...p.poly.map(v => v[1])) - Math.min(...p.poly.map(v => v[1]))) * k;
+    const fs = Math.max(7, Math.min(13, Math.min(bw, bh) * 0.42));
+    s += `<text class="lvno" data-no="${p.grp}:${p.no}" x="${X.toFixed(1)}" y="${(Y + fs * 0.35).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle">${esc(p.lbl)}</text>`;
+    if (bw > 46 && bh > 26)
+      s += `<text class="lvsz" x="${X.toFixed(1)}" y="${(Y + fs * 0.35 + 10).toFixed(1)}" font-size="8.5" text-anchor="middle">${lvMm(p.w)}×${lvMm(p.h)}</text>`;
+  }
+  for (const L of D.lines.mit)
+    s += `<line x1="${T(L[0])[0]}" y1="${T(L[0])[1]}" x2="${T(L[1])[0]}" y2="${T(L[1])[1]}" stroke="#c0392b" stroke-width="3" stroke-dasharray="6 3" opacity=".85"><title>Запил 45°</title></line>`;
+  for (const L of D.lines.slope)
+    s += `<line x1="${T(L[0])[0]}" y1="${T(L[0])[1]}" x2="${T(L[1])[0]}" y2="${T(L[1])[1]}" stroke="#2563eb" stroke-width="1.6" stroke-dasharray="7 4"><title>Линия уклона — подрезка плитки</title></line>`;
+  // overall sizes
+  const [ax, ay] = T([B.x0, B.y0]),
+    [bx, by] = T([B.x1, B.y1]);
+  s += lvDimH(ax, bx, ay + 26, lvMm(B.x1 - B.x0)) + lvDimV(ax - 30, by, ay, lvMm(B.y1 - B.y0));
+  // the start of the layout: offsets from the outline
+  if (D.origin) {
+    const [X, Y] = T(D.origin);
+    if (X > -20 && X < W + 20 && Y > -20 && Y < H + 20) {
+      s += `<g class="lvorg"><circle cx="${X.toFixed(1)}" cy="${Y.toFixed(1)}" r="7" fill="none" stroke="#e11d48" stroke-width="2"/><path d="M${X - 11} ${Y}h22M${X} ${Y - 11}v22" stroke="#e11d48" stroke-width="1.6"/></g>`;
+      s += `<text x="${(X + 10).toFixed(1)}" y="${(Y - 10).toFixed(1)}" font-size="10" fill="#e11d48">начало: ${lvMm(D.origin[0] - B.x0)} / ${lvMm(D.origin[1] - B.y0)}</text>`;
+    }
+  }
+  return s + '</svg>';
+}
+function lvDimH(x0, x1, y, t) {
+  return `<g class="lvdim"><line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/><line x1="${x0}" y1="${y - 5}" x2="${x0}" y2="${y + 5}"/><line x1="${x1}" y1="${y - 5}" x2="${x1}" y2="${y + 5}"/><text x="${(x0 + x1) / 2}" y="${y - 4}" text-anchor="middle">${t}</text></g>`;
+}
+function lvDimV(x, y0, y1, t) {
+  const m = (y0 + y1) / 2;
+  return `<g class="lvdim"><line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}"/><line x1="${x - 5}" y1="${y0}" x2="${x + 5}" y2="${y0}"/><line x1="${x - 5}" y1="${y1}" x2="${x + 5}" y2="${y1}"/><text x="${x - 4}" y="${m}" text-anchor="middle" transform="rotate(-90 ${x - 4} ${m})">${t}</text></g>`;
+}
+/** One cut tile: the pieces it gives and what goes to waste. */
+function sheetSvg(D, g, gi, sh) {
+  const G = D.groups[gi];
+  const k = Math.min(170 / Math.max(G.W, 1), 170 / Math.max(G.H, 1));
+  const W = G.W * k + 16,
+    H = G.H * k + 16;
+  const T = ([x, y]) => [8 + x * k, 8 + (G.H - y) * k];
+  let s = `<svg viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" width="${W.toFixed(0)}" class="lvsvg">`;
+  s += `<polygon points="${lvPts(G.src, T)}" fill="url(#lvHatch2)" stroke="#333" stroke-width="1"/>`;
+  for (const it of sh.items) {
+    const p = it.piece;
+    const pc = D.pieces.find(q => q.grp === gi && q.no === p.no && !q.full);
+    s += `<polygon class="lvp cut" data-no="${gi}:${p.no}" data-sh="${gi}:${sh.n}" points="${lvPts(it.poly, T)}" fill="${esc(D.col)}" stroke="#333" stroke-width=".8"/>`;
+    const c = it.poly.reduce((a, v) => [a[0] + v[0] / it.poly.length, a[1] + v[1] / it.poly.length], [0, 0]);
+    const [X, Y] = T(c);
+    s += `<text class="lvno" data-no="${gi}:${p.no}" x="${X.toFixed(1)}" y="${(Y + 4).toFixed(1)}" font-size="11" text-anchor="middle">${esc(pc ? pc.lbl : String(p.no))}</text>`;
+    if (pc && pc.w * k > 40 && pc.h * k > 22)
+      s += `<text class="lvsz" x="${X.toFixed(1)}" y="${(Y + 14).toFixed(1)}" font-size="8" text-anchor="middle">${lvMm(pc.w)}×${lvMm(pc.h)}</text>`;
+  }
+  return s + '</svg>';
+}
+function cuttingHtml(D) {
+  let h = `<svg width="0" height="0" style="position:absolute"><defs><pattern id="lvHatch2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fbe3e0"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d9534f" stroke-width="1.4"/></pattern></defs></svg>`;
+  D.groups.forEach((g, gi) => {
+    if (g.label) h += `<h4 class="lvh4">${esc(g.label)}</h4>`;
+    h += `<div class="lvcards">`;
+    if (g.full)
+      h += `<div class="lvcard full"><div class="lvct">Целые плитки</div><div class="lvbig">${g.full} шт</div><div class="hint">${lvMm(g.W)}×${lvMm(g.H)} — без резки</div></div>`;
+    for (const sh of g.sheets) {
+      const wa = sh.wasteA / 1e6;
+      const waT = wa > 0 && wa < 0.01 ? wa.toFixed(3).replace('.', ',') : lvN2(wa);
+      const nos = sh.items.map(it => {
+        const pc = D.pieces.find(q => q.grp === gi && q.no === it.piece.no && !q.full);
+        return pc ? pc.lbl : it.piece.no;
+      });
+      h += `<div class="lvcard" data-card="${gi}:${sh.n}"><div class="lvct">Плитка ${g.pre || ''}${sh.n} · дет. ${nos.join(', ')}</div>${sheetSvg(D, g, gi, sh)}<div class="hint">в выброс ${waT} м² · ${((sh.wasteA / (sh.wasteA + sh.usedA || 1)) * 100).toFixed(0)}%${sh.items.some(it => it.rot) ? ' · деталь повёрнута' : ''}</div></div>`;
+    }
+    h += '</div>';
+  });
+  return h;
+}
+function tableHtml(D) {
+  const rows = D.pieces
+    .filter(p => !p.full)
+    .map(
+      p =>
+        `<tr data-no="${p.grp}:${p.no}"><td><b>${esc(p.lbl)}</b></td><td>${lvMm(p.w)}×${lvMm(p.h)}</td><td>${(D.groups[p.grp] || {}).pre || ''}${p.sheet}</td><td>${p.rot ? 'повёрнута ' + p.rot + '°' : 'на месте'}</td><td>${[
+          ...(p.mit && p.mit.length
+            ? ['запил 45°: ' + p.mit.map(s => ({ l: 'слева', r: 'справа', t: 'сверху', b: 'снизу' })[s]).join(', ')]
+            : []),
+          ...(p.slope ? ['подрезка под уклон'] : [])
+        ].join('; ')}</td></tr>`
+    );
+  return `<table class="lvtbl"><thead><tr><th>Деталь</th><th>Размер, мм</th><th>Из плитки</th><th>Положение</th><th>Обработка</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+
+/* ---------- the window ---------- */
+function openLayoutView(kind, id, i = 0) {
+  LYV.kind = kind;
+  LYV.id = +id;
+  LYV.i = +i || 0;
+  LYV.hl = null;
+  LYV.pick = false;
+  let d = document.getElementById('lvdlg');
+  if (!d) {
+    d = document.createElement('div');
+    d.id = 'lvdlg';
+    d.className = 'modal';
+    d.style.zIndex = '60';
+    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Раскладка" style="width:min(1400px,100%);height:min(920px,100%)"><div class="dlgh"><h3>Раскладка</h3><span class="hint" id="lvTitle"></span><div class="seg" id="lvMode"><button class="btn" data-m="factory" title="Видимые кромки деталей — только заводские: деталь берётся из плитки на своём месте, две детали из одной плитки — только с противоположных краёв">Заводские кромки</button><button class="btn" data-m="reuse" title="Мастер обрабатывает торцы: годные обрезки идут на другие детали">Обрезки в дело</button></div><button class="btn" id="lvPick" title="Щёлкните на схеме — привязка к углам, серединам сторон, проёмам и трапам">Начало в схеме</button><button class="btn" id="lvPlan" title="Указать точку начала на плане с привязками">Начало на плане</button><button class="btn" id="lvAuto" title="Вернуть автоматический выбор начала">Авто</button><button class="btn pri" id="lvPrint">Печать / PDF</button><button class="x" id="lvClose" aria-label="Закрыть">×</button></div><div id="lvBody" class="lvbody"></div></div>`;
+    document.body.appendChild(d);
+    d.querySelector('#lvClose').onclick = () => (d.hidden = true);
+    d.querySelectorAll('#lvMode [data-m]').forEach(b => (b.onclick = () => setLayoutCfg({ reuse: b.dataset.m })));
+    d.querySelector('#lvPick').onclick = () => {
+      LYV.pick = !LYV.pick;
+      renderLayoutView();
+    };
+    d.querySelector('#lvPlan').onclick = () => {
+      d.hidden = true;
+      startCmd('layorg', mkLayOrg({ kind: LYV.kind, id: LYV.id, i: LYV.i, back: true }));
+    };
+    d.querySelector('#lvAuto').onclick = () => setLayoutCfg({ auto: true });
+    d.querySelector('#lvPrint').onclick = printLayout;
+    d.querySelector('#lvBody').addEventListener('click', onBodyClick);
+  }
+  d.hidden = false;
+  renderLayoutView();
+}
+function renderLayoutView() {
+  const D = layoutData();
+  const body = document.getElementById('lvBody');
+  if (!D || !body) return;
+  document.getElementById('lvTitle').textContent = D.title;
+  document.querySelectorAll('#lvMode [data-m]').forEach(b => b.classList.toggle('pri', b.dataset.m === D.reuse));
+  document.getElementById('lvPick').classList.toggle('pri', LYV.pick);
+  body.innerHTML = `<div class="lvtop"><section><h4 class="lvh4">Контур</h4>${outlineSvg(D)}</section><section class="lvst"><h4 class="lvh4">Расход</h4><dl>${D.stats
+    .map(([a, b]) => `<dt>${esc(a)}</dt><dd>${b}</dd>`)
+    .join(
+      ''
+    )}</dl><p class="hint">${D.reuse === 'reuse' ? 'Раскрой с использованием обрезков: мастер обрабатывает торцы.' : 'Раскрой только с заводскими кромками к швам.'} Щёлкните деталь — подсветится она и плитка, из которой она вырезана. Заштриховано — уходит в выброс.</p></section></div>
+  <section><h4 class="lvh4">Схема раскладки${LYV.pick ? ' — щёлкните точку начала' : ''}</h4><div class="lvscroll">${schemeSvg(D)}</div><div class="lvleg"><span><i class="lg full"></i>целая</span><span><i class="lg cut"></i>подрезка</span>${D.lines.mit.length ? '<span><i class="lg mit"></i>запил 45°</span>' : ''}${D.lines.slope.length ? '<span><i class="lg slope"></i>линия уклона</span>' : ''}<span><i class="lg org"></i>начало раскладки</span></div></section>
+  <section><h4 class="lvh4">Раскрой плиток</h4>${cuttingHtml(D)}</section>
+  <section><h4 class="lvh4">Детали</h4>${tableHtml(D)}</section>`;
+  if (LYV.hl) lvHighlight(LYV.hl);
+}
+function lvHighlight(key) {
+  LYV.hl = key;
+  const body = document.getElementById('lvBody');
+  if (!body) return;
+  body.querySelectorAll('.hl,.hlsh').forEach(el => el.classList.remove('hl', 'hlsh'));
+  if (!key) return;
+  const el = body.querySelector(`.lvp[data-no="${key}"]`);
+  const sh = el && el.dataset.sh;
+  if (sh) body.querySelectorAll(`.lvp[data-sh="${sh}"]`).forEach(x => x.classList.add('hlsh'));
+  body.querySelectorAll(`[data-no="${key}"]`).forEach(x => x.classList.add('hl'));
+  const card = sh && body.querySelector(`[data-card="${sh}"]`);
+  if (card) card.classList.add('hl');
+  return card;
+}
+function onBodyClick(ev) {
+  if (LYV.pick) {
+    const svg = ev.target.closest && ev.target.closest('#lvScheme');
+    if (svg) {
+      pickInScheme(svg, ev);
+      return;
+    }
+  }
+  const t = ev.target.closest && ev.target.closest('[data-no]');
+  if (!t) return;
+  const key = t.dataset.no;
+  const fromCard = !!t.closest('.lvcard');
+  const card = lvHighlight(LYV.hl === key ? null : key);
+  const body = document.getElementById('lvBody');
+  if (fromCard) {
+    const p = body.querySelector(`#lvScheme [data-no="${key}"]`);
+    if (p && p.scrollIntoView) p.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+  } else if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function pickInScheme(svg, ev) {
+  const r = svg.getBoundingClientRect(),
+    vb = svg.viewBox.baseVal;
+  const sx = ((ev.clientX - r.left) / r.width) * vb.width,
+    sy = ((ev.clientY - r.top) / r.height) * vb.height;
+  const { B, k, ox, oy } = LYV.T;
+  let x = B.x0 + (sx - ox) / k,
+    y = B.y1 - (sy - oy) / k;
+  // snap within 12 px of the drawing
+  const D = layoutData();
+  let best = null,
+    bd = 12 / k;
+  for (const p of D.snaps) {
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bd) {
+      bd = d;
+      best = p;
+    }
+  }
+  if (best) [x, y] = best;
+  LYV.pick = false;
+  setLayoutCfg({ pt: [Math.round(x), Math.round(y)] });
+  log(`Начало раскладки: ${best ? 'привязка, ' : ''}${lvMm(x)} / ${lvMm(y)}`);
+}
+/** Changes the layout settings of the zone being viewed. */
+function setLayoutCfg(o) {
+  const tgt = lvTarget(LYV);
+  if (!tgt) return;
+  pushUndo();
+  lvApply(tgt, o);
+  changed();
+  renderLayoutView();
+}
+function lvTarget(t) {
+  if (t.kind === 'wall') {
+    const w = byId(t.id),
+      z = w && (w.zones || [])[t.i];
+    return z ? { kind: 'wall', w, z } : null;
+  }
+  const z = byId(t.id);
+  return z ? { kind: 'floor', z } : null;
+}
+function lvApply(T, o) {
+  if (T.kind === 'wall') {
+    const z = T.z;
+    z.tile = Object.assign(tileCfg(z), z.tile || {});
+    if (o.reuse) z.tile.reuse = o.reuse;
+    if (o.auto) {
+      z.tile.ax = 'auto';
+      z.tile.ay = 'bottom';
+    }
+    if (o.pt) {
+      z.tile.ax = 'pt';
+      z.tile.px = Math.round(o.pt[0] * 10) / 10;
+      if (o.pt[1] != null) {
+        z.tile.ay = 'pt';
+        z.tile.pz = Math.round(o.pt[1] * 10) / 10;
+      }
+    }
+  } else {
+    const z = T.z;
+    z.cover = { ...coverCfg(z), ...(z.cover || {}) };
+    if (o.reuse) z.cover.reuse = o.reuse;
+    if (o.auto) {
+      z.cover.org = 'center';
+      z.cover.ox = 0;
+      z.cover.oy = 0;
+    }
+    if (o.pt) {
+      z.cover.org = 'pt';
+      z.cover.px = Math.round(o.pt[0] * 10) / 10;
+      z.cover.py = Math.round(o.pt[1] * 10) / 10;
+      z.cover.ox = 0;
+      z.cover.oy = 0;
+    }
+  }
+}
+function printLayout() {
+  const body = document.getElementById('lvBody');
+  if (!body) return;
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Раскладка</title><style>${LV_CSS}body{font:12px system-ui,sans-serif;color:#111;background:#fff;margin:12mm}.lvbody{background:#fff}@page{size:A3 landscape;margin:10mm}section{page-break-inside:avoid}</style></head><body><h2>${esc(document.getElementById('lvTitle').textContent)}</h2><div class="lvbody">${body.innerHTML}</div></body></html>`;
+  let f = document.getElementById('lvPrintFrame');
+  if (f) f.remove();
+  f = document.createElement('iframe');
+  f.id = 'lvPrintFrame';
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+  document.body.appendChild(f);
+  f.srcdoc = html;
+  f.onload = () => {
+    try {
+      f.contentWindow.focus();
+      f.contentWindow.print();
+    } catch (e) {
+      log('Печать недоступна в этом окне', true);
+    }
+  };
+}
+
+/* ---------- the command: start of the layout on the plan ---------- */
+/** Finds the tiled wall zone / floor zone under a plan point. */
+function layoutAt(p) {
+  const ws = wallSideAt(p);
+  if (ws && ws.w.zones) {
+    const i = ws.w.zones.findIndex(
+      z => z.side === ws.side && (z.k === 'tile' || z.k === 'stone') && ws.t >= z.x0 - 50 && ws.t <= z.x1 + 50
+    );
+    if (i >= 0) return { kind: 'wall', id: ws.w.id, i };
+  }
+  const f = S.ents.find(e => e.type === 'floorz' && e.pts && inPoly(p, e.pts));
+  if (f) return { kind: 'floor', id: f.id };
+  return null;
+}
+function mkLayOrg(t0) {
+  let T = t0 || null,
+    stage = T ? 1 : 0,
+    wallPt = null;
+  return {
+    name: 'layorg',
+    prompt: () =>
+      stage === 0
+        ? 'Начало раскладки: щёлкните по зоне плитки на стене или по полу:'
+        : stage === 1
+          ? T.kind === 'wall'
+            ? 'Точка начала на стене (привязки работают):'
+            : 'Точка начала раскладки (привязки работают):'
+          : `Высота точки начала от низа зоны, мм [Низ/Верх/Центр] <0>:`,
+    onPoint(p) {
+      if (stage === 0) {
+        T = layoutAt(p);
+        if (!T) {
+          log('Здесь нет плиточной зоны стены или пола', true);
+          return;
+        }
+        stage = 1;
+        return;
+      }
+      if (stage === 1) {
+        const tg = lvTarget(T);
+        if (!tg) return 'end';
+        if (T.kind === 'floor') {
+          pushUndo();
+          lvApply(tg, { pt: [p.x, p.y] });
+          changed();
+          log('Начало раскладки пола задано');
+          return this.done();
+        }
+        const wi = wallInfo(tg.w);
+        wallPt = Math.max(0, Math.min(wi.L, (p.x - tg.w.a.x) * wi.u.x + (p.y - tg.w.a.y) * wi.u.y));
+        stage = 2;
+        return;
+      }
+    },
+    onInput(s) {
+      if (stage !== 2) return false;
+      const tg = lvTarget(T);
+      const z = tg.z;
+      let v = parseFloat(String(s).replace(',', '.'));
+      if (kw(s, 'н', 'низ', 'b')) v = 0;
+      else if (kw(s, 'в', 'верх', 't')) v = z.z1 - z.z0;
+      else if (kw(s, 'ц', 'центр', 'c')) v = (z.z1 - z.z0) / 2;
+      if (!isFinite(v)) {
+        log('Введите высоту, мм', true);
+        return true;
+      }
+      pushUndo();
+      lvApply(tg, { pt: [wallPt, z.z0 + v] });
+      changed();
+      log(`Начало раскладки: ${lvMm(wallPt)} мм вдоль стены, ${lvMm(v)} мм от низа зоны`);
+      return this.done();
+    },
+    onEnter() {
+      if (stage === 2) return this.onInput('0');
+      return 'end';
+    },
+    done() {
+      if (T && T.back) setTimeout(() => openLayoutView(T.kind, T.id, T.i), 0);
+      return 'end';
+    }
+  };
+}
+
+const LV_CSS = `.lvbody{display:flex;flex-direction:column;gap:14px;padding:14px;overflow:auto;background:#fff;color:#1b1d20;min-height:0}
+.lvbody section{background:#fff}.lvh4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#555}
+.lvtop{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+.lvst dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:12px}.lvst dt{color:#666}.lvst dd{margin:0}
+.lvsvg{max-width:100%;height:auto;display:block;font-family:system-ui,sans-serif}.lvscroll{overflow:auto;border:1px solid #ddd;border-radius:6px;padding:6px}
+.lvp.cut{stroke:#c77d1a;stroke-width:.9;cursor:pointer}.lvp.full{stroke:none}.lvp.slope{stroke:#2563eb}
+.lvp.hlsh{fill:#fde68a!important}.lvp.hl{fill:#f59e0b!important;stroke:#7c2d12;stroke-width:2}
+.lvno{fill:#1b1d20;font-weight:700;cursor:pointer;pointer-events:all}.lvno.hl{fill:#7c2d12}.lvsz{fill:#555;pointer-events:none}
+.lvdim line{stroke:#333;stroke-width:.8}.lvdim text{font-size:11px;fill:#333}
+.lvsch.picking{cursor:crosshair}
+.lvcards{display:flex;flex-wrap:wrap;gap:10px}.lvcard{border:1px solid #ddd;border-radius:6px;padding:6px;background:#fafafa;font-size:11px}
+.lvcard.hl{border-color:#f59e0b;box-shadow:0 0 0 2px #f59e0b55;background:#fffbeb}.lvct{font-weight:600;margin-bottom:4px}
+.lvcard.full{min-width:150px}.lvbig{font-size:22px;font-weight:700;margin:10px 0}
+.lvtbl{border-collapse:collapse;font-size:11.5px}.lvtbl th,.lvtbl td{border:1px solid #ddd;padding:3px 8px;text-align:left}.lvtbl tr.hl td{background:#fef3c7}
+.lvleg{display:flex;gap:14px;font-size:11px;color:#444;margin-top:4px}.lvleg i{display:inline-block;width:14px;height:10px;margin-right:4px;vertical-align:middle;border:1px solid #999}
+.lvleg .full{background:#e8e4dc}.lvleg .cut{background:#e8e4dc;border-color:#c77d1a}.lvleg .mit{border:0;border-top:3px dashed #c0392b;height:0}
+.lvleg .slope{border:0;border-top:2px dashed #2563eb;height:0}.lvleg .org{border-radius:50%;border:2px solid #e11d48}
+.bad{color:#c0392b}
+#lvdlg .seg{display:flex;gap:0}#lvdlg .seg .btn{border-radius:0}#lvdlg .seg .btn:first-child{border-radius:6px 0 0 6px}#lvdlg .seg .btn:last-child{border-radius:0 6px 6px 0}`;
+
+defineTools({
+  layorg: {
+    command: { t: 'НАЧАЛОРАСКЛАДКИ', m: () => mkLayOrg(null), a: ['layorg', 'началораскладки', 'начало раскладки'] },
+    title: 'Начало раскладки плитки — точка на стене или на полу, с привязками · НАЧАЛОРАСКЛАДКИ',
+    help: 'Начало раскладки: щёлкните по плиточной зоне стены или по полу, затем укажите точку (привязки работают). Для стены — ещё высота от низа зоны.'
+  }
+});
+
+/** Wires the module: CSS and the buttons «Раскладка детально» / «Начало…» in Properties. Called once by app/boot.js. */
+function initLayoutView() {
+  try {
+    const st = document.createElement('style');
+    st.textContent = LV_CSS;
+    document.head.appendChild(st);
+    document.addEventListener('click', ev => {
+      const b = ev.target.closest && ev.target.closest('[data-lay]');
+      if (!b) return;
+      const [act, kind, id, i] = b.dataset.lay.split(':');
+      if (act === 'view') openLayoutView(kind, id, i);
+      else if (act === 'org') startCmd('layorg', mkLayOrg({ kind, id: +id, i: +i || 0 }));
+    });
+  } catch (e) {}
+}
+
 // ===== elements/openings.js =====
 /**
  * elements/openings.js
@@ -102242,6 +103232,7 @@ const solidEditorState = ED;
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -102497,6 +103488,7 @@ initWallTypesDialog();
 initProfilesDialog();
 initPalette();
 initShortLabels();
+initLayoutView();
 initVentTerminals();
 initJunctionBoxes();
 initMepDialog();
@@ -103958,6 +104950,273 @@ function closerSet(mb, lm, l, M, c, open) {
   mb.obox([E[0], E[1], zA + 15], [B[0], B[1], zA + 15], 15, 8, col);
   mb.cyl(E[0], E[1], zA + 1, zA + 20, 9, '#8f9396', 16);
   mb.cyl(B[0], B[1], zA + 10, zt + 4, 7, '#8f9396', 16);
+}
+
+// ===== elements/layout-cut.js =====
+/**
+ * elements/layout-cut.js
+ *
+ * Cutting of tiles (wall tiles, floor tiles and porcelain, planks) for a layout: which tile each cut piece comes
+ * from, where in that tile it lies, and what goes to waste.
+ *
+ * Input — the pieces of a layout in the frame of their own tile (`loc`: polygon in [0..W]×[0..H]), the tile size,
+ * the saw kerf and the mode:
+ * - 'factory' — a cut piece keeps the factory edges it shows to the joints: it is taken from the tile in its own
+ *   place (or turned 180°, for a square tile also 90°); two pieces share a tile only when they come from its
+ *   opposite parts and do not overlap with the kerf between them;
+ * - 'reuse' — the master can finish the cut edges: any offcut big enough is used (guillotine packing with the
+ *   kerf on every cut edge, the piece may be shifted and turned 180°, a square tile also 90°).
+ * Output — the cut tiles (sheets) with the pieces placed in them, the leftovers that go to waste, the waste area.
+ */
+const lcBox = q => {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const [x, y] of q) {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+};
+const lcArea = q => {
+  let a = 0;
+  for (let i = 0; i < q.length; i++) {
+    const p = q[i],
+      r = q[(i + 1) % q.length];
+    a += p[0] * r[1] - r[0] * p[1];
+  }
+  return Math.abs(a) / 2;
+};
+/** Convex hull, CCW. */
+function lcHull(P_) {
+  const p = P_.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [],
+    up = [];
+  for (const q of p) {
+    while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop();
+    lo.push(q);
+  }
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i];
+    while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+    up.push(q);
+  }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+/** True when two convex polygons are at least `gap` apart (separating axis test). */
+function lcApart(A, B, gap) {
+  for (const P_ of [A, B])
+    for (let i = 0; i < P_.length; i++) {
+      const a = P_[i],
+        b = P_[(i + 1) % P_.length];
+      let nx = b[1] - a[1],
+        ny = a[0] - b[0];
+      const l = Math.hypot(nx, ny);
+      if (l < 1e-9) continue;
+      nx /= l;
+      ny /= l;
+      let a0 = Infinity,
+        a1 = -Infinity,
+        b0 = Infinity,
+        b1 = -Infinity;
+      for (const [x, y] of A) {
+        const d = x * nx + y * ny;
+        a0 = Math.min(a0, d);
+        a1 = Math.max(a1, d);
+      }
+      for (const [x, y] of B) {
+        const d = x * nx + y * ny;
+        b0 = Math.min(b0, d);
+        b1 = Math.max(b1, d);
+      }
+      if (b0 - a1 >= gap - 1e-6 || a0 - b1 >= gap - 1e-6) return true;
+    }
+  return false;
+}
+/** The local polygon turned in the tile: 0 / 90 / 180 / 270°. */
+function lcTurn(q, rot, W, H) {
+  if (rot === 180) return q.map(([x, y]) => [W - x, H - y]);
+  if (rot === 90) return q.map(([x, y]) => [H - y, x]);
+  if (rot === 270) return q.map(([x, y]) => [y, W - x]);
+  return q;
+}
+
+/**
+ * Cuts the pieces. pieces: [{ loc: [[u, v]], full, A }] (A — area, mm²). opt: { W, H, kerf, mode, minUse, square }.
+ * Returns { sheets: [{ n, items: [{ piece, poly }], waste: [[u, v]][] (leftover rectangles), wasteA }],
+ *           full, cutTiles, total, net, usedA, wasteA, wasteP } and sets piece.no / piece.sheet / piece.rot.
+ */
+function cutLayout(pieces, opt) {
+  const W = +opt.W,
+    H = +opt.H,
+    k = Math.max(0, +opt.kerf || 0),
+    sq = Math.abs(W - H) < 0.5;
+  const rots = sq ? [0, 180, 90, 270] : [0, 180];
+  const full = pieces.filter(p => p.full);
+  const cuts = pieces.filter(p => !p.full && p.loc && p.loc.length >= 3);
+  // numbering: top-down, left to right in the layout (by the stored order key `ord` when given)
+  cuts.forEach((p, i) => (p.no = i + 1));
+  const sheets = [];
+  if (opt.mode === 'reuse' && !opt.shaped) {
+    // guillotine packing of the bounding boxes, largest first
+    const free = [];
+    // parts of one tile (cut by a slope line or an opening) stay together in it; the rest of the tile is offcut
+    const byOrig = new Map();
+    for (const p of cuts) if (p.orig != null) (byOrig.get(p.orig) || byOrig.set(p.orig, []).get(p.orig)).push(p);
+    const grouped = new Set();
+    for (const g of byOrig.values()) {
+      if (g.length < 2 || !opt.siblings) continue;
+      const sh = { n: sheets.length + 1, items: [], free: [] };
+      sheets.push(sh);
+      let ux0 = Infinity,
+        uy0 = Infinity,
+        ux1 = -Infinity,
+        uy1 = -Infinity;
+      for (const p of g) {
+        const B = lcBox(p.loc);
+        ux0 = Math.min(ux0, B.x0);
+        uy0 = Math.min(uy0, B.y0);
+        ux1 = Math.max(ux1, B.x1);
+        uy1 = Math.max(uy1, B.y1);
+        sh.items.push({ piece: p, poly: p.loc, rot: 0 });
+        p.sheet = sh.n;
+        p.rot = 0;
+        grouped.add(p);
+      }
+      const bx0 = ux0 - (ux0 > 0.5 ? k : 0),
+        bx1 = ux1 + (ux1 < W - 0.5 ? k : 0),
+        by0 = uy0 - (uy0 > 0.5 ? k : 0),
+        by1 = uy1 + (uy1 < H - 0.5 ? k : 0);
+      for (const r of [
+        { x: 0, y: 0, w: bx0, h: H },
+        { x: bx1, y: 0, w: W - bx1, h: H },
+        { x: bx0, y: 0, w: bx1 - bx0, h: by0 },
+        { x: bx0, y: by1, w: bx1 - bx0, h: H - by1 }
+      ])
+        if (r.w > 1 && r.h > 1) free.push({ ...r, sh });
+    }
+    for (const p of cuts.filter(q => !grouped.has(q)).sort((a, b) => lcArea(b.loc) - lcArea(a.loc))) {
+      const B0 = lcBox(p.loc);
+      let best = null;
+      for (const f of free) {
+        for (const rot of rots) {
+          const tq = lcTurn(p.loc, rot, W, H),
+            B = lcBox(tq);
+          // the kerf is needed on the edges cut inside the leftover
+          const nw = B.w + (B.w < f.w - 0.5 ? k : 0),
+            nh = B.h + (B.h < f.h - 0.5 ? k : 0);
+          if (nw <= f.w + 0.01 && nh <= f.h + 0.01) {
+            const s = f.w * f.h;
+            if (!best || s < best.s) best = { f, rot, B, s, nw, nh };
+          }
+        }
+      }
+      if (!best) {
+        const sh = { n: sheets.length + 1, items: [], free: [] };
+        sheets.push(sh);
+        const f = { x: 0, y: 0, w: W, h: H, sh };
+        // a new tile: the piece keeps its own place when it touches the tile edges (fewer cuts)
+        const B = lcBox(p.loc);
+        best = { f, rot: 0, B, nw: B.w + (B.w < W - 0.5 ? k : 0), nh: B.h + (B.h < H - 0.5 ? k : 0), keep: B0 };
+        free.push(f);
+      }
+      const { f, rot, B, nw, nh } = best;
+      free.splice(free.indexOf(f), 1);
+      const sh = f.sh;
+      let dx, dy;
+      if (best.keep) {
+        // the piece stays where it is in the tile; the rest of the tile is split into leftovers around it
+        dx = 0;
+        dy = 0;
+        const bx0 = B.x0 - (B.x0 > 0.5 ? k : 0),
+          bx1 = B.x1 + (B.x1 < W - 0.5 ? k : 0),
+          by0 = B.y0 - (B.y0 > 0.5 ? k : 0),
+          by1 = B.y1 + (B.y1 < H - 0.5 ? k : 0);
+        const rest = [
+          { x: 0, y: 0, w: bx0, h: H },
+          { x: bx1, y: 0, w: W - bx1, h: H },
+          { x: bx0, y: 0, w: bx1 - bx0, h: by0 },
+          { x: bx0, y: by1, w: bx1 - bx0, h: H - by1 }
+        ];
+        for (const r of rest) if (r.w > 1 && r.h > 1) free.push({ ...r, sh });
+      } else {
+        dx = f.x - B.x0;
+        dy = f.y - B.y0;
+        const rw = f.w - nw,
+          rh = f.h - nh;
+        if (rw * f.h >= f.w * rh) {
+          if (rw > 1) free.push({ x: f.x + nw, y: f.y, w: rw, h: f.h, sh });
+          if (rh > 1) free.push({ x: f.x, y: f.y + nh, w: nw, h: rh, sh });
+        } else {
+          if (rw > 1) free.push({ x: f.x + nw, y: f.y, w: rw, h: nh, sh });
+          if (rh > 1) free.push({ x: f.x, y: f.y + nh, w: f.w, h: rh, sh });
+        }
+      }
+      const poly = lcTurn(p.loc, rot, W, H).map(([x, y]) => [x + dx, y + dy]);
+      sh.items.push({ piece: p, poly, rot, moved: !best.keep });
+      p.sheet = sh.n;
+      p.rot = rot;
+    }
+    for (const f of free) f.sh.free.push(f);
+  } else {
+    // factory edges: the piece in its own place (or turned), never shifted
+    for (const p of cuts.slice().sort((a, b) => lcArea(b.loc) - lcArea(a.loc))) {
+      let placed = false;
+      for (const sh of sheets) {
+        for (const rot of rots) {
+          const q = lcHull(lcTurn(p.loc, rot, W, H));
+          // parts of one tile in their own places (a tile cut by a slope line or an opening) always go together
+          const sib = it => p.orig != null && it.piece.orig === p.orig && it.rot === rot;
+          if (sh.items.every(it => sib(it) || lcApart(lcHull(it.poly), q, k))) {
+            sh.items.push({ piece: p, poly: lcTurn(p.loc, rot, W, H), rot });
+            p.sheet = sh.n;
+            p.rot = rot;
+            placed = true;
+            break;
+          }
+        }
+        if (placed) break;
+      }
+      if (!placed) {
+        const sh = { n: sheets.length + 1, items: [{ piece: p, poly: p.loc, rot: 0 }], free: [] };
+        sheets.push(sh);
+        p.sheet = sh.n;
+        p.rot = 0;
+      }
+    }
+  }
+  const tileA = opt.tileA || W * H;
+  let net = 0,
+    wasteA = 0,
+    cutNet = 0;
+  for (const p of pieces) net += p.A != null ? p.A : lcArea(p.loc || []);
+  for (const sh of sheets) {
+    const used = sh.items.reduce((a, it) => a + (it.piece.A != null ? it.piece.A : lcArea(it.poly)), 0);
+    cutNet += used;
+    sh.usedA = used;
+    sh.wasteA = Math.max(0, tileA - used);
+    wasteA += sh.wasteA;
+  }
+  const total = full.length + sheets.length;
+  const usedA = total * tileA;
+  return {
+    sheets,
+    full: full.length,
+    cutN: cuts.length,
+    cutTiles: sheets.length,
+    total,
+    net,
+    cutNet,
+    usedA,
+    wasteA,
+    wasteP: usedA > 0 ? wasteA / usedA : 0,
+    mode: opt.mode === 'reuse' && !opt.shaped ? 'reuse' : 'factory'
+  };
 }
 
 // ===== elements/roof.js =====
