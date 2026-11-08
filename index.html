@@ -892,7 +892,7 @@ table.sp tbody tr:not(.cat):not(.tot):hover td {
 }
 .props {
   display: grid;
-  grid-template-columns: minmax(84px, 44%) minmax(0, 1fr);
+  grid-template-columns: minmax(84px, 38%) minmax(0, 1fr);
   gap: 5px 12px;
   align-items: center;
   margin: 0;
@@ -902,7 +902,6 @@ table.sp tbody tr:not(.cat):not(.tot):hover td {
 }
 .props dd {
   margin: 0;
-  font-family: var(--f-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
   overflow: hidden;
@@ -919,6 +918,10 @@ table.sp tbody tr:not(.cat):not(.tot):hover td {
   padding: 3px 5px;
   font: inherit;
   text-align: right;
+}
+.props select {
+  text-align: left;
+  text-overflow: ellipsis;
 }
 .props input[type='text'] {
   text-align: left;
@@ -4485,10 +4488,10 @@ label.ck {
   --panel2: #ececf0;
   --line: rgba(0, 0, 0, 0.1);
   --fg: #1d1d1f;
-  --muted: #86868b;
+  --muted: #636366;
   --accent: #007aff;
   --sel: #007aff;
-  --danger: #ff3b30;
+  --danger: #d70015;
   --blue: #007aff;
   --blue-t: rgba(0, 122, 255, 0.12);
   --solid: #f6f6f8;
@@ -5375,6 +5378,12 @@ label.ck {
 [data-skin='mac'] .iss .warn b,
 [data-skin='mac'] .iss .bad b {
   color: inherit;
+}
+
+/* keyboard focus is always visible, also on the active segment and on primary buttons */
+:root[data-skin='mac'] :is(button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--blue) !important;
+  outline-offset: 2px;
 }
 
 /* ---------- base palette (RAL Classic + metals) ---------- */
@@ -6806,15 +6815,15 @@ html[data-form='phone'] .modal table.cards td::before {
 
   <footer id="status">
     <span id="coords">0, 0</span>
-    <button class="mode" data-m="grid">Сетка<span class="fk">F7</span></button>
-    <button class="mode" data-m="snap">Шаг<span class="fk">F9</span></button>
-    <button class="mode" data-m="ortho">Орто<span class="fk">F8</span></button>
-    <span class="sgrp"><button class="mode" data-m="polar">Полярн.<span class="fk">F10</span></button>
+    <button class="mode" data-m="grid" title="Сетка (F7)">Сетка<span class="fk">F7</span></button>
+    <button class="mode" data-m="snap" title="Шаг курсора по сетке (F9)">Шаг<span class="fk">F9</span></button>
+    <button class="mode" data-m="ortho" title="Орто — только горизонтально и вертикально (F8)">Орто<span class="fk">F8</span></button>
+    <span class="sgrp"><button class="mode" data-m="polar" title="Полярное отслеживание: углы с выбранным шагом (F10)">Углы<span class="fk">F10</span></button>
       <select id="polarInc" title="Шаг углов полярного отслеживания" aria-label="Шаг углов">
-        <option>5</option><option>10</option><option selected>15</option><option>22.5</option><option>30</option><option>45</option><option>90</option>
+        <option value="5">5°</option><option value="10">10°</option><option value="15" selected>15°</option><option value="22.5">22,5°</option><option value="30">30°</option><option value="45">45°</option><option value="90">90°</option>
       </select></span>
-    <span class="sgrp"><button class="mode" data-m="osnap">Привязка<span class="fk">F3</span></button><button class="caret" id="bOs" title="Режимы привязки" aria-label="Режимы привязки">▲</button></span>
-    <button class="mode" data-m="otrack">Отслеж.<span class="fk">F11</span></button><button class="mode" data-v="dyn" title="Динамический ввод (F12): длина и угол у курсора; число + Tab — зафиксировать длину, затем угол">Дин. ввод</button><button class="mode" data-v="lwt" title="Отображение весов линий">Веса линий</button><button class="mode" data-v="cad" title="CAD-отображение чертежа: перья по ГОСТ, без заливок и свечения, чертёжный шрифт. Выкл — презентационный вид">CAD</button>
+    <span class="sgrp"><button class="mode" data-m="osnap" title="Объектная привязка (F3)">Привязка<span class="fk">F3</span></button><button class="caret" id="bOs" title="Режимы привязки" aria-label="Режимы привязки">▲</button></span>
+    <button class="mode" data-m="otrack" title="Объектное отслеживание — линии от точек привязки (F11)">Слежение<span class="fk">F11</span></button><button class="mode" data-v="dyn" title="Динамический ввод (F12): длина и угол у курсора; число + Tab — зафиксировать длину, затем угол">Дин. ввод</button><button class="mode" data-v="lwt" title="Отображение весов линий">Веса линий</button><button class="mode" data-v="cad" title="CAD-отображение чертежа: перья по ГОСТ, без заливок и свечения, чертёжный шрифт. Выкл — презентационный вид">CAD</button>
   </footer>
 </div>
 
@@ -6946,7 +6955,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '54';
+const APP_VER = '54.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -14426,6 +14435,15 @@ function resolveCmd(s) {
   return null;
 }
 function startCmd(name, inst) {
+  // a toolbar group id (not a command): start its first tool
+  if (!inst && !CMDS[name] && typeof GRP !== 'undefined' && GRP[name]) {
+    const g = GRP[name];
+    const m = typeof g.m === 'function' ? g.m() : g.m;
+    const f = m && m[0];
+    if (typeof f === 'string') return startCmd(f);
+    if (f && f.run) return f.run();
+    if (f && f.cmd) return startCmd(f.cmd);
+  }
   if (commandsState.cmd) endCmd(true);
   const def = CMDS[name] || { t: 'ВСТАВИТЬ' };
   log('Команда: ' + def.t);
@@ -14470,7 +14488,7 @@ function startCmd(name, inst) {
     ].includes(name)
   )
     noteRun(name, inst);
-  const c = inst || def.m();
+  const c = inst || (def.m ? def.m() : null);
   if (c) {
     commandsState.cmd = c;
     pickingState.box = null;
@@ -20717,7 +20735,7 @@ const MENUS = [
     ]
   },
   {
-    n: 'Редакт.',
+    n: 'Изменить',
     it: [
       { h: 'Положение и форма' },
       { n: 'Перенести', k: 'M', a: () => run('move') },
@@ -20860,7 +20878,9 @@ function insertMenu() {
           .split(':')[0]
           .trim();
         const n = (tt && tt.length <= 28 ? tt : TLBL[t]) || (CMDS[t] && CMDS[t].t) || t;
-        const k = CMDS[t] ? CMDS[t].t : '';
+        // a short command to type (≤ 6 letters), not a long command name that reads like a typo
+        const al = CMDS[t] ? [CMDS[t].t, ...(CMDS[t].a || [])].filter(x => x && x.length <= 6 && !/\s/.test(x)) : [];
+        const k = al.length ? al.sort((a, b) => a.length - b.length)[0].toUpperCase() : '';
         out.push({
           n,
           k: k.toUpperCase() === n.toUpperCase() ? '' : k,
@@ -21455,9 +21475,11 @@ function syncTools() {
   renderHelp();
 }
 function syncModes() {
-  document
-    .querySelectorAll('.mode')
-    .forEach(b => b.classList.toggle('on', b.dataset.v ? themeState.UI[b.dataset.v] !== false : !!modes[b.dataset.m]));
+  document.querySelectorAll('.mode').forEach(b => {
+    const on = b.dataset.v ? themeState.UI[b.dataset.v] !== false : !!modes[b.dataset.m];
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
 }
 const GLY = {
   end: '<rect x="3" y="3" width="10" height="10"/>',
@@ -21547,7 +21569,7 @@ function initToolbar() {
     b.className = 'tool';
     b.dataset.c = t[0];
     b.title = t[1];
-    b.setAttribute('aria-label', t[1]);
+    b.setAttribute('aria-label', String(t[1]).split('·')[0].trim());
     b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[t[0]]}</svg>`;
     b.onclick = () => {
       startCmd(t[0]);
@@ -25769,7 +25791,7 @@ const TLBL = {
   point: 'Точка',
   hatch: 'Штриховка',
   offset: 'Подобие',
-  mirror: 'Зеркало',
+  mirror: 'Отразить',
   array: 'Массив',
   scale: 'Масштаб',
   trimx: 'Обрезать',
@@ -25791,7 +25813,7 @@ const TLBL = {
   gpart: 'Стекло',
   level: 'Этажи',
   slab: 'Перекрытие',
-  ceilslab: 'Плита',
+  ceilslab: 'Плита потолка',
   shole: 'Отверстие',
   roof: 'Крыша',
   stair: 'Лестница',
@@ -25807,7 +25829,7 @@ const TLBL = {
   ceil: 'Потолок',
   ztrans: 'Переход',
   zmerge: 'Объединить',
-  finish: 'Стены',
+  finish: 'Отделка',
   trim: 'Плинтус',
   molding: 'Молдинги',
   curtain: 'Карниз',
@@ -25821,7 +25843,7 @@ const TLBL = {
   tv: 'Телевизор',
   socket: 'Розетка',
   switch: 'Выключатель',
-  fout: 'Напольная',
+  fout: 'Лючок',
   eout: 'Вывод',
   light: 'Светильник',
   track: 'Трек',
@@ -25833,12 +25855,12 @@ const TLBL = {
   sewergen: 'Стоки авто',
   watergen: 'Вода авто',
   fix: 'Прибор',
-  washer: 'Стиральная',
+  washer: 'Стир. машина',
   towel: 'Сушитель',
   boiler: 'Бойлер',
   wheater: 'Проточный',
   drain: 'Трап',
-  gshower: 'Душевая',
+  gshower: 'Душ. стекло',
   rad: 'Радиатор',
   ufh: 'Тёплый пол',
   duct: 'Воздуховод',
@@ -25852,7 +25874,7 @@ const TLBL = {
   node: 'Узел',
   sbox: '3D-вид',
   hsect: 'Гор. разрез',
-  csect: 'Ломаный',
+  csect: 'Лом. разрез',
   vbox: '3D-куб',
   arpt: 'AR-точки',
   views: 'Все виды',
@@ -25949,7 +25971,8 @@ function toolBtn(name) {
   b.dataset.c = name;
   const t = TT[name] || name;
   b.title = t;
-  b.setAttribute('aria-label', t);
+  // screen readers get the name, not the command aliases after «·»
+  b.setAttribute('aria-label', String(t).split('·')[0].trim());
   b.innerHTML = `<svg viewBox="0 0 20 20">${TOOL_SVG[name] || ''}</svg><span class="tl">${esc(TLBL[name] || String(t).split('·')[0].trim())}</span>`;
   b.onclick = ev => {
     if (FLY[name]) {
@@ -37978,7 +38001,7 @@ function tilePack(ps, c, W, H) {
   const cuts = ps.filter(p => !p.full);
   let nCuts = 0;
   for (const p of cuts) nCuts += (p.cx ? 1 : 0) + (p.cz ? 1 : 0);
-  const R = cutLayout(ps, { W, H, kerf: k, mode: c.reuse === 'reuse' ? 'reuse' : 'factory' });
+  const R = cutLayout(ps, { W, H, kerf: k, mode: c.reuse === 'reuse' ? 'reuse' : 'factory', siblings: true });
   const total = R.total,
     net = R.net / 1e6,
     order = Math.ceil(total * (1 + (+c.waste || 0) / 100));
@@ -38039,20 +38062,23 @@ function tileMiterLines(w, z, c = tileCfg(z)) {
 function wallEndOuter(w, wi, end, s) {
   const P0 = end ? w.b : w.a;
   const tol = Math.max(w.th, 50);
+  // every wall at this end decides together: a continuation or a wall on the face side make the corner inner
   for (const o of S.ents) {
     if (o === w || o.type !== 'wall' || !o.a || !o.b) continue;
+    let met = false;
     for (const [q, r] of [
       [o.a, o.b],
       [o.b, o.a]
     ]) {
       if (Math.hypot(q.x - P0.x, q.y - P0.y) > tol) continue;
+      met = true;
       const dx = r.x - q.x,
         dy = r.y - q.y,
         l = Math.hypot(dx, dy) || 1;
-      const along = (dx * wi.u.x + dy * wi.u.y) / l;
-      if (Math.abs(along) > 0.95) return false;
-      return ((dx * wi.n.x + dy * wi.n.y) / l) * s < 0;
+      if (Math.abs((dx * wi.u.x + dy * wi.u.y) / l) > 0.95) return false;
+      if (((dx * wi.n.x + dy * wi.n.y) / l) * s > 0) return false;
     }
+    if (met) continue;
     // a wall abutting the end with its side (a T-joint seen from the end)
     const ex = o.b.x - o.a.x,
       ey = o.b.y - o.a.y,
@@ -38065,6 +38091,7 @@ function wallEndOuter(w, wi, end, s) {
       }
     }
   }
+  // a wall going away from the face (outer corner), or no wall at all (a free end — its edge is visible)
   return true;
 }
 function tileGrout(L) {
@@ -44706,7 +44733,7 @@ function wireKind(e) {
   const mm = cableMm(c) || 0;
   const ends = [e.from, e.to].map(id => (id != null ? byId(id) : null)).filter(d => d && d.type === 'dev');
   if (ends.some(d => isLV(d))) return 'lv';
-  if (ends.some(d => hasSock(d) && isDedicated(d))) return 'sockPow';
+  if (ends.some(d => (hasSock(d) || d.kind === 'eout') && isDedicated(d))) return 'sockPow';
   if (e.sw) {
     const s = byId(e.sw.dev);
     if (s) {
@@ -44722,9 +44749,19 @@ function wireKind(e) {
     if (ms.includes('dim')) return 'dim';
     if (ms.some(m => m === 'sw1' || m === 'sw2')) return 'sw';
   }
+  // power lines first, whichever end is «from»: a 32 A socket, a thick cable or a dedicated group
+  const allM = ends.flatMap(d => (d.blk ? (d.blk.mods || []).slice(0, d.blk.posts || 1) : [d.kind]));
+  if (allM.includes('sock32') || allM.includes('s32') || mm >= 4) return 'sockPow';
+  if (
+    allM.some(m => modF(m) === 'socket') &&
+    isDedicated(
+      null,
+      S.elec.groups.find(g => g.n === e.group)
+    )
+  )
+    return 'sockPow';
   for (const d of ends) {
     const ms = d.blk ? (d.blk.mods || []).slice(0, d.blk.posts || 1) : [d.kind];
-    if (ms.includes('sock32') || ms.includes('s32') || mm >= 4) return 'sockPow';
     if (
       ms.some(m => modF(m) === 'socket') &&
       isDedicated(
@@ -58962,7 +58999,18 @@ function clipConvex(subj, clip) {
       } else if (iq) out.push(X(p, q));
     }
   }
-  return out;
+  // a vertex lying on a clip edge comes out twice: drop the repeats (they broke the collinear filter downstream)
+  return fcDedup(out);
+}
+function fcDedup(q) {
+  const r = [];
+  for (const p of q) {
+    const l = r[r.length - 1];
+    if (!l || Math.abs(l[0] - p[0]) > 1e-6 || Math.abs(l[1] - p[1]) > 1e-6) r.push(p);
+  }
+  while (r.length > 1 && Math.abs(r[0][0] - r[r.length - 1][0]) < 1e-6 && Math.abs(r[0][1] - r[r.length - 1][1]) < 1e-6)
+    r.pop();
+  return r;
 }
 const areaA = p => {
   let a = 0;
@@ -59042,7 +59090,8 @@ function mergeFrags(frags) {
           const q = [];
           for (let k = 0; k < A.length; k++) q.push(A[(a + 1 + k) % A.length]);
           for (let k = 2; k < B.length; k++) q.push(B[(b + k) % B.length]);
-          // drop collinear points left on the old seam
+          // drop repeated and collinear points left on the old seam
+          q.splice(0, q.length, ...fcDedup(q));
           const r = q.filter((p, k) => {
             const o = q[(k - 1 + q.length) % q.length],
               n = q[(k + 1) % q.length];
@@ -59105,6 +59154,14 @@ function coverLayout(z) {
     key = JSON.stringify([
       z.pts,
       z.slope,
+      (() => {
+        try {
+          const St = zoneSurf(z);
+          return [St.mode, (St.drains || []).map(d => [d.kind, d.c, d.a, d.b])];
+        } catch (err) {
+          return 0;
+        }
+      })(),
       cc,
       cc.on && cc.mat !== 'carpet' ? coverTrans(z, cc).map(t => [t.o.id, t.rect, t.depth]) : 0,
       cuttersIn(z.pts, 'floor').map(k => k.q)
@@ -59246,8 +59303,13 @@ function coverLayout0(z) {
     const src = lr.map(([x, y]) => [x - mx, y - my]);
     const sb = src.reduce((b, [x, y]) => [Math.max(b[0], x), Math.max(b[1], y)], [0, 0]);
     const rect = src.length === 4 && Math.abs(areaA(src) - sb[0] * sb[1]) < 1;
+    // one tile kind = one shape (a mirror image is another kind) and one colour of a two-colour pattern
     const skey =
-      (rect ? 'r' : 'p' + src.length) + ':' + Math.round(sb[0]) + 'x' + Math.round(sb[1]) + (pc.ins ? 'i' : '');
+      (rect
+        ? 'r:' + Math.round(sb[0]) + 'x' + Math.round(sb[1])
+        : 'p:' + src.map(v => Math.round(v[0]) + ',' + Math.round(v[1])).join(';')) +
+      (pc.ins ? 'i' : '') +
+      (c.pat === 'checker' || c.pat === 'rhomb' ? 's' + (pc.sh || 0) : '');
     let bx0 = 1e18,
       bx1 = -1e18,
       by0 = 1e18,
@@ -59342,7 +59404,7 @@ function coverLayout0(z) {
       for (const pc of R.pieces) {
         const q = pc.pts.map(p => [p.x, p.y]);
         const hit = regs.polys
-          .map(rg => clipConvex(rg, areaA(q) < 0 ? q.slice().reverse() : q))
+          .map(rg => clipConvex(areaA(q) < 0 ? q.slice().reverse() : q, rg))
           .filter(g => g.length >= 3 && Math.abs(areaA(g)) >= 50);
         if (hit.length <= 1) {
           np.push(pc);
@@ -59425,7 +59487,11 @@ function slopeRegions(z) {
       const t = [[c.x, c.y], a, b];
       if (areaA(t) <= 0) return null; // not star-shaped from the drain: no envelope cuts
       polys.push(t);
-      lines.push([P(c.x, c.y), P(a[0], a[1])]);
+      // a vertex on a straight edge is not a valley of the envelope
+      const pr = poly[(i - 1 + poly.length) % poly.length];
+      const cr = (a[0] - pr[0]) * (b[1] - a[1]) - (a[1] - pr[1]) * (b[0] - a[0]);
+      if (Math.abs(cr) > 1e-3 * Math.hypot(a[0] - pr[0], a[1] - pr[1]) * Math.hypot(b[0] - a[0], b[1] - a[1]))
+        lines.push([P(c.x, c.y), P(a[0], a[1])]);
     }
     return { polys, lines, kind: 'env' };
   }
@@ -59446,7 +59512,27 @@ function slopeRegions(z) {
       const q = [o, e, [e[0] + nx * far * sg, e[1] + ny * far * sg], [o[0] + nx * far * sg, o[1] + ny * far * sg]];
       return areaA(q) < 0 ? q.reverse() : q;
     };
-    return { polys: [half(1), half(-1)], lines: [[L.a, L.b]], kind: 'line' };
+    // the crease runs across the whole zone: its length is the line clipped by the outline
+    const ux = dx / l,
+      uy = dy / l;
+    let t0 = Infinity,
+      t1 = -Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i],
+        b = poly[(i + 1) % poly.length];
+      const sa = sd(a),
+        sb2 = sd(b);
+      if (sa > 0 === sb2 > 0 && sa !== 0) continue;
+      const k = Math.abs(sa - sb2) < 1e-9 ? 0 : sa / (sa - sb2);
+      const X = a[0] + (b[0] - a[0]) * k,
+        Y = a[1] + (b[1] - a[1]) * k;
+      const tt = (X - L.a.x) * ux + (Y - L.a.y) * uy;
+      t0 = Math.min(t0, tt);
+      t1 = Math.max(t1, tt);
+    }
+    const seg =
+      isFinite(t0) && t1 > t0 ? [P(L.a.x + ux * t0, L.a.y + uy * t0), P(L.a.x + ux * t1, L.a.y + uy * t1)] : [L.a, L.b];
+    return { polys: [half(1), half(-1)], lines: [seg], kind: 'line' };
   }
   return null;
 }
@@ -59828,6 +59914,21 @@ function coverChecks(z) {
   const M = COVER_MAT[c.mat] || {};
   const R = coverLayout(z);
   if (R.tooMany) out.push(['warn', 'Покрытие: формат слишком мелкий для площади — раскладка не построена.']);
+  if (c.slopeCut) {
+    try {
+      const St = zoneSurf(z);
+      if (St.mode === 'env' && St.envs && St.envs.length > 1)
+        out.push([
+          'warn',
+          'Покрытие: несколько точечных трапов — подрезка плитки под уклон не считается, разметьте линии вручную.'
+        ]);
+      else if (St.mode === 'env' && !(R.slope || []).length)
+        out.push([
+          'warn',
+          'Покрытие: форма помещения не позволяет построить конверт от трапа — подрезка под уклон не посчитана.'
+        ]);
+    } catch (err) {}
+  }
   if (M.wood && c.gap < 8 && c.mat !== 'vinyl')
     out.push(['warn', `Покрытие: компенсационный зазор ${c.gap} мм — для дерева и ламината нужно 8–15 мм.`]);
   const edgeMax = p => Math.max(...p.pts.map((q, i) => dist(q, p.pts[(i + 1) % p.pts.length])));
@@ -83559,7 +83660,6 @@ function renderWS() {
         h += `<div class="wleg" title="Оттенок — по нагрузке на провод: чем больше мощность за ним, тем темнее">${Object.entries(
           WCAT
         )
-          .filter(([k]) => k !== 'feed')
           .map(([k, c]) => `<span><i style="background:${catSwatch(k)}"></i>${c.n}</span>`)
           .join('')}</div><p class="hint" style="margin:2px 0">Светлее — меньше нагрузка, темнее — больше.</p>`;
       h += `<label class="fl">Прокладка автотрасс${sel_(
@@ -96347,12 +96447,18 @@ function panelEl() {
   }
   return p;
 }
+function arnEsc(ev) {
+  if (ev.key === 'Escape' && NV_.open) closeArNotes();
+}
 function openArNotes() {
   NV_.open = true;
+  if (document.removeEventListener) document.removeEventListener('keydown', arnEsc);
+  if (document.addEventListener) document.addEventListener('keydown', arnEsc);
   renderList();
   dirty();
 }
 function closeArNotes() {
+  if (document.removeEventListener) document.removeEventListener('keydown', arnEsc);
   NV_.open = false;
   NV_.sel = null;
   const p = $('#arnDlg');
@@ -96953,6 +97059,7 @@ const CTPL = {
 
 
 const LYV = { kind: null, id: null, i: 0, hl: null, pick: false };
+const lvPct = v => (v * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
 const lvN2 = v => (Math.round(v * 100) / 100).toLocaleString('ru-RU');
 const lvMm = v => Math.round(v).toLocaleString('ru-RU');
 
@@ -97025,7 +97132,8 @@ function layoutData() {
         ),
         slope: []
       },
-      origin: [L.ox, L.oz],
+      // the point the user picked (not the tile corner shifted by the anchor)
+      origin: [c.ax === 'pt' && isFinite(+c.px) ? +c.px : L.ox, c.ay === 'pt' && isFinite(+c.pz) ? +c.pz : L.oz],
       originSet: c.ax === 'pt' || c.ay === 'pt',
       snaps,
       reuse: c.reuse === 'reuse' ? 'reuse' : 'factory',
@@ -97035,12 +97143,12 @@ function layoutData() {
         ['Площадь облицовки', lvN2(L.net) + ' м²'],
         ['Плиток всего', `${L.total} шт (целых ${L.full}, на подрезки ${L.tilesCut})`],
         ['С запасом ' + c.waste + '%', `<b>${L.order} шт</b> · ${lvN2((L.order * L.W * L.H) / 1e6)} м²`],
-        ['В выброс', `${lvN2(L.wasteA)} м² · ${(L.waste * 100).toFixed(1)}%`],
+        ['В выброс', `${lvN2(L.wasteA)} м² · ${lvPct(L.waste)}`],
         ['Подрезанных деталей', `${L.cutN} · резов ${L.nCuts} · пропил ${lvMm(L.kerfLoss)} мм`],
         ...(L.mitLen ? [['Запил 45°', lvN2(L.mitLen / 1000) + ' м']] : []),
         ...(L.slivers ? [['Узкие подрезки', `<b class="bad">${L.slivers} шт уже ${c.minCut} мм</b>`]] : []),
         ['Мин. подрезка', isFinite(L.minCut) ? lvMm(L.minCut) + ' мм' : '—'],
-        ['Клей / затирка', `≈${tileGlue(L).toFixed(0)} кг / ≈${tileGrout(L).toFixed(1)} кг`]
+        ['Клей / затирка', `≈${tileGlue(L).toFixed(0)} кг / ≈${lvN2(tileGrout(L))} кг`]
       ]
     };
   }
@@ -97105,7 +97213,7 @@ function layoutData() {
           [L[1].x, L[1].y]
         ])
       },
-      origin: R.O ? [R.O.x, R.O.y] : null,
+      origin: c.org === 'pt' && isFinite(+c.px) ? [+c.px, +c.py] : R.O ? [R.O.x, R.O.y] : null,
       originSet: c.org === 'pt',
       snaps,
       reuse: c.reuse,
@@ -97116,10 +97224,10 @@ function layoutData() {
         ['Деталей', `целых ${st.full}, подрезанных ${st.cut}`],
         ['Плиток по раскрою', `${st.tiles} шт · ${lvN2(st.usedA)} м²`],
         ['Закупка с запасом ' + st.wasteP + '%', `<b>${lvN2(st.buy)} м²</b>${st.packs ? ` · ${st.packs} уп.` : ''}`],
-        ['В выброс', `${lvN2(st.wasteA)} м² · ${(st.wastePct * 100).toFixed(1)}%`],
+        ['В выброс', `${lvN2(st.wasteA)} м² · ${lvPct(st.wastePct)}`],
         ...(st.slopeLen ? [['Подрезка под уклон', lvN2(st.slopeLen / 1000) + ' м']] : []),
-        ...(st.glue ? [['Клей', '≈' + st.glue + ' кг']] : []),
-        ...(st.grout ? [['Затирка', '≈' + st.grout + ' кг']] : [])
+        ...(st.glue ? [['Клей', '≈' + lvN2(st.glue) + ' кг']] : []),
+        ...(st.grout ? [['Затирка', '≈' + lvN2(st.grout) + ' кг']] : [])
       ]
     };
   }
@@ -98676,7 +98784,7 @@ function openConverter(openId) {
       openCatalog();
     };
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && !ov.hidden && document.activeElement === document.body) ov.hidden = true;
+      if (e.key === 'Escape' && !ov.hidden) ov.hidden = true;
     });
   }
   ov.hidden = false;
@@ -101186,25 +101294,51 @@ function shortOf(t) {
 
 const SL_SEL = 'button, summary, .pntabs > *, [role="tab"]';
 function apply(el) {
+  if (el.closest && el.closest(SL_SKIP)) return;
+  // the code changed the text to something not in the dictionary: give back the title it had
+  if (el.dataset.full != null && !el.textContent.includes(SHORT[el.dataset.full] || '\u0000')) {
+    if (el.title === el.dataset.tip) el.title = el.dataset.own || '';
+    delete el.dataset.full;
+    delete el.dataset.tip;
+    delete el.dataset.own;
+  }
   const walker = document.createTreeWalker(el, 4);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    // text of a nested button / summary belongs to it
+    if (n.parentElement && n.parentElement.closest(SL_SEL) !== el) continue;
     const full = n.nodeValue.trim();
     if (!full) continue;
     const sh = shortOf(full);
     if (!sh || sh === full) continue;
     n.nodeValue = n.nodeValue.replace(full, sh);
-    if (!el.title || el.title === el.dataset.full) el.title = full;
+    // the full name leads the tooltip; a description the button had stays after it
+    const own = el.dataset.own != null ? el.dataset.own : el.title || '';
+    const tip = own && !own.includes(full) ? `${full}. ${own}` : own || full;
+    el.dataset.own = own;
     el.dataset.full = full;
+    el.dataset.tip = tip;
+    el.title = tip;
   }
 }
+/** Menus and context menus keep full texts: they have room and no other place to show the full name. */
+const SL_SKIP = '#mbmenu, #ctxmenu, .menu, .ctx';
 function scan(root) {
   if (!root || root.nodeType !== 1) return;
+  if (root.closest && root.closest(SL_SKIP)) return;
   if (root.matches && root.matches(SL_SEL)) apply(root);
   root.querySelectorAll && root.querySelectorAll(SL_SEL).forEach(apply);
 }
 /** Watches the page and shortens labels as panels are rebuilt. */
 function initShortLabels() {
   if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+  try {
+    document.documentElement.lang = 'ru';
+  } catch (_) {}
+  // a select cut by the narrow panel shows its full value on hover
+  document.addEventListener('mouseover', ev => {
+    const sl = ev.target && ev.target.closest && ev.target.closest('select');
+    if (sl && sl.selectedOptions && sl.selectedOptions[0]) sl.title = sl.selectedOptions[0].textContent;
+  });
   scan(document.body);
   const q = new Set();
   // the observer runs before the next paint: no flash of the long text
@@ -101221,7 +101355,11 @@ function initShortLabels() {
       } else
         for (const n of m.addedNodes)
           if (n.nodeType === 1) q.add(n);
-          else if (n.nodeType === 3 && n.parentElement) q.add(n.parentElement.closest(SL_SEL) || n.parentElement);
+          else if (n.nodeType === 3 && n.parentElement) {
+            // a text node: only its own button matters, not the whole container
+            const b = n.parentElement.closest(SL_SEL);
+            if (b) q.add(b);
+          }
     }
     if (q.size) flush();
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -105689,7 +105827,13 @@ function temperCheck(w, h, t, processed) {
   const mn = processed ? TEMP_MIN_HOLES : TEMP_MIN;
   const out = [];
   let film = false;
-  if (glassLam(t)) return { ok: true, film: false, msgs: ['Триплекс — безопасное стекло без закалки'] };
+  if (glassLam(t))
+    return {
+      ok: true,
+      film: false,
+      lam: true,
+      msgs: processed ? ['триплекс без закалки с отверстиями и вырезами — для фурнитуры нужен закалённый триплекс'] : []
+    };
   if (a < mn[0] || b < mn[1]) {
     film = true;
     out.push(
@@ -105702,8 +105846,12 @@ function temperCheck(w, h, t, processed) {
       `узкая панель 1:${(b / Math.max(1, a)).toFixed(1)} (больше 1:${ASPECT_MAX}) — при закалке поведёт или не возьмут в печь, нужна бронеплёнка`
     );
   }
-  if (a > TEMP_MAX[0] || b > TEMP_MAX[1]) out.push(`больше максимума закалки ${TEMP_MAX[0]}×${TEMP_MAX[1]}`);
-  return { ok: !out.length, film, msgs: out };
+  let over = false;
+  if (a > TEMP_MAX[0] || b > TEMP_MAX[1]) {
+    over = true;
+    out.push(`больше максимума закалки ${TEMP_MAX[0]}×${TEMP_MAX[1]} — разделите панель`);
+  }
+  return { ok: !out.length, film, over, msgs: out };
 }
 
 /* ---------- defaults ---------- */
@@ -105730,21 +105878,52 @@ function glassCfg(e) {
   return Object.assign(d, e.cfg || {});
 }
 /** Glass height (0 — to the ceiling of the level). */
+/** Height of the glass bottom: floor mark + bottom gap / profile seat + threshold. */
+function glassZ0(c) {
+  const PB = GL_PROF[c.fixB];
+  return (
+    (+c.z || 0) +
+    (PB ? PB.h - PB.d + 3 : c.fixB === 'free' ? +c.gapB || 0 : 0) +
+    (c.thr === 'glass' ? 50 : c.thr === 'step' ? 40 : 0)
+  );
+}
+/** Glass height (0 — to the ceiling: minus the bottom seat and the top channel / gap, so the glass goes in). */
 function glassH(e, c = glassCfg(e), ceil = 2700) {
-  const H = +c.h > 0 ? +c.h : ceil - (+c.z || 0) - (c.fixT !== 'free' && GL_PROF[c.fixT] ? 0 : 10);
+  const z0 = glassZ0(c);
+  const PT = GL_PROF[c.fixT];
+  const top = ceil - (PT ? PT.h - PT.d + 3 : 10);
+  const H = +c.h > 0 ? Math.min(+c.h, top - z0) : top - z0;
   return Math.max(300, H);
+}
+/** What the glass loses at a wall end: a clamp gap, or the depth of the wall channel it sits in. */
+function wallTrim(c) {
+  const PW = GL_PROF[c.fixW];
+  return PW ? PW.h - PW.d + 3 : 5;
 }
 
 /**
  * Panels of a glass run. Each segment of the polyline is split into panels: a door (hinged / pivot / sliding) and
  * fixed panels around it. Returns [{ seg, a, b, w, h, z, kind: 'fix'|'door', door?, i }], a and b — plan points.
  */
-function glassPanels(e, ceil) {
+function glassPanels(e, ceil, wallAt) {
   const c = glassCfg(e);
   const H = glassH(e, c, ceil);
-  const z0 =
-    (+c.z || 0) + (c.fixB === 'free' ? +c.gapB || 0 : 0) + (c.thr === 'glass' ? 50 : c.thr === 'step' ? 40 : 0);
+  const z0 = glassZ0(c);
   const out = [];
+  const t = +c.t || 8;
+  const nP = e.pts.length;
+  // a corner between segments: both panels stop short of the vertex by half the glass and a joint
+  const cornerAt = i => {
+    if (i <= 0 || i >= nP - 1) return false;
+    const a = e.pts[i - 1],
+      b = e.pts[i],
+      d = e.pts[i + 1];
+    const u1 = Math.atan2(b.y - a.y, b.x - a.x),
+      u2 = Math.atan2(d.y - b.y, d.x - b.x);
+    return Math.abs(Math.sin(u2 - u1)) > 0.05;
+  };
+  const wStart = !!(wallAt && wallAt(e.pts[0])),
+    wEnd = !!(wallAt && wallAt(e.pts[nP - 1]));
   const gap = 4; // joint between neighbour panels / door gap
   for (let i = 0; i < e.pts.length - 1; i++) {
     const A = e.pts[i],
@@ -105756,22 +105935,27 @@ function glassPanels(e, ceil) {
     const at = s => ({ x: A.x + ux * s, y: A.y + uy * s });
     const D = (e.doors || {})[i];
     const parts = [];
-    if (D && D.w > 0) {
-      const w = Math.min(+D.w, L);
-      const pos = w >= L - 1 ? 'full' : D.pos || 'r';
-      if (pos === 'full') parts.push([0, L, 'door']);
-      else if (pos === 'l') parts.push([0, w, 'door'], [w + gap, L, 'fix']);
-      else if (pos === 'c') {
-        const s0 = (L - w) / 2;
-        parts.push([0, s0 - gap, 'fix'], [s0, s0 + w, 'door'], [s0 + w + gap, L, 'fix']);
-      } else parts.push([0, L - w - gap, 'fix'], [L - w, L, 'door']);
-      if (D.type === 'slide' && pos !== 'full') {
+    // the usable length of the segment: trims at walls and corners
+    const g0 = i === 0 ? (wStart ? wallTrim(c) : 0) : cornerAt(i) ? t / 2 + 2 : gap / 2;
+    const g1 = i === nP - 2 ? (wEnd ? wallTrim(c) : 0) : cornerAt(i + 1) ? t / 2 + 2 : gap / 2;
+    const S0 = g0,
+      S1 = L - g1,
+      LL = S1 - S0;
+    if (D && D.type && +D.w > 0 && LL > 100) {
+      const w = Math.min(+D.w, LL);
+      let pos = w >= LL - 1 ? 'full' : D.pos || 'r';
+      if (D.type === 'slide' && pos === 'c') pos = 'r';
+      if (pos === 'full') parts.push([S0, S1, 'door']);
+      else if (D.type === 'slide' && w >= 100) {
         // a sliding door runs in front of the fixed panel with a 50 mm overlap
-        parts.length = 0;
-        if (pos === 'l') parts.push([0, w, 'door'], [w - 50, L, 'fix']);
-        else parts.push([0, L - w + 50, 'fix'], [L - w, L, 'door']);
-      }
-    } else parts.push([0, L, 'fix']);
+        if (pos === 'l') parts.push([S0, S0 + w, 'door'], [S0 + Math.max(0, w - 50), S1, 'fix']);
+        else parts.push([S0, S1 - Math.max(0, w - 50), 'fix'], [S1 - w, S1, 'door']);
+      } else if (pos === 'l') parts.push([S0, S0 + w, 'door'], [S0 + w + gap, S1, 'fix']);
+      else if (pos === 'c') {
+        const s0 = S0 + (LL - w) / 2;
+        parts.push([S0, s0 - gap, 'fix'], [s0, s0 + w, 'door'], [s0 + w + gap, S1, 'fix']);
+      } else parts.push([S0, S1 - w - gap, 'fix'], [S1 - w, S1, 'door']);
+    } else if (LL > 30) parts.push([S0, S1, 'fix']);
     for (const [s0, s1, kind] of parts) {
       if (s1 - s0 < 30) continue;
       // fixed panels split to the tempering maximum and to a handy width
@@ -105789,9 +105973,13 @@ function glassPanels(e, ceil) {
           b: at(a1),
           u: { x: ux, y: uy },
           w: a1 - a0,
-          h: H - (kind === 'door' && c.use === 'shower' ? 0 : 0),
+          h: H,
           z: z0,
           kind,
+          atStart: i === 0 && a0 <= S0 + 1,
+          atEnd: i === nP - 2 && a1 >= S1 - 1,
+          railed: kind === 'fix' && D && D.type === 'slide',
+          segL: L,
           door: kind === 'door' ? D : null,
           i: out.length
         });
@@ -105807,7 +105995,7 @@ function glassPanels(e, ceil) {
  */
 function glassCalc(e, ceil, wallAt) {
   const c = glassCfg(e);
-  const P_ = glassPanels(e, ceil);
+  const P_ = glassPanels(e, ceil, wallAt);
   const t = +c.t,
     kg = glassKgM2(t);
   const R = holeRules(t);
@@ -105820,17 +106008,33 @@ function glassCalc(e, ceil, wallAt) {
   const issues = [];
   const loads = [];
   const fin = GL_FIN[c.fin] || '';
+  if (!P_.length)
+    return {
+      c,
+      panels: [],
+      items: [],
+      issues: [['warn', 'Нет ни одной панели: участки короче 50 мм']],
+      loads: [],
+      edges: 0,
+      area: 0,
+      mass: 0,
+      rules: R
+    };
+  // hole sizes and offsets of the fittings grow with the glass
+  const dClamp = Math.max(R.dMin, 14),
+    dSmall = Math.max(R.dMin, 12);
+  const xClamp = Math.max(30, Math.ceil(R.edge + dClamp / 2 + 1));
+  const xEdge = Math.max(60, Math.ceil(R.corner * 0.75));
   for (const p of P_) {
     p.holes = [];
     p.notches = [];
   }
   for (const p of P_) {
     p.m = (p.w * p.h * kg) / 1e6;
-    const segL = Math.hypot(e.pts[p.seg + 1].x - e.pts[p.seg].x, e.pts[p.seg + 1].y - e.pts[p.seg].y);
     // the edges: wall at the start/end of the run, glass neighbour, or free
-    const startWall = p.seg === 0 && p.s0 < 1 && wallAt && wallAt(e.pts[0]);
-    const endWall = p.seg === e.pts.length - 2 && p.s1 > segL - 1 && wallAt && wallAt(e.pts[e.pts.length - 1]);
-    const near = (u, v) => Math.hypot(u.x - v.x, u.y - v.y) < 12;
+    const startWall = p.atStart && wallAt && wallAt(e.pts[0]);
+    const endWall = p.atEnd && wallAt && wallAt(e.pts[e.pts.length - 1]);
+    const near = (u, v) => Math.hypot(u.x - v.x, u.y - v.y) < 4 + t + 6;
     const nbL = P_.find(q => q !== p && near(q.b, p.a));
     const nbR = P_.find(q => q !== p && near(q.a, p.b));
     p.nL = nbL || null;
@@ -105851,9 +106055,10 @@ function glassCalc(e, ceil, wallAt) {
             for (let k = 0; k < n; k++)
               p.holes.push({
                 side,
-                x: side === 'L' ? 30 : p.w - 30,
+                x: side === 'L' ? xClamp : p.w - xClamp,
                 y: 150 + (k * (p.h - 300)) / Math.max(1, n - 1),
-                d: Math.max(R.dMin, 14)
+                d: dClamp,
+                kind: 'коннектор'
               });
           } else if (GL_PROF[c.fixW])
             add('prof' + c.fixW, `Профиль ${GL_PROF[c.fixW].n} пристенный, ${fin}`, p.h / 1000, 'м');
@@ -105861,6 +106066,11 @@ function glassCalc(e, ceil, wallAt) {
           if (c.fixG === 'clamp') {
             const n = nEdge(p.h);
             add('clampG', `Коннектор стекло–стекло, ${fin}`, n);
+            for (let k = 0; k < n; k++) {
+              const y = 150 + (k * (p.h - 300)) / Math.max(1, n - 1);
+              p.holes.push({ x: p.w - xClamp, y, d: dClamp, kind: 'коннектор' });
+              p.nR.holes.push({ x: xClamp, y, d: dClamp, kind: 'коннектор' });
+            }
           } else if (c.fixG === 'pc') add('pc', GL_SEAL.pc, p.h / 1000, 'м');
           else add('silG', 'Стык стекло–стекло на прозрачном силиконе', p.h / 1000, 'м');
         }
@@ -105888,8 +106098,16 @@ function glassCalc(e, ceil, wallAt) {
       p.m = (p.w * p.h * kg) / 1e6;
       if (dt === 'hinge' || dt === 'frame') {
         // which side the hinges are on: next to a wall → wall hinges, next to glass → glass hinges
-        const hs = D.hs || (p.edgeL === 'wall' ? 'L' : p.edgeR === 'wall' ? 'R' : p.edgeL === 'glass' ? 'L' : 'R');
+        const nbFix = q => q && q.kind === 'fix';
+        const hs =
+          D.hs || (p.edgeL === 'wall' ? 'L' : p.edgeR === 'wall' ? 'R' : nbFix(p.nL) ? 'L' : nbFix(p.nR) ? 'R' : 'L');
         const onWall = (hs === 'L' ? p.edgeL : p.edgeR) === 'wall';
+        const hingeTo = hs === 'L' ? p.nL : p.nR;
+        if (!onWall && !nbFix(hingeTo))
+          issues.push([
+            'bad',
+            `Дверь ${p.i + 1}: петли со стороны, где нет ни стены, ни глухой панели — переставьте петли или добавьте панель`
+          ]);
         const n = p.m <= 40 && p.w <= 900 ? 2 : p.m <= 65 && p.w <= 1000 ? 3 : 4;
         const off = 200;
         const dd = p.h - 2 * off;
@@ -105929,16 +106147,15 @@ function glassCalc(e, ceil, wallAt) {
             'bad',
             `Дверь ${p.i + 1}: ${p.m.toFixed(0)} кг / ширина ${Math.round(p.w)} — больше допустимого для петель (65 кг, 1000 мм). Уменьшите ширину или поставьте маятниковую ось`
           ]);
-        if (p.w > 900 && n < 4) issues.push(['warn', `Дверь ${p.i + 1} шире 900 мм — нужны 3 петли (поставлено ${n})`]);
         if (onWall && wallAt) {
           const w = wallAt(hs === 'L' ? p.a : p.b);
-          if (w && w.framed && F > 150)
+          if (w && w.framed)
             issues.push([
               'warn',
-              `Дверь ${p.i + 1}: петли на каркасной стене — нужна закладная (брус или профиль-усиление), усилие ≈ ${Math.round(F)} Н`
+              `Дверь ${p.i + 1}: петли на каркасной стене — нужна закладная (брус или профиль-усиление), вырывающее усилие ≈ ${Math.round(F)} Н`
             ]);
         }
-        if (!onWall) {
+        if (!onWall && c.fixT === 'free') {
           issues.push([
             'info',
             `Дверь ${p.i + 1} висит на стекле: соседняя панель несёт её вес — нужна стабилизирующая штанга`
@@ -105965,13 +106182,14 @@ function glassCalc(e, ceil, wallAt) {
         add('piv', `Ось маятниковая пол–потолок (до 80 кг), ${fin}`, 1);
         loads.push([`Дверь ${p.i + 1}`, `${p.m.toFixed(1)} кг на маятниковой оси`]);
         if (p.m > 80) issues.push(['bad', `Дверь ${p.i + 1}: ${p.m.toFixed(0)} кг — больше 80 кг для оси`]);
+        p.hs = 'L';
         p.notches.push(
           { side: 'B', x: 60, w: 60, d: 25, kind: 'ось' },
           { side: 'T', x: 60, w: 60, d: 25, kind: 'ось' }
         );
         if (c.seal) add('sbrush', GL_SEAL.brush, (p.w + 2 * p.h) / 1000, 'м');
       } else if (dt === 'slide') {
-        add('rail', `Штанга-направляющая Ø25 с роликами, ${fin}`, (p.w * 2) / 1000, 'м');
+        add('rail', `Штанга-направляющая Ø25 с роликами, ${fin}`, (p.segL || p.w * 2) / 1000, 'м');
         add('roll', 'Ролик раздвижной двери (пара)', 1);
         add('guide', 'Направляющая нижняя (флажок)', 1);
         loads.push([`Дверь ${p.i + 1}`, `${p.m.toFixed(1)} кг на 2 роликах: ${(p.m / 2).toFixed(1)} кг на ролик`]);
@@ -105980,26 +106198,78 @@ function glassCalc(e, ceil, wallAt) {
             'warn',
             `Раздвижная дверь ${p.i + 1}: ${p.m.toFixed(0)} кг — проверьте ролики (обычно до 60–80 кг)`
           ]);
-        p.holes.push({ x: 60, y: p.h - 40, d: 14 }, { x: p.w - 60, y: p.h - 40, d: 14 });
+        p.holes.push(
+          { x: xEdge, y: p.h - xEdge, d: dClamp, kind: 'ролик' },
+          { x: p.w - xEdge, y: p.h - xEdge, d: dClamp, kind: 'ролик' }
+        );
         if (c.seal) add('sh', GL_SEAL.h, p.h / 1000, 'м');
       }
       if (c.handle) {
         add('hd' + c.handle, `${GL_HANDLE[c.handle]}, ${fin}`, 1);
         if (c.handle !== 'slot') {
-          const hx = p.hs === 'L' ? p.w - 60 : 60;
+          const hx = p.hs === 'L' ? p.w - xEdge : xEdge;
           const hl = c.handle === 'pull450' ? 450 : c.handle === 'towel' ? 600 : c.handle === 'pull300' ? 300 : 0;
-          if (hl) p.holes.push({ x: hx, y: 1050 - p.z + hl / 2, d: 12 }, { x: hx, y: 1050 - p.z - hl / 2, d: 12 });
-          else p.holes.push({ x: hx, y: 1050 - p.z, d: 12 });
+          if (hl)
+            p.holes.push(
+              { x: hx, y: 1050 - p.z + hl / 2, d: dSmall, kind: 'ручка' },
+              { x: hx, y: 1050 - p.z - hl / 2, d: dSmall, kind: 'ручка' }
+            );
+          else p.holes.push({ x: hx, y: 1050 - p.z, d: dSmall, kind: 'ручка' });
         } else p.notches.push({ side: p.hs === 'L' ? 'R' : 'L', y: 1050 - p.z, w: 120, d: 25, kind: 'ручка' });
       }
     }
+  }
+  // stabiliser bars: a fixed panel with a free vertical edge and no top fixing, or a door on glass
+  const tall = P_.filter(
+    p =>
+      p.kind === 'fix' &&
+      c.fixT === 'free' &&
+      !p.railed &&
+      (p.edgeL === 'free' ||
+        p.edgeR === 'free' ||
+        p.carry ||
+        (p.w > 400 && ((p.nL && p.nL.kind === 'door') || (p.nR && p.nR.kind === 'door'))))
+  );
+  const needBar = c.bar === 'on' || (c.bar === 'auto' && (tall.length || P_.some(p => p.needBar)));
+  if (needBar && c.bar !== 'off' && c.fixT === 'free') {
+    const L = Math.min(1000, Math.max(300, (tall[0] || P_[0]).w));
+    add('bar', `Штанга стабилизирующая стена–стекло Ø19, ${fin}`, Math.max(1, tall.length || 1));
+    loads.push(['Штанга', `Ø19 до ${L} мм от стены; длиннее 1000 мм — штанга к потолку`]);
+    // the bar holds the edge away from the wall
+    for (const p of tall)
+      p.holes.push({
+        x: p.edgeL === 'wall' ? p.w - xEdge : p.edgeR === 'wall' ? xEdge : p.edgeR === 'free' ? p.w - xEdge : xEdge,
+        y: p.h - xEdge,
+        d: dSmall,
+        kind: 'штанга'
+      });
   }
   for (const p of P_) {
     // tempering, processing
     const processed = p.holes.length + p.notches.length > 0;
     p.temper = temperCheck(p.w, p.h, t, processed);
+    const loaded = processed || p.kind === 'door' || p.carry;
     for (const m of p.temper.msgs)
-      issues.push([p.temper.film ? 'warn' : 'info', `Панель ${p.i + 1} ${Math.round(p.w)}×${Math.round(p.h)}: ${m}`]);
+      issues.push([
+        p.temper.over || (p.temper.film && loaded) ? 'bad' : p.temper.film || p.temper.lam ? 'warn' : 'info',
+        `Панель ${p.i + 1} ${Math.round(p.w)}×${Math.round(p.h)}: ${m}`
+      ]);
+    if (p.temper.film && loaded)
+      issues.push([
+        'bad',
+        `Панель ${p.i + 1}: незакалённое стекло с отверстиями или нагрузкой — бронеплёнка не заменяет закалку. Нужен закалённый триплекс или другой раскрой`
+      ]);
+    for (let a = 0; a < p.holes.length; a++)
+      for (let b = a + 1; b < p.holes.length; b++) {
+        const A = p.holes[a],
+          B = p.holes[b];
+        const g = Math.hypot(A.x - B.x, A.y - B.y) - (A.d + B.d) / 2;
+        if (g < R.between - 0.1)
+          issues.push([
+            'warn',
+            `Панель ${p.i + 1}: отверстия ближе ${Math.round(g)} мм друг к другу — нужно ≥ ${R.between} мм`
+          ]);
+      }
     // hole rules
     for (const hl of p.holes) {
       const ed = Math.min(hl.x - hl.d / 2, p.w - hl.x - hl.d / 2, hl.y - hl.d / 2, p.h - hl.y - hl.d / 2);
@@ -106008,6 +106278,8 @@ function glassCalc(e, ceil, wallAt) {
           'warn',
           `Панель ${p.i + 1}: отверстие Ø${hl.d} в ${Math.round(ed)} мм от кромки — нужно не меньше ${R.edge} мм (2 толщины)`
         ]);
+      if (hl.d > Math.min(p.w, p.h) / 3)
+        issues.push(['warn', `Панель ${p.i + 1}: отверстие Ø${hl.d} больше 1/3 узкой стороны`]);
       if (hl.d < R.dMin)
         issues.push(['warn', `Панель ${p.i + 1}: отверстие Ø${hl.d} меньше допустимого Ø${R.dMin} для ${t} мм`]);
       const cd =
@@ -106028,24 +106300,6 @@ function glassCalc(e, ceil, wallAt) {
       if (n.y != null && (n.y - n.w / 2 < R.corner || p.h - n.y - n.w / 2 < R.corner))
         issues.push(['warn', `Панель ${p.i + 1}: вырез под ${n.kind} ближе ${Math.round(R.corner)} мм к углу`]);
     if (p.temper.film) add('film', 'Бронеплёнка (защитная плёнка) на незакаливаемые панели', (p.w * p.h) / 1e6, 'м²');
-  }
-  // stabiliser bars: a fixed panel with a free vertical edge and no top fixing, or a door on glass
-  const tall = P_.filter(
-    p => p.kind === 'fix' && c.fixT === 'free' && (p.edgeL === 'free' || p.edgeR === 'free' || p.carry)
-  );
-  const needBar = c.bar === 'on' || (c.bar === 'auto' && (tall.length || P_.some(p => p.needBar)));
-  if (needBar && c.bar !== 'off') {
-    const L = Math.min(1000, Math.max(300, (tall[0] || P_[0]).w));
-    add('bar', `Штанга стабилизирующая стена–стекло Ø19, ${fin}`, Math.max(1, tall.length || 1));
-    loads.push(['Штанга', `Ø19 до ${L} мм от стены; длиннее 1000 мм — штанга к потолку`]);
-    // the bar holds the edge away from the wall
-    for (const p of tall)
-      p.holes.push({
-        x: p.edgeL === 'wall' ? p.w - 60 : p.edgeR === 'wall' ? 60 : p.edgeR === 'free' ? p.w - 60 : 60,
-        y: p.h - 60,
-        d: 12,
-        kind: 'штанга'
-      });
   }
   if (c.use === 'shower' && c.fixB === 'free' && c.thr === 'none') add('sil', GL_SEAL.sil + ' (туба 280 мл)', 1);
   if (c.thr === 'alu') add('thr', GL_THR.alu, P_.reduce((a, p) => a + p.w, 0) / 1000, 'м');
@@ -106076,6 +106330,7 @@ function glassCalc(e, ceil, wallAt) {
 
 
 const GVS = { id: null };
+const gvRu = (v, d) => (+v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
 const gvMm = v => Math.round(v).toLocaleString('ru-RU');
 
 function panelSvg(p, t) {
@@ -106182,18 +106437,18 @@ function renderGlassView() {
   const cards = R.panels
     .map(
       p =>
-        `<div class="gvcard${p.temper.film ? ' film' : ''}"><div class="gvct">${p.i + 1}. ${p.kind === 'door' ? 'Дверь — ' + (GL_DOOR[(p.door || {}).type] || '').toLowerCase() : 'Глухая панель'}</div>${panelSvg(p, c.t)}<div class="hint">${gvMm(p.w)}×${gvMm(p.h)} мм · ${p.m.toFixed(1)} кг · ${p.temper.film ? '<b class="bad">не закаливается — бронеплёнка</b>' : /Триплекс/.test(GL_T[c.t] || '') ? 'триплекс' : 'закалка'} · отверстий ${p.holes.length}, вырезов ${p.notches.length}</div></div>`
+        `<div class="gvcard${p.temper.film ? ' film' : ''}"><div class="gvct">${p.i + 1}. ${p.kind === 'door' ? 'Дверь — ' + (GL_DOOR[(p.door || {}).type] || '').toLowerCase() : 'Глухая панель'}</div>${panelSvg(p, c.t)}<div class="hint">${gvMm(p.w)}×${gvMm(p.h)} мм · ${gvRu(p.m, 1)} кг · ${p.temper.film ? '<b class="bad">не закаливается — бронеплёнка</b>' : /Триплекс/.test(GL_T[c.t] || '') ? 'триплекс' : 'закалка'} · отверстий ${p.holes.length}, вырезов ${p.notches.length}</div></div>`
     )
     .join('');
   const items = R.items
-    .map(it => `<tr><td>${esc(it.n)}</td><td>${it.u === 'шт' ? it.q : it.q.toFixed(2)} ${it.u}</td></tr>`)
+    .map(it => `<tr><td>${esc(it.n)}</td><td>${it.u === 'шт' ? it.q : gvRu(it.q, 2)} ${it.u}</td></tr>`)
     .join('');
   const loads = R.loads.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('');
   const iss = R.issues.length
     ? R.issues.map(([l, m]) => `<li class="${l}">${esc(m)}</li>`).join('')
     : '<li class="ok">Замечаний нет</li>';
-  body.innerHTML = `<div class="gvtop"><section><h4>План</h4>${runSvg(R)}</section><section><h4>Итого</h4><dl><dt>Панелей</dt><dd>${R.panels.length}</dd><dt>Стекло</dt><dd>${R.area.toFixed(2)} м² · ${R.mass.toFixed(0)} кг</dd><dt>Кромка (полировка)</dt><dd>${R.edges.toFixed(1)} м</dd><dt>Отверстий / вырезов</dt><dd>${R.panels.reduce((a, p) => a + p.holes.length, 0)} / ${R.panels.reduce((a, p) => a + p.notches.length, 0)}</dd></dl>
-  <h4>Правила обработки для ${c.t} мм</h4><ul class="gvrules"><li>Закалка: от ${TEMP_MIN[0]}×${TEMP_MIN[1]} мм, с отверстиями и вырезами — от ${TEMP_MIN_HOLES[0]}×${TEMP_MIN_HOLES[1]} мм; стороны не уже 1:10. Меньше — бронеплёнка или триплекс.</li><li>Отверстие: Ø не меньше ${rr.dMin} мм и не больше 1/3 узкой стороны.</li><li>От кромки до отверстия — не меньше ${rr.edge} мм, между отверстиями — ${rr.between} мм, от угла — ${Math.round(rr.corner)} мм.</li><li>Внутренние углы вырезов — радиус не меньше ${Math.round(rr.notchR * 10) / 10} мм.</li><li>Масса стекла ${c.t} мм — ${(2.5 * c.t).toFixed(0)} кг/м².</li></ul></section></div>
+  body.innerHTML = `<div class="gvtop"><section><h4>План</h4>${runSvg(R)}</section><section><h4>Итого</h4><dl><dt>Панелей</dt><dd>${R.panels.length}</dd><dt>Стекло</dt><dd>${gvRu(R.area, 2)} м² · ${R.mass.toFixed(0)} кг</dd><dt>Кромка (полировка)</dt><dd>${gvRu(R.edges, 1)} м</dd><dt>Отверстий / вырезов</dt><dd>${R.panels.reduce((a, p) => a + p.holes.length, 0)} / ${R.panels.reduce((a, p) => a + p.notches.length, 0)}</dd></dl>
+  <h4>Правила обработки для ${c.t} мм</h4><ul class="gvrules"><li>Закалка: от ${TEMP_MIN[0]}×${TEMP_MIN[1]} мм, с отверстиями и вырезами — от ${TEMP_MIN_HOLES[0]}×${TEMP_MIN_HOLES[1]} мм; стороны не уже 1:10. Меньше — бронеплёнка или триплекс.</li><li>Отверстие: Ø не меньше ${rr.dMin} мм и не больше 1/3 узкой стороны.</li><li>От кромки до отверстия — не меньше ${rr.edge} мм, между отверстиями — ${rr.between} мм, от угла — ${Math.round(rr.corner)} мм.</li><li>Внутренние углы вырезов — радиус не меньше ${gvRu(rr.notchR, 1)} мм.</li><li>Масса стекла ${c.t} мм — ${(2.5 * c.t).toFixed(0)} кг/м².</li></ul></section></div>
   <section><h4>Панели</h4><div class="gvcards">${cards}</div><p class="hint">Отверстия: Ø · X от левой кромки / Y от низа. Размеры уточняются по замеру и по каталогу выбранной фурнитуры.</p></section>
   <div class="gvtop"><section><h4>Фурнитура и профили</h4><table class="gvtbl">${items}</table></section><section><h4>Нагрузки</h4><table class="gvtbl">${loads || '<tr><td>—</td></tr>'}</table><h4>Проверки</h4><ul class="gviss">${iss}</ul></section></div>`;
 }
@@ -106439,8 +106694,23 @@ function cutLayout(pieces, opt) {
     }
     for (const f of free) f.sh.free.push(f);
   } else {
-    // factory edges: the piece in its own place (or turned), never shifted
-    for (const p of cuts.slice().sort((a, b) => lcArea(b.loc) - lcArea(a.loc))) {
+    // factory edges: the piece in its own place (or turned), never shifted. Parts of one tile (cut by an opening
+    // or a slope line) are taken from that tile together, before the rest
+    const byOrig = new Map();
+    for (const p of cuts) if (p.orig != null) (byOrig.get(p.orig) || byOrig.set(p.orig, []).get(p.orig)).push(p);
+    const done = new Set();
+    for (const g of byOrig.values()) {
+      if (g.length < 2) continue;
+      const sh = { n: sheets.length + 1, items: [], free: [] };
+      sheets.push(sh);
+      for (const p of g) {
+        sh.items.push({ piece: p, poly: p.loc, rot: 0 });
+        p.sheet = sh.n;
+        p.rot = 0;
+        done.add(p);
+      }
+    }
+    for (const p of cuts.filter(q => !done.has(q)).sort((a, b) => lcArea(b.loc) - lcArea(a.loc))) {
       let placed = false;
       for (const sh of sheets) {
         for (const rot of rots) {
@@ -119457,12 +119727,12 @@ defineTools({
 
 /** Colour categories: name, the scale (W at the darkest shade), the two ends of the shade. */
 const WCAT = {
-  sock: { n: 'Розетки', lo: [34, 100, 72], hi: [22, 100, 40], max: 3500 },
-  light: { n: 'Освещение', lo: [52, 95, 64], hi: [44, 100, 40], max: 1200 },
-  pow: { n: 'Силовые', lo: [214, 92, 72], hi: [220, 80, 42], max: 7000 },
+  sock: { n: 'Розетки', lo: [32, 100, 60], hi: [18, 100, 36], max: 3500 },
+  light: { n: 'Освещение', lo: [48, 100, 42], hi: [38, 100, 28], max: 300 },
+  pow: { n: 'Силовые', lo: [212, 85, 58], hi: [222, 80, 34], max: 7000 },
   weak: { n: 'Слаботочка', lo: [145, 55, 60], hi: [150, 65, 36], max: 0 },
-  lv: { n: 'Подсветка 12–48 В', lo: [275, 85, 80], hi: [272, 60, 52], max: 240 },
-  feed: { n: 'Ввод', lo: [4, 75, 58], hi: [4, 75, 58], max: 0 }
+  lv: { n: 'Подсветка 12–48 В', lo: [275, 70, 70], hi: [272, 60, 42], max: 240 },
+  feed: { n: 'Прочие от щита', lo: [4, 75, 50], hi: [4, 75, 50], max: 0 }
 };
 /** Fine wire kinds (wireKind) → colour category. */
 const KIND_CAT = {
@@ -119504,11 +119774,21 @@ const DEDICATED_PW = {
   ac: 2500,
   other: 2000
 };
-const DED_RX = /бойлер|водонагрев|варочн|плит|духов|свч|микроволн|стирал|посудомо|сушил|кондиц/i;
+const DED_RX = /бойлер|водонагрев|варочн|плит[аыуе]?\b|электроплит|духов|свч|микроволн|стирал|посудомо|сушил|кондиц/i;
 
 /** True when a group or socket is a dedicated line for one appliance. */
 function isDedicated(d, group) {
   if (d && d.type === 'dev' && d.ded) return true;
+  // a 230 V outlet for an appliance (electrical outlet «Техника / прибор»)
+  if (
+    d &&
+    d.type === 'dev' &&
+    d.kind === 'eout' &&
+    d.eo &&
+    d.eo.use === 'appl' &&
+    !(+d.eo.volt > 0 && +d.eo.volt < 100)
+  )
+    return true;
   return !!(group && DED_RX.test(group.name || ''));
 }
 
@@ -119557,7 +119837,10 @@ function wireLoad(w) {
   return WL.m.get(w.id) || 0;
 }
 function buildLoads(out) {
-  const ws = S.ents.filter(e => e.type === 'wire' && visible(e) && e.pts && e.pts.length >= 2);
+  // low-current cables (UTP, TV) carry no power: they would join the loads of different groups
+  const ws = S.ents.filter(
+    e => e.type === 'wire' && visible(e) && e.pts && e.pts.length >= 2 && !/UTP|RG/.test(String(e.cable || ''))
+  );
   if (!ws.length) return;
   const nodeOf = (w, i) => {
     const id = i ? w.to : w.from;
