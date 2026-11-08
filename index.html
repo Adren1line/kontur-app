@@ -3736,6 +3736,34 @@ label.ck {
   text-align: left;
   margin-top: 2px;
 }
+.ag-imgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+}
+.ag-imgs figure {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--canvas);
+  aspect-ratio: 4 / 3;
+}
+.ag-imgs img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.ag-imgs button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0 5px;
+  background: var(--panel);
+  border-radius: 3px;
+}
 
 /*
  * Скин «Калька». Интерфейс как чертёжный лист на кульмане: холодная калька, синие чернила, две толщины линий по
@@ -7067,7 +7095,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '55';
+const APP_VER = '55.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -96730,7 +96758,7 @@ const AG_STD = `Нормы по умолчанию (если источник н
 - Высота потолка 2700 мм.
 - Всё, что принято без источника, помечай src:"assumed" и пиши why.`;
 
-const AG_OPS0 = `Операции (мм, точки [x,y]; у каждой создающей операции src: "dwg"|"tz"|"text"|"assumed", why — коротко, conf: "high"|"mid"|"low"):
+const AG_OPS0 = `Операции (мм, точки [x,y]; у каждой создающей операции src: "dwg"|"img"|"tz"|"text"|"assumed", why — коротко, conf: "high"|"mid"|"low"):
 - {op:"wall", ref?, a:[x,y], b:[x,y], th?, h?, kind?:"gkl"|"gas"|"ext"|"load"}
 - {op:"door", wall:<ref|id>, at?:<мм от начала стены до центра>, p?:[x,y], w, h?:2100, swing?:"in"|"out"|"left"|"right"}
 - {op:"window", wall, at?|p?, w, h?:1700, sill?:950}
@@ -96776,8 +96804,28 @@ function agStop() {
 
 const agJ = v => JSON.stringify(v);
 
+/** Plan pictures (PNG/JPG) of a run: kept in memory only, not in the project file. */
+const AG_IMGS = new Map();
+const agImages = id => AG_IMGS.get(id) || [];
+const agImgsOf = run => agImages(run.imgKey || run.id);
+function agImgText(run) {
+  const n = agImgsOf(run).length;
+  if (!n) return '';
+  return `
+К заданию приложено изображений планировки: ${n} (PNG/JPG — скан, скриншот, фото или рисунок плана).
+Как читать изображение:
+- Размеры бери с чертежа: размерные цепочки, подписи, площади помещений. Масштаб выводи из размеров; сверяй сумму цепочки с габаритом.
+- Если размеров нет — масштаб по типовым элементам (дверь 800–900, ванна 1700, унитаз ~400×650), такие размеры помечай conf:"low" и пиши why.
+- Толстые залитые/штрихованные стены — несущие/наружные; тонкие — перегородки (по нормам выше).
+- Разрывы в стенах с дугой — двери (сторона и направление по дуге); тонкие двойные/тройные линии в наружной стене — окна; разрыв без дуги — проём.
+- Подписи и номера помещений — имена помещений. Сантехнику и мебель с плана переноси, если она нарисована.
+- Начало координат — левый нижний угол наружного контура, X вправо, Y вверх. Объекты с изображения — src:"img".
+- При нескольких изображениях: это варианты или листы одной квартиры — скажи, как ты их понял.`;
+}
+
 /** Step 1 — the constructor tells what it understood (nothing is built). */
 async function agUnderstand(task, opts = {}) {
+  const imgs = (opts.images || []).filter(Boolean);
   if (!AG.paid) throw { code: 'not_paid', message: 'Построение доступно по подписке; доступна проверка проекта.' };
   const run = {
     id: 'r' + Date.now().toString(36),
@@ -96788,7 +96836,12 @@ async function agUnderstand(task, opts = {}) {
     notes: [],
     rounds: 0
   };
-  if (!run.task) throw { code: 'empty', message: 'Опишите задание' };
+  if (!run.task && imgs.length) run.task = 'Построить планировку по изображению';
+  if (!run.task) throw { code: 'empty', message: 'Опишите задание или приложите изображение планировки' };
+  if (imgs.length) {
+    AG_IMGS.set(run.id, imgs);
+    run.img = imgs.map(f => f.name || 'изображение');
+  }
   AGS.run = run;
   agSet('understanding', 'Разбираю задание…');
   const prompt = `Ты — агент-конструктор программы проектирования «Контур». Тебе дали задание; сначала покажи, как ты его понял — ничего не строй.
@@ -96799,11 +96852,12 @@ ${AG_STD}
 
 Задание пользователя:
 """${run.task}"""
+${agImgText(run)}
 
 Верни JSON: {"summary":["что я понял, по пунктам, с размерами"], "assumptions":["что принимаю без источника"], "questions":["что неясно — не больше 5"], "scope":"что будет построено одной строкой"}.
 Если задание не про проектирование в этой программе — верни {"offtopic":true}.`;
   try {
-    const u = await agAskJSON(prompt, { what: 'understand', tier: 'default', signal: agSig() });
+    const u = await agAskJSON(prompt, { what: 'understand', tier: 'default', signal: agSig(), images: agImgsOf(run) });
     if (u && u.offtopic) throw { code: 'offtopic', message: 'Задание не относится к проекту.' };
     run.und = {
       summary: agList(u && u.summary),
@@ -96836,12 +96890,13 @@ ${AG_OPS()}
 
 Задание:
 """${run.task}"""
+${agImgText(run)}
 Как ты его понял (подтверждено пользователем): ${agJ(run.und)}
 ${run.corr ? 'Уточнения пользователя (главнее твоего понимания):\n"""' + run.corr + '"""' : ''}
 
 Верни JSON: {"ops":[…], "note":"одна строка — что построено"}.`;
   try {
-    const r = await agAskJSON(prompt, { what: 'build', tier: 'default', signal: agSig() });
+    const r = await agAskJSON(prompt, { what: 'build', tier: 'default', signal: agSig(), images: agImgsOf(run) });
     const ops = Array.isArray(r) ? r : (r && r.ops) || [];
     const res = agApply(ops, { runId: run.id, allowForeign: run.edit });
     run.applied = { created: res.created.length, changed: res.changed.length, deleted: res.deleted.length };
@@ -96873,6 +96928,7 @@ async function agCheck(run, mayFix) {
 ${AG_STD}
 
 Задание: """${run.task}"""
+${agImgText(run)}
 ${run.und ? 'Как его понял конструктор: ' + agJ(run.und) : ''}
 ${run.corr ? 'Уточнения пользователя: """' + run.corr + '"""' : ''}
 Проект: ${agJ(agSummary())}
@@ -96881,7 +96937,7 @@ ${ids ? 'Объекты, созданные конструктором в это
 ${mayFix ? '\n' + AG_OPS() + '\nДля исправимых замечаний дай операции исправления (их выполнит конструктор).' : ''}
 
 Верни JSON: {"verdict":"ok"|"fix"|"bad", "notes":[{"id":<id объекта или null>,"lvl":"bad"|"warn"|"info","msg":"что не так и как должно быть"}]${mayFix ? ', "ops":[…]' : ''}}.`;
-  return agAskJSON(prompt, { what: 'check', tier: 'default', signal: agSig() });
+  return agAskJSON(prompt, { what: 'check', tier: 'default', signal: agSig(), images: agImgsOf(run) });
 }
 
 async function agCheckLoop(run) {
@@ -96906,20 +96962,31 @@ async function agCheckLoop(run) {
 }
 
 /** Checker only (works without the subscription): the whole project against a task or just the standards. */
-async function agCheckProject(task) {
+async function agCheckProject(task, images) {
+  const imgs = (images || []).filter(Boolean);
   const run = {
     id: '',
-    task: String(task || 'Проверь проект на ошибки и несоответствие нормам'),
+    task: String(
+      task ||
+        (imgs.length
+          ? 'Сверь проект с приложенной планировкой: стены, размеры, проёмы, помещения'
+          : 'Проверь проект на ошибки и несоответствие нормам')
+    ),
     at: new Date().toISOString(),
     status: 'checked',
     notes: [],
     rounds: 0
   };
+  if (imgs.length) {
+    run.imgKey = 'c' + Date.now().toString(36);
+    run.img = imgs.map(f => f.name || 'изображение');
+    AG_IMGS.set(run.imgKey, imgs);
+  }
   AGS.run = run;
   agSet('checking', 'Проверяю проект…');
   try {
     const c = (await agCheck(run, false)) || {};
-    run.id = 'c' + Date.now().toString(36);
+    run.id = run.imgKey || 'c' + Date.now().toString(36);
     run.notes = (Array.isArray(c.notes) ? c.notes : []).slice(0, 60).map(n => ({
       id: n && n.id != null ? n.id : null,
       lvl: ['bad', 'warn', 'info'].includes(n && n.lvl) ? n.lvl : 'warn',
@@ -97070,25 +97137,29 @@ function agParseJSON(t) {
   throw { code: 'invalid_json', message: 'В ответе модели нет JSON', text: s };
 }
 /**
- * Ask the model for one JSON value. opts: { tier: 'quick'|'default'|'complex', signal, what } (what — for the log).
+ * Ask the model for one JSON value. opts: { tier: 'quick'|'default'|'complex', signal, what, images?: Blob[] }
+ * (what — for the log; images — PNG/JPG plans the model looks at).
  * Rejects { code, message } — 'no_model' when nothing is reachable.
  */
 async function agAskJSON(prompt, opts = {}) {
   const tier = opts.tier || 'default';
   const t0 = Date.now();
-  const rec = { what: opts.what || '', tier, bytes: prompt.length, ms: 0, ok: false, via: '' };
+  const imgs = (opts.images || []).filter(Boolean);
+  const rec = { what: opts.what || '', tier, bytes: prompt.length, img: imgs.length, ms: 0, ok: false, via: '' };
   AG.log.push(rec);
   if (AG.log.length > 200) AG.log.shift();
   try {
     let v;
     if (AG.mock) {
       rec.via = 'mock';
-      v = await AG.mock(prompt, { tier, what: opts.what });
+      v = await AG.mock(prompt, { tier, what: opts.what, images: imgs });
     } else {
       const s = await agSampler();
       if (s) {
         rec.via = 'claude';
-        v = await s.json(prompt, { modelTier: tier, signal: opts.signal });
+        const so = { modelTier: tier, signal: opts.signal };
+        if (imgs.length) so.images = imgs;
+        v = await s.json(prompt, so);
       } else if (agApiKey()) {
         rec.via = 'key';
         const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -97103,7 +97174,15 @@ async function agAskJSON(prompt, opts = {}) {
           body: JSON.stringify({
             model: AG_MODELS[tier] || AG_MODELS.default,
             max_tokens: 16000,
-            messages: [{ role: 'user', content: prompt + '\n\nОтветь только одним значением JSON, без пояснений.' }]
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  ...(await Promise.all(imgs.map(agImgBlock))),
+                  { type: 'text', text: prompt + '\n\nОтветь только одним значением JSON, без пояснений.' }
+                ]
+              }
+            ]
           })
         });
         const j = await r.json();
@@ -97125,6 +97204,39 @@ async function agAskJSON(prompt, opts = {}) {
     rec.ms = Date.now() - t0;
   }
 }
+/** A picture for the API: base64 block (large plans are scaled down to 1568 px on the long side). */
+async function agImgBlock(b) {
+  let blob = b;
+  try {
+    const bm = await createImageBitmap(b);
+    const k = Math.min(1, 1568 / Math.max(bm.width, bm.height));
+    if (k < 1 || !/png|jpe?g|webp|gif/.test(b.type)) {
+      const c = document.createElement('canvas');
+      c.width = Math.round(bm.width * k);
+      c.height = Math.round(bm.height * k);
+      c.getContext('2d').drawImage(bm, 0, 0, c.width, c.height);
+      blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    }
+  } catch (_) {}
+  const u8 = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return { type: 'image', source: { type: 'base64', media_type: blob.type || 'image/png', data: btoa(bin) } };
+}
+/** How many pictures one request may carry here (0 — pictures cannot be sent). */
+async function agImageMax() {
+  if (AG.mock) return 5;
+  const s = await agSampler();
+  if (s) {
+    try {
+      const L = await s.limits();
+      return (L && L.images && L.images.maxCount) || 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+  return agApiKey() ? 5 : 0;
+}
 /** Viewer-facing text for an error code. */
 function agErrText(e) {
   const c = (e && e.code) || '';
@@ -97137,6 +97249,8 @@ function agErrText(e) {
       invalid_json: 'Модель ответила не в том формате — попробуйте ещё раз или упростите задание.',
       prompt_too_large: 'Проект слишком большой для одного запроса — сузьте задание.',
       cancelled: 'Остановлено.',
+      images_unavailable: 'Здесь нельзя отправить изображения модели — опишите планировку текстом.',
+      image_rejected: 'Изображение не принято: нужен PNG или JPG до 20 МБ.',
       refused: 'Модель отказалась выполнять это задание — переформулируйте.'
     }[c] || 'Ошибка связи с моделью: ' + ((e && e.message) || c)
   );
@@ -97156,8 +97270,33 @@ function agErrText(e) {
 
 
 
-const AGP = { err: '', where: null, task: '', edit: false, key: false };
-const AG_SRC = { dwg: 'чертёж', tz: 'ТЗ', text: 'задание', assumed: 'допущение' };
+const AGP = { err: '', where: null, task: '', edit: false, key: false, imgs: [], imax: 0 };
+const AG_IMG_RX = /^image\/(png|jpe?g|webp)$/;
+const agUrls = new WeakMap();
+const agUrl = f => {
+  if (!agUrls.has(f)) agUrls.set(f, URL.createObjectURL(f));
+  return agUrls.get(f);
+};
+/** Takes plan pictures (PNG/JPG) from a file picker, a drop or a paste. */
+function agAddImages(list) {
+  const fs = [...(list || [])].filter(f => f && AG_IMG_RX.test(f.type));
+  if (!fs.length) return false;
+  const max = AGP.imax || 5;
+  AGP.imgs = AGP.imgs.concat(fs).slice(0, max);
+  if (AGP.imgs.length >= max && fs.length) AGP.err = `Не больше ${max} изображений за раз.`;
+  const t = document.getElementById('agTask');
+  if (t) AGP.task = t.value;
+  renderAgent();
+  return true;
+}
+function agImgStrip(L, del) {
+  if (!L.length) return '';
+  return `<div class="ag-imgs">${L.map(
+    (f, i) =>
+      `<figure><img src="${agUrl(f)}" alt="${esc(f.name || 'план')}" title="${esc(f.name || '')}">${del ? `<button data-ag="imgdel" data-id="${i}" title="Убрать изображение" aria-label="Убрать изображение">✕</button>` : ''}</figure>`
+  ).join('')}</div>`;
+}
+const AG_SRC = { dwg: 'чертёж', img: 'изображение', tz: 'ТЗ', text: 'задание', assumed: 'допущение' };
 const AG_LVL = { bad: 'Ошибка', warn: 'Внимание', info: 'Подсказка' };
 const agEntName = e =>
   ({ wall: 'Стена', door: 'Дверь', window: 'Окно', floorz: 'Помещение', fix: 'Прибор', dev: 'Устройство' })[e.type] ||
@@ -97169,7 +97308,10 @@ function agBox() {
 function renderAgent() {
   const el = agBox();
   if (!el || el.closest('#secAgent').hidden) return;
-  if (AG.mock) AGP.where = 'mock';
+  if (AG.mock) {
+    AGP.where = 'mock';
+    AGP.imax = AGP.imax || 5;
+  }
   const run = AGS.run;
   const busy = ['understanding', 'building', 'checking'].includes(AGS.phase);
   let h = '';
@@ -97182,6 +97324,7 @@ function renderAgent() {
     h += `<div class="ag-busy"><span class="ag-dot"></span>${esc(AGS.msg || 'Работаю…')}</div><button class="btn" data-ag="stop">Стоп</button>`;
   } else if (AGS.phase === 'confirm' && run && run.und) {
     const u = run.und;
+    h += agImgStrip(agImages(run.id), false);
     h += `<div class="ag-h">Как я понял</div>${run.und.scope ? `<div class="hint">${esc(u.scope)}</div>` : ''}`;
     h += agUl(u.summary);
     if (u.assumptions.length) h += `<div class="ag-h">Принимаю без источника</div>` + agUl(u.assumptions);
@@ -97191,9 +97334,11 @@ function renderAgent() {
   } else if (AGS.phase === 'review' && run) {
     h += agReport(run);
   } else {
-    h += `<label class="fl">Задание<textarea id="agTask" rows="5" placeholder="Например: квартира 6×9 м, кухня-гостиная, спальня, санузел; перегородки ГКЛ 100">${esc(AGP.task)}</textarea></label>
+    h += `<label class="fl">Задание<textarea id="agTask" rows="5" placeholder="Например: квартира 6×9 м, кухня-гостиная, спальня, санузел; перегородки ГКЛ 100. Можно приложить или вставить (Ctrl+V) картинку планировки">${esc(AGP.task)}</textarea></label>
+      ${agImgStrip(AGP.imgs, true)}
+      ${AGP.imax ? `<div class="ag-row"><button class="btn" data-ag="imgadd" title="Планировка PNG или JPG: скан, скриншот, фото, рисунок. Можно перетащить на панель или вставить Ctrl+V">+ Планировка…</button><input type="file" id="agImgIn" accept="image/png,image/jpeg,image/webp" multiple hidden></div>` : ''}
       <label class="fl ag-ck"><input type="checkbox" id="agEdit" ${AGP.edit ? 'checked' : ''}>Можно менять существующие объекты</label>
-      <div class="ag-row">${AG.paid ? '<button class="btn pri" data-ag="und">Понять задание</button>' : ''}<button class="btn" data-ag="check" title="Проверяющий агент: сверить проект с заданием и нормами (ничего не меняет)">Проверить проект</button></div>`;
+      <div class="ag-row">${AG.paid ? '<button class="btn pri" data-ag="und">Понять задание</button>' : ''}<button class="btn" data-ag="check" title="Проверяющий агент: сверить проект с заданием, приложенной планировкой и нормами (ничего не меняет)">Проверить проект</button></div>`;
   }
   h += agHistory();
   h += `<details class="ag-set"${AGP.key ? ' open' : ''}><summary>Настройки</summary>
@@ -97207,6 +97352,7 @@ function agReport(run) {
   const ents = run.id ? agRunEnts(run.id) : [];
   const open = ents.filter(e => e._aiLayer);
   let h = `<div class="ag-h">${run.status === 'checked' ? 'Проверка проекта' : 'Предложение агента'}</div>`;
+  h += agImgStrip(agImages(run.id), false);
   if (run.note) h += `<div class="hint">${esc(run.note)}</div>`;
   if (run.applied)
     h += `<div class="hint">Создано ${run.applied.created}, изменено ${run.applied.changed}, удалено ${run.applied.deleted}${run.fixed ? ` · исправлено по проверке ${run.fixed}` : ''} · кругов проверки ${run.rounds}</div>`;
@@ -97272,14 +97418,24 @@ function agClick(ev) {
   if (a === 'und') {
     AGP.task = v('agTask');
     AGP.edit = !!(document.getElementById('agEdit') || {}).checked;
-    agDo(() => agUnderstand(AGP.task, { edit: AGP.edit }));
-  } else if (a === 'reund') agDo(() => agUnderstand(AGP.task + '\nУточнения: ' + v('agCorr'), { edit: AGP.edit }));
+    agDo(() => agUnderstand(AGP.task, { edit: AGP.edit, images: AGP.imgs }));
+  } else if (a === 'reund')
+    agDo(() =>
+      agUnderstand(AGP.task + '\nУточнения: ' + v('agCorr'), {
+        edit: AGP.edit,
+        images: run ? agImages(run.id) : AGP.imgs
+      })
+    );
   else if (a === 'build') agDo(() => agBuild(v('agCorr')));
   else if (a === 'check') {
     AGP.task = v('agTask');
-    agDo(() => agCheckProject(AGP.task));
+    agDo(() => agCheckProject(AGP.task, AGP.imgs));
   } else if (a === 'stop') agStop();
   else if (a === 'cancel' || a === 'new') {
+    if (a === 'new') {
+      AGP.imgs = [];
+      AGP.task = '';
+    }
     AGS.phase = 'idle';
     AGS.run = null;
     renderAgent();
@@ -97294,6 +97450,13 @@ function agClick(ev) {
     (a === 'acc1' ? agAcceptRun : agRejectRun)(run.id, [+id]);
     AGS.phase = agRunEnts(run.id).some(e => e._aiLayer) ? 'review' : 'idle';
     if (AGS.phase === 'idle') AGS.run = null;
+    renderAgent();
+  } else if (a === 'imgadd') {
+    const inp = document.getElementById('agImgIn');
+    if (inp) inp.click();
+  } else if (a === 'imgdel') {
+    AGP.task = v('agTask');
+    AGP.imgs.splice(+id, 1);
     renderAgent();
   } else if (a === 'show') selectAndShow(+id);
   else if (a === 'open') {
@@ -97312,19 +97475,47 @@ function initAgent() {
   AGS.onChange = renderAgent;
   el.addEventListener('click', agClick);
   el.addEventListener('change', ev => {
+    if (ev.target.id === 'agImgIn') {
+      agAddImages(ev.target.files);
+      return;
+    }
     if (ev.target.id === 'agKey') {
       agApiKey(ev.target.value.trim());
       AGP.key = true;
-      agWhere().then(w => {
-        AGP.where = w;
-        renderAgent();
-      });
+      agWhere()
+        .then(w => {
+          AGP.where = w;
+          return agImageMax();
+        })
+        .then(n => {
+          AGP.imax = n;
+          renderAgent();
+        });
     }
   });
-  agWhere().then(w => {
-    AGP.where = w;
-    renderAgent();
+  // a picture dropped on the panel or pasted into the task
+  el.addEventListener('dragover', ev => {
+    if (ev.dataTransfer && [...ev.dataTransfer.items].some(i => i.kind === 'file')) ev.preventDefault();
   });
+  el.addEventListener('drop', ev => {
+    if (ev.dataTransfer && ev.dataTransfer.files.length && AGS.phase === 'idle') {
+      ev.preventDefault();
+      agAddImages(ev.dataTransfer.files);
+    }
+  });
+  el.addEventListener('paste', ev => {
+    const fs = ev.clipboardData ? [...ev.clipboardData.files] : [];
+    if (fs.length && AGS.phase === 'idle' && agAddImages(fs)) ev.preventDefault();
+  });
+  agWhere()
+    .then(w => {
+      AGP.where = w;
+      return agImageMax();
+    })
+    .then(n => {
+      AGP.imax = n;
+      renderAgent();
+    });
 }
 
 // ===== drafting/vertex-edit.js =====
@@ -104570,7 +104761,7 @@ function agApply(ops, ctx) {
   };
   const add_ = (op, e, lay) => {
     e.id = S.nextId++;
-    e.ai = { run: runId, src: ['dwg', 'tz', 'text', 'assumed'].includes(op.src) ? op.src : 'assumed' };
+    e.ai = { run: runId, src: ['dwg', 'img', 'tz', 'text', 'assumed'].includes(op.src) ? op.src : 'assumed' };
     if (op.why) e.ai.why = String(op.why);
     if (op.conf) e.ai.conf = op.conf;
     e._aiLayer = ensureLayer(lay);
