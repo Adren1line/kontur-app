@@ -7095,7 +7095,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '56';
+const APP_VER = '57';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12446,6 +12446,8 @@ function changed() {
   }
   // fix-ups after an edit (free wall ends joined to the walls they touch, …)
   if (uiHooks.afterEdit) uiHooks.afterEdit();
+  // the caches of geometry (walls) are keyed by docVer: bump it before the fix-ups read them, and after they wrote
+  documentState.docVer++;
   if (uiHooks.onChanged) uiHooks.onChanged();
   documentState.docVer++;
   save();
@@ -13352,7 +13354,8 @@ function transformSel(fn, dA, copy) {
     const n = mapEnt(e, fn, dA);
     out.push([e, n]);
   }
-  for (const e of es)
+  // the openings of a chosen wall go with it even when they are not chosen themselves (a copy gets its own)
+  for (const e of S.ents)
     if ((e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted)) && selIds.has(e.host))
       out.push([e, JSON.parse(JSON.stringify(e))]);
   if (copy) {
@@ -13363,7 +13366,15 @@ function transformSel(fn, dA, copy) {
       created.push(n);
     }
     for (const n of created) {
-      if ((n.type === 'door' || n.type === 'window' || (XT[n.type] && XT[n.type].hosted)) && idMap.has(n.host))
+      // wall devices copied with their wall belong to the copy
+      if (
+        (n.type === 'door' ||
+          n.type === 'window' ||
+          n.type === 'dev' ||
+          n.type === 'fix' ||
+          (XT[n.type] && XT[n.type].hosted)) &&
+        idMap.has(n.host)
+      )
         n.host = idMap.get(n.host);
       if (n.type === 'wire' || n.type === 'duct') {
         n.from = idMap.has(n.from) ? idMap.get(n.from) : null;
@@ -14862,6 +14873,11 @@ function submit() {
   }
   if (wantsPoint() && !(commandsState.cmd.allowSpace && commandsState.cmd.allowSpace())) {
     const low = s.toLowerCase();
+    // «нет» answers a yes/no question of the command before it means «no snap for this point»
+    if (OVR.none && OVR.none.includes(low) && commandsState.cmd.onInput) {
+      const r = commandsState.cmd.onInput(s);
+      if (r) return finishIf(r);
+    }
     if (['от', 'from', 'fro'].includes(low)) return applyOverride('from');
     if (['м2т', 'm2p', 'mtp', 'сер2'].includes(low)) return applyOverride('m2p');
     for (const [k, ws] of Object.entries(OVR)) if (ws.includes(low)) return applyOverride(k);
@@ -18252,6 +18268,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19127,7 +19144,10 @@ function sync3D(force) {
     if (!L) continue;
     const k0 = key3(e);
     if (k0 === null) continue;
-    const k = e.type === 'wall' || e.type === 'inst' || e.type === 'slab' ? k0 : k0 + '|q' + meshState.TQK;
+    const k =
+      e.type === 'wall' || e.type === 'inst' || e.type === 'slab'
+        ? k0
+        : k0 + '|q' + meshState.TQK + '|s' + skinsState.ver;
     seen.add(e.id);
     let o = V3.objs.get(e.id);
     if (!o || o.key !== k) {
@@ -20721,6 +20741,7 @@ function wheelModeMenu() {
 
 
 
+
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -20920,6 +20941,7 @@ const MENUS = [
       { n: 'Каталог моделей…', a: () => openCatalog() },
       { n: 'Каталог моделей сантехники…', a: () => openSanLib() },
       { n: 'Контур Конвертор…', k: 'модели → каталог', a: () => openConverter() },
+      { n: 'Свои модели изделий…', k: 'своя графика заводских', a: () => openSkins() },
       { h: 'Инженерные системы' },
       { n: 'Группы и системы…', a: () => openMEP('el') },
       { n: 'Щит…', a: () => openMEP('panel') },
@@ -22569,7 +22591,17 @@ function fieldSet(e, k, raw) {
       e[k] = raw;
       return;
     case 't':
-      if (isFinite(v)) e.t = v;
+      if (isFinite(v) && (e.type === 'door' || e.type === 'window')) {
+        // an opening stays inside its wall
+        const w = byId(e.host);
+        const L = w && w.a && w.b ? dist(w.a, w.b) : Infinity;
+        const hw = (+e.w || 0) / 2;
+        if (v - hw < -1 || v + hw > L + 1) {
+          log(`Проём не помещается в стену: положение ${Math.round(hw)}…${Math.round(L - hw)} мм`, true);
+          return;
+        }
+        e.t = v;
+      } else if (isFinite(v)) e.t = v;
       return;
   }
   if (!isFinite(v)) return;
@@ -23331,7 +23363,10 @@ function updateProps() {
         const k = inp.dataset.f;
         if (inp.tagName === 'SELECT' && inp.value === '') return;
         pushUndo();
+        const was = documentState.undoS[documentState.undoS.length - 1];
         for (const x of targets) fieldSet(x, k, inp.type === 'checkbox' ? inp.checked : inp.value);
+        // a refused change leaves no empty undo step
+        if (snapshot() === was) documentState.undoS.pop();
         syncWalls();
         changed();
       })
@@ -23633,7 +23668,7 @@ function renderCatDetail() {
   const pr = Object.entries(a.props || {});
   const used = S.ents.filter(e => e.type === 'inst' && e.asset === a.id).length;
   el.innerHTML = `<div class="big">${thumbHtml(a)}</div>
-  <div class="btnrow"><button class="btn pri" id="cdIns">Вставить в проект</button>${a.builtin ? '' : '<button class="btn" id="cdDel">Удалить из каталога</button>'}${!a.builtin && a.meshes ? '<button class="btn" id="cdConv">Открыть в конверторе</button>' : ''}</div>
+  <div class="btnrow"><button class="btn pri" id="cdIns">Вставить в проект</button>${a.builtin ? '' : '<button class="btn" id="cdDel">Удалить из каталога</button>'}${!a.builtin && a.meshes ? '<button class="btn" id="cdConv">Открыть в конверторе</button>' : ''}${a.meshes ? `<button class="btn" data-skopen="" data-skasset="${esc(a.id)}" title="Поставить эту модель вместо заводской графики розетки, смесителя, ручки и других изделий">Вместо заводского изделия…</button>` : ''}</div>
   <label>Название<input type="text" id="cdName" value="${esc(a.name)}"></label>
   <label>Категория<select id="cdCat">${CATS.map(c => `<option ${c[0] === a.cat ? 'selected' : ''}>${c[0]}</option>`).join('')}</select></label>
   <label>Теги, через запятую<input type="text" id="cdTags" value="${esc((a.tags || []).join(', '))}"></label>
@@ -31717,6 +31752,7 @@ XT.load = {
 
 
 
+
 /* ---------- water supply, sewage, heating pipes ---------- */
 const PSYS = {
   hvs: { n: 'В1', full: 'Холодная вода (ХВС)', col: '#4a8ef0', g: 'hvs', kind: 'water' },
@@ -31748,7 +31784,17 @@ function pipeZ(e) {
 function portsOf(f) {
   const K = FIXK[f.kind];
   if (!K) return [];
+  // a user model of the fixture brings its own connection anchors: the pipes go to them
+  const own = skinGet('fix.' + f.kind) ? skinAnchors('fix.' + f.kind) : null;
   return K.ports(f).map(q => {
+    if (own) {
+      const kk = q.s === 'ot' ? 'heat' : q.s;
+      const a = own.find(o => !o.used && o.k === kk);
+      if (a) {
+        a.used = true;
+        q = { ...q, x: a.p[0], y: a.p[1], z: a.p[2] };
+      }
+    }
     const p = LP(f, q.x, q.y);
     return { ...q, p, z: (f.z || 0) + q.z, fix: f };
   });
@@ -32766,6 +32812,7 @@ defineTools({
  *
  * Plumbing fixtures registry FIXK and the fixture element type.
  */
+
 
 
 
@@ -33839,7 +33886,8 @@ XT.fix = {
     const K = FIXK[e.kind];
     if (!K) return null;
     const mb = MB(xfLocal(e, e.z || 0));
-    K.build(mb, e);
+    // the user's own model of this fixture kind stands in the same place, the connections stay
+    if (!skinPut(mb, 'fix.' + e.kind, null, K.n)) K.build(mb, e);
     return meshGroup(mb.meshes(), { edges: true });
   },
   group: e => (FIXK[e.kind] || {}).n || 'Прибор',
@@ -35770,6 +35818,7 @@ const sanShade = (c, k) => rgbHex(hex2rgb(c).map(v => v * k));
 
 
 
+
 /* GROHE mixers, shower systems and hygienic showers
    Only real catalogue items: every selectable variant is an existing
    article with its price (KZT, shop.grohe.kz unless noted).
@@ -36370,11 +36419,14 @@ function mixerPortsAt(M, Z, x0, deck, wz) {
   ];
 }
 function drawMixerFull(mb, M, Z, x0, y0, deck, wz, col) {
+  const own = 'mix.' + M.id;
   if (M.mount === 'wall') {
-    drawWallMixer(mb, M, Z, x0, wz, col);
+    if (!skinPut(mb, own, (x, y, z) => [x0 - x, -y, wz + z], M.n || 'Смеситель', col || CHR))
+      drawWallMixer(mb, M, Z, x0, wz, col);
     return;
   }
-  drawDeckMixer(mb, M, Z, x0, y0, deck, col);
+  if (!skinPut(mb, own, (x, y, z) => [x0 - x, y0 - y, deck + z], M.n || 'Смеситель', col || CHR))
+    drawDeckMixer(mb, M, Z, x0, y0, deck, col);
   mb.tag('Угловые вентили и подводка');
   for (const s of [-1, 1]) {
     const vx = x0 + s * 80;
@@ -38417,6 +38469,7 @@ function tilePanel(w, z, i) {
 
 
 
+
 /* manifold node constructor (water / heating / underfloor):
    chains of real components on inlets and outlets, plumber or owner-friendly
    valves, auto-build from fixtures, 3D block with connection points */
@@ -39086,6 +39139,14 @@ function mfPart(mb, it, hot, name) {
     }
     mb.smooth(false);
     return;
+  }
+  // the user's own model of this part kind: laid along the run and stretched to its length
+  const own = 'mf.' + k.k,
+    ownS = skinGet(own);
+  if (ownS) {
+    const f = skinFit(own, ownS);
+    const sc = f && f.size[0] > 1 ? len / (f.size[0] * (+ownS.scale > 0 ? +ownS.scale : 1)) : 1;
+    if (skinPut(mb, own, (x, y, z) => at(x * sc, z * sc, y * sc), name || M.n, M.col || BR)) return;
   }
   switch (k.k) {
     case 'ball':
@@ -57286,9 +57347,11 @@ function cutHull(P_) {
  * Outlines that cut the floor (where 'floor') or the ceiling ('ceil') of the current level:
  * [{ e, poly: [{x,y}], q: [[x,y]] convex CCW, box: [x0,y0,x1,y1] }].
  */
-function planCutters(where) {
+function planCutters(where, lv) {
   const out = [];
   for (const e of S.ents) {
+    // the specification walks all levels at once: a zone is cut only by what stands on its own level
+    if (lv !== undefined && e.__lv !== undefined && e.__lv !== lv) continue;
     let poly = null;
     try {
       const X = XT[e.type];
@@ -57376,9 +57439,9 @@ function cutPolys(polys, cutters) {
   return cur;
 }
 /** Cutters that boxOverlap the zone polygon ({x,y} points). */
-function cuttersIn(pts, where) {
+function cuttersIn(pts, where, lv) {
   const b = cutBoxOf(pts.map(p => [p.x, p.y]));
-  return planCutters(where).filter(c => boxOverlap(b, c.box));
+  return planCutters(where, lv).filter(c => boxOverlap(b, c.box));
 }
 /** 2D: limits the following drawing to the zone minus the cutters (even–odd clip); call inside ctx.save(). */
 function clipZone(pts, cutters) {
@@ -57529,8 +57592,8 @@ const segsOf = q => q.map((p, i) => [p, q[(i + 1) % q.length]]);
  * A zone outline with the cutters that cross its edge taken out (columns at walls, shafts in corners):
  * { pts, holes } — holes are the cutters lying fully inside. Cached by the caller.
  */
-function zoneMinusCutters(pts, where) {
-  const cuts = cuttersIn(pts, where);
+function zoneMinusCutters(pts, where, lv) {
+  const cuts = cuttersIn(pts, where, lv);
   if (!cuts.length) return { pts, holes: [] };
   const inP = (x, y, q) => {
     let c = false;
@@ -57876,7 +57939,7 @@ function cutTris(T, cuts) {
   return out;
 }
 function floorBuild(z, mb) {
-  const cuts = cuttersIn(z.pts, 'floor');
+  const cuts = cuttersIn(z.pts, 'floor', z.__lv);
   const T = cutTris(zoneTris(z), cuts);
   const Ls = zoneLayerFns(z);
   const poly = z.pts;
@@ -58026,7 +58089,7 @@ XT.floorz = {
     const fc = fin ? FLK[fin.k].col : '#c9c4b8';
     if (!ghost) {
       // the fill and the covering stop at columns, convectors, floor boxes, drains
-      const cuts = cuttersIn(e.pts, 'floor');
+      const cuts = cuttersIn(e.pts, 'floor', e.__lv);
       ctx.save();
       if (cuts.length) clipZone(e.pts, cuts);
       pathPoly(e.pts);
@@ -59313,7 +59376,7 @@ function coverLayout(z) {
       })(),
       cc,
       cc.on && cc.mat !== 'carpet' ? coverTrans(z, cc).map(t => [t.o.id, t.rect, t.depth]) : 0,
-      cuttersIn(z.pts, 'floor').map(k => k.q)
+      cuttersIn(z.pts, 'floor', z.__lv).map(k => k.q)
     ]);
   } catch (err) {
     key = null;
@@ -59519,7 +59582,7 @@ function coverLayout0(z) {
     }
   }
   // pieces around convectors, columns, floor boxes, drain grates: cut out, counted as cut pieces
-  const cuts = cuttersIn(z.pts, 'floor');
+  const cuts = cuttersIn(z.pts, 'floor', z.__lv);
   if (cuts.length) {
     const np = [];
     for (const pc of R.pieces) {
@@ -59839,7 +59902,7 @@ function coverMesh(z, mb, f) {
   const jcol = M.wood ? fcShade(c.col, 0.55) : '#bcbab4';
   // grout / seam base just below the pieces
   mb.tag('Швы покрытия');
-  const cuts = cuttersIn(z.pts, 'floor');
+  const cuts = cuttersIn(z.pts, 'floor', z.__lv);
   for (const q of [z.pts, ...R.trans.filter(t => t.depth > 0).map(t => t.rect)]) {
     const P_ = q.map(p => [p.x, p.y]);
     const T0 = triPolyXY(P_).map(t => t.map(i => P_[i]));
@@ -66474,6 +66537,7 @@ FIXK.riserK = {
 
 
 
+
 /* детальные электроустановочные изделия: евророзетка (Schuko, заземляющие контакты, шторки), RJ45 (кейстоун, контакты, шторка),
    ТВ (F-разъём), USB, клавиши выключателей; рамки со скруглением. Светильники: споты (встраиваемые, накладные, гипсовые, скрытые для натяжного),
    люстры, подвесы, бра (выключатель на группе или на самом светильнике)
@@ -66700,7 +66764,7 @@ function mechBlank2(mb, cx, cz, st, mc, k) {
 }
 /* frame: outer soft (AtlasDesign) or thin flat (ArtGallery) profile, one window per post */
 function frameS(mb, cx, cz, W, H, n, orient, fc, sk) {
-  const st = MSTY[sk];
+  const st = MSTY[sk] || MSTY.atlas;
   const T = st.fTop;
   const ring = (a, b, r, w) => fRing(cx, cz, rrRing2(cx, cz, a, b, r, w));
   mb.smooth(true);
@@ -66749,12 +66813,23 @@ function blkMeshes(e) {
   const P_ = 71,
     Wd = 85 + P_ * (n - 1);
   const sk = serKey(b);
-  const st = MSTY[sk];
+  const own = sk === 'own';
+  const st = MSTY[sk] || MSTY.atlas;
   const fc = b.frameCol;
   const mc = mechHex(b);
-  if (sk !== 'flush') {
-    if (b.orient === 'v') frameS(mb, 0, z, 85, Wd, n, 'v', fc, sk);
-    else frameS(mb, 0, z, Wd, 85, n, 'h', fc, sk);
+  // the user's own frame model: made horizontal, a vertical block turns it
+  const ownFrame =
+    own &&
+    skinPut(
+      mb,
+      'el.frame.' + n,
+      b.orient === 'v' ? (x, y, zz) => [zz, y, z - x] : (x, y, zz) => [x, y, z + zz],
+      'Рамка · ' + skinsName(),
+      fc
+    );
+  if (sk !== 'flush' && !ownFrame) {
+    if (b.orient === 'v') frameS(mb, 0, z, 85, Wd, n, 'v', fc, own ? 'atlas' : sk);
+    else frameS(mb, 0, z, Wd, 85, n, 'h', fc, own ? 'atlas' : sk);
   }
   for (let i = 0; i < n; i++) {
     const k = b.mods[i] || 'blank';
@@ -66762,6 +66837,11 @@ function blkMeshes(e) {
     const cx = b.orient === 'v' ? 0 : o,
       cz = b.orient === 'v' ? z - o : z;
     const M = MODK[k] || {};
+    if (
+      own &&
+      skinPut(mb, 'el.mech.' + k, (x, y, zz) => [cx + x, y, cz + zz], (M.n || 'Механизм') + ' · ' + skinsName(), mc)
+    )
+      continue;
     {
       const F = faceMB(mb, cx, cz);
       mb.tag('Суппорт механизма');
@@ -66807,13 +66887,14 @@ function blkSpec(e, put) {
     n = Math.max(1, b.posts | 0);
   const S_ = 'Электроустановочные изделия (модульно)';
   const sk = serKey(b);
+  const serN = sk === 'own' ? skinsName() : b.series;
   const fr = b.fcol === 'как механизм' ? b.col : b.fcol === 'свой' ? 'по образцу' : b.fcol;
   if (sk !== 'flush')
     put(
       S_,
       'fr' + n + b.orient + b.series + fr + b.fmat,
       {
-        name: `Рамка ${n}-постовая${n > 1 ? (b.orient === 'v' ? ' вертикальная' : ' горизонтальная') : ''} ${blkSize(b)} · ${b.series}${sk === 'gal' && b.fmat !== 'plastic' ? ' · ' + GAL_FMAT[b.fmat].n : ''}, ${fr}`,
+        name: `Рамка ${n}-постовая${n > 1 ? (b.orient === 'v' ? ' вертикальная' : ' горизонтальная') : ''} ${blkSize(b)} · ${serN}${sk === 'gal' && b.fmat !== 'plastic' ? ' · ' + GAL_FMAT[b.fmat].n : ''}, ${fr}`,
         u: 'шт'
       },
       r => {
@@ -66822,7 +66903,7 @@ function blkSpec(e, put) {
       }
     );
   for (const k of b.mods.slice(0, n))
-    put(S_, 'm' + k + b.series + b.col, { name: `${(MODK[k] || {}).n} · ${b.series}, ${b.col}`, u: 'шт' }, r => {
+    put(S_, 'm' + k + b.series + b.col, { name: `${(MODK[k] || {}).n} · ${serN}, ${b.col}`, u: 'шт' }, r => {
       r.q++;
       r.ids.push(e.id);
     });
@@ -78740,7 +78821,7 @@ const HOST_REACH = 600;
 const isWallDev = d => d.type === 'dev' && !!DEVK[d.kind] && DEVK[d.kind].mount === 'wall' && !d.free;
 
 /** The nearest visible wall to point p, with the place on it: { w, t, side } or null. */
-function nearestWallFace(p, reach = HOST_REACH, arcs = false) {
+function nearestWallFace(p, reach = HOST_REACH, arcs = false, prefer = null) {
   let best = null,
     bd = Infinity;
   for (const w of S.ents) {
@@ -78750,8 +78831,9 @@ function nearestWallFace(p, reach = HOST_REACH, arcs = false) {
     if (w.type !== 'wall' || !visible(w) || (A && !arcs)) continue;
     const q = A ? arcPt(A, Math.max(0, Math.min(A.L, arcLocal(A, p)[0])), 0) : segPt(w.a, w.b, p);
     const d = Math.max(0, dist(q, p) - w.th / 2);
-    if (d < reach && d < bd) {
-      bd = d;
+    // prefer — the wall the device already hangs on wins a tie (a copied wall lying on the same line)
+    if (d < reach && (d < bd || (w === prefer && d <= bd + 0.5))) {
+      bd = Math.min(bd, d);
       best = w;
     }
   }
@@ -78784,7 +78866,7 @@ function rehostDevices() {
     const moved = !d._hp || Math.abs(d._hp.x - d.p.x) > 0.5 || Math.abs(d._hp.y - d.p.y) > 0.5;
     if (moved || !w || d.ht == null || !d.hs) {
       // first time, or the user moved the device: attach to the nearest wall at its place
-      const f = nearestWallFace(d.p);
+      const f = nearestWallFace(d.p, HOST_REACH, false, w);
       if (!f) {
         if (d.host != null && !w) d.host = null;
         d._hp = { x: d.p.x, y: d.p.y };
@@ -78794,6 +78876,24 @@ function rehostDevices() {
       d.host = w.id;
       d.ht = Math.round(f.t * 10) / 10;
       d.hs = f.side;
+    } else if (d._ha && d._hb && w.a && w.b && !w.arc) {
+      // the wall start was trimmed or stretched along its own line (a joint recalculated, an end dragged) and the
+      // wall did not simply slide: the device keeps its place in the room, its distance from the start changes
+      const wi = wallInfo(w);
+      const da = sub(w.a, d._ha),
+        db = sub(w.b, d._hb);
+      const along = dot(da, wi.u);
+      if (
+        Math.abs(along) > 0.05 &&
+        Math.abs(dot(da, wi.n)) < 0.5 &&
+        Math.abs(dot(db, wi.n)) < 0.5 &&
+        Math.abs(dot(db, wi.u) - along) > 0.05
+      )
+        d.ht = Math.round((d.ht - along) * 10) / 10;
+    }
+    if (w.a && w.b) {
+      d._ha = { x: w.a.x, y: w.a.y };
+      d._hb = { x: w.b.x, y: w.b.y };
     }
     const F = facePlace(w, d.ht, d.hs);
     if (Math.abs(F.p.x - d.p.x) > 0.05 || Math.abs(F.p.y - d.p.y) > 0.05) n++;
@@ -97540,6 +97640,242 @@ function initAgent() {
     });
 }
 
+// ===== core/skins.js =====
+/**
+ * core/skins.js
+ *
+ * User models in place of the built-in graphics of factory items ("свои модели изделий"). A module declares a slot —
+ * a part it draws itself (a socket mechanism, a frame, a mixer, a glass hinge…): the local frame of the part, its
+ * envelope, how a model is seated in it and the connection anchors of the factory part. The user assigns a catalogue
+ * model (made in the converter, with its anchors) to a slot; the module then draws that model in the same frame, and
+ * everything else — the frame choice, the block layout, the wires and pipes, the specification — stays factory.
+ *
+ * Seating: a model whose anchor kinds match the anchors of the slot is seated by them (the model anchor comes to the
+ * factory connection point); otherwise by its bounding box, as the slot says (centre / back face / bottom).
+ * The assignment is local: it is kept in this browser, next to the model library.
+ */
+
+
+/** id → { id, grp, n, env: [w, d, h], align: { x, y, z }, anchors: [{ k, n, p: [x, y, z] }], hint, axis } */
+const SKIN_SLOTS = new Map();
+/** lazy — declares the slots that depend on the project (user mixer models) when one is first asked for. */
+const skinsState = { map: {}, ver: 0, name: 'Своя серия', lazy: null };
+const skinSlotOf = id => SKIN_SLOTS.get(id) || (skinsState.lazy && skinsState.lazy(id)) || null;
+const SKIN_LS = 'kontur.skins';
+const skinCache = new Map();
+
+/** Declares a slot. align: x 'c'|'min'|'max', y 'c'|'back'|'front', z 'c'|'b'|'t' — which face of the model box sits at the origin. */
+function skinSlot(id, def) {
+  SKIN_SLOTS.set(id, {
+    id,
+    env: [100, 100, 100],
+    align: { x: 'c', y: 'back', z: 'c' },
+    anchors: [],
+    axis: 'y',
+    ...def
+  });
+}
+function skinsLoad() {
+  try {
+    const o = JSON.parse(localStorage.getItem(SKIN_LS) || 'null');
+    if (o && o.map) {
+      skinsState.map = o.map;
+      skinsState.name = o.name || skinsState.name;
+    }
+  } catch (_) {
+    /* no storage: nothing assigned */
+  }
+  skinsState.ver++;
+}
+function skinsSave() {
+  try {
+    localStorage.setItem(SKIN_LS, JSON.stringify({ map: skinsState.map, name: skinsState.name }));
+  } catch (_) {
+    /* private mode: lives until the page closes */
+  }
+}
+/** The assignment of a slot with its model present, or null. */
+function skinGet(id) {
+  const s = skinsState.map[id];
+  return s && s.asset && ASSETS.has(s.asset) ? s : null;
+}
+/** Assigns (entry: { asset, rot, flip, scale, dx, dy, dz, tint, by }) or clears (null) a slot. */
+function skinSet(id, entry) {
+  if (entry && entry.asset) skinsState.map[id] = { rot: 0, scale: 1, dx: 0, dy: 0, dz: 0, ...entry };
+  else delete skinsState.map[id];
+  skinsState.ver++;
+  skinCache.clear();
+  skinsSave();
+}
+function skinsName(n) {
+  if (n != null) {
+    skinsState.name = String(n).trim() || 'Своя серия';
+    skinsState.ver++;
+    skinsSave();
+  }
+  return skinsState.name;
+}
+/** Slots that have a model assigned: [[id, entry]]. */
+const skinsUsed = () => Object.keys(skinsState.map).filter(id => skinGet(id));
+
+/** The transform of a model into the frame of its slot: p → [x, y, z]. */
+function skinXf(slot, s, a) {
+  const ax = slot.axis === 'z' ? 'z' : 'y';
+  const r = ((s.rot || 0) * Math.PI) / 180,
+    c = Math.cos(r),
+    sn = Math.sin(r);
+  const k = +s.scale > 0 ? +s.scale : 1;
+  const fl = s.flip ? -1 : 1;
+  // rotation about the mounting axis (the wall normal or the vertical), a mirror, the scale
+  const lin =
+    ax === 'y'
+      ? (x, y, z) => [(x * fl * c + z * sn) * k, y * k, (-x * fl * sn + z * c) * k]
+      : (x, y, z) => [(x * fl * c - y * sn) * k, (x * fl * sn + y * c) * k, z * k];
+  // seat: by the anchors when the kinds match, else by the box
+  let off = null;
+  const want = slot.anchors || [];
+  if (s.by !== 'bbox' && want.length && a.ports && a.ports.length) {
+    const pairs = [];
+    const used = new Set();
+    for (const w of want) {
+      const i = a.ports.findIndex((q, j) => !used.has(j) && q.k === w.k);
+      if (i >= 0) {
+        used.add(i);
+        pairs.push([w.p, lin(a.ports[i].x || 0, a.ports[i].y || 0, a.ports[i].z || 0)]);
+      }
+    }
+    if (pairs.length) {
+      off = [0, 0, 0];
+      for (const [w, q] of pairs) for (let i = 0; i < 3; i++) off[i] += (w[i] - q[i]) / pairs.length;
+    }
+  }
+  if (!off) {
+    const mn = [Infinity, Infinity, Infinity],
+      mx = [-Infinity, -Infinity, -Infinity];
+    const b = a.bbox || { min: [0, 0, 0], max: [0, 0, 0] };
+    for (const X of [b.min[0], b.max[0]])
+      for (const Y of [b.min[1], b.max[1]])
+        for (const Z of [b.min[2], b.max[2]]) {
+          const q = lin(X, Y, Z);
+          for (let i = 0; i < 3; i++) {
+            mn[i] = Math.min(mn[i], q[i]);
+            mx[i] = Math.max(mx[i], q[i]);
+          }
+        }
+    const al = slot.align || {};
+    const pick = (i, m) =>
+      m === 'c' ? (mn[i] + mx[i]) / 2 : m === 'min' || m === 'front' || m === 'b' ? mn[i] : mx[i];
+    off = [-pick(0, al.x || 'c'), -pick(1, al.y || 'back'), -pick(2, al.z || 'c')];
+  }
+  const d = [+s.dx || 0, +s.dy || 0, +s.dz || 0];
+  return (x, y, z) => {
+    const q = lin(x, y, z);
+    return [q[0] + off[0] + d[0], q[1] + off[1] + d[1], q[2] + off[2] + d[2]];
+  };
+}
+const skinLum = c => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+function skinHex(h) {
+  const n = parseInt(String(h).replace('#', ''), 16) || 0;
+  return [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+/**
+ * Meshes of the model of a slot in the slot frame: [{ pos, color, op }], or null when nothing is assigned.
+ * col — the colour of the factory part (mechanism, frame, metal finish): used when the assignment asks to tint.
+ */
+function skinMeshes(id, col) {
+  const s = skinGet(id),
+    slot = skinSlotOf(id);
+  if (!s || !slot) return null;
+  const key = id + '|' + (s.tint && col ? col : '');
+  if (skinCache.has(key)) return skinCache.get(key);
+  const a = ASSETS.get(s.asset);
+  const xf = skinXf(slot, s, a);
+  const tint = s.tint && col ? (Array.isArray(col) ? col : skinHex(col)) : null;
+  let top = 0;
+  if (tint) for (const m of a.meshes) top = Math.max(top, skinLum(m.color || [0.8, 0.8, 0.8]));
+  const out = a.meshes.map(m => {
+    const p = m.pos,
+      pos = new Float32Array(p.length);
+    for (let i = 0; i < p.length; i += 3) {
+      const q = xf(p[i], p[i + 1], p[i + 2]);
+      pos[i] = q[0];
+      pos[i + 1] = q[1];
+      pos[i + 2] = q[2];
+    }
+    if (s.flip)
+      // a mirror turns the triangles inside out
+      for (let i = 0; i < pos.length; i += 9)
+        for (let j = 0; j < 3; j++) {
+          const t = pos[i + 3 + j];
+          pos[i + 3 + j] = pos[i + 6 + j];
+          pos[i + 6 + j] = t;
+        }
+    let color = m.color || [0.8, 0.8, 0.8];
+    if (tint) {
+      // keep the light-and-dark of the model, take the hue of the factory part
+      const f = 0.55 + 0.45 * (top > 0 ? skinLum(color) / top : 1);
+      color = [tint[0] * f, tint[1] * f, tint[2] * f];
+    }
+    return { pos, color, op: m.op ?? 1 };
+  });
+  skinCache.set(key, out);
+  return out;
+}
+/**
+ * Draws the model of a slot into a mesh builder: map(x, y, z) takes slot coordinates to the coordinates of the
+ * builder. Returns false when the slot has no model (the caller then draws the factory part).
+ */
+function skinPut(mb, id, map, tag, col) {
+  const ms = skinMeshes(id, col);
+  if (!ms) return false;
+  if (tag != null) mb.tag(tag);
+  // through the builder, triangle by triangle: its own transform (the frame of the element) applies
+  for (const m of ms) {
+    const p = m.pos;
+    const at = i => (map ? map(p[i], p[i + 1], p[i + 2]) : [p[i], p[i + 1], p[i + 2]]);
+    for (let i = 0; i + 8 < p.length; i += 9) mb.tri3(m.color, at(i), at(i + 3), at(i + 6), m.op);
+  }
+  return true;
+}
+/**
+ * Anchors of the model of a slot, in the slot frame: [{ k, n, d, p: [x, y, z] }]; kind — only these kinds.
+ * The factory part takes its connection points from here when the model has them.
+ */
+function skinAnchors(id, kind) {
+  const s = skinGet(id),
+    slot = skinSlotOf(id);
+  if (!s || !slot) return [];
+  const a = ASSETS.get(s.asset);
+  if (!a.ports || !a.ports.length) return [];
+  const xf = skinXf(slot, s, a);
+  return a.ports
+    .filter(q => !kind || q.k === kind)
+    .map(q => ({ k: q.k, n: q.n || '', d: q.d || 0, p: xf(q.x || 0, q.y || 0, q.z || 0) }));
+}
+/** The size of the seated model against the envelope of the slot: { size: [w, d, h], fit } — fit is the scale that would fill the envelope. */
+function skinFit(id, entry) {
+  const slot = skinSlotOf(id),
+    a = entry && ASSETS.get(entry.asset);
+  if (!slot || !a || !a.bbox) return null;
+  const xf = skinXf(slot, { ...entry, scale: 1, dx: 0, dy: 0, dz: 0, by: 'bbox' }, a);
+  const mn = [Infinity, Infinity, Infinity],
+    mx = [-Infinity, -Infinity, -Infinity];
+  for (const X of [a.bbox.min[0], a.bbox.max[0]])
+    for (const Y of [a.bbox.min[1], a.bbox.max[1]])
+      for (const Z of [a.bbox.min[2], a.bbox.max[2]]) {
+        const q = xf(X, Y, Z);
+        for (let i = 0; i < 3; i++) {
+          mn[i] = Math.min(mn[i], q[i]);
+          mx[i] = Math.max(mx[i], q[i]);
+        }
+      }
+  const size = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]];
+  // the face of the part decides: width and height for a wall item, the footprint for a floor item
+  const ia = slot.axis === 'z' ? [0, 1] : [0, 2];
+  const fit = Math.min(...ia.map(i => (size[i] > 0.01 ? slot.env[i] / size[i] : 1)));
+  return { size, fit };
+}
+
 // ===== drafting/vertex-edit.js =====
 /**
  * drafting/vertex-edit.js
@@ -102640,6 +102976,397 @@ function initShortLabels() {
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
+// ===== ui/skins-panel.js =====
+/**
+ * ui/skins-panel.js
+ *
+ * «Свои модели изделий»: the list of factory parts whose graphics can be replaced by a catalogue model (slots of
+ * core/skins.js), the assignment of a model to a part and its seating — turn, mirror, scale, shift, colour, by
+ * anchors or by the box. The slots of all modules are declared here, in one place.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const SK_ANCH = {
+  el: '230 В',
+  el3: '380 В',
+  low: 'слаботочка',
+  hvs: 'ХВС',
+  gvs: 'ГВС',
+  k: 'канализация',
+  heat: 'отопление'
+};
+
+/** Mixer models come from the sanitary library of the project and the browser: declared when the project is there. */
+function skMixSlots() {
+  let list = [];
+  try {
+    list = sanAll('mix');
+  } catch (_) {
+    return;
+  }
+  for (const m of list) {
+    if (SKIN_SLOTS.has('mix.' + m.id)) continue;
+    const wall = m.mount === 'wall';
+    skinSlot('mix.' + m.id, {
+      grp: 'Сантехника · смесители',
+      n: [m.brand, m.series, m.art].filter(Boolean).join(' '),
+      env: wall ? [220, 220, 140] : [60, 180, 320],
+      axis: wall ? 'y' : 'z',
+      align: wall ? { x: 'c', y: 'back', z: 'c' } : { x: 'c', y: 'c', z: 'b' },
+      anchors: wall
+        ? [
+            { k: 'gvs', n: 'ГВС (скрытая часть)', p: [40, 50, -70] },
+            { k: 'hvs', n: 'ХВС (скрытая часть)', p: [-40, 50, -70] }
+          ]
+        : [],
+      hint: wall
+        ? 'Настенный смеситель: задняя грань накладок на плоскости стены, излив от стены.'
+        : 'Смеситель на раковину или столешницу: низ корпуса на плоскости установки, излив вперёд (к −Y модели).'
+    });
+  }
+}
+/** Declares the slots of every module that can draw a user model. Called once at start. */
+function skinSlotsInit() {
+  for (let n = 1; n <= 5; n++)
+    skinSlot('el.frame.' + n, {
+      grp: 'Электрика · рамки',
+      n: `Рамка на ${n} ${n === 1 ? 'пост' : n < 5 ? 'поста' : 'постов'}`,
+      env: [85 + 71 * (n - 1), 12, 85],
+      hint: 'Модель горизонтальной рамки: задняя грань к стене, окна постов с шагом 71 мм. В вертикальном блоке рамка поворачивается сама.'
+    });
+  for (const [k, M] of Object.entries(MODK))
+    skinSlot('el.mech.' + k, {
+      grp: 'Электрика · механизмы',
+      n: M.n,
+      env: [56, 30, 56],
+      anchors: [{ k: M.weak ? 'low' : 'el', n: 'ввод кабеля (центр поста на стене)', p: [0, 0, 0] }],
+      hint: 'Механизм одного поста: центр — в центре окна рамки, задняя грань на плоскости стены.'
+    });
+  for (const [k, K] of Object.entries(FIXK)) {
+    let anchors = [];
+    try {
+      const e = { type: 'fix', kind: k, p: { x: 0, y: 0 }, rot: 0, z: 0, cfg: K.cfg ? K.cfg() : {} };
+      anchors = K.ports(e).map(q => ({ k: q.s === 'ot' ? 'heat' : q.s, n: q.n || '', p: [q.x, q.y, q.z] }));
+    } catch (_) {
+      /* a kind whose connections depend on the project: seated by the box */
+    }
+    skinSlot('fix.' + k, {
+      grp: 'Сантехника · приборы',
+      n: K.n,
+      env: [600, 500, 850],
+      axis: 'z',
+      align: { x: 'c', y: 'min', z: 'b' },
+      def: { rot: 180 },
+      anchors,
+      hint: 'Прибор целиком: стена сзади, пол снизу. Трубы подходят к якорям модели (ХВС, ГВС, канализация), если они заданы в конверторе.'
+    });
+  }
+  skMixSlots();
+  for (const [k, M] of Object.entries(MFC))
+    skinSlot('mf.' + k, {
+      grp: 'Коллектор · детали',
+      n: M.n,
+      env: [M.L || 60, 40, 40],
+      axis: 'z',
+      align: { x: 'min', y: 'c', z: 'c' },
+      hint: 'Деталь на прямом участке: ось трубы вдоль X модели, начало детали — в начале участка. Длина подгоняется под место детали в сборке.'
+    });
+  for (const [k, n] of Object.entries(GL_HANDLE))
+    if (k !== 'slot')
+      skinSlot('glass.handle.' + k, {
+        grp: 'Стекло · фурнитура',
+        n,
+        env: [40, 120, k === 'knob' ? 40 : 500],
+        align: { x: 'c', y: 'c', z: 'c' },
+        hint: 'Ручка стеклянной двери целиком, на обе стороны: плоскость стекла — середина модели по Y, центр — между отверстиями.'
+      });
+  skinSlot('glass.hingeW', {
+    grp: 'Стекло · фурнитура',
+    n: 'Петля стена–стекло',
+    env: [65, 60, 90],
+    align: { x: 'min', y: 'c', z: 'c' },
+    hint: 'Петля: плоскость стены — X = 0 модели, стекло уходит в +X, середина стекла — Y = 0.'
+  });
+  skinSlot('glass.clampW', {
+    grp: 'Стекло · фурнитура',
+    n: 'Коннектор стена–стекло',
+    env: [55, 55, 45],
+    align: { x: 'min', y: 'c', z: 'c' },
+    hint: 'Коннектор: плоскость стены — X = 0 модели, стекло уходит в +X, середина стекла — Y = 0.'
+  });
+  for (const [k, n] of [
+    ['rosette', 'Ручка двери на розетке'],
+    ['knob', 'Ручка-кноб двери'],
+    ['plate', 'Ручка двери на планке']
+  ])
+    skinSlot('door.handle.' + k, {
+      grp: 'Двери и окна',
+      n,
+      env: [140, 60, 60],
+      align: { x: 'min', y: 'back', z: 'c' },
+      def: { dx: -26 },
+      hint: 'Ручка одной стороны двери: задняя грань на полотне, ось розетки — в 26 мм от левого края модели, рычаг в +X. Вторая сторона зеркалится.'
+    });
+  skinSlot('win.handle', {
+    grp: 'Двери и окна',
+    n: 'Ручка оконная',
+    env: [32, 50, 140],
+    align: { x: 'c', y: 'back', z: 't' },
+    def: { dz: 16 },
+    hint: 'Оконная ручка: задняя грань на створке, розетка сверху, рычаг вниз.'
+  });
+}
+
+/* ---------- dialog ---------- */
+const SK_CSS = `#skdlg .dlg{width:min(1020px,96vw);height:min(720px,92vh);display:flex;flex-direction:column}
+#skdlg .skw{display:grid;grid-template-columns:330px 1fr;min-height:0;flex:1}
+#skdlg .skl{border-right:1px solid var(--line);overflow:auto;padding:8px}
+#skdlg .skl input{width:100%;margin-bottom:6px}
+#skdlg .skg{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 6px 4px}
+#skdlg .ski{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:6px 8px;border:0;background:none;border-radius:6px;font-size:12.5px;color:var(--fg);cursor:pointer}
+#skdlg .ski:hover{background:var(--panel2)}#skdlg .ski.on{background:var(--accent);color:#fff}
+#skdlg .ski i{font-style:normal;font-size:11px;opacity:.8;white-space:nowrap}
+#skdlg .skr{overflow:auto;padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+#skdlg .skr h4{margin:0;font-size:15px}#skdlg .skh{font-size:12px;color:var(--muted);line-height:1.45}
+#skdlg .skf{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 14px;align-items:end}
+#skdlg .skf label{display:flex;flex-direction:column;gap:3px;font-size:12px}#skdlg .skf label.ck{flex-direction:row;align-items:center;gap:6px}
+#skdlg .skm{display:flex;gap:12px;align-items:center}#skdlg .skm img{width:96px;height:96px;object-fit:contain;background:var(--panel2);border-radius:8px}
+#skdlg .ska{font-size:12px;display:flex;flex-direction:column;gap:3px}#skdlg .ok{color:#2f855a}#skdlg .warn{color:#b7791f}
+#skdlg select.big{width:100%}
+@media(max-width:760px){#skdlg .skw{grid-template-columns:1fr;grid-template-rows:40% 60%}#skdlg .skl{border-right:0;border-bottom:1px solid var(--line)}}`;
+const SKP = { cur: '', q: '' };
+function skEnsure() {
+  let m = document.getElementById('skdlg');
+  if (m) return m;
+  const st = document.createElement('style');
+  st.textContent = SK_CSS;
+  document.head.appendChild(st);
+  m = document.createElement('div');
+  m.id = 'skdlg';
+  m.className = 'modal';
+  m.hidden = true;
+  m.innerHTML = `<div class="dlg" role="dialog" aria-label="Свои модели изделий"><div class="dlgh"><h3>Свои модели изделий</h3><button class="x" data-sk="close" aria-label="Закрыть">×</button></div><div class="skw"><div class="skl" id="sklist"></div><div class="skr" id="skbody"></div></div></div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', skClick);
+  m.addEventListener('change', skChange);
+  m.addEventListener('input', ev => {
+    if (ev.target.id === 'skq') {
+      SKP.q = ev.target.value;
+      skList(true);
+    }
+  });
+  m.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape') m.hidden = true;
+  });
+  return m;
+}
+/** Opens the dialog; slot — the part to show, asset — a catalogue model to offer for it. */
+function openSkins(slot, asset) {
+  if (!SKP.init) skinSlotsInit();
+  skMixSlots();
+  if (slot && SKIN_SLOTS.has(slot)) SKP.cur = slot;
+  if (!SKP.cur) SKP.cur = [...SKIN_SLOTS.keys()][0] || '';
+  SKP.offer = asset || null;
+  skEnsure().hidden = false;
+  skList();
+  skBody();
+}
+function skList(keepFocus) {
+  const el = document.getElementById('sklist');
+  if (!el) return;
+  const q = SKP.q.trim().toLowerCase();
+  const groups = new Map();
+  for (const s of SKIN_SLOTS.values()) {
+    if (q && !(s.n + ' ' + s.grp).toLowerCase().includes(q)) continue;
+    if (!groups.has(s.grp)) groups.set(s.grp, []);
+    groups.get(s.grp).push(s);
+  }
+  const rows = [...groups]
+    .map(
+      ([g, list]) =>
+        `<div class="skg">${esc(g)}</div>` +
+        list
+          .map(
+            s =>
+              `<button class="ski ${s.id === SKP.cur ? 'on' : ''}" data-sks="${esc(s.id)}"><span>${esc(s.n)}</span>${skinGet(s.id) ? '<i>своя модель</i>' : ''}</button>`
+          )
+          .join('')
+    )
+    .join('');
+  if (keepFocus && el.querySelector('#skrows')) el.querySelector('#skrows').innerHTML = rows;
+  else
+    el.innerHTML = `<input id="skq" type="search" placeholder="Найти изделие" value="${esc(SKP.q)}" aria-label="Найти изделие"><div id="skrows">${rows}</div>`;
+}
+const skNum = v => Math.round(v * 10) / 10;
+function skBody() {
+  const el = document.getElementById('skbody');
+  const slot = SKIN_SLOTS.get(SKP.cur);
+  if (!el || !slot) return;
+  const cur = skinGet(slot.id);
+  const models = [...ASSETS.values()]
+    .filter(a => a.meshes && a.meshes.length)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const offer = !cur && SKP.offer && ASSETS.has(SKP.offer) ? SKP.offer : '';
+  const opts =
+    `<option value="">— заводская графика —</option>` +
+    models
+      .map(
+        a =>
+          `<option value="${esc(a.id)}" ${cur && cur.asset === a.id ? 'selected' : ''}>${esc(a.name)} · ${esc(a.cat || '')}${a.ports && a.ports.length ? ' · якорей ' + a.ports.length : ''}</option>`
+      )
+      .join('');
+  let h = `<h4>${esc(slot.n)}</h4><div class="skh">${esc(slot.grp)} · габарит заводского изделия ${slot.env.map(Math.round).join(' × ')} мм (ширина × глубина × высота).<br>${esc(slot.hint || '')}</div>`;
+  if (slot.id.startsWith('el.'))
+    h += `<div class="skh">Работает в блоках с серией «${esc(SER_OWN)}»: рамка выбирается по числу постов, механизмы — по вставкам блока, как у заводских серий. Чего в своей серии нет — рисуется заводским.</div><div class="skf"><label>Название своей серии (в свойствах и спецификации)<input type="text" data-skn value="${esc(skinsName())}"></label></div>`;
+  h += `<label style="font-size:12px;display:flex;flex-direction:column;gap:4px">Модель из каталога<select class="big" data-skf="asset">${opts}</select></label>`;
+  if (offer)
+    h += `<div class="btnrow"><button class="btn pri" data-sk="offer">Назначить «${esc(ASSETS.get(offer).name)}»</button></div>`;
+  if (!models.length)
+    h += `<div class="skh warn">В каталоге нет моделей. Загрузите свою модель через «Сервис → Контур Конвертор…», отметьте в ней якоря подключения и сохраните в каталог.</div>`;
+  if (cur) {
+    const a = ASSETS.get(cur.asset);
+    const f = skinFit(slot.id, cur);
+    const k = +cur.scale > 0 ? +cur.scale : 1;
+    const have = skinAnchors(slot.id);
+    const seatA = cur.by !== 'bbox' && slot.anchors.some(w => have.some(q => q.k === w.k));
+    const anch = slot.anchors.length
+      ? slot.anchors
+          .map(w => {
+            const okA = (a.ports || []).some(q => q.k === w.k);
+            return `<span class="${okA ? 'ok' : 'warn'}">${okA ? '✓' : '—'} ${esc(SK_ANCH[w.k] || w.k)}${w.n ? ': ' + esc(w.n) : ''}${okA ? '' : ' — якоря в модели нет, точка подключения заводская'}</span>`;
+          })
+          .join('')
+      : '<span>У этого изделия нет точек подключения — модель ставится по габариту.</span>';
+    h += `<div class="skm">${a.thumb ? `<img src="${a.thumb}" alt="">` : ''}<div class="skh"><b style="color:var(--fg)">${esc(a.name)}</b><br>Размер после посадки: ${f ? f.size.map(v => skNum(v * k)).join(' × ') : '—'} мм${f && Math.abs(f.fit / k - 1) > 0.08 ? ` · <span class="warn">заводской габарит ${f.fit / k > 1 ? 'больше' : 'меньше'} в ${skNum(Math.max(f.fit / k, k / f.fit))} раза</span>` : ''}<br>Посадка: ${seatA ? 'по якорям модели' : 'по габариту'}</div></div>
+<div class="ska">${anch}</div>
+<div class="skf">
+<label>Поворот<select data-skf="rot">${[0, 90, 180, 270].map(r => `<option value="${r}" ${(+cur.rot || 0) === r ? 'selected' : ''}>${r}°</option>`).join('')}</select></label>
+<label>Масштаб<input type="number" step="0.01" min="0.01" data-skf="scale" value="${skNum(k * 100) / 100}"></label>
+<label>Сдвиг вбок, мм<input type="number" step="1" data-skf="dx" value="${+cur.dx || 0}"></label>
+<label>Сдвиг ${slot.axis === 'z' ? 'вглубь' : 'от стены'}, мм<input type="number" step="1" data-skf="dy" value="${+cur.dy || 0}"></label>
+<label>Сдвиг по высоте, мм<input type="number" step="1" data-skf="dz" value="${+cur.dz || 0}"></label>
+<label>Посадка<select data-skf="by"><option value="">по якорям, иначе по габариту</option><option value="bbox" ${cur.by === 'bbox' ? 'selected' : ''}>только по габариту</option></select></label>
+<label class="ck"><input type="checkbox" data-skf="flip" ${cur.flip ? 'checked' : ''}>Зеркально</label>
+<label class="ck" title="Модель берёт цвет изделия — механизма, рамки, покрытия фурнитуры; светлое и тёмное остаётся как в модели"><input type="checkbox" data-skf="tint" ${cur.tint ? 'checked' : ''}>Красить в цвет изделия</label>
+</div>
+<div class="btnrow"><button class="btn" data-sk="fit" title="Подогнать масштаб так, чтобы модель заняла габарит заводского изделия">Вписать в габарит</button><button class="btn" data-sk="reset">Сбросить посадку</button><button class="btn" data-sk="clear">Вернуть заводскую графику</button></div>`;
+  }
+  h += `<div class="skh">Назначения хранятся в этом браузере вместе с каталогом моделей: проект на другом компьютере откроется с заводской графикой. Размеры, подключения и спецификация от замены графики не меняются.</div>`;
+  el.innerHTML = h;
+}
+function skRedraw() {
+  skList();
+  skBody();
+  try {
+    render();
+    sync3DSoon();
+    req3();
+  } catch (_) {
+    /* no view yet */
+  }
+}
+function skAssign(asset) {
+  const slot = SKIN_SLOTS.get(SKP.cur);
+  if (!slot) return;
+  if (!asset) skinSet(slot.id, null);
+  else {
+    const e = { asset, ...(slot.def || {}) };
+    skinSet(slot.id, e);
+    log(`«${slot.n}»: графика — модель «${ASSETS.get(asset).name}»`);
+  }
+  SKP.offer = null;
+  skRedraw();
+}
+function skClick(ev) {
+  const t = ev.target;
+  if (t === ev.currentTarget) {
+    ev.currentTarget.hidden = true;
+    return;
+  }
+  const s = t.closest('[data-sks]');
+  if (s) {
+    SKP.cur = s.dataset.sks;
+    skList(true);
+    skBody();
+    return;
+  }
+  const b = t.closest('[data-sk]');
+  if (!b) return;
+  const a = b.dataset.sk;
+  const slot = SKIN_SLOTS.get(SKP.cur);
+  const cur = slot && skinGet(slot.id);
+  if (a === 'close') document.getElementById('skdlg').hidden = true;
+  else if (a === 'offer') skAssign(SKP.offer);
+  else if (a === 'clear') skAssign('');
+  else if (a === 'reset' && cur) {
+    skinSet(slot.id, { asset: cur.asset, ...(slot.def || {}) });
+    skRedraw();
+  } else if (a === 'fit' && cur) {
+    const f = skinFit(slot.id, cur);
+    if (f) skinSet(slot.id, { ...cur, scale: Math.round(f.fit * 1000) / 1000 });
+    skRedraw();
+  }
+}
+function skChange(ev) {
+  const t = ev.target;
+  if (t.dataset.skn != null) {
+    skinsName(t.value);
+    skRedraw();
+    return;
+  }
+  const k = t.dataset.skf;
+  if (!k) return;
+  const slot = SKIN_SLOTS.get(SKP.cur);
+  if (!slot) return;
+  if (k === 'asset') return skAssign(t.value);
+  const cur = skinGet(slot.id);
+  if (!cur) return;
+  const v = t.type === 'checkbox' ? t.checked : k === 'by' ? t.value : +t.value || 0;
+  skinSet(slot.id, { ...cur, [k]: k === 'scale' ? Math.max(0.01, v) : v });
+  skRedraw();
+}
+function initSkins() {
+  // the slots are declared on first use: the catalogues of the modules are ready by then
+  skinsState.lazy = id => {
+    if (!SKP.init) skinSlotsInit();
+    if (id.startsWith('mix.')) skMixSlots();
+    return SKIN_SLOTS.get(id) || null;
+  };
+  skinsLoad();
+  try {
+    document.addEventListener('click', ev => {
+      const b = ev.target.closest && ev.target.closest('[data-skopen]');
+      if (b) openSkins(b.dataset.skopen || '', b.dataset.skasset || '');
+    });
+  } catch (_) {
+    /* tests: no DOM */
+  }
+}
+/** How many parts use their own models now (for the catalogue card). */
+const skinsCount = () => Object.keys(skinsState.map).filter(id => skinGet(id)).length;
+
+defineTools({
+  skins: {
+    command: { t: 'СВОИМОДЕЛИ', m: () => (openSkins(), null), a: ['skins', 'своимодели', 'своиизделия'] },
+    title:
+      'Свои модели изделий: своя графика розеток, рамок, смесителей, деталей коллектора, ручек и петель · СВОИМОДЕЛИ',
+    icon: '<path d="M4 6l6-3 6 3v8l-6 3-6-3z"/><path d="M4 6l6 3 6-3M10 9v8" opacity=".55"/>',
+    help: 'Заводские изделия со своей графикой: модель из каталога встаёт на место заводской, выбор рамок, блоки, подключения и спецификация остаются.'
+  }
+});
+
 // ===== ui/solid-editor.js =====
 /**
  * ui/solid-editor.js
@@ -104659,6 +105386,10 @@ const solidEditorState = ED;
 
 
 
+
+
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -104783,6 +105514,7 @@ function xBoot() {
   });
   /** test/debug handle used by tests/browser (not an API) */
   window.__kontur = {
+    skins: { skinSet, skinGet, openSkins, skinSlotsInit, ASSETS, assetGeomInfo, SKIN_SLOTS, MB, defBlk, SER_OWN },
     agent: {
       agApply,
       openAirCalc,
@@ -104930,6 +105662,7 @@ initPalette();
 initShortLabels();
 initAgent();
 initAirCalc();
+initSkins();
 initLayoutView();
 initVentTerminals();
 initJunctionBoxes();
@@ -104982,6 +105715,16 @@ initLibrary();
     }
   } else sample();
   if (!S.layers.length) sample();
+  // the fix-ups of an edit (wall joints, devices on their walls) run at once: what is saved right after the start is
+  // what opens later
+  try {
+    syncWalls();
+    if (uiHooks.afterEdit) uiHooks.afterEdit();
+    documentState.docVer++;
+    if (uiHooks.onChanged) uiHooks.onChanged();
+  } catch (err) {
+    console.error(err);
+  }
   new ResizeObserver(resize).observe(cv);
   resize();
   zoomExtents();
@@ -105258,11 +106001,12 @@ function agApply(ops, ctx) {
     fix(op) {
       const kind = AG_FIXMAP[op.kind] || op.kind;
       if (!FIXK[kind]) throw new Error(`неизвестная сантехника «${op.kind}»`);
-      const p = agPt(op.p);
+      let p = agPt(op.p);
       let rot = op.rot != null ? agNum(op.rot, 'rot') : 0,
         h = null;
       if (op.wall != null) {
         const pl = agOnWall(host(op.wall, ['wall']), p);
+        p = pl.p; // on the wall face, not on its axis
         if (op.rot == null) rot = pl.rot;
         h = pl.host;
       }
@@ -106397,6 +107141,7 @@ function ceilBoardsMesh(e, mb, col, th) {
 
 
 
+
 const LEAF_ST = {
   flat: 'Гладкое',
   panel: 'Филёнчатое',
@@ -106826,6 +107571,8 @@ function handleSet(lm, mb, l, M, c) {
     [dhi, 1],
     [dlo, -1]
   ]) {
+    // the user's own handle model: the lever towards the hinges on both faces
+    if (skinPut(lm, 'door.handle.' + ty, (x, y, z) => [hx - dir * x, df - sg * y, hz + z], 'Ручка', col)) continue;
     if (ty === 'rosette') {
       rosette(lm, ser, hx, df, sg, hz, col);
       lever(lm, ser, hx, df + sg * (ser === 'slim' ? 4.5 : 9.5), sg, hz, dir, col);
@@ -107021,7 +107768,6 @@ function closerSet(mb, lm, l, M, c, open) {
 
 
 
-
 const ceilOf = () => S.ceil || 2700;
 /** The wall at a plan point (the end of a glass run against a wall): { framed } or null. */
 function glassWallAt(p) {
@@ -107133,164 +107879,6 @@ function drawGlass(e, color, o, ghost, col) {
     }
   }
   ctx.restore();
-}
-
-/* ---------- 3D ---------- */
-function glMerge(mb, sub) {
-  for (const m of sub.meshes()) {
-    mb.tag(m.tag || '');
-    mb.raw(m.color, m.op, m.pos);
-  }
-}
-function buildGlass(e) {
-  const R = glassCalcOf(e);
-  const c = R.c;
-  const mb = MB();
-  const G = GL_KIND[c.gk] || GL_KIND.clear;
-  const met = GL_FIN_COL[c.fin] || '#d4d8dc';
-  const t = +c.t;
-  const z0 = +c.z || 0;
-  for (const p of R.panels) {
-    const off = p.kind === 'door' && (p.door || {}).type === 'slide' ? 35 : 0;
-    const nx = -p.u.y,
-      ny = p.u.x;
-    const mapP = (s, y, z) => [p.a.x + p.u.x * s + nx * (y + off), p.a.y + p.u.y * s + ny * (y + off), z];
-    const mbP = MB(mapP);
-    mbP.tag(`Стекло ${GL_T[c.t] || c.t + ' мм'}, ${G.n.toLowerCase()}`);
-    mbP.box(0, -t / 2, p.z, p.w, t / 2, p.z + p.h, G.col, G.op);
-    // edges of the glass: a thin brighter line reads the panel
-    mbP.tag('Фурнитура');
-    if (p.kind === 'door') {
-      const D = p.door || {};
-      if (D.type !== 'slide' && D.type !== 'pivot') {
-        const hx = p.hs === 'R' ? p.w : 0;
-        for (const n of p.notches.filter(q => q.kind === 'петля'))
-          mbP.rbox(
-            hx - (p.hs === 'R' ? 44 : -44) - 22,
-            -12,
-            p.z + n.y - 32,
-            hx - (p.hs === 'R' ? 44 : -44) + 22,
-            12,
-            p.z + n.y + 32,
-            3,
-            met
-          );
-      }
-      if (D.type === 'pivot') {
-        mbP.box(30, -10, p.z - 10, 90, 10, p.z, met);
-        mbP.box(30, -10, p.z + p.h, 90, 10, p.z + p.h + 10, met);
-      }
-      // handle
-      const hl = c.handle === 'pull450' ? 450 : c.handle === 'towel' ? 600 : c.handle === 'pull300' ? 300 : 0;
-      const hx = p.hs === 'L' ? p.w - 60 : 60;
-      const zh = 1050;
-      if (hl) {
-        for (const sg of [1, -1]) {
-          mbP.sweep(
-            [
-              [hx, sg * (t / 2), zh - hl / 2],
-              [hx, sg * 45, zh - hl / 2],
-              [hx, sg * 45, zh + hl / 2],
-              [hx, sg * (t / 2), zh + hl / 2]
-            ],
-            7,
-            met,
-            10
-          );
-        }
-      } else if (c.handle === 'knob')
-        for (const sg of [1, -1])
-          mbP.sweep(
-            [
-              [hx, sg * (t / 2), zh],
-              [hx, sg * 40, zh]
-            ],
-            18,
-            met,
-            14
-          );
-      if (D.type === 'slide') {
-        mbP.sweep(
-          [
-            [-p.w * 0.1, 30, p.z + p.h + 60],
-            [p.w * 1.1, 30, p.z + p.h + 60]
-          ],
-          12.5,
-          met,
-          14
-        );
-        for (const s of [80, p.w - 80]) mbP.rbox(s - 25, -8, p.z + p.h - 40, s + 25, 40, p.z + p.h + 70, 6, met);
-      }
-    } else {
-      // clamps on the wall edges
-      for (const hl of p.holes.filter(q => q.x <= 30 || q.x >= p.w - 30)) {
-        const sx = hl.x < p.w / 2 ? 0 : p.w;
-        mbP.rbox(sx - 22, -14, p.z + hl.y - 22, sx + 22, 14, p.z + hl.y + 22, 3, met);
-      }
-      for (const hl of p.holes.filter(q => q.kind === 'штанга')) {
-        // stabiliser bar to the wall, across the glass
-        mbP.sweep(
-          [
-            [hl.x, 0, p.z + hl.y],
-            [hl.x, 600, p.z + hl.y]
-          ],
-          9.5,
-          met,
-          12
-        );
-      }
-    }
-    // profiles
-    for (const [fx, zb, zt] of [
-      [c.fixB, z0, z0 + (GL_PROF[c.fixB] || {}).h],
-      [
-        c.fixT,
-        p.z + p.h - ((GL_PROF[c.fixT] || {}).d || 0),
-        p.z + p.h - ((GL_PROF[c.fixT] || {}).d || 0) + (GL_PROF[c.fixT] || {}).h
-      ]
-    ]) {
-      const P_ = GL_PROF[fx];
-      if (!P_ || p.kind === 'door') continue;
-      mbP.tag(`Профиль ${P_.n}`);
-      mbP.box(0, -P_.w / 2, zb, p.w, P_.w / 2, zt, c.sys === 'prof' && c.fin === 'black' ? '#2a2c2f' : met);
-    }
-    glMerge(mb, mbP);
-  }
-  // wall profiles
-  if (GL_PROF[c.fixW] && R.panels.length) {
-    const P_ = GL_PROF[c.fixW];
-    for (const p of [R.panels[0], R.panels[R.panels.length - 1]])
-      for (const [q, ed] of [
-        [p.a, p.edgeL],
-        [p.b, p.edgeR]
-      ]) {
-        if (ed !== 'wall') continue;
-        mb.tag(`Профиль ${P_.n} пристенный`);
-        mb.box(q.x - P_.w / 2, q.y - P_.w / 2, z0, q.x + P_.w / 2, q.y + P_.w / 2, z0 + p.z - z0 + p.h, met);
-      }
-  }
-  // threshold
-  if (c.thr === 'glass' || c.thr === 'alu' || c.thr === 'step')
-    for (const p of R.panels) {
-      const hh = c.thr === 'glass' ? 50 : c.thr === 'step' ? 40 : 15;
-      const ww = c.thr === 'step' ? 60 : c.thr === 'glass' ? t : 30;
-      const nx = -p.u.y,
-        ny = p.u.x;
-      const mbT = MB((s, y, z) => [p.a.x + p.u.x * s + nx * y, p.a.y + p.u.y * s + ny * y, z]);
-      mbT.tag(GL_THR[c.thr]);
-      mbT.box(
-        0,
-        -ww / 2,
-        z0,
-        p.w,
-        ww / 2,
-        z0 + hh,
-        c.thr === 'glass' ? G.col : c.thr === 'step' ? '#d9d6cf' : met,
-        c.thr === 'glass' ? G.op : 1
-      );
-      glMerge(mb, mbT);
-    }
-  return meshGroup(mb.meshes(), { edges: false });
 }
 
 /* ---------- properties ---------- */
@@ -107439,8 +108027,8 @@ XT.glass = {
   },
   grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
   draw: drawGlass,
-  k3: e => [e.pts, e.cfg, e.doors, S.ceil],
-  build3: buildGlass,
+  k3: e => [e.pts, e.cfg, e.doors, S.ceil, g3WallSig()],
+  build3: e => buildGlass(e, glassCalcOf(e), ceilOf()),
   group: e => {
     const c = glassCfg(e);
     return `${c.use === 'shower' ? 'Душевое ограждение' : 'Стеклянная перегородка'} · ${GL_T[c.t] || c.t}`;
@@ -107598,6 +108186,519 @@ defineTools({
     help: 'Стеклянная перегородка: точки по оси. Высота 0 — до потолка. Профили, двери, нащельники и уплотнители — в свойствах.'
   }
 });
+
+// ===== elements/glass-3d.js =====
+/**
+ * elements/glass-3d.js
+ *
+ * The 3D model of glass constructions (shower screens, glass partitions): glass with a polished edge, hinges
+ * (wall–glass, glass–glass at any angle, butt hinges of a framed door), wall and glass connectors, the stabiliser
+ * bar to the nearest wall or to the ceiling, the sliding system (rail between the panes, holders, rollers, stoppers,
+ * floor guide), pivot patch fittings, handles, seals, channel profiles with a real section, thresholds.
+ *
+ * Every part is built by its own small function in the frame of its panel: s — along the panel from its start,
+ * y — across the glass (the normal), z — up. A part model can later be replaced by a user model in the same frame.
+ */
+
+
+
+
+
+
+
+/** The slide door runs in front of the fixed panes at this offset (as on the plan). */
+const G3_OFF = 35;
+const g3Map = (p, off) => {
+  const nx = -p.u.y,
+    ny = p.u.x;
+  return (s, y, z) => [p.a.x + p.u.x * s + nx * (y + off), p.a.y + p.u.y * s + ny * (y + off), z];
+};
+const g3Off = p => (p.kind === 'door' && (p.door || {}).type === 'slide' ? G3_OFF : 0);
+/** A cheap signature of the walls: the bar and the profiles depend on where the walls are. */
+function g3WallSig() {
+  let n = 0,
+    h = 0;
+  for (const w of S.ents)
+    if (w.type === 'wall' && w.a && w.b) {
+      n++;
+      h += w.a.x * 3 + w.a.y * 7 + w.b.x * 11 + w.b.y * 13 + (w.th || 0);
+    }
+  return n + ':' + Math.round(h);
+}
+/** Distance from the plan point o along the unit direction d to the nearest wall face, or Infinity. */
+function g3WallHit(o, d, max) {
+  let best = Infinity;
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !w.a || !w.b) continue;
+    const ex = w.b.x - w.a.x,
+      ey = w.b.y - w.a.y;
+    const L = Math.hypot(ex, ey);
+    if (L < 1) continue;
+    const den = d.x * ey - d.y * ex;
+    if (Math.abs(den) < 1e-6 * L) continue;
+    const ax = w.a.x - o.x,
+      ay = w.a.y - o.y;
+    const t = (ax * ey - ay * ex) / den,
+      k = (ax * d.y - ay * d.x) / den;
+    if (k < -0.02 || k > 1.02 || t <= 0) continue;
+    const tf = t - (w.th || 0) / 2 / (Math.abs(den) / L);
+    if (tf > 40 && tf < best) best = tf;
+  }
+  return best <= max ? best : Infinity;
+}
+
+/* ---------- parts (panel frame) ---------- */
+/** The glass slab with a darker polished edge band; fluted glass gets ribs on one face. */
+function g3Pane(mb, p, t, G, name) {
+  mb.tag(name);
+  mb.box(0, -t / 2, p.z, p.w, t / 2, p.z + p.h, G.col, G.op);
+  const ec = shade(G.col, -28),
+    eo = Math.min(1, G.op + 0.4),
+    b = 1.6;
+  mb.box(0, -t / 2, p.z, p.w, t / 2, p.z + b, ec, eo);
+  mb.box(0, -t / 2, p.z + p.h - b, p.w, t / 2, p.z + p.h, ec, eo);
+  mb.box(0, -t / 2, p.z + b, b, t / 2, p.z + p.h - b, ec, eo);
+  mb.box(p.w - b, -t / 2, p.z + b, p.w, t / 2, p.z + p.h - b, ec, eo);
+}
+function g3Flutes(mb, p, t, G) {
+  const n = Math.max(1, Math.floor(p.w / 20));
+  const st = p.w / n;
+  for (let i = 0; i < n; i++) {
+    const s = (i + 0.5) * st;
+    mb.tube([s, t / 2 - 3, p.z + 2], [s, t / 2 - 3, p.z + p.h - 2], 6.5, G.col, 6, Math.min(1, G.op + 0.1));
+  }
+}
+/** A clamping plate on both faces of the glass: s0..s1 × z0..z1, thickness th. */
+function g3Plates(mb, s0, s1, z0, z1, t, th, met) {
+  const a = Math.min(s0, s1),
+    b = Math.max(s0, s1);
+  mb.rbox(a, t / 2, z0, b, t / 2 + th, z1, 2.2, met, 2);
+  mb.rbox(a, -t / 2 - th, z0, b, -t / 2, z1, 2.2, met, 2);
+}
+/**
+ * A hinge leaf on a glass edge: the edge at s = e, the glass goes in the direction dir (±1) from it; zc — the centre.
+ * The leaf wraps the edge (the cut-out of the glass is under it).
+ */
+function g3HingeLeaf(mb, e, dir, zc, t, met) {
+  g3Plates(mb, e - dir * 1.5, e + dir * 54, zc - 45, zc + 45, t, 6.5, met);
+  mb.box(
+    Math.min(e - dir * 1.5, e + dir * 6),
+    -t / 2,
+    zc - 45,
+    Math.max(e - dir * 1.5, e + dir * 6),
+    t / 2,
+    zc + 45,
+    met
+  );
+  // cover screws
+  const dk = shade(met, -12);
+  for (const dz of [-26, 26])
+    for (const sg of [1, -1])
+      mb.tube([e + dir * 30, sg * (t / 2 + 6.5), zc + dz], [e + dir * 30, sg * (t / 2 + 7.6), zc + dz], 4.2, dk, 10);
+}
+/** Wall–glass hinge: the leaf on the door, the barrel in the gap, the back plate on the wall plane at s = sw. */
+function g3HingeWall(mb, e, dir, sw, zc, t, met) {
+  g3HingeLeaf(mb, e, dir, zc, t, met);
+  const g = Math.abs(e - sw);
+  const pl = Math.min(5, Math.max(1.5, g * 0.6));
+  mb.rbox(Math.min(sw, sw + dir * pl), -28, zc - 45, Math.max(sw, sw + dir * pl), 28, zc + 45, 1.2, met, 2);
+  mb.tube([(e + sw) / 2, 0, zc - 43], [(e + sw) / 2, 0, zc + 43], Math.max(3, Math.min(7, g / 2 + 1.5)), met, 12);
+  const dk = shade(met, -12);
+  for (const dy of [-18, 18]) mb.tube([sw + dir * pl, dy, zc], [sw + dir * (pl + 1.2), dy, zc], 4, dk, 10);
+}
+/** A wall connector at a hole: an angle bracket on one face (glass leg + wall leg), a cover plate on the other. */
+function g3ClampWall(mb, x, dir, sw, zc, t, met) {
+  const a = Math.min(sw, x + dir * 22),
+    b = Math.max(sw, x + dir * 22);
+  mb.rbox(a, t / 2, zc - 22, b, t / 2 + 5, zc + 22, 2, met, 2);
+  mb.rbox(a, -t / 2 - 5, zc - 22, b, -t / 2, zc + 22, 2, met, 2);
+  mb.rbox(Math.min(sw, sw + dir * 5), t / 2, zc - 22, Math.max(sw, sw + dir * 5), t / 2 + 46, zc + 22, 2, met, 2);
+  const dk = shade(met, -12);
+  mb.tube([sw + dir * 5, t / 2 + 28, zc], [sw + dir * 6.2, t / 2 + 28, zc], 4.5, dk, 10);
+  for (const sg of [1, -1]) mb.tube([x, sg * (t / 2 + 5), zc], [x, sg * (t / 2 + 6.2), zc], 5.5, dk, 12);
+}
+/** A glass–glass connector leaf at a hole: from the hole to the edge and a little into the joint. */
+function g3ClampGlass(mb, x, w, zc, t, met) {
+  const toR = x > w / 2;
+  const a = toR ? x - 22 : -2.2,
+    b = toR ? w + 2.2 : x + 22;
+  g3Plates(mb, a, b, zc - 22, zc + 22, t, 5, met);
+  const dk = shade(met, -12);
+  for (const sg of [1, -1]) mb.tube([x, sg * (t / 2 + 5), zc], [x, sg * (t / 2 + 6.2), zc], 5.5, dk, 12);
+}
+/**
+ * The stabiliser bar from a clamp on the glass at (x, zc): to the nearest wall across the glass, else a brace at
+ * 45° to the wall the panel starts from, else up to the ceiling. Always ends in a flange.
+ */
+function g3Bar(mb, p, x, zc, t, met, ceil) {
+  const r = 9.5;
+  mb.tube([x, -t / 2 - 9, zc], [x, t / 2 + 9, zc], 13, met, 14);
+  const o = { x: p.a.x + p.u.x * x, y: p.a.y + p.u.y * x };
+  const n = { x: -p.u.y, y: p.u.x };
+  const d1 = g3WallHit(o, n, 1300),
+    d2 = g3WallHit(o, { x: -n.x, y: -n.y }, 1300);
+  let A, B;
+  if (Math.min(d1, d2) < Infinity) {
+    const sg = d1 <= d2 ? 1 : -1,
+      L = Math.min(d1, d2);
+    A = [x, sg * (t / 2 + 9), zc];
+    B = [x, sg * L, zc];
+  } else {
+    // a brace to the wall the panel is fixed to
+    const wl = p.edgeL === 'wall' ? -1 : p.edgeR === 'wall' ? 1 : 0;
+    let L = Infinity,
+      sg = 1;
+    if (wl)
+      for (const s2 of [1, -1]) {
+        const d = { x: (p.u.x * wl + n.x * s2) * Math.SQRT1_2, y: (p.u.y * wl + n.y * s2) * Math.SQRT1_2 };
+        const h = g3WallHit(o, d, 1300);
+        if (h < L) {
+          L = h;
+          sg = s2;
+        }
+      }
+    if (L < Infinity) {
+      const k = L * Math.SQRT1_2;
+      A = [x, sg * (t / 2 + 9), zc];
+      B = [x + wl * k, sg * k, zc];
+    } else {
+      A = [x, 0, zc + 13];
+      B = [x, 0, Math.max(zc + 60, ceil)];
+    }
+  }
+  mb.tube(A, B, r, met, 12);
+  const dx = B[0] - A[0],
+    dy = B[1] - A[1],
+    dz = B[2] - A[2];
+  const L = Math.hypot(dx, dy, dz) || 1;
+  mb.tube([B[0] - (dx / L) * 5, B[1] - (dy / L) * 5, B[2] - (dz / L) * 5], B, 21, met, 16);
+}
+/** A pull handle on two standoff posts at the holes z0 < z1, on both faces; one hole — a knob. */
+function g3Handle(mb, x, zs, t, met, kind) {
+  const dk = shade(met, -10);
+  if (zs.length >= 2) {
+    const z0 = Math.min(...zs),
+      z1 = Math.max(...zs);
+    const rb = kind === 'towel' ? 9.5 : 11;
+    for (const sg of [1, -1]) {
+      const y1 = sg * (t / 2 + 52);
+      for (const z of [z0, z1]) {
+        mb.tube([x, sg * (t / 2), z], [x, sg * (t / 2 + 3.5), z], 13, dk, 14);
+        mb.tube([x, sg * (t / 2 + 3.5), z], [x, y1, z], 6.5, met, 10);
+      }
+      mb.sweep(
+        [
+          [x, y1, z0 - 28],
+          [x, y1, z1 + 28]
+        ],
+        rb,
+        met,
+        14
+      );
+    }
+  } else if (zs.length === 1) {
+    const z = zs[0];
+    for (const sg of [1, -1]) {
+      mb.tube([x, sg * (t / 2), z], [x, sg * (t / 2 + 3), z], 12, dk, 14);
+      mb.tube([x, sg * (t / 2 + 3), z], [x, sg * (t / 2 + 18), z], 7, met, 10);
+      mb.sweep(
+        [
+          [x, sg * (t / 2 + 18), z],
+          [x, sg * (t / 2 + 22), z],
+          [x, sg * (t / 2 + 32), z],
+          [x, sg * (t / 2 + 35), z]
+        ],
+        [17, 20, 20, 16],
+        met,
+        18
+      );
+    }
+  }
+}
+/** A recessed finger pull at an edge cut-out. */
+function g3Slot(mb, e, dir, zc, t, met) {
+  const a = Math.min(e, e + dir * 30),
+    b = Math.max(e, e + dir * 30);
+  mb.rbox(a, -t / 2 - 1.5, zc - 64, b, t / 2 + 1.5, zc + 64, 1.4, met, 2);
+  mb.box(Math.min(e, e + dir * 24), -t / 2 - 1.9, zc - 56, Math.max(e, e + dir * 24), t / 2 + 1.9, zc + 56, '#15171a');
+}
+/**
+ * A channel profile along s0..s1 around the glass: zf — the plane the flanges end at, up = +1 the channel opens
+ * upwards (bottom profile), −1 downwards (top profile). P — { w, h, d } of GL_PROF, fat — a clamping profile.
+ */
+function g3Channel(mb, s0, s1, zf, up, P, t, col, fat) {
+  const fl = fat ? Math.max(3, (P.w - t - 3) / 2) : 2;
+  const zb = zf - up * P.h;
+  const lo = (a, b) => [Math.min(a, b), Math.max(a, b)];
+  const [b0, b1] = lo(zb, zb + up * (P.h - P.d));
+  mb.box(s0, -P.w / 2, b0, s1, P.w / 2, b1, col);
+  const [f0, f1] = lo(zb + up * (P.h - P.d), zf);
+  mb.box(s0, -P.w / 2, f0, s1, -P.w / 2 + fl, f1, col);
+  mb.box(s0, P.w / 2 - fl, f0, s1, P.w / 2, f1, col);
+}
+/** The same channel standing on a wall: the base at s = sb, the flanges run dir·h to the glass. */
+function g3ChannelV(mb, sb, dir, z0, z1, P, t, col, fat) {
+  const fl = fat ? Math.max(3, (P.w - t - 3) / 2) : 2;
+  const lo = (a, b) => [Math.min(a, b), Math.max(a, b)];
+  const [a0, a1] = lo(sb, sb + dir * (P.h - P.d));
+  mb.box(a0, -P.w / 2, z0, a1, P.w / 2, z1, col);
+  const [c0, c1] = lo(sb + dir * (P.h - P.d), sb + dir * P.h);
+  mb.box(c0, -P.w / 2, z0, c1, -P.w / 2 + fl, z1, col);
+  mb.box(c0, P.w / 2 - fl, z0, c1, P.w / 2, z1, col);
+}
+/** A seal strip clipped on a vertical glass edge at s = e (the glass goes dir from it), lip mm into the gap. */
+function g3SealV(mb, e, dir, z0, z1, t, lip, col, op) {
+  const a = Math.min(e - dir * lip, e + dir * 11),
+    b = Math.max(e - dir * lip, e + dir * 11);
+  mb.box(a, -t / 2 - 1.4, z0, b, t / 2 + 1.4, z1, col, op);
+}
+
+/* ---------- the element ---------- */
+function buildGlass(e, R, ceil) {
+  const c = R.c;
+  const mb = MB();
+  const G = GL_KIND[c.gk] || GL_KIND.clear;
+  const met = GL_FIN_COL[c.fin] || '#d4d8dc';
+  const pcol = c.sys === 'prof' && c.fin === 'black' ? '#2a2c2f' : met;
+  const t = +c.t;
+  const zf = +c.z || 0; // the floor mark of the run
+  const SEAL = '#dfe7ea';
+  const nP = e.pts.length;
+  const merge = sub => {
+    for (const m of sub.meshes()) {
+      mb.tag(m.tag || '');
+      mb.raw(m.color, m.op, m.pos);
+    }
+  };
+  /** The wall plane at an end of the run in the frame of a panel (s coordinate), or null. */
+  const wallS = (p, side) =>
+    side === 'L' ? (p.edgeL === 'wall' ? -p.s0 : null) : p.edgeR === 'wall' ? p.w + (p.segL - p.s1) : null;
+  const glassName = `Стекло ${GL_T[c.t] || c.t + ' мм'}, ${G.n.toLowerCase()}`;
+  for (const p of R.panels) {
+    const off = g3Off(p);
+    const m = MB(g3Map(p, off)); // the plane of this panel
+    const m0 = off ? MB(g3Map(p, 0)) : m; // the plane of the fixed panes of the segment
+    const D = p.door || {};
+    const dt = p.kind === 'door' ? D.type || 'hinge' : '';
+    g3Pane(m, p, t, G, glassName);
+    if (c.gk === 'fluted') g3Flutes(m, p, t, G);
+    if (dt === 'frame') {
+      // an aluminium frame around the door glass
+      m.tag('Рамка двери алюминиевая');
+      const fw = 28,
+        fd = 17.5;
+      m.box(0, -fd, p.z, fw, fd, p.z + p.h, pcol);
+      m.box(p.w - fw, -fd, p.z, p.w, fd, p.z + p.h, pcol);
+      m.box(fw, -fd, p.z, p.w - fw, fd, p.z + fw, pcol);
+      m.box(fw, -fd, p.z + p.h - fw, p.w - fw, fd, p.z + p.h, pcol);
+    }
+    if (p.kind === 'door') {
+      const hs = p.hs || 'L';
+      const he = hs === 'L' ? 0 : p.w, // the hinge edge
+        hd = hs === 'L' ? 1 : -1; // into the door from it
+      const le = hs === 'L' ? p.w : 0; // the lock edge
+      if (dt === 'hinge' || dt === 'frame') {
+        const sw = wallS(p, hs);
+        const nb = hs === 'L' ? p.nL : p.nR;
+        for (const n of p.notches.filter(q => q.kind === 'петля')) {
+          const zc = p.z + n.y;
+          if (dt === 'frame') {
+            m.tag('Петля карточная');
+            const sb = sw ?? he - hd * 4;
+            m.tube([he - hd * 2, 21, zc - 45], [he - hd * 2, 21, zc + 45], 6, met, 10);
+            m.box(Math.min(he, he + hd * 26), 17.5, zc - 42, Math.max(he, he + hd * 26), 20, zc + 42, met);
+            m.box(Math.min(sb, sb + hd * 2.5), -10, zc - 42, Math.max(sb, sb + hd * 2.5), 22, zc + 42, met);
+          } else if (p.hOnWall && sw != null) {
+            m.tag('Петля стена–стекло');
+            if (!skinPut(m, 'glass.hingeW', (x, y, z) => [sw + hd * x, y, zc + z], null, met))
+              g3HingeWall(m, he, hd, sw, zc, t, met);
+          } else {
+            m.tag('Петля стекло–стекло');
+            g3HingeLeaf(m, he, hd, zc, t, met);
+            m.tube([he - hd * 2, 0, zc - 43], [he - hd * 2, 0, zc + 43], 6.5, met, 12);
+            if (nb && nb.kind === 'fix') {
+              // the other leaf sits on the neighbour panel, at whatever angle it stands
+              const mn = MB(g3Map(nb, 0));
+              mn.tag('Петля стекло–стекло');
+              g3HingeLeaf(mn, hs === 'L' ? nb.w : 0, hs === 'L' ? -1 : 1, zc, t, met);
+              merge(mn);
+            }
+          }
+        }
+        if (c.seal && dt === 'hinge') {
+          m.tag('Уплотнители');
+          g3SealV(m, le, -hd, p.z, p.z + p.h, t, 3.4, SEAL, 0.55);
+          g3SealV(m, he, hd, p.z, p.z + p.h, t, 1.6, SEAL, 0.5);
+          const zb = Math.max(zf + 1, p.z - 9);
+          m.box(0, -t / 2 - 1.4, zb, p.w, t / 2 + 1.4, p.z + 11, SEAL, 0.55);
+          m.box(0, -t / 2 - 9, zb + 2, p.w, -t / 2 - 1.4, zb + 4.5, SEAL, 0.55);
+        }
+      } else if (dt === 'pivot') {
+        m.tag('Ось маятниковая');
+        const px = (p.notches.find(q => q.kind === 'ось') || { x: 60 }).x;
+        for (const [z0, z1] of [
+          [p.z - 3, p.z + 52],
+          [p.z + p.h - 52, p.z + p.h + 3]
+        ])
+          m.rbox(-3, -t / 2 - 7, z0, 165, t / 2 + 7, z1, 2.5, met, 2);
+        // the floor plate and pin, the top pin with its plate
+        m.tube([px, 0, zf], [px, 0, p.z - 2], 7, met, 12);
+        m.rbox(px - 60, -22, zf, px + 60, 22, zf + 3.5, 1.5, met, 2);
+        const up = Math.min(ceil, p.z + p.h + 60);
+        m.tube([px, 0, p.z + p.h + 2], [px, 0, up], 7, met, 12);
+        if (ceil - (p.z + p.h) <= 60) m.rbox(px - 60, -22, up - 3.5, px + 60, 22, up, 1.5, met, 2);
+        if (c.seal) {
+          m.tag('Уплотнители');
+          for (const [e_, d_] of [
+            [0, 1],
+            [p.w, -1]
+          ])
+            g3SealV(m, e_, d_, p.z + 55, p.z + p.h - 55, t, 2.2, '#3a3d40', 0.9);
+        }
+      } else if (dt === 'slide') {
+        // the rail between the panes over the whole segment, holders on the fixed panes, rollers, stoppers, guide
+        const rr = Math.max(7, Math.min(12.5, (G3_OFF - t) / 2 - 2));
+        const ry = G3_OFF / 2;
+        const rollers = p.holes.filter(q => q.kind === 'ролик');
+        const zh = p.z + (rollers[0] ? rollers[0].y : p.h - 70);
+        const rz = zh - 20 - rr;
+        const s0 = -p.s0,
+          s1 = p.segL - p.s0;
+        m0.tag('Штанга-направляющая');
+        m0.tube([s0, ry, rz], [s1, ry, rz], rr, met, 14);
+        for (const s of [s0, s1])
+          m0.tube([s + (s === s0 ? 0 : -5), ry, rz], [s + (s === s0 ? 5 : 0), ry, rz], 20, met, 16);
+        for (const s of [s0 + 55, s1 - 55]) m0.tube([s - 9, ry, rz], [s + 9, ry, rz], rr + 5, shade(met, -8), 14);
+        for (const q of R.panels.filter(q => q.seg === p.seg && q.kind === 'fix')) {
+          const xs = q.w < 420 ? [q.w / 2] : [110, q.w - 110];
+          for (const x of xs) {
+            const s = q.s0 - p.s0 + x;
+            m0.tag('Держатель штанги');
+            m0.tube([s, -t / 2 - 5, rz], [s, -t / 2, rz], 14, met, 14);
+            m0.tube([s, t / 2, rz], [s, t / 2 + 3, rz], 14, met, 14);
+            m0.tube([s, t / 2 + 3, rz], [s, ry, rz], 8, met, 10);
+          }
+        }
+        m0.tag('Ролик раздвижной двери');
+        const dk = shade(met, -14);
+        for (const h of rollers) {
+          const s = h.x;
+          m0.tube([s, ry - 6.5, zh], [s, ry + 6.5, zh], 20, met, 18);
+          m0.tube([s, ry - 7.5, zh], [s, ry + 7.5, zh], 9, dk, 12);
+          m0.tube([s, ry + 6.5, zh], [s, G3_OFF + t / 2 + 6, zh], 6, met, 10);
+          m0.tube([s, G3_OFF + t / 2, zh], [s, G3_OFF + t / 2 + 6, zh], 15, met, 14);
+          m0.tube([s, G3_OFF - t / 2 - 4, zh], [s, G3_OFF - t / 2, zh], 15, met, 14);
+          // the anti-lift wheel under the rail
+          m0.tube([s, ry - 5, rz - rr - 9], [s, ry + 5, rz - rr - 9], 8, dk, 12);
+          m0.tube([s, ry + 5, rz - rr - 9], [s, G3_OFF - t / 2, rz - rr - 9], 4, met, 8);
+        }
+        const fx = R.panels.find(q => q.seg === p.seg && q.kind === 'fix');
+        const gs = fx ? (Math.max(p.s0, fx.s0) + Math.min(p.s1, fx.s1)) / 2 - p.s0 : p.w / 2;
+        m0.tag('Направляющая нижняя');
+        const gt = Math.max(p.z + 18, zf + 22);
+        m0.box(gs - 20, G3_OFF - t / 2 - 9, zf, gs + 20, G3_OFF - t / 2 - 2, gt, met);
+        m0.box(gs - 20, G3_OFF + t / 2 + 2, zf, gs + 20, G3_OFF + t / 2 + 9, gt, met);
+        if (p.z - zf > 3.5) m0.box(gs - 20, G3_OFF - t / 2 - 9, zf, gs + 20, G3_OFF + t / 2 + 9, zf + 3, met);
+        if (c.seal) {
+          m.tag('Уплотнители');
+          const oe = fx && fx.s0 < p.s0 ? 0 : p.w;
+          g3SealV(m, oe, oe ? -1 : 1, p.z, p.z + p.h, t, 1.5, SEAL, 0.55);
+        }
+      }
+      // handle
+      m.tag('Ручка');
+      const hh = p.holes.filter(q => q.kind === 'ручка');
+      const hz = hh.length ? hh.reduce((q, h) => q + p.z + h.y, 0) / hh.length : 0;
+      if (hh.length && skinPut(m, 'glass.handle.' + c.handle, (x, y, z) => [hh[0].x + x, y, hz + z], 'Ручка', met)) {
+        /* the user's own handle model */
+      } else if (hh.length)
+        g3Handle(
+          m,
+          hh[0].x,
+          hh.map(q => p.z + q.y),
+          t,
+          met,
+          c.handle
+        );
+      for (const n of p.notches.filter(q => q.kind === 'ручка'))
+        g3Slot(m, n.side === 'R' ? p.w : 0, n.side === 'R' ? -1 : 1, p.z + n.y, t, met);
+    } else {
+      // fixed panel: connectors, the bar
+      for (const h of p.holes) {
+        const zc = p.z + h.y;
+        if (h.kind === 'коннектор') {
+          const sw = h.side ? wallS(p, h.side) : null;
+          if (h.side && sw != null) {
+            m.tag('Коннектор стена–стекло');
+            const cd = h.side === 'L' ? 1 : -1;
+            if (!skinPut(m, 'glass.clampW', (x, y, z) => [sw + cd * x, y, zc + z], null, met))
+              g3ClampWall(m, h.x, cd, sw, zc, t, met);
+          } else {
+            m.tag('Коннектор стекло–стекло');
+            g3ClampGlass(m, h.x, p.w, zc, t, met);
+          }
+        } else if (h.kind === 'штанга') {
+          m.tag('Штанга стабилизирующая');
+          g3Bar(m, p, h.x, zc, t, met, ceil);
+        }
+      }
+      // joint strip between fixed panes
+      if (c.fixG === 'pc') {
+        m.tag('Профиль стыковочный');
+        if (p.nR && p.nR.kind === 'fix') g3SealV(m, p.w, -1, p.z, p.z + p.h, t, 2.2, SEAL, 0.6);
+        if (p.nL && p.nL.kind === 'fix') g3SealV(m, 0, 1, p.z, p.z + p.h, t, 2.2, SEAL, 0.6);
+      }
+      // bottom and top channels
+      const PB = GL_PROF[c.fixB],
+        PT = GL_PROF[c.fixT];
+      if (PB) {
+        m.tag(`Профиль ${PB.n} нижний`);
+        g3Channel(m, 0, p.w, c.fixB === 'emb' ? zf : zf + PB.h, 1, PB, t, pcol, c.fixB === 'clampP');
+      }
+      if (PT) {
+        m.tag(`Профиль ${PT.n} верхний`);
+        const zt = p.z + p.h - PT.d + PT.h; // the back of the channel
+        g3Channel(m, 0, p.w, zt - PT.h, -1, PT, t, pcol, c.fixT === 'clampP');
+      }
+    }
+    // the wall channel at the ends of the run
+    const PW = GL_PROF[c.fixW];
+    if (PW)
+      for (const side of ['L', 'R']) {
+        const sw = wallS(p, side);
+        if (sw == null) continue;
+        const dir = side === 'L' ? 1 : -1;
+        m.tag(`Профиль ${PW.n} пристенный`);
+        g3ChannelV(m, c.fixW === 'emb' ? sw - dir * PW.h : sw, dir, zf, p.z + p.h, PW, t, pcol, c.fixW === 'clampP');
+      }
+    // threshold
+    if (c.thr === 'alu' || c.thr === 'glass' || c.thr === 'step') {
+      m0.tag(GL_THR[c.thr]);
+      if (c.thr === 'alu') m0.rbox(0, -15, zf, p.w, 15, zf + 15, 6, met, 3);
+      else if (c.thr === 'step') m0.box(0, -30, zf, p.w, 30, zf + 40, '#d9d6cf');
+      else {
+        m0.box(0, -t / 2, zf + 4, p.w, t / 2, zf + 50, G.col, Math.min(1, G.op + 0.15));
+        m0.box(0, -t / 2 - 3, zf, p.w, t / 2 + 3, zf + 6, met);
+      }
+    }
+    merge(m);
+    if (m0 !== m) merge(m0);
+  }
+  // a post at a corner joint of the profile system
+  if (c.sys === 'prof' && c.fixG === 'pc')
+    for (let i = 1; i < nP - 1; i++) {
+      const a = e.pts[i - 1],
+        b = e.pts[i],
+        d = e.pts[i + 1];
+      const cr = Math.sin(Math.atan2(d.y - b.y, d.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x));
+      if (Math.abs(cr) < 0.05) continue;
+      const pn = R.panels.find(q => q.seg === i - 1 || q.seg === i);
+      if (!pn) continue;
+      mb.tag('Профиль угловой');
+      mb.box(b.x - t / 2 - 3, b.y - t / 2 - 3, zf, b.x + t / 2 + 3, b.y + t / 2 + 3, pn.z + pn.h, pcol);
+    }
+  return meshGroup(mb.meshes(), { edges: false });
+}
 
 // ===== elements/glass-hw.js =====
 /**
@@ -107778,7 +108879,7 @@ function glassZ0(c) {
   const PB = GL_PROF[c.fixB];
   return (
     (+c.z || 0) +
-    (PB ? PB.h - PB.d + 3 : c.fixB === 'free' ? +c.gapB || 0 : 0) +
+    (PB ? (c.fixB === 'emb' ? 3 - PB.d : PB.h - PB.d + 3) : c.fixB === 'free' ? +c.gapB || 0 : 0) +
     (c.thr === 'glass' ? 50 : c.thr === 'step' ? 40 : 0)
   );
 }
@@ -107786,14 +108887,14 @@ function glassZ0(c) {
 function glassH(e, c = glassCfg(e), ceil = 2700) {
   const z0 = glassZ0(c);
   const PT = GL_PROF[c.fixT];
-  const top = ceil - (PT ? PT.h - PT.d + 3 : 10);
+  const top = ceil - (PT ? (c.fixT === 'emb' ? 3 - PT.d : PT.h - PT.d + 3) : 10);
   const H = +c.h > 0 ? Math.min(+c.h, top - z0) : top - z0;
   return Math.max(300, H);
 }
 /** What the glass loses at a wall end: a clamp gap, or the depth of the wall channel it sits in. */
 function wallTrim(c) {
   const PW = GL_PROF[c.fixW];
-  return PW ? PW.h - PW.d + 3 : 5;
+  return PW ? (c.fixW === 'emb' ? 3 - PW.d : PW.h - PW.d + 3) : 5;
 }
 
 /**
@@ -108031,6 +109132,8 @@ function glassCalc(e, ceil, wallAt) {
             });
         }
         add('h' + hk, `${GL_HINGE[hk]}, ${fin}`, n);
+        p.hk = hk;
+        p.hOnWall = onWall;
         const M = p.m * 9.81 * (p.w / 2 / 1000);
         const F = M / Math.max(0.3, dd / 1000);
         loads.push([
@@ -110801,6 +111904,7 @@ function wallTie(e) {
  */
 
 
+
 const ID = (x, d, z) => [x, d, z];
 const GASKET = '#2a2d31';
 
@@ -111005,6 +112109,16 @@ function winBar(mb, a0, a1, b0, b1, dOut, dIn, colOut, colIn, vertical) {
  * off the face and tapering, pointing down (dir −1) or sideways for a top-hung sash (horizontal).
  */
 function winHandle(mb, s, d, z, col, horizontal) {
+  if (
+    skinPut(
+      mb,
+      'win.handle',
+      horizontal ? (x, y, zz) => [s - zz, d - y, z + x] : (x, y, zz) => [s + x, d - y, z + zz],
+      'Ручка оконная',
+      col
+    )
+  )
+    return;
   mb.tag('Ручка оконная');
   mb.smooth(true);
   if (horizontal) {
@@ -120228,7 +121342,10 @@ const LEGACY_SER = {
   'Дизайн: стекло': ['Schneider ArtGallery', 'белый', 'glass'],
   'Дизайн: металл': ['Schneider ArtGallery', 'сталь', 'metal']
 };
-const serKey = b => (/ArtGallery/.test(b.series) ? 'gal' : /Безрамоч/.test(b.series) ? 'flush' : 'atlas');
+/** The series whose frames and mechanisms are the user's own models (core/skins.js); what has no model is drawn as AtlasDesign. */
+const SER_OWN = 'Своя серия (свои модели)';
+const serKey = b =>
+  /ArtGallery/.test(b.series) ? 'gal' : /Безрамоч/.test(b.series) ? 'flush' : b.series === SER_OWN ? 'own' : 'atlas';
 function blkNorm(b) {
   if (!b) return b;
   const L = LEGACY_SER[b.series];
@@ -120279,7 +121396,7 @@ function blkSize(b) {
 }
 
 /** Wiring-device series (frames + mechanisms). Old project values are mapped by LEGACY_SER. */
-const SERIES = ['Schneider AtlasDesign', 'Schneider ArtGallery', 'Безрамочная (скрытого монтажа)'];
+const SERIES = ['Schneider AtlasDesign', 'Schneider ArtGallery', 'Безрамочная (скрытого монтажа)', SER_OWN];
 
 /** Series-dependent rows of the block panel: mechanism colour, frame material/colour, frame size. */
 function blkSeriesRows(e) {
@@ -124280,7 +125397,12 @@ function sewerGenerate(opts = {}) {
   pushUndo();
   // previous generated pipes of the level are replaced
   for (let i = S.ents.length - 1; i >= 0; i--)
-    if (S.ents[i].type === 'pipe' && S.ents[i].gen === 'sewer') S.ents.splice(i, 1);
+    if (
+      S.ents[i].type === 'pipe' &&
+      S.ents[i].gen === 'sewer' &&
+      (!opts.fixes || opts.fixes.some(f => f.id === S.ents[i].fid))
+    )
+      S.ents.splice(i, 1);
   const obs = sewObstacles();
   // biggest outlets first, then the farthest from the riser
   outs.sort((a, b) => b.q.d - a.q.d || dist(b.q.p, tee.p) - dist(a.q.p, tee.p));
@@ -124477,6 +125599,7 @@ function sewerGenerate(opts = {}) {
       slope: r.slope,
       ins: 0,
       gen: 'sewer',
+      fid: r.o.fix.id,
       layer: 'Сантехника',
       id: S.nextId++
     };
@@ -124756,7 +125879,9 @@ const DIR4 = [
 ];
 /** Fixture connections (cold / hot) not yet reached by a pipe. */
 function waterPoints(fixes) {
-  const pipes = S.ents.filter(e => e.type === 'pipe' && e.gen !== 'water');
+  // generated lines that stay (a run for chosen fixtures) count as connections too
+  const own = new Set(fixes.map(f => f.id));
+  const pipes = S.ents.filter(e => e.type === 'pipe' && (e.gen !== 'water' || (e.fid != null && !own.has(e.fid))));
   const used = q =>
     pipes.some(
       e =>
@@ -125071,9 +126196,16 @@ function wgSearch(G, a, b) {
 function waterGenerate(opts = {}) {
   const fixes = opts.fixes || S.ents.filter(e => e.type === 'fix');
   pushUndo();
+  // a run for chosen fixtures replaces only their own lines; the lines of the others stay and keep their outlets
+  const scope = opts.fixes ? new Set(opts.fixes.map(f => f.id)) : null;
   for (let i = S.ents.length - 1; i >= 0; i--)
-    if (S.ents[i].type === 'pipe' && S.ents[i].gen === 'water') S.ents.splice(i, 1);
+    if (S.ents[i].type === 'pipe' && S.ents[i].gen === 'water' && (!scope || scope.has(S.ents[i].fid)))
+      S.ents.splice(i, 1);
   let outs = manifoldOutlets();
+  if (scope) {
+    const kept = S.ents.filter(e => e.type === 'pipe' && e.gen === 'water');
+    outs = outs.filter(o => !kept.some(e => [e.pts[0], e.pts[e.pts.length - 1]].some(q => dist(q, o.p) < 60)));
+  }
   const pts = waterPoints(fixes);
   // a single water manifold without enough outlets is re-laid radially: one outlet per fixture connection
   const mfs = [...new Set(outs.map(o => o.mf))];
@@ -125151,6 +126283,7 @@ function waterGenerate(opts = {}) {
       slope: 0,
       ins: L.o.sys === 'gvs' ? 9 : 4,
       gen: 'water',
+      fid: L.w.fix.id,
       layer: 'Водоснабжение',
       id: S.nextId++
     };
