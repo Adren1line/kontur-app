@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.3';
+const APP_VER = '59.4';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -8161,6 +8161,15 @@ const DEVK = {
     pw: 7000,
     box: 1
   },
+  eout: {
+    f: 'socket',
+    n: 'Электровывод (кабель под оборудование)',
+    kw: 'Вывод',
+    mount: 'wall',
+    z: 2400,
+    pw: 500,
+    box: 1
+  },
   sockUSB: { f: 'socket', n: 'Розетка с USB', kw: 'USB', mount: 'wall', z: 900, pw: 300, box: 1 },
   tv: { f: 'socket', n: 'Розетка ТВ', kw: 'ТВ', mount: 'wall', z: 300, pw: 0, box: 1, weak: true },
   rj45: {
@@ -8203,14 +8212,16 @@ const DUCT_INS = [0, 10, 25, 50];
 const VKINDS = ['Приток', 'Вытяжка', 'Кондиционер: подача', 'Кондиционер: забор', 'Рециркуляция'];
 /** Standard colours of the systems (7.1): supply blue, extract red, AC supply magenta, AC return light blue. */
 const VKCOL = {
-  Приток: '#2f6fd6',
-  Вытяжка: '#d64545',
-  'Кондиционер: подача': '#c2185b',
-  'Кондиционер: забор': '#4fb3e8',
+  Приток: '#2e9d4a',
+  Вытяжка: '#e868a2',
+  'Кондиционер: подача': '#4fb3e8',
+  'Кондиционер: забор': '#d64545',
   Рециркуляция: '#38b2ac'
 };
-/** Freon and condensate drain (7.1): green and yellow. */
-const ACL_STD = { freon: '#2e9d4a', drain: '#e6b800' };
+/** Earlier standard colours: systems that still have them follow the standard. */
+const VKCOL_OLD = ['#2f6fd6', '#d64545', '#c2185b', '#4fb3e8', '#5b8def', '#e0805a'];
+/** Freon and condensate drain. */
+const ACL_STD = { freon: '#8a6d1f', drain: '#e6b800' };
 const GPAL = [
   '#f2d15e',
   '#c97cf0',
@@ -8238,10 +8249,10 @@ function defaultElec() {
 function defaultVent() {
   return {
     systems: [
-      { id: 'П1', name: 'Приток', kind: 'Приток', col: '#2f6fd6' },
-      { id: 'В1', name: 'Вытяжка', kind: 'Вытяжка', col: '#d64545' },
-      { id: 'К1п', name: 'Кондиционер: подача', kind: 'Кондиционер: подача', col: '#c2185b' },
-      { id: 'К1з', name: 'Кондиционер: забор', kind: 'Кондиционер: забор', col: '#4fb3e8' }
+      { id: 'П1', name: 'Приток', kind: 'Приток', col: '#2e9d4a' },
+      { id: 'В1', name: 'Вытяжка', kind: 'Вытяжка', col: '#e868a2' },
+      { id: 'К1п', name: 'Кондиционер: подача', kind: 'Кондиционер: подача', col: '#4fb3e8' },
+      { id: 'К1з', name: 'Кондиционер: забор', kind: 'Кондиционер: забор', col: '#d64545' }
     ],
     vmax: 4,
     flexMax: 3000,
@@ -14179,8 +14190,11 @@ function mkWire() {
     }
   };
 }
-function mkDuct() {
+function mkDuct(opt = {}) {
   const pts = [];
+  // a flexible connection drawn by hand: the same command, the duct is flexible; the end spigot gives its own height
+  let flex = !!opt.flex,
+    zEnd = null;
   let sec = mkDuct.sec || { shape: 'round', d: 160 },
     z = mkDuct.z ?? S.ceil - 150,
     sys = S.vent.cur || S.vent.systems[0].id,
@@ -14191,14 +14205,21 @@ function mkDuct() {
     if (pts.length >= 2) {
       const a = devAt(pts[0], 'vterm'),
         b = devAt(pts[pts.length - 1], 'vterm');
+      const out = pts.map(p => P(p.x, p.y));
+      if (zEnd != null && Math.abs(zEnd - z) > 1) {
+        // the run keeps its height and comes to the spigot at the spigot's height
+        out.forEach(p => (p.z = z));
+        out[out.length - 1].z = zEnd;
+      }
       addEnt({
         type: 'duct',
-        pts: pts.slice(),
+        pts: out,
         ...full(),
+        ...(flex && sec.shape !== 'rect' ? { flex: true } : {}),
         z,
         sys,
         flow,
-        mat: DUCT_MATS[0],
+        mat: flex && sec.shape !== 'rect' ? 'Гибкий алюминиевый' : DUCT_MATS[0],
         ins: 0,
         from: a ? a.id : null,
         to: b ? b.id : null,
@@ -14219,7 +14240,7 @@ function mkDuct() {
             ? `Расход, м³/ч <${flow}>:`
             : ask === 's'
               ? `Система (${S.vent.systems.map(s => s.id).join(', ')}) <${sys}>:`
-              : `${!pts.length ? 'Начало воздуховода' : 'Следующая точка'} (${sys}, ${secTxt(full())}, ${flow} м³/ч, ось ${z}) или [Сечение/Высота/Система/Расход${pts.length ? '/Отменить' : ''}]:`,
+              : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${z}) или [Сечение/Высота/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}${pts.length ? '/Отменить' : ''}]:`,
     hasValue: () => ask === 'z' || ask === 'q',
     onValue(v) {
       if (ask === 'z') {
@@ -14255,6 +14276,14 @@ function mkDuct() {
         ask = 'sec';
         return true;
       }
+      if (kw(s, 'г', 'гибкий')) {
+        flex = true;
+        return true;
+      }
+      if (kw(s, 'ж', 'жёсткий', 'жесткий')) {
+        flex = false;
+        return true;
+      }
       if (kw(s, 'в', 'высота', 'h')) {
         ask = 'z';
         return true;
@@ -14288,6 +14317,7 @@ function mkDuct() {
           return;
         }
         pts.push(q);
+        zEnd = Math.round(sp.p[2]);
         return fin();
       }
       if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) pts.push(p);
@@ -14300,7 +14330,8 @@ function mkDuct() {
       return fin();
     },
     preview(cur) {
-      if (pts.length && !ask) drawDuct({ type: 'duct', pts: pts.concat([cur]), ...full(), z, sys, flow }, 'ghost');
+      if (pts.length && !ask)
+        drawDuct({ type: 'duct', pts: pts.concat([cur]), ...full(), z, sys, flow, flex }, 'ghost');
     }
   };
 }
@@ -26218,7 +26249,8 @@ const WSDEF = [
     g: [
       ['Отопление', ['rad', 'ufh']],
       ['Вентиляция', ['duct', 'vterm', 'vshaft', 'avcalc']],
-      ['Оборудование', ['ahu', 'silencer', 'plenum', 'flexconn']],
+      ['Оборудование', ['ahu', 'silencer', 'plenum']],
+      ['Детали', ['reducer', 'ductee', 'flexconn']],
       ['Кондиционеры', ['ac', 'acfreon', 'acdrain']],
       ['Схемы', ['ventlabel', 'ventsheet']]
     ]
@@ -26344,7 +26376,9 @@ const TLBL = {
   ahu: 'Установка',
   silencer: 'Глушитель',
   plenum: 'Адаптер',
-  flexconn: 'Подводки',
+  flexconn: 'Подводка',
+  reducer: 'Переход',
+  ductee: 'Тройник',
   ventlabel: 'Подписать',
   ventsheet: 'Листы схем',
   sect: 'Разрез',
@@ -63184,10 +63218,14 @@ const AHU_CAT = {
 /** Silencers: the round CSR series — connection Ø, length, outer Ø. */
 const SIL_D = [100, 125, 160, 200, 250, 315];
 const SIL_L = [600, 900, 1200];
+/** Diameters of the fittings. */
+const FIT_D = [100, 125, 160, 200, 250, 315];
 const silOuter = d => d + (d <= 125 ? 100 : 100);
 const HV_KIND = {
   ahu: 'Приточно-вытяжная установка',
   sil: 'Шумоглушитель',
+  red: 'Переход диаметров',
+  tee: 'Тройник',
   plen: 'Адаптер решётки'
 };
 /** Colours of the air streams outside the systems: outdoor air and exhaust to the street. */
@@ -63205,6 +63243,9 @@ function hvZ(e) {
   return ceil + 150;
 }
 /** Body size in the local frame: [length along x, depth along y, height]. */
+/** A reducer: the length of the cone by the difference of the diameters; a tee: the branch plus the collars. */
+const redLen = e => Math.max(100, Math.round(Math.abs((+e.d || 200) - (+e.d2 || 160)) * 1.2 + 80));
+const teeLen = e => Math.round((+e.d2 || 160) * (+e.ang === 45 ? 1.5 : 1) + 120);
 function hvDim(e) {
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
@@ -63213,6 +63254,14 @@ function hvDim(e) {
   if (e.kind === 'sil') {
     const D = silOuter(+e.d || 160);
     return [+e.L || 900, D, D];
+  }
+  if (e.kind === 'red') {
+    const D = Math.max(+e.d || 200, +e.d2 || 160);
+    return [redLen(e), D, D];
+  }
+  if (e.kind === 'tee') {
+    const D = +e.d || 200;
+    return [teeLen(e), D, D];
   }
   return [+e.L || 1000, +e.W || 150, +e.H || 250];
 }
@@ -63234,6 +63283,33 @@ function hvSpigotsL(e) {
       { x: L / 2 + ext, y: -W / 4, z: zc, dir: [1, 0, 0], d, role: 'sup', sys: e.sysS || null, n: 'Приток' },
       { x: L / 2 + ext, y: W / 4, z: zc, dir: [1, 0, 0], d, role: 'eta', sys: e.sysE || null, n: 'Вытяжка' }
     );
+  } else if (e.kind === 'red') {
+    out.push(
+      { x: -L / 2 - 40, y: 0, z: 0, dir: [-1, 0, 0], d: +e.d || 200, role: 'in', sys: e.sys || null, n: 'Большой Ø' },
+      { x: L / 2 + 40, y: 0, z: 0, dir: [1, 0, 0], d: +e.d2 || 160, role: 'out', sys: e.sys || null, n: 'Малый Ø' }
+    );
+  } else if (e.kind === 'tee') {
+    const d = +e.d || 200,
+      d2 = +e.d2 || 160;
+    const a45 = +e.ang === 45,
+      bl = d / 2 + 90;
+    const bd = a45 ? [Math.SQRT1_2, Math.SQRT1_2, 0] : [0, 1, 0];
+    out.push(
+      { x: -L / 2 - 40, y: 0, z: 0, dir: [-1, 0, 0], d, role: 'in', sys: e.sys || null, n: 'Вход' },
+      { x: L / 2 + 40, y: 0, z: 0, dir: [1, 0, 0], d, role: 'out', sys: e.sys || null, n: 'Проход' },
+      {
+        x: bd[0] * bl * (a45 ? 1.3 : 1),
+        y: bd[1] * bl * (a45 ? 1.3 : 1),
+        z: 0,
+        dir: bd,
+        d: d2,
+        role: 'br',
+        sys: e.sys || null,
+        n: 'Ответвление'
+      }
+    );
+    if (e.cross)
+      out.push({ x: 0, y: -bl, z: 0, dir: [0, -1, 0], d: d2, role: 'br', sys: e.sys || null, n: 'Ответвление 2' });
   } else if (e.kind === 'sil') {
     const d = +e.d || 160;
     out.push(
@@ -63309,6 +63385,9 @@ function hvLabel(e) {
     return `${e.name ? e.name + ' · ' : ''}${a.n}\nL=${fmt(+e.flow || a.q)} м³/ч`;
   }
   if (e.kind === 'sil') return `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`;
+  if (e.kind === 'red') return `Переход ø${+e.d || 200}/ø${+e.d2 || 160}`;
+  if (e.kind === 'tee')
+    return `${e.cross ? 'Крестовина' : 'Тройник'} ø${+e.d || 200}/ø${+e.d2 || 160}${+e.ang === 45 ? ' 45°' : ''}`;
   const s = plenSlot(e);
   const [L, W] = hvDim(e);
   return `${e.mount === 'wall' ? 'Решётка настенная с адаптером' : 'Адаптер'} ${fmt(L)}×${fmt(W)}, ${Math.round(+e.n || 2)}×ø${+e.d || 125}\n${fmt(s.L)} мм, ${s.ns} щел${s.ns === 1 ? 'ь' : s.ns < 5 ? 'и' : 'ей'} ${s.sw} мм\nL=${e.flowTxt || fmt(+e.flow || 0)} м³/ч\nV=${n1(s.v)} м/с`;
@@ -63395,6 +63474,39 @@ function hvBuild(e, mb) {
       ])
         mb.box(x - 4, y - 4, H, x + 4, y + 4, H + 220, '#9aa1a9');
     }
+  } else if (e.kind === 'red' || e.kind === 'tee') {
+    const col = hvShade(sysOf(e.sys || '').col, 0.15),
+      dark = hvShade(sysOf(e.sys || '').col, -0.25);
+    mb.tag(hvLabel(e));
+    mb.smooth(true);
+    const r1 = (+e.d || 200) / 2,
+      r2 = (e.kind === 'red' ? +e.d2 || 160 : +e.d || 200) / 2;
+    if (e.kind === 'red')
+      mb.sweep(
+        [
+          [-L / 2 - 40, 0, 0],
+          [-L / 2, 0, 0],
+          [L / 2, 0, 0],
+          [L / 2 + 40, 0, 0]
+        ],
+        [r1, r1, r2, r2],
+        col,
+        28
+      );
+    else {
+      mb.tube([-L / 2 - 40, 0, 0], [L / 2 + 40, 0, 0], r1, col, 28);
+      for (const q of SP.filter(q => q.role === 'br')) mb.tube([0, 0, 0], [q.x, q.y, 0], q.d / 2, col, 24);
+    }
+    // rolled beads at the ends
+    for (const q of SP)
+      mb.tube(
+        [q.x - q.dir[0] * 26, q.y - q.dir[1] * 26, 0],
+        [q.x - q.dir[0] * 18, q.y - q.dir[1] * 18, 0],
+        q.d / 2 + 3,
+        dark,
+        24
+      );
+    mb.smooth(false);
   } else if (e.kind === 'sil') {
     const col = sysOf(e.sys || '').col;
     const D = W;
@@ -63559,7 +63671,15 @@ function hvDraw(e, color, o, ghost) {
   ctx.strokeStyle = c;
   ctx.fillStyle = c;
   ctx.lineWidth = o.hover ? 2.2 : 1.3;
-  const poly = hvPoly(e);
+  const poly =
+    e.kind === 'red'
+      ? (() => {
+          const l = hvDim(e)[0] / 2,
+            a = (+e.d || 200) / 2,
+            b = (+e.d2 || 160) / 2;
+          return [LP(e, -l, -a), LP(e, l, -b), LP(e, l, b), LP(e, -l, a)];
+        })()
+      : hvPoly(e);
   pathPoly(poly);
   ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(e.kind === 'ahu' ? '#9aa1a9' : sc, 0.22);
   ctx.fill();
@@ -63666,6 +63786,74 @@ function hvDraw(e, color, o, ghost) {
   ctx.restore();
 }
 
+/* ---------- power ---------- */
+/** Electric power of the units, W (fans + heater; approximate — the passport is the source). */
+const AHU_W = {
+  'komf-r700f': 1200,
+  'komf-r400f': 1000,
+  'komf-r700v': 1200,
+  'komf-r450v': 1000,
+  'brz-900re': 2500,
+  'brz-500rp': 4200
+};
+const unitPower = e =>
+  e.type === 'hvu' ? AHU_W[e.model] || 1000 : Math.round(((+e.cap || 3.5) * 1000) / 3 / 50) * 50;
+const PWR_KIND = { out: 'электровывод (кабель в клеммы блока)', sock: 'розетка' };
+/** The power point of a unit: the one made for it, else any socket or outlet within 2 m. */
+function powerNear(e) {
+  return (
+    S.ents.find(d => d.type === 'dev' && d.feeds === e.id) ||
+    S.ents.find(
+      d =>
+        d.type === 'dev' && DEVK[d.kind] && DEVK[d.kind].f === 'socket' && !DEVK[d.kind].weak && dist(d.p, e.p) < 2000
+    ) ||
+    null
+  );
+}
+/** Puts an outlet or a socket for the unit on the nearest wall, at the height of the unit. */
+function addPower(e) {
+  const pl = placeOnWall(e.p, 'wall');
+  const kind = e.pwr === 'sock' ? 'sock1' : 'eout';
+  const z =
+    Math.round(
+      Math.min((S.ceil || 2700) - 100, Math.max(300, e.type === 'hvu' ? hvZ(e) : (S.ceil || 2700) - 150)) / 10
+    ) * 10;
+  pushUndo();
+  const d = addEnt({
+    type: 'dev',
+    kind,
+    p: pl.p,
+    rot: pl.rot,
+    z: e.pwr === 'sock' ? Math.min(z, (S.ceil || 2700) - 200) : z,
+    group: S.elec.cur || 1,
+    pw: unitPower(e),
+    host: pl.host,
+    feeds: e.id,
+    layer: ensureLayer(FAMS.socket.cat),
+    meta: { note: 'Питание: ' + (XT[e.type].group ? XT[e.type].group(e) : 'оборудование') }
+  });
+  changed();
+  log(
+    `${e.pwr === 'sock' ? 'Розетка' : 'Электровывод'} ${unitPower(e)} Вт поставлен на ближайшую стену — передвиньте при необходимости, группа щита — в свойствах`
+  );
+  return d;
+}
+/** The row of the properties: the kind of the power point, its state and the button. */
+function powerRows(e) {
+  const d = powerNear(e);
+  return (
+    cR('Мощность', `≈ ${unitPower(e)} Вт`) +
+    cR(
+      'Подключение',
+      `<select data-x="pwr">${Object.entries(PWR_KIND)
+        .map(([k, n]) => `<option value="${k}" ${(e.pwr || 'out') === k ? 'selected' : ''}>${n}</option>`)
+        .join('')}</select>`
+    ) +
+    (d
+      ? cR('Точка питания', esc(DEVK[d.kind].n) + (d.group != null ? ` · группа ${d.group}` : ''))
+      : `<dt></dt><dd class="warn" style="text-align:left">Питания рядом нет</dd><dt></dt><dd><button class="btn" data-xa="unitpwr">Поставить ${e.pwr === 'sock' ? 'розетку' : 'электровывод'}</button></dd>`)
+  );
+}
 /* ---------- checks ---------- */
 function hvChecks(e) {
   const out = [];
@@ -63674,6 +63862,11 @@ function hvChecks(e) {
     const q = +e.flow || a.q;
     if (q > a.qmax) out.push(['bad', `${a.n}: расход ${fmt(q)} м³/ч больше предельного ${fmt(a.qmax)} м³/ч.`]);
     if (!e.sysS || !e.sysE) out.push(['warn', 'Установке не назначены системы притока и вытяжки.']);
+    if (!powerNear(e))
+      out.push([
+        'warn',
+        `${a.n}: нет питания (≈ ${unitPower(e)} Вт) — поставьте электровывод или розетку (свойства → «Питание»).`
+      ]);
   }
   if (e.kind === 'plen') {
     const s = plenSlot(e);
@@ -63759,7 +63952,9 @@ XT.hvu = {
       ? ahuOf(e).n
       : e.kind === 'sil'
         ? `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`
-        : 'Адаптер решётки',
+        : e.kind === 'red' || e.kind === 'tee'
+          ? hvLabel(e)
+          : 'Адаптер решётки',
   label: hvLabel,
   checks: hvChecks,
   panel(e) {
@@ -63775,49 +63970,72 @@ XT.hvu = {
             ['Поворот, °', 'rotd', 'n'],
             ['Обозначение', 'name', 't']
           ]
-        : e.kind === 'sil'
+        : e.kind === 'red' || e.kind === 'tee'
           ? [
-              ['Ø подключения', 'd', 's', SIL_D.map(d => [d, 'ø' + d])],
-              ['Длина, мм', 'L', 's', SIL_L.map(l => [l, String(l)])],
+              [e.kind === 'red' ? 'Больший Ø' : 'Ø магистрали', 'd', 's', FIT_D.map(d => [d, 'ø' + d])],
+              [e.kind === 'red' ? 'Меньший Ø' : 'Ø ответвления', 'd2', 's', FIT_D.map(d => [d, 'ø' + d])],
+              ...(e.kind === 'tee'
+                ? [
+                    [
+                      'Угол ответвления',
+                      'ang',
+                      's',
+                      [
+                        [90, '90°'],
+                        [45, '45°']
+                      ]
+                    ],
+                    ['Крестовина (два ответвления)', 'cross', 'b']
+                  ]
+                : []),
               ['Система', 'sys', 's', sysOpts],
               ['Отметка оси, мм', 'z', 'n'],
               ['Поворот, °', 'rotd', 'n']
             ]
-          : [
-              [
-                'Установка',
-                'mount',
-                's',
+          : e.kind === 'sil'
+            ? [
+                ['Ø подключения', 'd', 's', SIL_D.map(d => [d, 'ø' + d])],
+                ['Длина, мм', 'L', 's', SIL_L.map(l => [l, String(l)])],
+                ['Система', 'sys', 's', sysOpts],
+                ['Отметка оси, мм', 'z', 'n'],
+                ['Поворот, °', 'rotd', 'n']
+              ]
+            : [
                 [
-                  ['ceil', 'в потолке (решётка вниз)'],
-                  ['wall', 'в стене / коробе (решётка в помещение)']
-                ]
-              ],
-              ['Длина, мм', 'L', 'n'],
-              [e.mount === 'wall' ? 'Высота короба, мм' : 'Ширина, мм', 'W', 'n'],
-              [e.mount === 'wall' ? 'Глубина короба, мм' : 'Высота, мм', 'H', 'n'],
-              ['Патрубков', 'n', 'n'],
-              ['Ø патрубков', 'd', 's', [100, 125, 160, 200].map(d => [d, 'ø' + d])],
-              [
-                'Подвод',
-                'conn',
-                's',
+                  'Установка',
+                  'mount',
+                  's',
+                  [
+                    ['ceil', 'в потолке (решётка вниз)'],
+                    ['wall', 'в стене / коробе (решётка в помещение)']
+                  ]
+                ],
+                ['Длина, мм', 'L', 'n'],
+                [e.mount === 'wall' ? 'Высота короба, мм' : 'Ширина, мм', 'W', 'n'],
+                [e.mount === 'wall' ? 'Глубина короба, мм' : 'Высота, мм', 'H', 'n'],
+                ['Патрубков', 'n', 'n'],
+                ['Ø патрубков', 'd', 's', [100, 125, 160, 200].map(d => [d, 'ø' + d])],
                 [
-                  ['top', 'сверху'],
-                  ['side', e.mount === 'wall' ? 'сзади' : 'сбоку']
-                ]
-              ],
-              ['Щелей', 'slots', 'n'],
-              ['Ширина щели, мм', 'sw', 's', [20, 25, 30].map(v => [v, String(v)])],
-              ['Расход, м³/ч', 'flow', 'n'],
-              ['Система', 'sys', 's', sysOpts],
-              [e.mount === 'wall' ? 'Отметка низа решётки, мм' : 'Отметка низа (потолок), мм', 'z', 'n'],
-              ['Поворот, °', 'rotd', 'n']
-            ];
+                  'Подвод',
+                  'conn',
+                  's',
+                  [
+                    ['top', 'сверху'],
+                    ['side', e.mount === 'wall' ? 'сзади' : 'сбоку']
+                  ]
+                ],
+                ['Щелей', 'slots', 'n'],
+                ['Ширина щели, мм', 'sw', 's', [20, 25, 30].map(v => [v, String(v)])],
+                ['Расход, м³/ч', 'flow', 'n'],
+                ['Система', 'sys', 's', sysOpts],
+                [e.mount === 'wall' ? 'Отметка низа решётки, мм' : 'Отметка низа (потолок), мм', 'z', 'n'],
+                ['Поворот, °', 'rotd', 'n']
+              ];
     const sp = hvSpigots(e);
     const chk = hvChecks(e);
     return xGroups(e, [
       [HV_KIND[e.kind], esc(XT.hvu.group(e)), rows],
+      ...(e.kind === 'ahu' ? [['Питание', powerNear(e) ? 'есть' : 'нет', powerRows(e)]] : []),
       [
         'Патрубки',
         `${sp.length}`,
@@ -63828,10 +64046,7 @@ XT.hvu = {
               `ø${q.d}${q.sys ? ' · ' + esc(q.sys) : ''}${q.sys !== null && !spigotLinked(q) ? ' · свободен' : ''}`
             )
           )
-          .join('') +
-          (e.kind !== 'ahu'
-            ? `<dt></dt><dd><button class="btn" data-xa="hvflex" title="Гибкие подводки от ближайшего воздуховода системы к каждому патрубку">Подвести гибкими</button> <button class="btn" data-xa="hvrigid" title="Жёсткие подводки из оцинковки с отводами">Подвести жёсткими</button></dd>`
-            : '')
+          .join('')
       ],
       ['Выноска', '', `<dt></dt><dd style="text-align:left;white-space:pre-line">${esc(hvLabel(e))}</dd>`],
       [
@@ -63854,6 +64069,7 @@ XT.hvu = {
     }
   },
   action(e, a) {
+    if (a === 'unitpwr') addPower(e);
     if (a === 'hvflex' || a === 'hvrigid') {
       const n = flexConnect(e, null, { rigid: a === 'hvrigid' });
       log(n ? `Подводок: ${n}` : flexConnect.why, !n);
@@ -63872,7 +64088,9 @@ XT.hvu = {
       one('hvahu' + e.model, `Приточно-вытяжная установка с рекуператором ${a.n}, ${fmt(a.q)} м³/ч`);
       if (a.mount !== 'floor') one('hvahang', 'Подвес установки: шпилька М8 + виброизолятор, комплект', 'компл');
       one('hvavib', `Вставка гибкая (антивибрационная) ø${a.d}`, 'шт', 4);
-    } else if (e.kind === 'sil') one(`hvsil${e.d}-${e.L}`, `Шумоглушитель круглый CSR ${+e.d || 160}/${+e.L || 900}`);
+    } else if (e.kind === 'red' || e.kind === 'tee')
+      one(`hvfit${e.kind}${e.d}-${e.d2}-${e.ang || 90}-${e.cross ? 1 : 0}`, hvLabel(e) + ', оцинкованная сталь');
+    else if (e.kind === 'sil') one(`hvsil${e.d}-${e.L}`, `Шумоглушитель круглый CSR ${+e.d || 160}/${+e.L || 900}`);
     else {
       const s = plenSlot(e);
       const [L, W, H] = hvDim(e);
@@ -64201,20 +64419,27 @@ function mkHvu(kind0) {
             sysS: S.vent.systems.find(s => /прит/i.test(s.kind))?.id || '',
             sysE: S.vent.systems.find(s => /выт/i.test(s.kind))?.id || ''
           }
-        : kind === 'sil'
-          ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
-          : {
-              L: o.L || 1000,
-              W: 150,
-              H: 250,
-              n: 2,
-              d: 125,
-              conn: 'top',
-              slots: 2,
-              sw: 30,
-              flow: 200,
+        : kind === 'red' || kind === 'tee'
+          ? {
+              d: o.d || 200,
+              d2: o.d2 || 160,
+              ...(kind === 'tee' ? { ang: 90 } : {}),
               sys: S.vent.cur || S.vent.systems[0].id
-            })
+            }
+          : kind === 'sil'
+            ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
+            : {
+                L: o.L || 1000,
+                W: 150,
+                H: 250,
+                n: 2,
+                d: 125,
+                conn: 'top',
+                slots: 2,
+                sw: 30,
+                flow: 200,
+                sys: S.vent.cur || S.vent.systems[0].id
+              })
     };
     return e;
   };
@@ -64244,13 +64469,16 @@ function mkHvu(kind0) {
     name: 'hvu',
     base: () => null,
     prompt: () =>
-      kind === 'sil'
-        ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
-        : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
+      kind === 'red' || kind === 'tee'
+        ? `${kind === 'red' ? 'Переход' : 'Тройник'} ø${o.d || 200}/ø${o.d2 || 160}: щелчок по воздуховоду — встанет в разрыв (Ø магистрали — от воздуховода), или свободное место [Ø/Второй Ø/Повернуть/Зеркально]:`
+        : kind === 'sil'
+          ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
+          : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
     hasValue: () => dk != null,
     onValue(v) {
       if (dk === 'L' && v > 100) o.L = v;
       if (dk === 'd' && v > 50) o.d = v;
+      if (dk === 'd2' && v > 50) o.d2 = v;
       mkHvu['o' + kind] = o;
       dk = null;
     },
@@ -64261,7 +64489,13 @@ function mkHvu(kind0) {
         return true;
       }
       if (kw(s, 'д', 'длина')) return !!(dk = 'L');
-      if (kind === 'sil' && kw(s, 'ø', 'диаметр', 'd')) return !!(dk = 'd');
+      if (kind !== 'ahu' && kind !== 'plen' && kw(s, 'ø', 'диаметр', 'd')) return !!(dk = 'd');
+      if ((kind === 'red' || kind === 'tee') && kw(s, 'в', 'второй', 'd2')) return !!(dk = 'd2');
+      if (kw(s, 'з', 'зеркально', 'm')) {
+        rot += Math.PI;
+        mkHvu['r' + kind] = rot;
+        return true;
+      }
       if (kind === 'ahu' && kw(s, 'м', 'модель')) {
         const ks = Object.keys(AHU_CAT);
         o.model = ks[(ks.indexOf(o.model || 'komf-r700f') + 1) % ks.length];
@@ -64272,10 +64506,10 @@ function mkHvu(kind0) {
       return false;
     },
     onPoint(p) {
-      if (kind === 'sil') {
+      if (kind === 'sil' || kind === 'red' || kind === 'tee') {
         const h = onDuct(p);
         if (h) {
-          insertSilencer(h.d, h.i, h.c, o);
+          insertInline(kind, h.d, h.i, h.c, o);
           return 'end';
         }
       }
@@ -64288,17 +64522,31 @@ function mkHvu(kind0) {
   };
 }
 /** Cuts a duct at a point and puts a silencer into the gap (axis, height, Ø and system of the duct). */
-function insertSilencer(d, i, c, o = {}) {
-  const L = +o.L || 900,
-    dd = SIL_SNAP(d.d || 160);
+const insertSilencer = (d, i, c, o = {}) => insertInline('sil', d, i, c, o);
+/**
+ * Cuts a round duct at a point and puts an inline part into the gap: a silencer, a reducer (the run after it takes
+ * the smaller Ø) or a tee (the branch stays free for a duct drawn by hand). flip — the part turned end for end.
+ */
+function insertInline(kind, d, i, c, o = {}) {
+  const dd = kind === 'sil' ? SIL_SNAP(d.d || 160) : +d.d || 160;
+  const part =
+    kind === 'sil'
+      ? { d: dd, L: +o.L || 900 }
+      : kind === 'red'
+        ? {
+            d: Math.max(dd, +o.d2 || 125),
+            d2: Math.min(dd, +o.d2 || 125) === dd ? Math.max(100, dd - 40) : Math.min(dd, +o.d2 || 125)
+          }
+        : { d: dd, d2: Math.min(dd, +o.d2 || 160), ang: +o.ang || 90 };
+  const L = kind === 'sil' ? part.L : hvDim({ kind, ...part })[0];
   const a = d.pts[i - 1],
     b = d.pts[i];
   const u = nrm(sub(b, a));
-  const half = L / 2 + 50;
+  const half = L / 2 + (kind === 'sil' ? 50 : 40);
   const p0 = sub(c, mul(u, half)),
     p1 = add(c, mul(u, half));
   if (dist(a, p0) < 50 || dist(b, p1) < 50) {
-    log('Слишком близко к повороту — нужен прямой участок длиннее шумоглушителя', true);
+    log('Слишком близко к повороту или концу — нужен прямой участок длиннее детали', true);
     return null;
   }
   pushUndo();
@@ -64317,15 +64565,18 @@ function insertSilencer(d, i, c, o = {}) {
   const { id, ...rest } = d;
   d.pts = A;
   d.to = null;
-  addEnt({ ...rest, pts: B, from: null });
-  const rot = Math.atan2(u.y, u.x);
+  const tail = addEnt({ ...rest, pts: B, from: null });
+  // after a reducer the run goes on in the smaller Ø
+  if (kind === 'red') {
+    tail.d = tail.w = tail.hh = part.d2;
+  }
+  const rot = Math.atan2(u.y, u.x) + (o.flip ? Math.PI : 0);
   const s = addEnt({
     type: 'hvu',
-    kind: 'sil',
+    kind,
     p: c,
     rot,
-    d: dd,
-    L,
+    ...part,
     sys: d.sys,
     z: zc,
     layer: ensureLayer('Вентиляция')
@@ -64472,11 +64723,27 @@ defineTools({
     icon: '<rect x="3" y="9" width="14" height="5"/><path d="M6 9V6M14 9V6M5 15.5h10M5 17h10"/>',
     help: 'Адаптер решётки (камера статического давления) с щелевой решёткой: щелчок — место на потолке. Патрубки, щели, расход — в свойствах; «Подвести гибкими» — подводки от магистрали.'
   },
+  reducer: {
+    command: { t: 'ПЕРЕХОД', m: () => mkHvu('red'), a: ['переход', 'переходник', 'редуктор', 'reducer'] },
+    title: 'Переход диаметров · ПЕРЕХОД',
+    icon: '<path d="M2 5v10M2 5l8 2.5V12.5L2 15M10 7.5h8M10 12.5h8"/>',
+    help: 'Переход с одного диаметра на другой: щелчок по воздуховоду — встанет в разрыв, участок после него получит меньший Ø; или свободное место. [Ø], [Второй Ø], [Зеркально].'
+  },
+  ductee: {
+    command: { t: 'ТРОЙНИК', m: () => mkHvu('tee'), a: ['тройник', 'разветвитель', 'врезка', 'крестовина', 'tee'] },
+    title: 'Тройник · ТРОЙНИК',
+    icon: '<path d="M2 7h16M2 12h6M12 12h6M8 12v6M12 12v6"/>',
+    help: 'Тройник: щелчок по воздуховоду — встанет в разрыв, ответвление остаётся свободным патрубком для воздуховода. Ø ответвления, угол 90/45°, крестовина — в свойствах. [Зеркально] — ответвление в другую сторону.'
+  },
   flexconn: {
-    command: { t: 'ПОДВОДКИ', m: mkFlex, a: ['подводки', 'гибкие', 'flex', 'гибкий'] },
-    title: 'Гибкие подводки к патрубкам · ПОДВОДКИ',
+    command: {
+      t: 'ПОДВОДКА',
+      m: () => mkDuct({ flex: true }),
+      a: ['подводка', 'подводки', 'гибкие', 'flex', 'гибкий']
+    },
+    title: 'Гибкая подводка вручную · ПОДВОДКА',
     icon: '<path d="M3 4h14M6 4c0 5 8 3 8 8v4"/><path d="M5 7.5l2 -1M7 10l2-1M10 12l2-1"/>',
-    help: 'Гибкие подводки: щелчок по магистрали, затем по адаптеру, шумоглушителю или канальному кондиционеру — по одной подводке на каждый свободный патрубок.'
+    help: 'Гибкая подводка рисуется вручную: щелчок по патрубку (возьмёт его Ø, систему и отметку), точки трассы, щелчок по второму патрубку или Enter. [Жёсткий] — тот же путь из оцинковки. Старое: щелчок по магистрали, затем по адаптеру, шумоглушителю или канальному кондиционеру — по одной подводке на каждый свободный патрубок.'
   },
   ventlabel: {
     command: { t: 'ПОДПИСАТЬСИСТЕМУ', m: mkLabels, a: ['подписать', 'подписатьсистему', 'выноски вентиляции'] },
@@ -64941,11 +65208,10 @@ function acChecks(e) {
     ]);
   if (e.drain === 'sewer' && !S.ents.some(f => f.type === 'fix' && f.kind === 'vtrap'))
     out.push(['info', 'Дренаж в канализацию: поставьте гидрозатвор для кондиционера (сухой сифон) рядом с трассой.']);
-  const sock = S.ents.some(d => d.type === 'dev' && dist(d.p, e.p) < 1500);
-  if (!sock)
+  if (!powerNear(e))
     out.push([
-      'info',
-      'Питание: розетка рядом с блоком или отдельный кабель от щита (автомат C16 для 2,5–3,5 кВт, C20–C25 для 5–7 кВт).'
+      e.kind === 'split' ? 'info' : 'warn',
+      `Нет питания внутреннего блока (≈ ${unitPower(e)} Вт на систему): электровывод или розетка рядом, либо кабель от щита (C16 для 2,5–3,5 кВт, C20–C25 для 5–7 кВт).`
     ]);
   return out;
 }
@@ -65221,8 +65487,9 @@ XT.ac = {
           )
           .join(
             ''
-          )}${e.kind === 'duct' && acSpigotsL(e).some(q => !q.shape) ? `<dt></dt><dd><button class="btn" data-xa="acflex" title="Гибкие подводки от ближайших воздуховодов к свободным круглым патрубкам">Подвести гибкими</button> <button class="btn" data-xa="acrigid" title="Жёсткие подводки из оцинковки с отводами к свободным круглым патрубкам">Подвести жёсткими</button></dd>` : ''}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
+          )}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
       ],
+      ['Питание', powerNear(e) ? 'есть' : 'нет', powerRows(e)],
       [
         'Проверки',
         '',
@@ -65247,6 +65514,7 @@ XT.ac = {
   },
   action(e, a) {
     if (a === 'acsplit') return acSplitLines(e);
+    if (a === 'unitpwr') return addPower(e);
     if (a === 'acflex' || a === 'acrigid') {
       const n = flexConnect(e, null, { rigid: a === 'acrigid' });
       log(n ? `Подводок: ${n}` : flexConnect.why, !n);
@@ -99319,6 +99587,7 @@ uiHooks.openArNotes = openArNotes;
 
 
 
+
 /* ---------- migration, sample, glue ---------- */
 function xMigrate() {
   S.x = S.x || defaultX();
@@ -99326,6 +99595,12 @@ function xMigrate() {
   const dx = defaultX();
   for (const k of Object.keys(dx)) if (S.x[k] == null) S.x[k] = dx[k];
 
+  // v59.4: the standard colours of the air systems changed; a system that had a standard colour follows
+  if (S.vent && S.vent.systems && !S.vent.colv) {
+    for (const x of S.vent.systems)
+      if (VKCOL[x.kind] && VKCOL_OLD.includes(String(x.col).toLowerCase())) x.col = VKCOL[x.kind];
+    S.vent.colv = 2;
+  }
   for (const e of S.ents) {
     // v39.11: furniture keeps the height it was given; the old automatic filler strip to the ceiling is dropped
     if (e.type === 'casework' && e.cfg && !e.cfg.hv) {
