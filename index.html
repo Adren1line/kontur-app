@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59';
+const APP_VER = '59.1';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -16968,6 +16968,18 @@ const renderState = {
  * The model on the plan (no grid, no UI overlays): walls, openings, elements, networks, level overlays.
  * o.plain — no selection / hover look (sheets); o.only(e) — extra filter; o.noLv — without other levels.
  */
+/** The elevation of an element for the plan height filter: its axis / bottom above the floor of its level; null — always shown. */
+function planElev(e) {
+  const ceil = S.ceil || 2700;
+  if (e.type === 'duct' || e.type === 'pipe' || e.type === 'wire' || e.type === 'acl') {
+    const zs = (e.pts || []).map(p => (p.z != null ? +p.z : +e.z || 0));
+    return zs.length ? Math.min(...zs) : +e.z || 0;
+  }
+  if (e.type === 'dev') return +e.z || 0;
+  if (e.type === 'hvu') return e.z != null ? +e.z : e.kind === 'plen' ? ceil : ceil + 40;
+  if (e.type === 'ac') return e.z != null ? +e.z : e.kind === 'split' ? ceil - 500 : ceil;
+  return null;
+}
 function drawModel(o = {}) {
   CAD.world = true;
   CAD.pen = null;
@@ -16982,7 +16994,9 @@ function drawModel(o = {}) {
     if (o.plain) return { sel: false, hover: false, dim: false };
     return { sel: S.sel.has(e.id), hover: renderState.hoverEnt === e && !wp, dim: L.lock || e === gripEnt };
   };
-  const vis = S.ents.filter(e => visible(e) && in2d(e) && (!o.only || o.only(e)));
+  // the height of the plan: what lies above it is not drawn (0 — no limit)
+  const pz = +(o.planZ ?? (S.x && S.x.planZ)) || 0;
+  const vis = S.ents.filter(e => visible(e) && in2d(e) && (!o.only || o.only(e)) && !(pz > 0 && planElev(e) > pz));
   for (const e of vis)
     if (e.type === 'slab') {
       const L = layerOf(e);
@@ -17180,7 +17194,12 @@ function drawModel(o = {}) {
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
-  for (const t of ['ufh', 'fix', 'reinf', 'pipe', 'duct', 'acl', 'rad', 'wire', 'dev', 'load'])
+  const NET_T = ['ufh', 'fix', 'reinf', 'pipe', 'duct', 'acl', 'rad', 'wire', 'dev', 'load'];
+  // other network elements (ventilation units, shafts…): under the ducts and pipes, over the architecture
+  for (const e of vis)
+    if (!NET_T.includes(e.type) && e.type !== 'inst' && isNetEnt(e) && netShown(e))
+      drawEnt(e, inkC(layerOf(e).color), opt(e));
+  for (const t of NET_T)
     for (const e of vis) if (e.type === t && netShown(e)) drawEnt(e, inkC(layerOf(e).color), opt(e));
   if (!o.noLv)
     try {
@@ -88761,7 +88780,7 @@ function drawPlanVp(it, o = {}) {
     const nv0 = NV.on;
     if (it.src.nv) NV.on = true;
     try {
-      withLv(it.src.lv, () => drawModel({ plain: !o.active, noLv: true }));
+      withLv(it.src.lv, () => drawModel({ plain: !o.active, noLv: true, planZ: +it.src.planZ || 0 }));
     } finally {
       NV.on = nv0;
     }
@@ -90609,6 +90628,7 @@ function itemPanel(sh, it) {
     }).join('')}</div>`;
   }
   if (it.t === 'vp' && it.src.k === 'plan') {
+    h += fl('Высота плана, мм (0 — всё; выше не показывается)', ip('src.planZ'));
     h += fl(
       'Этаж',
       selS(
@@ -91875,6 +91895,7 @@ function stageMenu(b) {
     `<button data-o="">Вся модель</button>` +
     g.list.map(s => `<button data-o="${s.id}">${esc(s.n)}${g.cur === s.id ? ' ✓' : ''}</button>`).join('') +
     `<hr><button data-o="new">Новая стадия…</button><button data-o="pdemo">Стадия «План демонтажа»</button><button data-o="pmount">Стадия «План монтажа»</button>` +
+    `<hr><div class="mh">Высота плана, мм</div><label class="fl" style="padding:2px 10px 6px" title="Что лежит выше — на плане не показывается. 0 — показывать всё (воздуховоды и кондиционеры за потолком тоже)"><input type="number" id="planZIn" step="100" min="0" value="${+S.x.planZ || 0}" style="width:110px"></label>` +
     `<hr><div class="mh">Показ фаз на этом чертеже</div>` +
     Object.entries(PHM)
       .map(([k, n]) => `<button data-ph="${k}">${n}${phaseMode() === k ? ' ✓' : ''}</button>`)
@@ -91882,6 +91903,13 @@ function stageMenu(b) {
   const r = b.getBoundingClientRect();
   m.style.cssText = `position:fixed;left:${r.left}px;top:${r.bottom + 4}px;z-index:60`;
   document.body.appendChild(m);
+  const pzi = m.querySelector('#planZIn');
+  if (pzi)
+    pzi.onchange = () => {
+      S.x.planZ = Math.max(0, parseFloat(pzi.value) || 0);
+      changed();
+      log(S.x.planZ ? `План: показывается всё не выше ${S.x.planZ} мм` : 'План: показывается всё по высоте');
+    };
   m.onclick = ev => {
     const x = ev.target.closest('button');
     if (!x) return;
