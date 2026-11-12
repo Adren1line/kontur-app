@@ -56906,14 +56906,14 @@ function stairsOver(w) {
     const ol = stairOutlineW(s);
     let hit = false;
     const L = wi.L;
-    for (let t = 0; t <= L && !hit; t += 80)
-      for (const d of [-w.th / 2 + 1, 0, w.th / 2 - 1]) {
-        const q = add(add(w.a, mul(wi.u, t)), mul(wi.n, d));
-        if (inPoly(q, ol)) {
-          hit = true;
-          break;
-        }
-      }
+    // under the stair = the middle band of the wall is inside the outline of the stair. A wall that stands beside the
+    // flight and only touches it (its face on the edge of the steps, or a few millimetres into them) is not under it:
+    // clamping such a wall to the underside cut steps («зубья») into its face
+    const band = Math.min(20, w.th / 4);
+    for (let t = 0; t <= L && !hit; t += 80) {
+      const q = add(w.a, mul(wi.u, t));
+      if (inPoly(q, ol) && inPoly(add(q, mul(wi.n, band)), ol) && inPoly(add(q, mul(wi.n, -band)), ol)) hit = true;
+    }
     if (hit) out.push(s);
   }
   return out;
@@ -108741,6 +108741,17 @@ function glassPanelHtml(e) {
               ['sil', 'прозрачный силикон']
             ]
           ],
+          ['Зазор между стёклами, мм', 'cfg.gapG', 'n'],
+          [
+            'В углу проходит',
+            'cfg.corner',
+            's',
+            [
+              ['', 'авто (стекло без двери)'],
+              ['first', 'первое стекло'],
+              ['second', 'второе стекло']
+            ]
+          ],
           [
             'Стабилизирующая штанга',
             'cfg.bar',
@@ -109186,15 +109197,31 @@ function g3Slot(mb, e, dir, zc, t, met) {
  * A channel profile along s0..s1 around the glass: zf — the plane the flanges end at, up = +1 the channel opens
  * upwards (bottom profile), −1 downwards (top profile). P — { w, h, d } of GL_PROF, fat — a clamping profile.
  */
-function g3Channel(mb, s0, s1, zf, up, P, t, col, fat) {
+function g3Channel(mb, s0, s1, zf, up, P, t, col, fat, kL, kR) {
   const fl = fat ? Math.max(3, (P.w - t - 3) / 2) : 2;
   const zb = zf - up * P.h;
   const lo = (a, b) => [Math.min(a, b), Math.max(a, b)];
+  // a strip y0..y1 of the section; at a mitred end the cut runs along the bisector of the corner:
+  // kL / kR — tan of half the signed turn at the start / the end (0 — a square end)
+  const strip = (y0, y1, z0, z1) => {
+    if (!kL && !kR) return mb.box(s0, y0, z0, s1, y1, z1, col);
+    mb.extrude(
+      [
+        [s0 + y0 * (kL || 0), y0],
+        [s1 - y0 * (kR || 0), y0],
+        [s1 - y1 * (kR || 0), y1],
+        [s0 + y1 * (kL || 0), y1]
+      ],
+      z0,
+      z1,
+      col
+    );
+  };
   const [b0, b1] = lo(zb, zb + up * (P.h - P.d));
-  mb.box(s0, -P.w / 2, b0, s1, P.w / 2, b1, col);
+  strip(-P.w / 2, P.w / 2, b0, b1);
   const [f0, f1] = lo(zb + up * (P.h - P.d), zf);
-  mb.box(s0, -P.w / 2, f0, s1, -P.w / 2 + fl, f1, col);
-  mb.box(s0, P.w / 2 - fl, f0, s1, P.w / 2, f1, col);
+  strip(-P.w / 2, -P.w / 2 + fl, f0, f1);
+  strip(P.w / 2 - fl, P.w / 2, f0, f1);
 }
 /** The same channel standing on a wall: the base at s = sb, the flanges run dir·h to the glass. */
 function g3ChannelV(mb, sb, dir, z0, z1, P, t, col, fat) {
@@ -109413,12 +109440,26 @@ function buildGlass(e, R, ceil) {
         PT = GL_PROF[c.fixT];
       if (PB) {
         m.tag(`Профиль ${PB.n} нижний`);
-        g3Channel(m, 0, p.w, c.fixB === 'emb' ? zf : zf + PB.h, 1, PB, t, pcol, c.fixB === 'clampP');
+        const r = glassProfRun(p);
+        g3Channel(
+          m,
+          r.s0,
+          r.s1,
+          c.fixB === 'emb' ? zf : zf + PB.h,
+          1,
+          PB,
+          t,
+          pcol,
+          c.fixB === 'clampP',
+          r.mL ? p.cL.k : 0,
+          r.mR ? p.cR.k : 0
+        );
       }
       if (PT) {
         m.tag(`Профиль ${PT.n} верхний`);
         const zt = p.z + p.h - PT.d + PT.h; // the back of the channel
-        g3Channel(m, 0, p.w, zt - PT.h, -1, PT, t, pcol, c.fixT === 'clampP');
+        const r = glassProfRun(p);
+        g3Channel(m, r.s0, r.s1, zt - PT.h, -1, PT, t, pcol, c.fixT === 'clampP', r.mL ? p.cL.k : 0, r.mR ? p.cR.k : 0);
       }
     }
     // the wall channel at the ends of the run
@@ -109668,19 +109709,41 @@ function glassPanels(e, ceil, wallAt) {
   const out = [];
   const t = +c.t || 8;
   const nP = e.pts.length;
-  // a corner between segments: both panels stop short of the vertex by half the glass and a joint
-  const cornerAt = i => {
-    if (i <= 0 || i >= nP - 1) return false;
+  // the signed turn of the run at vertex i (0 — the segments go straight on)
+  const turnAt = i => {
+    if (i <= 0 || i >= nP - 1) return 0;
     const a = e.pts[i - 1],
       b = e.pts[i],
       d = e.pts[i + 1];
     const u1 = Math.atan2(b.y - a.y, b.x - a.x),
       u2 = Math.atan2(d.y - b.y, d.x - b.x);
-    return Math.abs(Math.sin(u2 - u1)) > 0.05;
+    const th = Math.atan2(Math.sin(u2 - u1), Math.cos(u2 - u1));
+    return Math.abs(Math.sin(th)) > 0.05 ? th : 0;
   };
   const wStart = !!(wallAt && wallAt(e.pts[0])),
     wEnd = !!(wallAt && wallAt(e.pts[nP - 1]));
-  const gap = 4; // joint between neighbour panels / door gap
+  const gap = 4; // the gap around a door
+  // the joint between fixed panes, in line and in a corner: 1–2 mm as glaziers set it
+  const jg = c.gapG != null && c.gapG !== '' && isFinite(+c.gapG) ? Math.max(0, +c.gapG) : 2;
+  const hasDoor = i => {
+    const D = (e.doors || {})[i];
+    return !!(D && D.type && +D.w > 0);
+  };
+  // a right corner: one pane runs through to the outer face of the corner, the other butts against its face.
+  // The pane without a door runs through unless the run says which one does
+  const through = i => {
+    if (c.corner === 'first') return 'prev';
+    if (c.corner === 'second') return 'next';
+    return hasDoor(i - 1) && !hasDoor(i) ? 'next' : 'prev';
+  };
+  /** How far the pane of a segment stops from vertex i: side 'prev' — the end of segment i−1, 'next' — the start of segment i. */
+  const cornerTrim = (i, side) => {
+    const th = Math.abs(turnAt(i));
+    if (!th) return jg / 2;
+    if (Math.abs(th - Math.PI / 2) < 0.27) return through(i) === side ? -t / 2 : t / 2 + jg;
+    // any other angle: both panes stop where their inner faces would meet, the joint on the bisector
+    return (t / 2) * Math.tan(th / 2) + jg / 2;
+  };
   for (let i = 0; i < e.pts.length - 1; i++) {
     const A = e.pts[i],
       B = e.pts[i + 1];
@@ -109692,8 +109755,8 @@ function glassPanels(e, ceil, wallAt) {
     const D = (e.doors || {})[i];
     const parts = [];
     // the usable length of the segment: trims at walls and corners
-    const g0 = i === 0 ? (wStart ? wallTrim(c) : 0) : cornerAt(i) ? t / 2 + 2 : gap / 2;
-    const g1 = i === nP - 2 ? (wEnd ? wallTrim(c) : 0) : cornerAt(i + 1) ? t / 2 + 2 : gap / 2;
+    const g0 = i === 0 ? (wStart ? wallTrim(c) : 0) : cornerTrim(i, 'next');
+    const g1 = i === nP - 2 ? (wEnd ? wallTrim(c) : 0) : cornerTrim(i + 1, 'prev');
     const S0 = g0,
       S1 = L - g1,
       LL = S1 - S0;
@@ -109717,9 +109780,9 @@ function glassPanels(e, ceil, wallAt) {
       // fixed panels split to the tempering maximum and to a handy width
       const maxW = kind === 'fix' ? +c.maxW || 1600 : 1e9;
       const n = Math.max(1, Math.ceil((s1 - s0) / maxW));
-      const pw = (s1 - s0 - gap * (n - 1)) / n;
+      const pw = (s1 - s0 - jg * (n - 1)) / n;
       for (let k = 0; k < n; k++) {
-        const a0 = s0 + k * (pw + gap),
+        const a0 = s0 + k * (pw + jg),
           a1 = a0 + pw;
         out.push({
           seg: i,
@@ -109736,6 +109799,10 @@ function glassPanels(e, ceil, wallAt) {
           atEnd: i === nP - 2 && a1 >= S1 - 1,
           railed: kind === 'fix' && D && D.type === 'slide',
           segL: L,
+          // a corner of the run at this end of the pane: sv — the vertex in the frame of the pane (s from its
+          // start), k — tan of half the signed turn; the profiles are mitred along the bisector by these
+          cL: i > 0 && a0 <= S0 + 1 && turnAt(i) ? { sv: -a0, k: Math.tan(turnAt(i) / 2) } : null,
+          cR: i < nP - 2 && a1 >= S1 - 1 && turnAt(i + 1) ? { sv: L - a0, k: Math.tan(turnAt(i + 1) / 2) } : null,
           door: kind === 'door' ? D : null,
           i: out.length
         });
@@ -109745,6 +109812,24 @@ function glassPanels(e, ceil, wallAt) {
   return out;
 }
 
+/**
+ * The run of a channel profile under or over a fixed pane: [s0, s1] in the frame of the pane, on its axis. At a
+ * corner of the run where the neighbour pane is fixed too the profile goes to the vertex and is mitred there.
+ */
+function glassProfRun(p) {
+  const mit = (c, nb) => c && nb && nb.kind === 'fix' && nb.seg !== p.seg;
+  return {
+    s0: mit(p.cL, p.nL) ? p.cL.sv : 0,
+    s1: mit(p.cR, p.nR) ? p.cR.sv : p.w,
+    mL: mit(p.cL, p.nL),
+    mR: mit(p.cR, p.nR)
+  };
+}
+/** The length of that profile to order: by the long side of each mitre. */
+function glassProfLen(p, P) {
+  const r = glassProfRun(p);
+  return r.s1 - r.s0 + (r.mL ? Math.abs(p.cL.k) : 0) * (P.w / 2) + (r.mR ? Math.abs(p.cR.k) : 0) * (P.w / 2);
+}
 /**
  * Hardware, processing and loads of a glass run. walls — function(p) → the wall at a plan point (or null).
  * Returns { panels, items: [{k, n, q, u}], holes, loads: [...], issues: [[lvl, msg]] }.
@@ -109832,9 +109917,19 @@ function glassCalc(e, ceil, wallAt) {
         }
       }
       if (c.fixB !== 'free' && GL_PROF[c.fixB])
-        add('profB' + c.fixB, `Профиль ${GL_PROF[c.fixB].n} нижний, ${fin}`, p.w / 1000, 'м');
+        add(
+          'profB' + c.fixB,
+          `Профиль ${GL_PROF[c.fixB].n} нижний, ${fin}`,
+          glassProfLen(p, GL_PROF[c.fixB]) / 1000,
+          'м'
+        );
       if (c.fixT !== 'free' && GL_PROF[c.fixT])
-        add('profT' + c.fixT, `Профиль ${GL_PROF[c.fixT].n} верхний, ${fin}`, p.w / 1000, 'м');
+        add(
+          'profT' + c.fixT,
+          `Профиль ${GL_PROF[c.fixT].n} верхний, ${fin}`,
+          glassProfLen(p, GL_PROF[c.fixT]) / 1000,
+          'м'
+        );
       if (c.fixB === 'free' && c.fixW !== 'clamp' && !GL_PROF[c.fixW])
         issues.push(['bad', `Панель ${p.i + 1}: ничем не закреплена — задайте профиль или коннекторы`]);
       // clamps only, no bottom support: the clamps carry the weight
