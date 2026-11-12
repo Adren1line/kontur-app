@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.1';
+const APP_VER = '59.2';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -14280,7 +14280,7 @@ function mkDuct() {
       if (sp) {
         const q = P(sp.p[0], sp.p[1]);
         if (!pts.length) {
-          sec = { shape: 'round', d: sp.d };
+          sec = sp.shape === 'rect' ? { shape: 'rect', w: sp.w, hh: sp.hh } : { shape: 'round', d: sp.d };
           if (sp.sys) sys = sp.sys;
           z = Math.round(sp.p[2]);
           log(`От патрубка «${sp.n}»: ø${sp.d}${sp.sys ? ', ' + sp.sys : ''}, ось ${z}`);
@@ -18701,6 +18701,7 @@ function key3Base(e) {
         e.shape,
         e.ins,
         e.flex || 0,
+        e.tap || 0,
         e.type === 'wire' ? [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable] : 0,
         e.group != null ? groupOf(e.group).col : 0,
         e.sys ? sysOf(e.sys).col : 0,
@@ -18945,6 +18946,24 @@ function build3(e) {
         }
       });
       ductJoints(e, mb, col, W, Hh);
+      if (e.tap && pts.length > 1) {
+        // the saddle on the main and the rolled (beaded) joint at the spigot of a rigid connection
+        const ring = (a, b, s0, s1, r) => {
+          const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
+          const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
+          mb.tube(
+            [a[0] + u[0] * s0, a[1] + u[1] * s0, a[2] + u[2] * s0],
+            [a[0] + u[0] * s1, a[1] + u[1] * s1, a[2] + u[2] * s1],
+            r,
+            '#8b939d',
+            24
+          );
+        };
+        mb.tag('Врезка в магистраль');
+        ring(pts[pts.length - 1], pts[pts.length - 2], 40, 70, rr + 6);
+        mb.tag('Вальцовка');
+        ring(pts[0], pts[1], 14, 22, rr + 3);
+      }
       return meshGroup(mb.meshes(), { edges: e.shape === 'rect' });
     }
     case 'line':
@@ -24419,6 +24438,10 @@ function renderSpecLevel() {
           r.ids.push(e.id);
         }
       );
+      put(bends, 'tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
       put(bends, 'clamp' + st, { name: `Хомут для гибкого воздуховода ${st}`, u: 'шт' }, r => {
         r.q += 2;
         r.ids.push(e.id);
@@ -24430,7 +24453,12 @@ function renderSpecLevel() {
         r.A = (r.A || 0) + (ductPerim(e) * Math.max(ductLen(e), ductLen3(e))) / 1000;
         r.ids.push(e.id);
       });
-      for (const a of ductBends(e))
+      if (e.tap)
+        put(bends, 'tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+      for (const a of e.pts.some(p => p.z != null) ? ductBends3(e) : ductBends(e))
         put(bends, st + a, { name: `Отвод ${a}° ${st}`, u: 'шт' }, r => {
           r.q++;
           r.ids.push(e.id);
@@ -63173,7 +63201,7 @@ function hvZ(e) {
   const ceil = S.ceil || 2700;
   if (e.z != null && isFinite(+e.z)) return +e.z;
   if (e.kind === 'ahu') return ahuOf(e).mount === 'floor' ? 0 : ceil + 40;
-  if (e.kind === 'plen') return ceil;
+  if (e.kind === 'plen') return e.mount === 'wall' ? ceil - 350 : ceil;
   return ceil + 150;
 }
 /** Body size in the local frame: [length along x, depth along y, height]. */
@@ -63216,22 +63244,17 @@ function hvSpigotsL(e) {
     const n = Math.max(1, Math.round(+e.n || 2)),
       d = +e.d || 125;
     const side = e.conn === 'side';
+    const wall = e.mount === 'wall';
     for (let i = 0; i < n; i++) {
       const x = -L / 2 + (L * (i + 0.5)) / n;
-      out.push(
-        side
-          ? {
-              x,
-              y: -W / 2 - 60,
-              z: H / 2,
-              dir: [0, -1, 0],
-              d,
-              role: 'conn',
-              sys: e.sys || null,
-              n: `Патрубок ${i + 1}`
-            }
-          : { x, y: 0, z: H + 60, dir: [0, 0, 1], d, role: 'conn', sys: e.sys || null, n: `Патрубок ${i + 1}` }
-      );
+      const q = wall
+        ? side
+          ? { x, y: -H - 60, z: W / 2, dir: [0, -1, 0] }
+          : { x, y: -H / 2, z: W + 60, dir: [0, 0, 1] }
+        : side
+          ? { x, y: -W / 2 - 60, z: H / 2, dir: [0, -1, 0] }
+          : { x, y: 0, z: H + 60, dir: [0, 0, 1] };
+      out.push({ ...q, d, role: 'conn', sys: e.sys || null, n: `Патрубок ${i + 1}` });
     }
   }
   return out;
@@ -63253,7 +63276,15 @@ function hvSpigots(e) {
 }
 /** Plan outline of the body. */
 function hvPoly(e) {
-  const [L, W] = hvDim(e);
+  const [L, W, H] = hvDim(e);
+  // on a wall: the box stands behind the face (in the bulkhead), the grille looks into the room
+  if (e.kind === 'plen' && e.mount === 'wall')
+    return [
+      [-L / 2, -H],
+      [L / 2, -H],
+      [L / 2, 0],
+      [-L / 2, 0]
+    ].map(([x, y]) => LP(e, x, y));
   return [
     [-L / 2, -W / 2],
     [L / 2, -W / 2],
@@ -63280,7 +63311,7 @@ function hvLabel(e) {
   if (e.kind === 'sil') return `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`;
   const s = plenSlot(e);
   const [L, W] = hvDim(e);
-  return `Адаптер ${fmt(L)}×${fmt(W)}, ${Math.round(+e.n || 2)}×ø${+e.d || 125}\n${fmt(s.L)} мм, ${s.ns} щел${s.ns === 1 ? 'ь' : s.ns < 5 ? 'и' : 'ей'} ${s.sw} мм\nL=${e.flowTxt || fmt(+e.flow || 0)} м³/ч\nV=${n1(s.v)} м/с`;
+  return `${e.mount === 'wall' ? 'Решётка настенная с адаптером' : 'Адаптер'} ${fmt(L)}×${fmt(W)}, ${Math.round(+e.n || 2)}×ø${+e.d || 125}\n${fmt(s.L)} мм, ${s.ns} щел${s.ns === 1 ? 'ь' : s.ns < 5 ? 'и' : 'ей'} ${s.sw} мм\nL=${e.flowTxt || fmt(+e.flow || 0)} м³/ч\nV=${n1(s.v)} м/с`;
 }
 
 /* ---------- 3D ---------- */
@@ -63393,6 +63424,22 @@ function hvBuild(e, mb) {
     mb.smooth(false);
   } else {
     const col = sysOf(e.sys || '').col;
+    if (e.mount === 'wall') {
+      mb.tag(`Адаптер настенной решётки ${L}×${W}`);
+      mb.box(-L / 2, -H, 0, L / 2, 0, W, hvShade(col, 0.35));
+      mb.tag('Патрубки адаптера');
+      for (const q of SP) spigotTube(mb, q, hvShade(col, 0.35), hvShade(col, -0.3));
+      const s = plenSlot(e);
+      mb.tag(`Решётка щелевая настенная ${s.L} мм, ${s.ns}×${s.sw} мм`);
+      const fw = s.ns * s.sw + (s.ns + 1) * 12,
+        z0 = W / 2 - fw / 2;
+      mb.box(-L / 2 - 15, 0, z0 - 15, L / 2 + 15, 4, z0 + fw + 15, '#f2f3f4');
+      for (let i = 0; i < s.ns; i++) {
+        const zz = z0 + 12 + i * (s.sw + 12);
+        mb.box(-L / 2 + 10, 4, zz, L / 2 - 10, 5, zz + s.sw, '#2b2f35');
+      }
+      return;
+    }
     mb.tag(`Адаптер решётки ${L}×${W}`);
     mb.box(-L / 2, -W / 2, 0, L / 2, W / 2, H, hvShade(col, 0.35));
     mb.tag('Патрубки адаптера');
@@ -63579,7 +63626,18 @@ function hvDraw(e, color, o, ghost) {
     ctx.strokeStyle = ghost ? C.ghost : c;
     ctx.lineWidth = 0.8;
     const fw = s.ns * s.sw + (s.ns + 1) * 12;
-    for (let i = 0; i < s.ns; i++) {
+    if (e.mount === 'wall') {
+      // the grille on the wall face: a thick line with ticks of the air stream
+      ctx.lineWidth = 2.4;
+      pathPoly([LP(e, -L / 2, 12), LP(e, L / 2, 12)], false);
+      ctx.stroke();
+      ctx.lineWidth = 0.8;
+      for (let x = -L / 2 + 60; x < L / 2; x += 120) {
+        pathPoly([LP(e, x, 12), LP(e, x, 90)], false);
+        ctx.stroke();
+      }
+    }
+    for (let i = 0; i < (e.mount === 'wall' ? 0 : s.ns); i++) {
       const y0 = -fw / 2 + 12 + i * (s.sw + 12);
       pathPoly([
         LP(e, -L / 2 + 10, y0),
@@ -63622,7 +63680,7 @@ function hvChecks(e) {
     if (s.v > 3)
       out.push(['warn', `Скорость в щелях ${n1(s.v)} м/с — выше 3 м/с: шумно. Добавьте щель или удлините решётку.`]);
   }
-  const free = hvSpigots(e).filter(q => q.sys !== null && !spigotLinked(q));
+  const free = hvSpigots(e).filter(q => q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q));
   if (free.length && e.kind !== 'ahu') out.push(['info', `Свободных патрубков: ${free.length}.`]);
   return out;
 }
@@ -63632,7 +63690,11 @@ function spigotLinked(q) {
     d =>
       d.type === 'duct' &&
       d.pts.length &&
-      [d.pts[0], d.pts[d.pts.length - 1]].some(p => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 30)
+      [0, d.pts.length - 1].some(i => {
+        const p = d.pts[i],
+          z = p.z != null ? +p.z : +d.z || 0;
+        return Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 30 && Math.abs(z - q.p[2]) < 150;
+      })
   );
 }
 /** Checks of a flexible duct: the length limit and the bend radius. */
@@ -63722,9 +63784,18 @@ XT.hvu = {
               ['Поворот, °', 'rotd', 'n']
             ]
           : [
+              [
+                'Установка',
+                'mount',
+                's',
+                [
+                  ['ceil', 'в потолке (решётка вниз)'],
+                  ['wall', 'в стене / коробе (решётка в помещение)']
+                ]
+              ],
               ['Длина, мм', 'L', 'n'],
-              ['Ширина, мм', 'W', 'n'],
-              ['Высота, мм', 'H', 'n'],
+              [e.mount === 'wall' ? 'Высота короба, мм' : 'Ширина, мм', 'W', 'n'],
+              [e.mount === 'wall' ? 'Глубина короба, мм' : 'Высота, мм', 'H', 'n'],
               ['Патрубков', 'n', 'n'],
               ['Ø патрубков', 'd', 's', [100, 125, 160, 200].map(d => [d, 'ø' + d])],
               [
@@ -63733,14 +63804,14 @@ XT.hvu = {
                 's',
                 [
                   ['top', 'сверху'],
-                  ['side', 'сбоку']
+                  ['side', e.mount === 'wall' ? 'сзади' : 'сбоку']
                 ]
               ],
               ['Щелей', 'slots', 'n'],
               ['Ширина щели, мм', 'sw', 's', [20, 25, 30].map(v => [v, String(v)])],
               ['Расход, м³/ч', 'flow', 'n'],
               ['Система', 'sys', 's', sysOpts],
-              ['Отметка низа (потолок), мм', 'z', 'n'],
+              [e.mount === 'wall' ? 'Отметка низа решётки, мм' : 'Отметка низа (потолок), мм', 'z', 'n'],
               ['Поворот, °', 'rotd', 'n']
             ];
     const sp = hvSpigots(e);
@@ -63759,7 +63830,7 @@ XT.hvu = {
           )
           .join('') +
           (e.kind !== 'ahu'
-            ? `<dt></dt><dd><button class="btn" data-xa="hvflex" title="Гибкие подводки от ближайшего воздуховода системы к каждому патрубку">Подвести гибкими</button></dd>`
+            ? `<dt></dt><dd><button class="btn" data-xa="hvflex" title="Гибкие подводки от ближайшего воздуховода системы к каждому патрубку">Подвести гибкими</button> <button class="btn" data-xa="hvrigid" title="Жёсткие подводки из оцинковки с отводами">Подвести жёсткими</button></dd>`
             : '')
       ],
       ['Выноска', '', `<dt></dt><dd style="text-align:left;white-space:pre-line">${esc(hvLabel(e))}</dd>`],
@@ -63777,11 +63848,15 @@ XT.hvu = {
       if (a) e.flow = a.q;
       delete e.z;
     }
+    if (p === 'mount') {
+      delete e.z;
+      if (v === 'ceil') delete e.mount;
+    }
   },
   action(e, a) {
-    if (a === 'hvflex') {
-      const n = flexConnect(e);
-      log(n ? `Гибких подводок: ${n}` : 'Нет воздуховода системы рядом или все патрубки уже подключены', !n);
+    if (a === 'hvflex' || a === 'hvrigid') {
+      const n = flexConnect(e, null, { rigid: a === 'hvrigid' });
+      log(n ? `Подводок: ${n}` : flexConnect.why, !n);
     }
   },
   fields: () => [],
@@ -63805,27 +63880,34 @@ XT.hvu = {
         `hvpl${L}-${W}-${H}-${e.n}-${e.d}`,
         `Адаптер решётки (камера) ${fmt(L)}×${fmt(W)}×${fmt(H)}, ${Math.round(+e.n || 2)} патр. ø${+e.d || 125}`
       );
-      one(`hvsl${s.L}-${s.ns}-${s.sw}`, `Решётка щелевая ${fmt(s.L)} мм, ${s.ns} щ. × ${s.sw} мм`);
+      one(
+        `hvsl${e.mount === 'wall' ? 'w' : ''}${s.L}-${s.ns}-${s.sw}`,
+        `Решётка щелевая ${e.mount === 'wall' ? 'настенная ' : ''}${fmt(s.L)} мм, ${s.ns} щ. × ${s.sw} мм`
+      );
     }
   }
 };
 
 /* ---------- connections ---------- */
 /** The nearest point on the rigid ducts of a system (or any, if the system has none near). */
-function nearMain(q, sys, maxD = 4500) {
+function nearMain(q, sys, maxD = 6000) {
   let best = null;
   for (const d of S.ents) {
-    if (d.type !== 'duct' || d.flex || !visible(d) || d.pts.length < 2) continue;
+    if (d.type !== 'duct' || d.flex || d.tap || !visible(d) || d.pts.length < 2) continue;
     const zs = ductPath3(d);
     for (let i = 1; i < d.pts.length; i++) {
       const c = segPt(d.pts[i - 1], d.pts[i], P(q.p[0], q.p[1]));
-      const t = dist(d.pts[i - 1], d.pts[i]) > 1e-6 ? dist(d.pts[i - 1], c) / dist(d.pts[i - 1], d.pts[i]) : 0;
+      const l = dist(d.pts[i - 1], d.pts[i]);
+      const t = l > 1e-6 ? dist(d.pts[i - 1], c) / l : 0;
       const z = zs[i - 1][2] + (zs[i][2] - zs[i - 1][2]) * t;
-      const dd = Math.hypot(c.x - q.p[0], c.y - q.p[1]) + (sys && d.sys !== sys ? 1e5 : 0);
-      if (dd < maxD + (sys && d.sys !== sys ? 1e5 : 0) && (!best || dd < best.dd)) best = { d, c, z, dd };
+      const dd = Math.hypot(c.x - q.p[0], c.y - q.p[1]);
+      if (dd > maxD) continue;
+      // a main of the spigot's own system wins over any nearer one
+      const rank = dd + (sys && d.sys !== sys ? 1e6 : 0);
+      if (!best || rank < best.rank) best = { d, c, z, dd, rank };
     }
   }
-  return best && best.dd < 1e5 ? best : best && !sys ? best : best;
+  return best;
 }
 /** The flexible duct path from a spigot to a point on the main: out of the spigot, then to the main's axis. */
 function flexPath(q, m) {
@@ -63852,10 +63934,18 @@ function flexPath(q, m) {
   return o;
 }
 /** Runs one flexible duct to every free spigot of the unit. Returns how many were made. */
-function flexConnect(e, main) {
-  const sp = (e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e)).filter(q => q.sys !== null && !spigotLinked(q));
+function flexConnect(e, main, opt = {}) {
+  const all = (e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e)).filter(q => q.role !== 'oda' && q.role !== 'eha');
+  const round = all.filter(q => !q.shape);
+  const sp = round.filter(q => !spigotLinked(q));
+  flexConnect.why = !all.length
+    ? 'У оборудования нет патрубков: выберите камеру с патрубками в свойствах'
+    : !round.length
+      ? 'Патрубки прямоугольные — ведите от них прямоугольный воздуховод командой «Воздуховод»'
+      : !sp.length
+        ? 'Все патрубки уже подключены'
+        : 'Рядом нет жёсткого воздуховода (магистрали) — нарисуйте его или укажите командой «Подводки»';
   if (!sp.length) return 0;
-  pushUndo();
   let n = 0;
   for (const q of sp) {
     const m = main
@@ -63870,6 +63960,7 @@ function flexConnect(e, main) {
         })()
       : nearMain(q, q.sys);
     if (!m) continue;
+    if (!n) pushUndo();
     const pts = flexPath(q, m).map(p => {
       const v = P(Math.round(p[0]), Math.round(p[1]));
       v.z = Math.round(p[2]);
@@ -63877,7 +63968,8 @@ function flexConnect(e, main) {
     });
     addEnt({
       type: 'duct',
-      flex: true,
+      ...(opt.rigid ? { rigid: true } : { flex: true }),
+      tap: true,
       pts,
       shape: 'round',
       d: q.d,
@@ -63885,10 +63977,8 @@ function flexConnect(e, main) {
       hh: q.d,
       z: pts[0].z,
       sys: q.sys || m.d.sys,
-      flow: Math.round(
-        (+e.flow || +m.d.flow || 0) / (e.type === 'hvu' && e.kind === 'plen' ? Math.max(1, +e.n || 1) : 1)
-      ),
-      mat: 'Гибкий алюминиевый',
+      flow: Math.round((+e.flow || +m.d.flow || 0) / Math.max(1, sp.length)),
+      mat: opt.rigid ? 'Оцинкованная сталь' : 'Гибкий алюминиевый',
       ins: 0,
       from: null,
       to: null,
@@ -63898,6 +63988,23 @@ function flexConnect(e, main) {
   }
   if (n) changed();
   return n;
+}
+flexConnect.why = '';
+/** Bend angles of a duct with a 3D path (per-point heights), rounded to 15°. */
+function ductBends3(e) {
+  const q = ductPath3(e),
+    out = [];
+  for (let i = 1; i < q.length - 1; i++) {
+    const u = [q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1], q[i][2] - q[i - 1][2]],
+      v = [q[i + 1][0] - q[i][0], q[i + 1][1] - q[i][1], q[i + 1][2] - q[i][2]];
+    const lu = Math.hypot(...u),
+      lv = Math.hypot(...v);
+    if (lu < 1 || lv < 1) continue;
+    const cs = Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / lu / lv));
+    const a = Math.round((Math.acos(cs) * 180) / Math.PI / 15) * 15;
+    if (a >= 15) out.push(a);
+  }
+  return out;
 }
 /** Spigots of other units (ducted air conditioners with chambers) — filled by air-conditioners.js. */
 const hvHooks = { acSpigots: null };
@@ -64062,13 +64169,22 @@ function mkHvu(kind0) {
     }
     return best;
   };
+  // an adapter clicked at a wall goes onto it: the grille looks into the room
+  const onWall = p => {
+    const e = base(p);
+    if (kind !== 'plen') return e;
+    const pl = placeOnWall(p, 'wall');
+    if (pl && pl.host && dist(pl.p, p) < 350)
+      return { ...e, p: pl.p, rot: pl.rot, mount: 'wall', conn: 'side', host: pl.host };
+    return e;
+  };
   return {
     name: 'hvu',
     base: () => null,
     prompt: () =>
       kind === 'sil'
         ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
-        : `${HV_KIND[kind]}: место [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
+        : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
     hasValue: () => dk != null,
     onValue(v) {
       if (dk === 'L' && v > 100) o.L = v;
@@ -64101,11 +64217,11 @@ function mkHvu(kind0) {
           return 'end';
         }
       }
-      addEnt({ ...base(p), layer: ensureLayer('Вентиляция') });
+      addEnt({ ...onWall(p), layer: ensureLayer('Вентиляция') });
       return 'end';
     },
     preview(cur) {
-      XT.hvu.draw(base(cur), 'ghost', {}, true);
+      XT.hvu.draw(onWall(cur), 'ghost', {}, true);
     }
   };
 }
@@ -64158,14 +64274,20 @@ function insertSilencer(d, i, c, o = {}) {
 const SIL_SNAP = d => SIL_D.reduce((a, x) => (Math.abs(x - d) < Math.abs(a - d) ? x : a), 160);
 /** «Подводки»: a main duct, then a unit (plenum, silencer, ducted air conditioner). */
 function mkFlex() {
-  let main = null;
+  let main = null,
+    rigid = !!mkFlex.rigid;
   return {
     name: 'flexconn',
     base: () => null,
     prompt: () =>
       !main
-        ? 'Гибкие подводки: магистраль (воздуховод), Enter — брать ближайшую магистраль системы:'
-        : 'Адаптер решётки, шумоглушитель или канальный кондиционер с камерами:',
+        ? `Подводки ${rigid ? 'жёсткие (оцинковка с отводами)' : 'гибкие'}: щелчок по магистрали или сразу по оборудованию [Гибкие/Жёсткие]:`
+        : 'Адаптер решётки, шумоглушитель или канальный кондиционер:',
+    onInput(s) {
+      if (kw(s, 'г', 'гибкие')) return !(rigid = mkFlex.rigid = false);
+      if (kw(s, 'ж', 'жёсткие', 'жесткие')) return (rigid = mkFlex.rigid = true);
+      return false;
+    },
     onPoint(p) {
       if (!main) {
         let best = null;
@@ -64191,8 +64313,8 @@ function mkFlex() {
         log('Здесь нет оборудования с патрубками', true);
         return;
       }
-      const n = flexConnect(u, main);
-      log(n ? `Гибких подводок: ${n}` : 'Все патрубки уже подключены или магистрали рядом нет', !n);
+      const n = flexConnect(u, main, { rigid });
+      log(n ? `Подводок: ${n}` : flexConnect.why, !n);
       return 'end';
     },
     onEnter() {
@@ -64376,37 +64498,61 @@ const acDim = e => (acModel(e) ? acModel(e).dim : ACD[e.kind][acCap(e)] || ACD.s
  * Chambers of a ducted unit with round spigots (supply in front, return behind), in the local frame of the unit:
  * [{ x, y, z, dir, d, role, sys, n }]; empty when the unit keeps the built-in plenum and grille.
  */
+/** How the air leaves and enters a ducted unit: each side on its own. */
+const AC_SIDE = {
+  cam: 'камера с круглыми патрубками',
+  rect: 'прямоугольный воздуховод от фланца',
+  grille: 'встроенный короб с решёткой',
+  free: 'свободно, из запотолочного пространства'
+};
+const acSup = e => (AC_SIDE[e.supply] && e.supply !== 'free' ? e.supply : 'cam');
+const acRet = e => (AC_SIDE[e.ret] ? e.ret : 'cam');
+const acSysOf = (e, k) =>
+  e[k] ||
+  (S.vent.systems.find(x => x.kind === (k === 'sysS' ? 'Кондиционер: подача' : 'Кондиционер: забор')) || {}).id ||
+  null;
+/** Depth of the chamber of a side. */
+const acCH = (e, side) => Math.max(120, +(side === 'sup' ? e.ch : e.rch) || 260);
 function acSpigotsL(e) {
-  if (e.kind !== 'duct' || !e.cams) return [];
+  if (e.kind !== 'duct') return [];
   const [w, d, h] = acDim(e);
   const out = [];
-  const n = Math.max(1, Math.round(+e.cn || 3)),
-    cd = +e.cd || 160,
-    rn = Math.max(0, Math.round(+e.rn || 2)),
-    rd = +e.rd || 200;
-  const CH = 260;
-  for (let i = 0; i < n; i++)
-    out.push({
-      x: -w / 2 + (w * (i + 0.5)) / n,
-      y: d + CH + 60,
-      z: h / 2,
-      dir: [0, 1, 0],
-      d: cd,
-      role: 'sup',
-      sys: e.sysS || null,
-      n: `Подача ${i + 1}`
-    });
-  for (let i = 0; i < rn; i++)
-    out.push({
-      x: -w / 2 + (w * (i + 0.5)) / rn,
-      y: -CH - 60,
-      z: h / 2,
-      dir: [0, -1, 0],
-      d: rd,
-      role: 'ret',
-      sys: e.sysR || null,
-      n: `Забор ${i + 1}`
-    });
+  const sm = acSup(e),
+    rm = acRet(e);
+  const side = (role, mode, n, dia, sys, y0, dy, nm) => {
+    if (mode === 'cam') {
+      const CH = acCH(e, role);
+      for (let i = 0; i < n; i++)
+        out.push({
+          x: -w / 2 + (w * (i + 0.5)) / n,
+          y: y0 + dy * (CH + 60),
+          z: h / 2,
+          dir: [0, dy, 0],
+          d: dia,
+          role,
+          sys,
+          n: `${nm} ${i + 1}`
+        });
+    } else if (mode === 'rect') {
+      const rw = Math.min(w - 40, +(role === 'sup' ? e.sw : e.rw) || w - 120),
+        rh = Math.min(h - 10, +(role === 'sup' ? e.sh : e.rh) || h - 50);
+      out.push({
+        x: 0,
+        y: y0 + dy * 80,
+        z: h / 2,
+        dir: [0, dy, 0],
+        d: Math.round(Math.sqrt(rw * rh)),
+        shape: 'rect',
+        w: rw,
+        hh: rh,
+        role,
+        sys,
+        n: nm
+      });
+    }
+  };
+  side('sup', sm, Math.max(1, Math.round(+e.cn || 3)), +e.cd || 160, acSysOf(e, 'sysS'), d, 1, 'Подача');
+  side('ret', rm, Math.max(1, Math.round(+e.rn || 2)), +e.rd || 200, acSysOf(e, 'sysR'), 0, -1, 'Забор');
   return out;
 }
 function acSpigots(e) {
@@ -64468,24 +64614,44 @@ function acOutF(e) {
 }
 /** Separate freon / drain lines drawn for this unit (mep/hvac/ac-lines.js) replace the built-in line set. */
 const acHasLine = (e, k) => S.ents.some(l => l.type === 'acl' && l.ac === e.id && l.kind === k);
-/** Supply and return chambers with spigots, a flow arrow on the body. */
+/** Supply and return chambers with spigots or flanges, a flow arrow on the body. */
 function acChambers(e, mb, box, L_, z, w, d, h) {
-  const CH = 260;
-  const cs = sysOf(e.sysS || '').col,
-    cr = sysOf(e.sysR || '').col;
-  mb.tag('Камера подачи с патрубками');
-  box(-w / 2 + 20, d, z + 10, w / 2 - 20, d + CH, z + h - 10, cs);
-  mb.tag('Камера забора с патрубками');
-  box(-w / 2 + 20, -CH, z + 10, w / 2 - 20, 0, z + h - 10, cr);
-  mb.tag('Патрубки камер');
-  mb.smooth(true);
-  for (const q of acSpigotsL(e)) {
-    const r = q.d / 2;
-    const a = L_(q.x, q.y - q.dir[1] * 70, z + q.z),
-      b = L_(q.x, q.y, z + q.z);
-    mb.tube(a, b, r, q.role === 'sup' ? cs : cr, 24);
+  const sm = acSup(e),
+    rm = acRet(e);
+  const cs = sysOf(acSysOf(e, 'sysS') || '').col,
+    cr = sysOf(acSysOf(e, 'sysR') || '').col;
+  const CH = sm === 'cam' ? acCH(e, 'sup') : 80;
+  if (sm === 'cam') {
+    mb.tag('Камера подачи с патрубками');
+    box(-w / 2 + 20, d, z + 10, w / 2 - 20, d + acCH(e, 'sup'), z + h - 10, cs);
   }
-  mb.smooth(false);
+  if (rm === 'cam') {
+    mb.tag('Камера забора с патрубками');
+    box(-w / 2 + 20, -acCH(e, 'ret'), z + 10, w / 2 - 20, 0, z + h - 10, cr);
+  }
+  mb.tag('Патрубки и фланцы');
+  for (const q of acSpigotsL(e)) {
+    const col = q.role === 'sup' ? cs : cr;
+    if (q.shape === 'rect') {
+      const y0 = Math.min(q.y, q.y - q.dir[1] * 80),
+        y1 = Math.max(q.y, q.y - q.dir[1] * 80);
+      box(q.x - q.w / 2, y0, z + q.z - q.hh / 2, q.x + q.w / 2, y1, z + q.z + q.hh / 2, col);
+      const yf = q.dir[1] > 0 ? y1 - 12 : y0;
+      box(
+        q.x - q.w / 2 - 14,
+        yf,
+        z + q.z - q.hh / 2 - 14,
+        q.x + q.w / 2 + 14,
+        yf + 12,
+        z + q.z + q.hh / 2 + 14,
+        '#7d848c'
+      );
+    } else {
+      mb.smooth(true);
+      mb.tube(L_(q.x, q.y - q.dir[1] * 70, z + q.z), L_(q.x, q.y, z + q.z), q.d / 2, col, 24);
+      mb.smooth(false);
+    }
+  }
   mb.tag('Стрелка потока');
   const A = L_(0, -CH / 2, z + h + 2),
     B = L_(0, d + CH / 2, z + h + 2);
@@ -64557,9 +64723,8 @@ function acBuild(e, mb) {
         '#9aa1a9'
       );
     }
-    if (e.cams) {
-      acChambers(e, mb, box, L_, z, w, d, h);
-    } else {
+    acChambers(e, mb, box, L_, z, w, d, h);
+    if (acSup(e) === 'grille') {
       const sd = +e.sdist || 1500,
         gl = +e.gl || 1000;
       mb.tag('Камера статического давления (приток)');
@@ -64581,6 +64746,8 @@ function acBuild(e, mb) {
           GR
         );
       st.grilles++;
+    }
+    if (acRet(e) === 'grille') {
       mb.tag('Возвратная решётка с фильтром 600×300');
       box(-300, -260, (S.ceil || 2700) - 6, 300, 40, S.ceil || 2700, W);
       for (let k = 0; k < 8; k++)
@@ -64776,13 +64943,13 @@ XT.ac = {
     pathPoly(acPoly(e));
     ctx.stroke();
     ctx.setLineDash([]);
-    if (e.kind === 'duct' && e.cams) {
-      const D = acDim(e),
-        CH = 260;
-      for (const [y0, y1, sy] of [
-        [D[1], D[1] + CH, e.sysS],
-        [-CH, 0, e.sysR]
+    if (e.kind === 'duct') {
+      const D = acDim(e);
+      for (const [on, y0, y1, sy] of [
+        [acSup(e) === 'cam', D[1], D[1] + acCH(e, 'sup'), acSysOf(e, 'sysS')],
+        [acRet(e) === 'cam', -acCH(e, 'ret'), 0, acSysOf(e, 'sysR')]
       ]) {
+        if (!on) continue;
         ctx.strokeStyle = ghost ? C.ghost : sysOf(sy || '').col;
         pathPoly([
           LP(e, -D[0] / 2 + 20, y0),
@@ -64793,14 +64960,14 @@ XT.ac = {
         ctx.stroke();
       }
       for (const q of acSpigotsL(e)) {
-        ctx.strokeStyle = ghost ? C.ghost : sysOf((q.role === 'sup' ? e.sysS : e.sysR) || '').col;
-        const r = q.d / 2,
+        ctx.strokeStyle = ghost ? C.ghost : sysOf(q.sys || '').col;
+        const r = q.shape === 'rect' ? q.w / 2 : q.d / 2,
           y0 = q.y - q.dir[1] * 70;
         pathPoly([LP(e, q.x - r, y0), LP(e, q.x + r, y0), LP(e, q.x + r, q.y), LP(e, q.x - r, q.y)]);
         ctx.stroke();
       }
       // the flow arrow through the unit
-      ctx.fillStyle = ghost ? C.ghost : sysOf(e.sysS || '').col;
+      ctx.fillStyle = ghost ? C.ghost : sysOf(acSysOf(e, 'sysS') || '').col;
       const t = LP(e, 0, D[1] * 0.85),
         b0 = LP(e, -60, D[1] * 0.55),
         b1 = LP(e, 60, D[1] * 0.55);
@@ -64808,7 +64975,11 @@ XT.ac = {
       ctx.fill();
       ctx.strokeStyle = c;
     }
-    if (e.kind === 'duct' && !e.cams) {
+    if (e.kind === 'duct' && acRet(e) === 'grille') {
+      pathPoly([LP(e, -300, -260), LP(e, 300, -260), LP(e, 300, 40), LP(e, -300, 40)]);
+      ctx.stroke();
+    }
+    if (e.kind === 'duct' && acSup(e) === 'grille') {
       const D = acDim(e),
         sd = +e.sdist || 1500,
         gl = +e.gl || 1000;
@@ -64818,8 +64989,6 @@ XT.ac = {
         LP(e, gl / 2, D[1] + sd + 30),
         LP(e, -gl / 2, D[1] + sd + 30)
       ]);
-      ctx.stroke();
-      pathPoly([LP(e, -300, -260), LP(e, 300, -260), LP(e, 300, 40), LP(e, -300, 40)]);
       ctx.stroke();
       ctx.setLineDash([3, 3]);
       pathPoly([LP(e, 0, D[1]), LP(e, 0, D[1] + sd - 80)], false);
@@ -64895,31 +65064,47 @@ XT.ac = {
                     ...Object.entries(AC_CAT).map(([k, v]) => [k, `${v.n} · ${String(v.cap).replace('.', ',')} кВт`])
                   ]
                 ],
-                ['Камеры с патрубками', 'cams', 'b'],
-                ...(e.cams
+                ['Расход, м³/ч', 'flow', 'n'],
+                ['Подача воздуха', 'supply', 's', ['cam', 'rect', 'grille'].map(k => [k, AC_SIDE[k]])],
+                ...(acSup(e) === 'cam'
                   ? [
-                      ['Патрубков подачи', 'cn', 'n'],
-                      ['Ø подачи', 'cd', 's', [125, 160, 200, 250].map(d => [d, 'ø' + d])],
-                      ['Патрубков забора', 'rn', 'n'],
-                      ['Ø забора', 'rd', 's', [125, 160, 200, 250].map(d => [d, 'ø' + d])],
+                      ['· патрубков', 'cn', 'n'],
+                      ['· Ø патрубков', 'cd', 's', [100, 125, 160, 200, 250, 315].map(d => [d, 'ø' + d])],
+                      ['· глубина камеры, мм', 'ch', 'n']
+                    ]
+                  : acSup(e) === 'rect'
+                    ? [
+                        ['· ширина, мм', 'sw', 'n'],
+                        ['· высота, мм', 'sh', 'n']
+                      ]
+                    : [
+                        ['· до решётки, мм', 'sdist', 'n'],
+                        ['· длина решётки, мм', 'gl', 'n']
+                      ]),
+                ['· система', 'sysS', 's', [['', 'авто'], ...S.vent.systems.map(x => [x.id, `${x.id} · ${x.name}`])]],
+                ['Забор воздуха', 'ret', 's', ['cam', 'rect', 'grille', 'free'].map(k => [k, AC_SIDE[k]])],
+                ...(acRet(e) === 'cam'
+                  ? [
+                      ['· патрубков ', 'rn', 'n'],
+                      ['· Ø патрубков ', 'rd', 's', [100, 125, 160, 200, 250, 315].map(d => [d, 'ø' + d])],
+                      ['· глубина камеры, мм ', 'rch', 'n']
+                    ]
+                  : acRet(e) === 'rect'
+                    ? [
+                        ['· ширина, мм ', 'rw', 'n'],
+                        ['· высота, мм ', 'rh', 'n']
+                      ]
+                    : []),
+                ...(acRet(e) === 'cam' || acRet(e) === 'rect'
+                  ? [
                       [
-                        'Система подачи',
-                        'sysS',
-                        's',
-                        [['', '—'], ...S.vent.systems.map(x => [x.id, `${x.id} · ${x.name}`])]
-                      ],
-                      [
-                        'Система забора',
+                        '· система ',
                         'sysR',
                         's',
-                        [['', '—'], ...S.vent.systems.map(x => [x.id, `${x.id} · ${x.name}`])]
-                      ],
-                      ['Расход, м³/ч', 'flow', 'n']
+                        [['', 'авто'], ...S.vent.systems.map(x => [x.id, `${x.id} · ${x.name}`])]
+                      ]
                     ]
-                  : [
-                      ['Расстояние до приточной решётки, мм', 'sdist', 'n'],
-                      ['Длина щелевой решётки, мм', 'gl', 'n']
-                    ])
+                  : [])
               ]
             : []),
           [
@@ -64969,7 +65154,7 @@ XT.ac = {
           )
           .join(
             ''
-          )}${e.kind === 'duct' && e.cams ? `<dt></dt><dd><button class="btn" data-xa="acflex" title="Гибкие подводки от ближайших воздуховодов систем подачи и забора к патрубкам камер">Подвести гибкими</button></dd>` : ''}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
+          )}${e.kind === 'duct' && acSpigotsL(e).some(q => !q.shape) ? `<dt></dt><dd><button class="btn" data-xa="acflex" title="Гибкие подводки от ближайших воздуховодов к свободным круглым патрубкам">Подвести гибкими</button> <button class="btn" data-xa="acrigid" title="Жёсткие подводки из оцинковки с отводами к свободным круглым патрубкам">Подвести жёсткими</button></dd>` : ''}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
       ],
       [
         'Проверки',
@@ -64991,22 +65176,13 @@ XT.ac = {
       e.cap = AC_CAT[v].cap;
       e.flow = AC_CAT[v].q;
     }
-    if (p === 'cams' && v) {
-      // chambers on: the AC systems by default, three supply spigots, two return
-      const sys = k => (S.vent.systems.find(x => x.kind === k) || {}).id || '';
-      if (!e.sysS) e.sysS = sys('Кондиционер: подача');
-      if (!e.sysR) e.sysR = sys('Кондиционер: забор');
-      if (!e.cn) e.cn = 3;
-      if (!e.cd) e.cd = 160;
-      if (e.rn == null) e.rn = 2;
-      if (!e.rd) e.rd = 200;
-    }
+    for (const k of ['supply', 'ret', 'sysS', 'sysR', 'model']) if (p === k && v === '') delete e[k];
   },
   action(e, a) {
     if (a === 'acsplit') return acSplitLines(e);
-    if (a === 'acflex') {
-      const n = flexConnect(e);
-      log(n ? `Гибких подводок: ${n}` : 'Нет воздуховода системы рядом или все патрубки уже подключены', !n);
+    if (a === 'acflex' || a === 'acrigid') {
+      const n = flexConnect(e, null, { rigid: a === 'acrigid' });
+      log(n ? `Подводок: ${n}` : flexConnect.why, !n);
       return;
     }
     pushUndo();
@@ -65082,20 +65258,41 @@ XT.ac = {
         r.q++;
         r.ids.push(e.id);
       });
-    if (e.kind === 'duct' && e.cams) {
+    if (e.kind === 'duct') {
       const n = Math.round(+e.cn || 3),
         rn = Math.round(+e.rn || 2);
-      put(S_, `accs${n}-${e.cd}`, { name: `Камера подачи с ${n} патрубками ø${+e.cd || 160}`, u: 'шт' }, r => {
+      if (acSup(e) === 'cam')
+        put(S_, `accs${n}-${e.cd}`, { name: `Камера подачи с ${n} патрубками ø${+e.cd || 160}`, u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+      for (const q of acSpigotsL(e))
+        if (q.shape === 'rect')
+          put(
+            S_,
+            `acfl${q.w}-${q.hh}`,
+            { name: `Вставка гибкая прямоугольная ${q.w}×${q.hh} на фланец блока`, u: 'шт' },
+            r => {
+              r.q++;
+              r.ids.push(e.id);
+            }
+          );
+      put(S_, 'achang', { name: 'Шпилька М8 + виброподвес, комплект', u: 'компл' }, r => {
         r.q++;
         r.ids.push(e.id);
       });
-      if (rn)
+      if (acRet(e) === 'cam')
         put(S_, `accr${rn}-${e.rd}`, { name: `Камера забора с ${rn} патрубками ø${+e.rd || 200}`, u: 'шт' }, r => {
           r.q++;
           r.ids.push(e.id);
         });
     }
-    if (e.kind === 'duct' && !e.cams) {
+    if (e.kind === 'duct' && acRet(e) === 'grille')
+      put(S_, 'acgr', { name: 'Решётка возвратная 600×300 с фильтром', u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+    if (e.kind === 'duct' && acSup(e) === 'grille') {
       put(S_, 'acksd', { name: 'Камера статического давления (пленум) приточная', u: 'шт' }, r => {
         r.q++;
         r.ids.push(e.id);
@@ -65109,16 +65306,8 @@ XT.ac = {
           r.ids.push(e.id);
         }
       );
-      put(S_, 'acgr', { name: 'Решётка возвратная 600×300 с фильтром', u: 'шт' }, r => {
-        r.q++;
-        r.ids.push(e.id);
-      });
       put(S_, 'acdu', { name: 'Воздуховод приточный утеплённый, м', u: 'м' }, r => {
         r.q = Math.round((r.q + (+e.sdist || 1500) / 1000) * 10) / 10;
-        r.ids.push(e.id);
-      });
-      put(S_, 'achang', { name: 'Шпилька М8 + виброподвес, комплект', u: 'компл' }, r => {
-        r.q++;
         r.ids.push(e.id);
       });
     }
