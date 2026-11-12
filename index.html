@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.2';
+const APP_VER = '59.3';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -63890,10 +63890,11 @@ XT.hvu = {
 
 /* ---------- connections ---------- */
 /** The nearest point on the rigid ducts of a system (or any, if the system has none near). */
-function nearMain(q, sys, maxD = 6000) {
+function nearMain(q, sys, maxD = 6000, skip) {
   let best = null;
   for (const d of S.ents) {
-    if (d.type !== 'duct' || d.flex || d.tap || !visible(d) || d.pts.length < 2) continue;
+    if (d.type !== 'duct' || d.flex || d.tap || d.link || !visible(d) || d.pts.length < 2) continue;
+    if (skip && skip.has(d)) continue;
     const zs = ductPath3(d);
     for (let i = 1; i < d.pts.length; i++) {
       const c = segPt(d.pts[i - 1], d.pts[i], P(q.p[0], q.p[1]));
@@ -63902,6 +63903,9 @@ function nearMain(q, sys, maxD = 6000) {
       const z = zs[i - 1][2] + (zs[i][2] - zs[i - 1][2]) * t;
       const dd = Math.hypot(c.x - q.p[0], c.y - q.p[1]);
       if (dd > maxD) continue;
+      // not behind the spigot
+      const fw = (c.x - q.p[0]) * q.dir[0] + (c.y - q.p[1]) * q.dir[1] + (z - q.p[2]) * q.dir[2];
+      if (fw < -0.35 * Math.hypot(dd, z - q.p[2]) - 1) continue;
       // a main of the spigot's own system wins over any nearer one
       const rank = dd + (sys && d.sys !== sys ? 1e6 : 0);
       if (!best || rank < best.rank) best = { d, c, z, dd, rank };
@@ -63934,6 +63938,34 @@ function flexPath(q, m) {
   return o;
 }
 /** Runs one flexible duct to every free spigot of the unit. Returns how many were made. */
+/** Free spigots of other equipment a connection may go to (not the street side of an air handling unit). */
+function freeSpigots(except) {
+  return allSpigots().filter(
+    q => q.e !== except && !q.shape && q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q)
+  );
+}
+/** The path between two spigots: out of each along its axis; a rigid run keeps to the axes of the plan. */
+function spigotPath(a, b, rigid) {
+  const o = q => 100 + q.d * 0.4;
+  const A1 = [a.p[0] + a.dir[0] * o(a), a.p[1] + a.dir[1] * o(a), a.p[2] + a.dir[2] * o(a)],
+    B1 = [b.p[0] + b.dir[0] * o(b), b.p[1] + b.dir[1] * o(b), b.p[2] + b.dir[2] * o(b)];
+  const pts = [a.p, A1];
+  if (rigid) {
+    pts.push([B1[0], A1[1], A1[2]], [B1[0], B1[1], A1[2]]);
+  } else if (Math.abs(A1[2] - B1[2]) > 40) pts.push([(A1[0] + B1[0]) / 2, (A1[1] + B1[1]) / 2, Math.max(A1[2], B1[2])]);
+  pts.push(B1, b.p);
+  const out = [];
+  for (const p of pts) {
+    const l = out[out.length - 1];
+    if (!l || Math.hypot(p[0] - l[0], p[1] - l[1], p[2] - l[2]) > 5) out.push(p);
+  }
+  return out;
+}
+/**
+ * Connects every free round spigot of the unit: to the nearest main duct or to the nearest free spigot of other
+ * equipment (an adapter to a ducted air conditioner, a silencer to an air handling unit…), whichever is closer;
+ * the own system is preferred. Returns how many connections were made; flexConnect.why says why none.
+ */
 function flexConnect(e, main, opt = {}) {
   const all = (e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e)).filter(q => q.role !== 'oda' && q.role !== 'eha');
   const round = all.filter(q => !q.shape);
@@ -63944,46 +63976,76 @@ function flexConnect(e, main, opt = {}) {
       ? 'Патрубки прямоугольные — ведите от них прямоугольный воздуховод командой «Воздуховод»'
       : !sp.length
         ? 'Все патрубки уже подключены'
-        : 'Рядом нет жёсткого воздуховода (магистрали) — нарисуйте его или укажите командой «Подводки»';
+        : 'Рядом (до 6 м) нет ни воздуховода, ни свободного патрубка другого оборудования';
   if (!sp.length) return 0;
+  const maxD = 6000;
+  const others = main ? [] : freeSpigots(e);
+  const used = new Set(),
+    made = new Set();
   let n = 0;
   for (const q of sp) {
-    const m = main
-      ? (() => {
-          let best = null;
-          for (let i = 1; i < main.pts.length; i++) {
-            const c = segPt(main.pts[i - 1], main.pts[i], P(q.p[0], q.p[1]));
-            const dd = dist(c, P(q.p[0], q.p[1]));
-            if (!best || dd < best.dd) best = { d: main, c, z: ductPath3(main)[i][2], dd };
-          }
-          return best;
-        })()
-      : nearMain(q, q.sys);
-    if (!m) continue;
+    let m = null;
+    if (main) {
+      for (let i = 1; i < main.pts.length; i++) {
+        const c = segPt(main.pts[i - 1], main.pts[i], P(q.p[0], q.p[1]));
+        const dd = dist(c, P(q.p[0], q.p[1]));
+        if (!m || dd < m.dd) m = { d: main, c, z: ductPath3(main)[i][2], dd, rank: dd };
+      }
+    } else m = nearMain(q, q.sys, maxD, made);
+    // a free spigot of other equipment, if nearer
+    let t = null;
+    for (const o of others) {
+      if (used.has(o)) continue;
+      const dd = Math.hypot(o.p[0] - q.p[0], o.p[1] - q.p[1], o.p[2] - q.p[2]);
+      if (dd > maxD) continue;
+      // not behind either spigot: the run must leave each of them forwards
+      const fwd = (a, b) => (b.p[0] - a.p[0]) * a.dir[0] + (b.p[1] - a.p[1]) * a.dir[1] + (b.p[2] - a.p[2]) * a.dir[2];
+      if (fwd(q, o) < -0.35 * dd || fwd(o, q) < -0.35 * dd) continue;
+      // an adapter or a silencer takes the system of what it is joined to: only two machines must agree
+      const mach = x => x.e.type === 'ac' || (x.e.type === 'hvu' && x.e.kind === 'ahu');
+      const rank = dd + (mach(q) && mach(o) && q.sys && o.sys && q.sys !== o.sys ? 1e6 : 0);
+      if (!t || rank < t.rank) t = { o, dd, rank };
+    }
+    if (t && (!m || t.dd < m.dd || t.rank < m.rank)) m = null;
+    else t = null;
+    if (!m && !t) continue;
     if (!n) pushUndo();
-    const pts = flexPath(q, m).map(p => {
+    let path, sys;
+    if (t) {
+      used.add(t.o);
+      path = spigotPath(q, t.o, opt.rigid);
+      // the terminal side takes the system of the machine it is fed from
+      const src = [q, t.o].find(x => x.e.type === 'ac' || (x.e.type === 'hvu' && x.e.kind === 'ahu')) || t.o;
+      sys = src.sys || q.sys || t.o.sys || S.vent.cur;
+      for (const x of [q, t.o]) if (x.e.type === 'hvu' && x.e.kind !== 'ahu' && sys) x.e.sys = sys;
+    } else {
+      path = flexPath(q, m);
+      sys = q.sys || m.d.sys;
+    }
+    const pts = path.map(p => {
       const v = P(Math.round(p[0]), Math.round(p[1]));
       v.z = Math.round(p[2]);
       return v;
     });
-    addEnt({
+    const made1 = addEnt({
       type: 'duct',
       ...(opt.rigid ? { rigid: true } : { flex: true }),
-      tap: true,
+      ...(t ? { link: true } : { tap: true }),
       pts,
       shape: 'round',
       d: q.d,
       w: q.d,
       hh: q.d,
       z: pts[0].z,
-      sys: q.sys || m.d.sys,
-      flow: Math.round((+e.flow || +m.d.flow || 0) / Math.max(1, sp.length)),
+      sys,
+      flow: Math.round((+e.flow || (m && +m.d.flow) || 0) / Math.max(1, sp.length)),
       mat: opt.rigid ? 'Оцинкованная сталь' : 'Гибкий алюминиевый',
       ins: 0,
       from: null,
       to: null,
       layer: ensureLayer('Вентиляция')
     });
+    made.add(made1);
     n++;
   }
   if (n) changed();
@@ -64273,6 +64335,16 @@ function insertSilencer(d, i, c, o = {}) {
 }
 const SIL_SNAP = d => SIL_D.reduce((a, x) => (Math.abs(x - d) < Math.abs(a - d) ? x : a), 160);
 /** «Подводки»: a main duct, then a unit (plenum, silencer, ducted air conditioner). */
+/** The equipment under a click: its body, its chambers or any of its spigots. */
+function unitAt(p) {
+  for (const e of S.ents) {
+    if (!visible(e)) continue;
+    if (e.type === 'hvu' && XT.hvu.dist(e, p) < 150) return e;
+    if (e.type === 'ac' && XT.ac && XT.ac.inside && XT.ac.inside(e, p)) return e;
+  }
+  const q = spigotAt(p, 450);
+  return q ? q.e : null;
+}
 function mkFlex() {
   let main = null,
     rigid = !!mkFlex.rigid;
@@ -64303,14 +64375,9 @@ function mkFlex() {
           return;
         }
       }
-      const u = S.ents.find(
-        e =>
-          visible(e) &&
-          ((e.type === 'hvu' && XT.hvu.dist(e, p) < 120) ||
-            (e.type === 'ac' && XT.ac && XT.ac.dist(e, p) != null && XT.ac.dist(e, p) < 120))
-      );
+      const u = unitAt(p);
       if (!u) {
-        log('Здесь нет оборудования с патрубками', true);
+        log('Щёлкните по самому оборудованию или его патрубку: установке, глушителю, адаптеру, кондиционеру', true);
         return;
       }
       const n = flexConnect(u, main, { rigid });
