@@ -3780,6 +3780,43 @@ label.ck {
   border-radius: 3px;
 }
 
+/* collector 3D editor: the step bar next to the selected part */
+.mf3hud {
+  position: absolute;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 6px;
+  background: rgba(20, 23, 28, 0.94);
+  border: 1px solid #f0b45e;
+  border-radius: 6px;
+  z-index: 3;
+  white-space: nowrap;
+}
+.mf3hud[hidden] {
+  display: none;
+}
+.mf3hud .btn {
+  min-width: 30px;
+  padding: 3px 7px;
+  margin: 0;
+}
+.mf3hud .mf3hv {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #f0b45e;
+  font: 12px 'IBM Plex Mono', monospace;
+}
+.mf3hud .mf3hv input {
+  width: 64px;
+}
+.mf3hud .mf3hs {
+  color: #9aa3ad;
+  font: 11px 'IBM Plex Mono', monospace;
+  margin-left: 2px;
+}
+
 /*
  * Скин «Калька». Интерфейс как чертёжный лист на кульмане: холодная калька, синие чернила, две толщины линий по
  * ГОСТ 2.303 — основная (2 px, чернила) для рамок и активного состояния, тонкая (1 px) для деления на ячейки.
@@ -7117,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '58';
+const APP_VER = '59';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7640,9 +7677,17 @@ const uiHooks = {};
 const vpVis = e => (e.vp == null || e.vp === docView.vp) && stVis(e);
 /** Drawn / picked / snapped in the current 2D context (in paper space the model is not there). */
 const in2d = e => (typeof docView.vp === 'string' ? e.vp === docView.vp : vpVis(e));
+/** A ventilation system switched off in the list of systems hides its ducts and units. */
+const sysOff = e => {
+  const V = S.vent;
+  if (!V || !V.off) return false;
+  const ids = e.type === 'hvu' && e.kind === 'ahu' ? [e.sysS, e.sysE] : e.type === 'ac' ? [e.sysS] : [e.sys];
+  const has = ids.filter(id => id != null && id !== '');
+  return has.length > 0 && has.every(id => V.off[id]);
+};
 const visible = e => {
   const L = layerOf(e);
-  return !!(L && L.on) && vpVis(e);
+  return !!(L && L.on) && vpVis(e) && !sysOff(e);
 };
 const pickable = e => {
   const L = layerOf(e);
@@ -8155,7 +8200,17 @@ const FAMS = {
 };
 const DUCT_MATS = ['Оцинкованная сталь', 'ПВХ (пластиковый)', 'Гибкий алюминиевый', 'Полужёсткий алюминиевый'];
 const DUCT_INS = [0, 10, 25, 50];
-const VKINDS = ['Приток', 'Вытяжка', 'Рециркуляция'];
+const VKINDS = ['Приток', 'Вытяжка', 'Кондиционер: подача', 'Кондиционер: забор', 'Рециркуляция'];
+/** Standard colours of the systems (7.1): supply blue, extract red, AC supply magenta, AC return light blue. */
+const VKCOL = {
+  Приток: '#2f6fd6',
+  Вытяжка: '#d64545',
+  'Кондиционер: подача': '#c2185b',
+  'Кондиционер: забор': '#4fb3e8',
+  Рециркуляция: '#38b2ac'
+};
+/** Freon and condensate drain (7.1): green and yellow. */
+const ACL_STD = { freon: '#2e9d4a', drain: '#e6b800' };
 const GPAL = [
   '#f2d15e',
   '#c97cf0',
@@ -8183,10 +8238,13 @@ function defaultElec() {
 function defaultVent() {
   return {
     systems: [
-      { id: 'П1', name: 'Приток гостиной', kind: 'Приток', col: '#5b8def' },
-      { id: 'В1', name: 'Вытяжка', kind: 'Вытяжка', col: '#e0805a' }
+      { id: 'П1', name: 'Приток', kind: 'Приток', col: '#2f6fd6' },
+      { id: 'В1', name: 'Вытяжка', kind: 'Вытяжка', col: '#d64545' },
+      { id: 'К1п', name: 'Кондиционер: подача', kind: 'Кондиционер: подача', col: '#c2185b' },
+      { id: 'К1з', name: 'Кондиционер: забор', kind: 'Кондиционер: забор', col: '#4fb3e8' }
     ],
     vmax: 4,
+    flexMax: 3000,
     cur: 'П1'
   };
 }
@@ -13243,6 +13301,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -14216,6 +14275,21 @@ function mkDuct() {
     },
     onPoint(p) {
       if (ask) return;
+      // a spigot of a unit: the duct takes its Ø, system and height and starts (or ends) at its end
+      const sp = spigotAt(p);
+      if (sp) {
+        const q = P(sp.p[0], sp.p[1]);
+        if (!pts.length) {
+          sec = { shape: 'round', d: sp.d };
+          if (sp.sys) sys = sp.sys;
+          z = Math.round(sp.p[2]);
+          log(`От патрубка «${sp.n}»: ø${sp.d}${sp.sys ? ', ' + sp.sys : ''}, ось ${z}`);
+          pts.push(q);
+          return;
+        }
+        pts.push(q);
+        return fin();
+      }
       if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) pts.push(p);
     },
     onEnter() {
@@ -16344,6 +16418,56 @@ function offsetLine(pts, d) {
   }
   return out;
 }
+/**
+ * A lower duct is drawn with a break where a higher one crosses it: the band of the upper duct (its width plus a
+ * gap on each side) is clipped out of the lower one.
+ */
+function ductBreakClip(e) {
+  const z = ductTop(e);
+  const bands = [];
+  for (const o of S.ents) {
+    if (o === e || o.type !== 'duct' || !o.pts || o.pts.length < 2 || !visible(o)) continue;
+    if (ductTop(o) <= z + 1) continue;
+    const g = ductW(o) / 2 + (o.ins || 0) + 40;
+    for (let j = 1; j < o.pts.length; j++)
+      for (let i = 1; i < e.pts.length; i++) {
+        const x = segSegX(e.pts[i - 1], e.pts[i], o.pts[j - 1], o.pts[j]);
+        if (!x) continue;
+        const u = nrm(sub(o.pts[j], o.pts[j - 1])),
+          n = P(-u.y, u.x),
+          k = ductW(e) + 200;
+        bands.push([
+          add(add(x, mul(n, g)), mul(u, -k)),
+          add(add(x, mul(n, g)), mul(u, k)),
+          add(sub(x, mul(n, g)), mul(u, k)),
+          add(sub(x, mul(n, g)), mul(u, -k))
+        ]);
+      }
+  }
+  if (!bands.length) return;
+  ctx.beginPath();
+  ctx.rect(-1e5, -1e5, 2e5, 2e5);
+  for (const b of bands) {
+    const q = b.map(w2s);
+    ctx.moveTo(q[0].x, q[0].y);
+    for (let i = 1; i < 4; i++) ctx.lineTo(q[i].x, q[i].y);
+    ctx.closePath();
+  }
+  ctx.clip('evenodd');
+}
+/** The top of a duct along its run (the highest point of its section). */
+const ductTop = e =>
+  e.pts.some(p => p.z != null) ? Math.max(...e.pts.map(p => (p.z != null ? +p.z : +e.z || 0))) : +e.z || 0;
+function segSegX(a, b, c, d) {
+  const r = sub(b, a),
+    s = sub(d, c);
+  const den = r.x * s.y - r.y * s.x;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / den,
+    u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / den;
+  if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return null;
+  return add(a, mul(r, t));
+}
 function drawDuct(e, color, o = {}) {
   const ghost = color === 'ghost',
     sy = sysOf(e.sys),
@@ -16354,9 +16478,32 @@ function drawDuct(e, color, o = {}) {
     r = offsetLine(e.pts, -hw);
   ctx.save();
   if (o.dim) ctx.globalAlpha = 0.4;
+  if (!ghost) ductBreakClip(e);
   pathPoly(l.concat(r.slice().reverse()));
-  ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(sy.col, 0.13);
+  ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(sy.col, 0.3);
   ctx.fill();
+  if (e.flex) {
+    // the coils of a flexible duct: short strokes across it every 40 mm
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1],
+        b = e.pts[i],
+        L = dist(a, b);
+      if (L < 1) continue;
+      const u = nrm(sub(b, a)),
+        n = P(-u.y, u.x);
+      for (let t = 20; t < L; t += 40) {
+        const c = add(a, mul(u, t));
+        const s0 = w2s(add(c, mul(n, hw))),
+          s1 = w2s(sub(c, mul(n, hw)));
+        ctx.moveTo(s0.x, s0.y);
+        ctx.lineTo(s1.x, s1.y);
+      }
+    }
+    ctx.stroke();
+  }
   ctx.strokeStyle = col;
   ctx.lineWidth = o.hover ? 2.2 : 1.2;
   pathPoly(l, false);
@@ -16403,7 +16550,11 @@ function drawDuct(e, color, o = {}) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = bad ? '#ef5f5f' : col;
-    ctx.fillText(`${e.sys} · ${secTxt(e)} · ${fmt(e.flow)} м³/ч · ${v.toFixed(1)} м/с`, 0, 0);
+    ctx.fillText(
+      e.flex ? `${secTxt(e)} гибк.` : `${e.sys} · ${secTxt(e)} · ${fmt(e.flow)} м³/ч · ${v.toFixed(1)} м/с`,
+      0,
+      0
+    );
   }
   ctx.restore();
 }
@@ -18317,6 +18468,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -18529,6 +18681,7 @@ function key3Base(e) {
         e.hh,
         e.shape,
         e.ins,
+        e.flex || 0,
         e.type === 'wire' ? [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable] : 0,
         e.group != null ? groupOf(e.group).col : 0,
         e.sys ? sysOf(e.sys).col : 0,
@@ -18717,13 +18870,18 @@ function build3(e) {
     case 'duct': {
       const sy = sysOf(e.sys),
         ins = e.ins || 0;
-      const col = ins ? '#d8d2c2' : rgbHex(hex2rgb(sy.col).map(c => c * 0.45 + 0.8 * 0.55));
+      // the colour of the system (7.1): saturated, a little lighter; insulated — the system tint on the jacket
+      const col = rgbHex(hex2rgb(sy.col).map(c => c * (ins ? 0.45 : 0.82) + (ins ? 0.85 * 0.55 : 0.18)));
       const mb = MB(),
         z = e.z || 0,
         W = ductW(e) + 2 * ins,
         Hh = (e.shape === 'rect' ? e.hh : e.d) + 2 * ins,
         rr = W / 2;
-      const pts = e.pts.map(p => [p.x, p.y, z]);
+      if (e.flex) {
+        flexBuild(e, mb, col);
+        return meshGroup(mb.meshes(), {});
+      }
+      const pts = ductPath3(e);
       for (let i = 1; i < pts.length; i++) {
         let a = pts[i - 1],
           b = pts[i];
@@ -18735,8 +18893,8 @@ function build3(e) {
           uy = dy / L,
           ea = i > 1 ? W / 2 : 0,
           eb = i < pts.length - 1 ? W / 2 : 0;
-        a = [a[0] - ux * ea, a[1] - uy * ea, z];
-        b = [b[0] + ux * eb, b[1] + uy * eb, z];
+        a = [a[0] - ux * ea, a[1] - uy * ea, a[2]];
+        b = [b[0] + ux * eb, b[1] + uy * eb, b[2]];
         if (e.shape === 'rect') mb.obox(a, b, W, Hh, col);
       }
       if (e.shape !== 'rect') {
@@ -18767,6 +18925,7 @@ function build3(e) {
           }
         }
       });
+      ductJoints(e, mb, col, W, Hh);
       return meshGroup(mb.meshes(), { edges: e.shape === 'rect' });
     }
     case 'line':
@@ -23905,6 +24064,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -24228,11 +24388,27 @@ function renderSpecLevel() {
         r.q += wireLen(e).total / 1000;
         r.ids.push(e.id);
       });
-    else if (e.type === 'duct') {
+    else if (e.type === 'duct' && e.flex) {
+      const st = secTxt(e);
+      put(
+        ducts,
+        'flex' + st + (e.ins ? 'i' : ''),
+        { name: `Воздуховод гибкий ${st}${e.ins ? ' в изоляции' : ''}, м`, u: 'м' },
+        r => {
+          r.q += ductLen3(e) / 1000;
+          r.A = (r.A || 0) + (ductPerim(e) * ductLen3(e)) / 1000;
+          r.ids.push(e.id);
+        }
+      );
+      put(bends, 'clamp' + st, { name: `Хомут для гибкого воздуховода ${st}`, u: 'шт' }, r => {
+        r.q += 2;
+        r.ids.push(e.id);
+      });
+    } else if (e.type === 'duct') {
       const st = secTxt(e);
       put(ducts, e.sys + st + e.mat, { name: `Воздуховод ${st}, ${e.mat.toLowerCase()} · ${e.sys}`, u: 'м' }, r => {
-        r.q += ductLen(e) / 1000;
-        r.A = (r.A || 0) + (ductPerim(e) * ductLen(e)) / 1000;
+        r.q += Math.max(ductLen(e), ductLen3(e)) / 1000;
+        r.A = (r.A || 0) + (ductPerim(e) * Math.max(ductLen(e), ductLen3(e))) / 1000;
         r.ids.push(e.id);
       });
       for (const a of ductBends(e))
@@ -25995,7 +26171,9 @@ const WSDEF = [
     g: [
       ['Отопление', ['rad', 'ufh']],
       ['Вентиляция', ['duct', 'vterm', 'vshaft', 'avcalc']],
-      ['Кондиционеры', ['ac', 'acfreon', 'acdrain']]
+      ['Оборудование', ['ahu', 'silencer', 'plenum', 'flexconn']],
+      ['Кондиционеры', ['ac', 'acfreon', 'acdrain']],
+      ['Схемы', ['ventlabel', 'ventsheet']]
     ]
   },
   {
@@ -26116,6 +26294,12 @@ const TLBL = {
   ac: 'Кондиционер',
   acfreon: 'Фреон',
   acdrain: 'Дренаж',
+  ahu: 'Установка',
+  silencer: 'Глушитель',
+  plenum: 'Адаптер',
+  flexconn: 'Подводки',
+  ventlabel: 'Подписать',
+  ventsheet: 'Листы схем',
   sect: 'Разрез',
   elev: 'Развёртка',
   node: 'Узел',
@@ -26466,13 +26650,13 @@ function renderMEP() {
     }
     const fast = S.ents.filter(e => e.type === 'duct' && ductVel(e) > (S.vent.vmax || 4));
     el.innerHTML = `<p class="hint">Система объединяет воздуховоды и решётки одного назначения. Скорость в воздуховоде считается из расхода и сечения; для жилых помещений обычно держат до 3–4 м/с в ответвлениях, чтобы не было шума.</p>
-    <div class="tblwrap"><table class="mtbl"><thead><tr><th>Обозначение</th><th>Название</th><th>Тип</th><th>Цвет</th><th style="text-align:right">Устройств</th><th style="text-align:right">Σ расход, м³/ч</th><th style="text-align:right">Воздуховоды, м</th><th></th></tr></thead><tbody>${S.vent.systems
+    <div class="tblwrap"><table class="mtbl"><thead><tr><th title="Показывать систему на плане и в 3D">Вид</th><th>Обозначение</th><th>Название</th><th>Тип</th><th>Цвет</th><th style="text-align:right">Устройств</th><th style="text-align:right">Σ расход, м³/ч</th><th style="text-align:right">Воздуховоды, м</th><th></th></tr></thead><tbody>${S.vent.systems
       .map((s, i) => {
         const r = stat.get(s.id);
-        return `<tr data-s="${i}"><td><input data-k="id" value="${esc(s.id)}" style="width:80px" aria-label="Обозначение"></td><td><input data-k="name" value="${esc(s.name)}" aria-label="Название"></td><td><select data-k="kind">${VKINDS.map(k => `<option ${k === s.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${s.col}" aria-label="Цвет"></td><td class="n">${r.n}</td><td class="n">${Math.round(r.q)}</td><td class="n">${(r.L / 1000).toFixed(1)}</td><td><button class="btn" data-del="${i}" ${r.n || r.L ? 'disabled title="Система используется"' : ''} aria-label="Удалить систему">×</button></td></tr>`;
+        return `<tr data-s="${i}"><td><input type="checkbox" data-voff="${esc(s.id)}" ${S.vent.off && S.vent.off[s.id] ? '' : 'checked'} aria-label="Показывать ${esc(s.id)}"></td><td><input data-k="id" value="${esc(s.id)}" style="width:80px" aria-label="Обозначение"></td><td><input data-k="name" value="${esc(s.name)}" aria-label="Название"></td><td><select data-k="kind">${VKINDS.map(k => `<option ${k === s.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${s.col}" aria-label="Цвет"></td><td class="n">${r.n}</td><td class="n">${Math.round(r.q)}</td><td class="n">${(r.L / 1000).toFixed(1)}</td><td><button class="btn" data-del="${i}" ${r.n || r.L ? 'disabled title="Система используется"' : ''} aria-label="Удалить систему">×</button></td></tr>`;
       })
       .join('')}</tbody></table></div>
-    <div class="btnrow" style="align-items:center"><button class="btn" id="mepAddS">+ Система</button><label class="fl" style="flex-direction:row;align-items:center;gap:8px">Предельная скорость, м/с <input type="number" step="0.5" id="mepV" value="${S.vent.vmax}" style="width:80px;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:5px 7px"></label></div>
+    <div class="btnrow" style="align-items:center"><button class="btn" id="mepAddS">+ Система</button><button class="btn" id="mepStdCol" title="Приток — синий, вытяжка — красный, подача кондиционера — малиновый, забор — голубой">Цвета по стандарту</button><label class="fl" style="flex-direction:row;align-items:center;gap:8px" title="Длиннее — замечание в проверках">Гибкая подводка до, мм <input type="number" step="100" id="mepFlex" value="${S.vent.flexMax || 3000}" style="width:80px"></label><label class="fl" style="flex-direction:row;align-items:center;gap:8px">Предельная скорость, м/с <input type="number" step="0.5" id="mepV" value="${S.vent.vmax}" style="width:80px;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:5px 7px"></label></div>
     ${fast.length ? `<div><div class="sech" style="margin-bottom:6px">Скорость выше предела</div><div class="tblwrap"><table class="mtbl"><tbody>${fast.map(e => `<tr data-sel="${e.id}"><td>${esc(e.sys)} · ${secTxt(e)}</td><td class="n">${fmt(e.flow)} м³/ч</td><td class="n bad">${ductVel(e).toFixed(2)} м/с</td><td>увеличьте сечение</td></tr>`).join('')}</tbody></table></div></div>` : '<div class="ok">Скорость во всех воздуховодах в пределе.</div>'}`;
     el.querySelectorAll('tr[data-s] [data-k]').forEach(
       inp =>
@@ -26491,7 +26675,10 @@ function renderMEP() {
             });
             if (S.vent.cur === s.id) S.vent.cur = v;
             s.id = v;
-          } else s[k] = inp.value;
+          } else {
+            s[k] = inp.value;
+            if (k === 'kind' && VKCOL[inp.value]) s.col = VKCOL[inp.value];
+          }
           changed();
           renderMEP();
         })
@@ -26520,6 +26707,27 @@ function renderMEP() {
       S.vent.systems.push({ id: 'П' + i, name: 'Приток', kind: 'Приток', col: GPAL[(i + 3) % GPAL.length] });
       changed();
       renderMEP();
+    };
+    el.querySelectorAll('[data-voff]').forEach(
+      c =>
+        (c.onchange = () => {
+          pushUndo();
+          S.vent.off = { ...(S.vent.off || {}) };
+          if (c.checked) delete S.vent.off[c.dataset.voff];
+          else S.vent.off[c.dataset.voff] = true;
+          changed();
+        })
+    );
+    $('#mepStdCol').onclick = () => {
+      pushUndo();
+      for (const x of S.vent.systems) if (VKCOL[x.kind]) x.col = VKCOL[x.kind];
+      changed();
+      renderMEP();
+    };
+    $('#mepFlex').onchange = e => {
+      pushUndo();
+      S.vent.flexMax = Math.max(500, parseFloat(e.target.value) || 3000);
+      changed();
     };
     $('#mepV').onchange = e => {
       pushUndo();
@@ -40137,6 +40345,8 @@ function mfLay(e) {
   const defZ = j => (water ? c.z - Math.floor(j / 2) * Math.round(MF_ROW * 1.4) : c.z - j * MF_ROW);
   const zLow = Math.min(...c.lines.map((L, j) => (L.ori === 'v' ? 1e9 : mfNum(L.z, defZ(j)))));
   c.lines.forEach((L, li) => {
+    const i0 = items.length,
+      c0 = conns.length;
     const o = mfLineOpt(L, li),
       { ori, sd, rv } = o;
     const ps = li % 2 ? -1 : 1;
@@ -40355,7 +40565,9 @@ function mfLay(e) {
       });
       return { E, d: ob.d };
     });
-    lines.push({ L, li, ...o, ax, S, F, C: C0, cx, y, z, rb, ro, step, bw, port, drop, outs, ext });
+    const ln = { L, li, ...o, ax, S, F, C: C0, cx, y, z, rb, ro, step, bw, port, drop, outs, ext };
+    mfTurnLine(L, o, ln, items.slice(i0), conns.slice(c0), C0, ax);
+    lines.push(ln);
   });
   // pipes drawn in the editor
   (c.pipes || []).forEach(p => {
@@ -40462,6 +40674,100 @@ function mfLay(e) {
     yMax = Math.max(yMax, C[1] + D / 2);
   }
   return { c, lines, items, conns, xMin, xMax, zMin, zMax, yMax };
+}
+/** A plate on the wall (y 0..t): half-sizes a along u (a direction in the wall plane) and b across it. */
+function mfPlate(mb, B, u, a, b, t, col) {
+  const v = [-u[2], 0, u[0]];
+  const q = [
+    [-a, -b],
+    [a, -b],
+    [a, b],
+    [-a, b]
+  ].map(([i, j]) => [B[0] + u[0] * i + v[0] * j, B[2] + u[2] * i + v[2] * j]);
+  // wound counter-clockwise seen from the room (+Y): in (−x, z)
+  let ar = 0;
+  for (let i = 0; i < 4; i++) {
+    const p = q[i],
+      n = q[(i + 1) % 4];
+    ar += -p[0] * n[1] - -n[0] * p[1];
+  }
+  if (ar < 0) q.reverse();
+  const V = [...q.map(([x, z]) => [x, 0, z]), ...q.map(([x, z]) => [x, t, z])];
+  for (const f of [
+    [0, 2, 1],
+    [0, 3, 2],
+    [4, 5, 6],
+    [4, 6, 7],
+    [0, 1, 5],
+    [0, 5, 4],
+    [1, 2, 6],
+    [1, 6, 5],
+    [2, 3, 7],
+    [2, 7, 6],
+    [3, 0, 4],
+    [3, 4, 7]
+  ])
+    mb.tri3(col, V[f[0]], V[f[1]], V[f[2]]);
+}
+/** Angles of a collector: ang — turn in the wall plane (about the wall normal, through the bar centre), 45° steps;
+ *  tilt — the outlets turned away from the wall about the bar axis (0 — in the wall plane, 90 — straight out). */
+const mfAng = L => (((Math.round((+L.ang || 0) / 45) * 45) % 360) + 360) % 360;
+const mfTilt = L => Math.max(0, Math.min(90, Math.round((+L.tilt || 0) / 45) * 45));
+// point / vector fields of the layout items that turn with the collector
+const MF_PTS = ['A', 'C', 'S', 'F', 'P', 'E', 'top', 'port', 'N', 'p'],
+  MF_VEC = ['d', 'ax', 'od', 'dd'],
+  MF_ARR = ['pos', 'pts', 'route'];
+function mfTurnLine(L, o, ln, its, cs, C0, ax) {
+  const ang = mfAng(L) * D2R,
+    tilt = o.od === 'front' ? 0 : mfTilt(L) * D2R;
+  if (!ang && !tilt) return;
+  // the outlets first: about the bar axis through their point on the bar, towards the room (+Y)
+  if (tilt) {
+    const od0 = MF_OD[o.od];
+    const cr = cross3(ax, od0);
+    const sg = cr[1] >= 0 ? 1 : -1;
+    const done = new Set();
+    const turnOut = (obj, P) => {
+      if (!obj || done.has(obj)) return;
+      done.add(obj);
+      for (const f of MF_PTS) if (Array.isArray(obj[f]) && f !== 'P') obj[f] = mfRotP(obj[f], P, ax, sg * tilt);
+      for (const f of ['d', 'od']) if (Array.isArray(obj[f])) obj[f] = mfRotP(obj[f], [0, 0, 0], ax, sg * tilt);
+    };
+    for (const it of its)
+      if (it.kind === 'out') {
+        const g = `${it.li}|o${it.addr.split('|')[1].slice(3)}`;
+        const P = it.P;
+        for (const q of its) if (q.kind === 'comp' && q.grp === g) turnOut(q, P);
+        const E0 = it.E;
+        turnOut(it, P);
+        for (const q of cs) if (q.p === E0) q.p = it.E;
+      }
+    const bar = its.find(q => q.kind === 'bar');
+    if (bar) bar.od = mfRotP(od0, [0, 0, 0], ax, sg * tilt);
+  }
+  if (!ang) return;
+  const Y = [0, 1, 0],
+    O = [0, 0, 0];
+  const memo = new Map();
+  const tp = v => {
+    if (!memo.has(v)) memo.set(v, mfRotP(v, C0, Y, ang));
+    return memo.get(v);
+  };
+  const tv = v => {
+    if (!memo.has(v)) memo.set(v, mfRotP(v, O, Y, ang));
+    return memo.get(v);
+  };
+  const turn = obj => {
+    for (const f of MF_PTS) if (Array.isArray(obj[f]) && typeof obj[f][0] === 'number') obj[f] = tp(obj[f]);
+    for (const f of MF_VEC) if (Array.isArray(obj[f]) && typeof obj[f][0] === 'number') obj[f] = tv(obj[f]);
+    for (const f of MF_ARR) if (Array.isArray(obj[f])) obj[f] = obj[f].map(tp);
+  };
+  for (const it of its) if (it.kind !== 'wall') turn(it);
+  // a wall device keeps its own place on the wall; its connection follows the turned tee
+  for (const it of its) if (it.kind === 'wall') Object.assign(it, mfWallItem(it.tee, L, ln.y));
+  for (const q of cs) q.p = tp(q.p);
+  turn(ln);
+  ln.ang = ang;
 }
 // a wall-hung device: own position on the wall, bracket, connection pipe from the tee in the chain
 function mfWallItem(it, L, yLine) {
@@ -40694,9 +41000,8 @@ function mfBuild(mb, e, opt) {
       const wn = [0, -1, 0];
       for (const t of [it.mg * 0.45, it.bw - it.mg * 0.45]) {
         const B = mfA(it.S, ax, t);
-        const vx = ax[2] !== 0;
-        if (vx) mb.box(B[0] - r - 28, 0, B[2] - 14, B[0] + r + 28, 4, B[2] + 14, '#5a626b');
-        else mb.box(B[0] - 14, 0, B[2] - r - 28, B[0] + 14, 4, B[2] + r + 28, '#5a626b');
+        // the plate on the wall, across the bar (the bar may be turned in the wall plane)
+        mfPlate(mb, B, ax, 14, r + 28, 4, '#5a626b');
         mfRev(
           mb,
           [B[0], 4, B[2]],
@@ -42322,6 +42627,7 @@ function mf3Draw() {
   for (const m of MF3.meshes) if (m.op < 1) draw(m);
   gl.depthMask(true);
   mf3Overlay();
+  mf3HudPos();
 }
 function mf3Overlay() {
   const ov = MF3.ov;
@@ -42727,7 +43033,8 @@ function mf3Move(ev, e) {
     return;
   }
   if (D.mode === 'none') return;
-  if (!D.moved && Math.hypot(ev.clientX - D.x, ev.clientY - D.y) < 4) return;
+  if (!D.moved && Math.hypot(ev.clientX - D.x, ev.clientY - D.y) < 8) return;
+  if (!D.moved && MF3.noDrag) return;
   D.moved = true;
   D.mx = ev.clientX - r.left;
   D.my = ev.clientY - r.top;
@@ -42909,7 +43216,20 @@ function mf3Key(ev, e) {
     else if (k === 'ArrowDown') L.z = lay.z - s;
     else if (k === 'PageUp') L.y = lay.y + s;
     else if (k === 'PageDown') L.y = Math.max(it.r + 10, lay.y - s);
+    else if (/^[rRкК]$/.test(k)) L.ang = mfAng({ ang: mfAng(L) + (ev.shiftKey ? -45 : 45) });
     else done = false;
+  } else if (it.kind === 'out' || it.kind === 'riser') {
+    const pos = ['ArrowRight', 'ArrowUp', '+', '='].includes(ev.key)
+      ? 1
+      : ['ArrowLeft', 'ArrowDown', '-'].includes(ev.key)
+        ? -1
+        : 0;
+    if (!pos) done = false;
+    else if (it.kind === 'riser') L.drop = Math.max(40, Math.round(lay.drop) + pos * s);
+    else {
+      const ob = L.outs[+it.addr.split('|')[1].slice(3)];
+      ob.len = Math.max(10, mfNum(ob.len, 28) + pos * s);
+    }
   } else if (it.kind === 'wall' || it.kind === 'ctrl') {
     const k = ev.key,
       q = it.k;
@@ -42981,7 +43301,7 @@ function mf3Side(e) {
           )}</label>`
         : ''
     }${k.k === 'tank' ? `<label>Объём бака, л<select data-m3k="vol">${[8, 12, 18, 24].map(v => `<option ${+(k.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Крепление<select data-m3k="mount"><option value="wall" ${k.mount !== 'pipe' ? 'selected' : ''}>на стене, на кронштейне (тройник + подводка)</option><option value="pipe" ${k.mount === 'pipe' ? 'selected' : ''}>на трубе</option></select></label>` : ''}</div>
-      <p class="hint">Длина по оси ${it.len} мм. Тяните вдоль трубы: элемент едет с шагом привязки, соседи стоят; дальше середины соседа — перестановка. Shift — вместе с соседями. Стрелки — на шаг, Delete — удалить.</p>
+      <p class="hint">Длина по оси ${it.len} мм. Двигайте кнопками ◀ ▶ над видом или стрелками — на шаг привязки, зазор можно ввести числом. Мышью: тяните вдоль трубы (соседи стоят, дальше середины соседа — перестановка; Shift — вместе с соседями). Delete — удалить.</p>
       <div class="btnrow"><span class="hint" style="align-self:center">Поворот вокруг трубы: ${(((+k.rot || 0) % 360) + 360) % 360}°</span><button class="btn" data-m3b="rotl" title="Повернуть на −90°">⟲ 90°</button><button class="btn" data-m3b="rotr" title="Повернуть на +90° (клавиша R)">⟳ 90°</button><button class="btn" data-m3b="rot45">+45°</button></div><div class="btnrow"><button class="btn" data-m3b="prev">◀ раньше</button><button class="btn" data-m3b="next">позже ▶</button><button class="btn" data-m3b="tight">Вплотную</button><button class="btn" data-m3b="del">Удалить</button></div>`;
   } else if (it && it.kind === 'ctrl') {
     const k = it.k;
@@ -43052,6 +43372,18 @@ function mf3Side(e) {
       (l.ori === 'h' ? ['down', 'up', 'front'] : ['left', 'right', 'front']).map(k => [k, MF_ODN[k]]),
       l.od
     )}</label>${
+      l.od !== 'front'
+        ? `<label>Выходы от стены${mf3Sel(
+            'tilt',
+            [
+              ['0', 'в плоскости стены'],
+              ['45', 'на 45° от стены'],
+              ['90', 'на 90° (прямо от стены)']
+            ],
+            String(mfTilt(L))
+          )}</label>`
+        : ''
+    }${
       l.ori === 'h'
         ? `<label>Арматура ввода${mf3Sel(
             'inMode',
@@ -43071,7 +43403,7 @@ function mf3Side(e) {
       l.rv > 0 ? 'up' : 'down'
     )}</label>
       <label>Ось от стены, мм<input type="number" step="${st}" data-m3l="y" value="${Math.round(l.y)}"></label><label>${l.ori === 'v' ? 'Центр' : 'Ось'} от пола, мм<input type="number" step="${st}" data-m3l="z" value="${Math.round(l.z)}"></label><label>Центр по X, мм<input type="number" step="${st}" data-m3l="x" value="${Math.round(l.cx)}"></label><label>Шаг выходов, мм<input type="number" step="1" data-m3l="step" value="${l.step}"></label><label>Прямой участок ввода, мм<input type="number" step="${st}" data-m3l="drop" value="${Math.round(l.drop)}"></label><label>Выходов<input type="number" min="1" max="16" data-m3l="n" value="${L.outs.length}"></label></div>
-      <p class="hint">Тяните коллектор по стене, Shift — к стене / от стены, Alt — весь узел. Стрелки, PgUp/PgDn — шаг привязки. Ввод тянется вдоль подвода, крайний выход — шаг выходов.</p><div class="btnrow"><button class="btn" data-m3b="auto">Сбросить положение</button><button class="btn" data-m3b="lflip" title="Ввод с другого конца, выходы в обратном порядке">⇋ Зеркально</button><button class="btn" data-m3b="ldel">Удалить коллектор</button></div>`;
+      <p class="hint">Двигайте кнопками над видом или стрелками (PgUp/PgDn — от стены) на шаг привязки; R / Shift+R — поворот на 45° в плоскости стены. Мышью: тяните по стене, Shift — от стены, Alt — весь узел. Ввод тянется вдоль подвода, крайний выход — шаг выходов.</p><div class="btnrow"><span class="hint" style="align-self:center">Поворот в плоскости стены: ${mfAng(L)}°</span><button class="btn" data-m3b="angl" title="Повернуть коллектор на −45° в плоскости стены (Shift+R)">⟲ 45°</button><button class="btn" data-m3b="angr" title="Повернуть коллектор на +45° в плоскости стены (R)">⟳ 45°</button><button class="btn" data-m3b="ang90" title="Повернуть на 90°">⟳ 90°</button></div><div class="btnrow"><button class="btn" data-m3b="auto">Сбросить положение</button><button class="btn" data-m3b="lflip" title="Ввод с другого конца, выходы в обратном порядке">⇋ Зеркально</button><button class="btn" data-m3b="ldel">Удалить коллектор</button></div>`;
   } else
     h = `<p class="hint">Щёлкните элемент, коллектор, ввод, выход, бак или трубу. Камера: Ctrl + левая кнопка — вращение, Ctrl + правая (или просто правая / средняя) — сдвиг, колесо — масштаб к курсору. «Труба» — рисовать трубы прямо в узле.</p>`;
   h += `<div class="sech" style="margin-top:8px">Питание</div><p class="hint" style="margin:0">${mfPowerHTML(e)}</p><div class="sech" style="margin-top:8px">Проверка сборки</div>${
@@ -43083,6 +43415,7 @@ function mf3Side(e) {
       : '<p class="hint" style="color:#7fcf8f">Пересечений и заходов в стену нет.</p>'
   }`;
   box.innerHTML = h;
+  mf3Hud(e, it);
   const rb = () => {
     changed();
     mf3Build(e);
@@ -43149,7 +43482,7 @@ function mf3Side(e) {
         else if (f === 'xd') c.pipes[it.pi].d = +v;
         else {
           const L = c.lines[it.li];
-          L[f] = v;
+          L[f] = f === 'tilt' ? +v : v;
           if (f === 'ori') {
             delete L.outDir;
             delete L.z;
@@ -43194,7 +43527,10 @@ function mf3Side(e) {
           return;
         }
         pushUndo();
-        if (a === 'lflip') {
+        if (a === 'angl' || a === 'angr' || a === 'ang90') {
+          const L = c.lines[it.li];
+          L.ang = mfAng({ ang: mfAng(L) + (a === 'angl' ? -45 : a === 'angr' ? 45 : 90) });
+        } else if (a === 'lflip') {
           mfFlipLine(e, it.li);
         } else if (a === 'ldel') {
           if (c.lines.length <= 1) {
@@ -43274,6 +43610,90 @@ function mf3Side(e) {
         mf3Side(e);
       })
   );
+}
+/* ---- the bar next to the selected part: steps by buttons and the value typed in, without dragging ---- */
+function mf3HudAt(it) {
+  if (!it) return null;
+  if (it.kind === 'comp') return mfA(it.A, it.d, it.len / 2);
+  if (it.kind === 'out') return it.E;
+  if (it.kind === 'riser') return it.port;
+  if (it.kind === 'bar' || it.kind === 'wall' || it.kind === 'ctrl') return it.C;
+  return null;
+}
+function mf3HudVal(e, it) {
+  const c = mfCfg(e);
+  if (it.kind === 'comp') return ['зазор', Math.round(+it.k.gap || 0)];
+  if (it.kind === 'out')
+    return ['длина', Math.round(mfNum(c.lines[it.li].outs[+it.addr.split('|')[1].slice(3)].len, 28))];
+  if (it.kind === 'riser') return ['ввод', Math.round(it.drop)];
+  if (it.kind === 'bar') return ['от стены', Math.round(it.y)];
+  if (it.kind === 'wall') return ['от стены', Math.round(it.wy)];
+  return null;
+}
+function mf3Hud(e, it) {
+  const hud = document.getElementById('mf3hud');
+  if (!hud) return;
+  if (!it || MF3.tool || !mf3HudAt(it)) {
+    hud.hidden = true;
+    return;
+  }
+  const s = MF3.snap || 1;
+  const b = (k, t, ti) => `<button class="btn" data-m3h="${k}" title="${ti}">${t}</button>`;
+  const v = mf3HudVal(e, it);
+  const val = v
+    ? `<label class="mf3hv" title="${v[0]}, мм — введите и Enter">${v[0]}<input data-m3hv type="number" step="${s}" value="${v[1]}"></label>`
+    : '';
+  let h = '';
+  if (it.kind === 'comp')
+    h =
+      b('ArrowLeft', '◀', `Ближе на ${s} мм (←)`) +
+      val +
+      b('ArrowRight', '▶', `Дальше на ${s} мм (→)`) +
+      b('r', '⟳', 'Повернуть вокруг трубы на 90° (R)');
+  else if (it.kind === 'out' || it.kind === 'riser')
+    h = b('ArrowDown', '−', `Короче на ${s} мм`) + val + b('ArrowUp', '+', `Длиннее на ${s} мм`);
+  else {
+    h =
+      b('ArrowLeft', '←', `Влево на ${s} мм`) +
+      b('ArrowUp', '↑', `Вверх на ${s} мм`) +
+      b('ArrowDown', '↓', `Вниз на ${s} мм`) +
+      b('ArrowRight', '→', `Вправо на ${s} мм`) +
+      val;
+    if (it.kind === 'bar') h += b('r', '⟳45°', 'Повернуть в плоскости стены на 45° (R)');
+  }
+  hud.innerHTML = h + `<span class="mf3hs" title="Шаг — «Привязка» вверху">шаг ${s}</span>`;
+  hud.hidden = false;
+  hud.querySelectorAll('[data-m3h]').forEach(
+    x =>
+      (x.onclick = ev => {
+        mf3Key({ key: x.dataset.m3h, shiftKey: ev.shiftKey, preventDefault() {}, target: {} }, e);
+      })
+  );
+  const inp = hud.querySelector('[data-m3hv]');
+  if (inp) {
+    inp.onkeydown = ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') inp.blur();
+      if (ev.key === 'Escape') {
+        inp.value = v[1];
+        inp.blur();
+      }
+    };
+    inp.onchange = () => {
+      const x = parseFloat(String(inp.value).replace(',', '.'));
+      if (isFinite(x)) mf3DynApply(e, x);
+    };
+  }
+  mf3HudPos();
+}
+function mf3HudPos() {
+  // a fixed place at the top of the view: the labels next to the parts stay readable
+  const hud = document.getElementById('mf3hud');
+  if (!hud || hud.hidden || !MF3.cv) return;
+  const W = MF3.cv.clientWidth,
+    w = hud.offsetWidth || 220;
+  hud.style.left = Math.round(Math.max(6, (W - w) / 2)) + 'px';
+  hud.style.top = '8px';
 }
 // zoom towards the point under the cursor; steps never shrink below a minimum, the pivot follows the camera
 function mf3Zoom(ev) {
@@ -43463,6 +43883,7 @@ function renderColl3D(el, e) {
          ''
        )}</select><button class="btn ${MF3.tool ? 'pri' : ''}" data-m3t="pipe" title="Рисовать трубу в узле">⟋ Труба</button>
      <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Привязка <select id="mf3snap">${[1, 5, 10, 25, 50].map(v => `<option value="${v}" ${MF3.snap === v ? 'selected' : ''}>${v} мм</option>`).join('')}</select></label>
+     <label class="fl" style="flex-direction:row;align-items:center;gap:6px" title="Перетаскивание деталей мышью (порог 8 px). Без него — щелчок выбирает, двигают стрелки, кнопки у детали и ввод числа"><input type="checkbox" id="mf3drag" ${MF3.noDrag ? '' : 'checked'}>Тянуть мышью</label>
      <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Узел от стены <input id="mf3dy" type="number" step="5" value="${c.dy}" style="width:70px"></label>
      <span style="flex:1"></span>${['front:Спереди', 'side:Сбоку', 'top:Сверху', 'iso:3D', 'fit:Вписать']
        .map(s => {
@@ -43470,7 +43891,7 @@ function renderColl3D(el, e) {
          return `<button class="btn" data-m3v="${a}">${b}</button>`;
        })
        .join('')}<button class="btn" id="mfGo">Показать в сцене</button></div>
-   <div class="pnwrap"><div class="pnpal">${pal}</div><div class="pnsvg" style="position:relative;padding:0;overflow:hidden;min-height:360px"><canvas id="mf3cv" style="width:100%;height:100%;display:block;touch-action:none" tabindex="0" aria-label="3D-редактор коллекторного узла"></canvas><canvas id="mf3ov" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas><div id="mf3dynw" hidden style="position:absolute;left:12px;bottom:12px;display:flex;gap:6px;align-items:center;background:rgba(20,23,28,.92);border:1px solid #f0b45e;border-radius:5px;padding:4px 8px"><span id="mf3dynl" style="color:#f0b45e;font:12px 'IBM Plex Mono',monospace"></span><input id="mf3dyn" style="width:90px" inputmode="decimal" aria-label="Значение, мм"></div></div><div class="pnedit" id="mf3side"></div></div>`;
+   <div class="pnwrap"><div class="pnpal">${pal}</div><div class="pnsvg" style="position:relative;padding:0;overflow:hidden;min-height:360px"><canvas id="mf3cv" style="width:100%;height:100%;display:block;touch-action:none" tabindex="0" aria-label="3D-редактор коллекторного узла"></canvas><canvas id="mf3ov" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas><div id="mf3hud" class="mf3hud" hidden></div><div id="mf3dynw" hidden style="position:absolute;left:12px;bottom:12px;display:flex;gap:6px;align-items:center;background:rgba(20,23,28,.92);border:1px solid #f0b45e;border-radius:5px;padding:4px 8px"><span id="mf3dynl" style="color:#f0b45e;font:12px 'IBM Plex Mono',monospace"></span><input id="mf3dyn" style="width:90px" inputmode="decimal" aria-label="Значение, мм"></div></div><div class="pnedit" id="mf3side"></div></div>`;
   const q = x => el.querySelector(x);
   el.querySelectorAll('[data-mfmode]').forEach(
     b =>
@@ -43526,6 +43947,9 @@ function renderColl3D(el, e) {
     mf3Draw();
     mf3Side(e);
     MF3.cv && MF3.cv.focus();
+  };
+  q('#mf3drag').onchange = ev => {
+    MF3.noDrag = !ev.target.checked;
   };
   q('#mf3snap').onchange = ev => {
     MF3.snap = +ev.target.value;
@@ -51055,12 +51479,16 @@ uiHooks.v3Init = () => {
 
 
 
+
 /* ---------- annotations: callouts, sections, nodes ---------- */
 function noteText(e) {
   const t = e.target != null ? byId(e.target) : null;
   const own = (e.text || '').trim();
   if (own) return own;
   if (t && t.meta && t.meta.note) return t.meta.note;
+  // ventilation and air conditioning: the text comes from the model (section, model and flow, grille data)
+  const v = t ? ventLabel(t) : null;
+  if (v) return v;
   return t ? groupName(t) : 'Заметка';
 }
 function noteBox(e) {
@@ -51109,6 +51537,26 @@ XT.note = {
       A = noteAnchor(e);
     const tgt = e.target != null ? byId(e.target) : null;
     const c = ghost ? C.ghost : o.sel ? C.sel : '#f2c879';
+    if (e.auto === 'vent') {
+      // a leader of a system element: thin line to a shelf, the text above the shelf (lines from the model)
+      const ink = ghost ? C.ghost : o.sel ? C.sel : col || '#d9dde1';
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = ink;
+      ctx.lineWidth = o.hover ? 1.6 : 0.8;
+      const sh0 = e.p,
+        sh1 = add(e.p, P(b.w, 0));
+      const start = A.x <= e.p.x + b.w / 2 ? sh0 : sh1;
+      seg(A, start);
+      seg(sh0, sh1);
+      const s = w2s(A);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 2.2, 0, TAU);
+      ctx.fill();
+      b.lines.forEach((l, i) =>
+        drawTextW(add(e.p, P(b.h * 0.3, b.h * 0.35 + (b.lines.length - 1 - i) * b.h * 1.35)), l, b.h, 0, ink, 'left')
+      );
+      return;
+    }
     ctx.strokeStyle = c;
     ctx.fillStyle = c;
     ctx.lineWidth = 1;
@@ -51307,6 +51755,7 @@ XT.node = {
  *
  * Model checks ("fool-proofing"): collects issues of all element types for the Checks tab and markers.
  */
+
 
 
 
@@ -51753,6 +52202,10 @@ function validate() {
     }
     for (const e of S.ents)
       if (e.type === 'ac') for (const [l, m] of acChecks(e)) if (l !== 'info' && !/люк/.test(m)) add_(e, l, m, e.p);
+    for (const e of S.ents) {
+      if (e.type === 'hvu' && visible(e)) for (const [l, m] of hvChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
+      if (e.type === 'duct' && e.flex && visible(e)) for (const [l, m] of flexChecks(e)) add_(e, l, m, e.pts[0]);
+    }
     for (const e of S.ents)
       if (e.type === 'stair') for (const [l, m] of stairChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
   } catch (err) {
@@ -56261,6 +56714,27 @@ function stairChecks(e) {
           `Ступень ${f.i0 + j + 1}: проступь ${Math.round(gj)} мм отличается от остальных (${g}) — в одном марше ступени должны быть одинаковыми.`
         ]);
     }
+  // a wall beside the flight that runs into the steps: the flight and the wall overlap in plan
+  try {
+    const ol = stairOutlineW(e);
+    for (const w of S.ents) {
+      if (w.type !== 'wall' || !w.a || !w.b || w.arc || stairsOver(w).some(s => s === e)) continue;
+      const wi = wallInfo(w);
+      let deep = 0;
+      for (let t = 0; t <= wi.L; t += 50)
+        for (const sg of [-1, 1]) {
+          const q = add(add(w.a, mul(wi.u, t)), mul(wi.n, (sg * (+w.th || 0)) / 2));
+          if (!inPoly(q, ol)) continue;
+          let d = Infinity;
+          for (let i = 0; i < ol.length; i++) d = Math.min(d, dist(q, segPt(ol[i], ol[(i + 1) % ol.length], q)));
+          deep = Math.max(deep, d);
+        }
+      if (deep > 5)
+        out.push(['warn', `Стена заходит на марш на ${Math.round(deep)} мм — сдвиньте стену или лестницу.`]);
+    }
+  } catch (err) {
+    /* geometry of a half-drawn stair */
+  }
   const RC = railsCfg(e);
   for (const k of ['outer', 'inner']) {
     const c = RC[k];
@@ -56906,10 +57380,10 @@ function stairsOver(w) {
     const ol = stairOutlineW(s);
     let hit = false;
     const L = wi.L;
-    // under the stair = the middle band of the wall is inside the outline of the stair. A wall that stands beside the
-    // flight and only touches it (its face on the edge of the steps, or a few millimetres into them) is not under it:
-    // clamping such a wall to the underside cut steps («зубья») into its face
-    const band = Math.min(20, w.th / 4);
+    // under the stair = the whole thickness of the wall is inside the outline somewhere along it (a partition under the
+    // flight). A wall beside the flight that touches it or runs a few centimetres into the steps is not under it:
+    // clamping it to the underside cut a sloped saw («зубья») into its top, one face clamped and the other not
+    const band = Math.max(1, w.th / 2 - 2);
     for (let t = 0; t <= L && !hit; t += 80) {
       const q = add(w.a, mul(wi.u, t));
       if (inPoly(q, ol) && inPoly(add(q, mul(wi.n, band)), ol) && inPoly(add(q, mul(wi.n, -band)), ol)) hit = true;
@@ -56934,14 +57408,27 @@ function stairClampXF(w, xf) {
     S_ = stairsOver(w);
   } catch (err) {}
   if (!S_.length) return xf;
-  const zb = w.z || 0;
+  const zb = w.z || 0,
+    h2 = (+w.th || 0) / 2;
+  // one limit for the whole section of the wall at x (both faces and the axis): the top stays level across the
+  // thickness. Where any of them is outside the flight the wall keeps its height (the step down is at the outline)
+  const limAt = (x, z) => {
+    let lim = null;
+    for (const yy of [-h2, 0, h2]) {
+      const q = xf(x, yy, z);
+      let l = null;
+      for (const s of S_) {
+        const u = stairUnderZ(s, P(q[0], q[1]));
+        if (u != null) l = l == null ? u : Math.min(l, u);
+      }
+      if (l == null) return null;
+      lim = lim == null ? l : Math.min(lim, l);
+    }
+    return lim;
+  };
   return (x, y, z) => {
     const p = xf(x, y, z);
-    let lim = null;
-    for (const s of S_) {
-      const u = stairUnderZ(s, P(p[0], p[1]));
-      if (u != null) lim = lim == null ? u : Math.min(lim, u);
-    }
+    const lim = limAt(x, z);
     if (lim != null && p[2] > lim) p[2] = Math.max(zb, lim);
     return p;
   };
@@ -62564,12 +63051,1241 @@ function galvSpec(e, L, H, put, S_) {
     });
 }
 
+// ===== mep/hvac/air-units.js =====
+/**
+ * mep/hvac/air-units.js
+ *
+ * Ventilation equipment and its connection (type 'hvu'):
+ *   - ahu  — heat-recovery air handling unit: body, four spigots (outdoor air, exhaust, supply, extract) with
+ *            coloured flow arrows, the automation box; hung under the slab or standing on the floor;
+ *   - sil  — round duct silencer (CSR …): a cylinder thicker than the duct, in the colour of its system;
+ *   - plen — grille adapter (static pressure box) with round spigots on top or on the side and a slot grille under it.
+ * Every unit exposes its spigots (world point, direction, Ø, system): the duct command snaps to them, «Подводки»
+ * runs one flexible duct from the nearest main duct of the system to each spigot of a plenum, a silencer or a
+ * ducted air conditioner with chambers. Flexible ducts are ordinary ducts with flex: true and a 3D path (per-point z).
+ * The same module labels the systems (leaders with text taken from the model) and makes the album sheet with the
+ * axonometric scheme and the 3D view with the walls.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ---------- catalogue ---------- */
+/** Air handling units with heat recovery: body L × W × H (mm), spigot Ø, nominal / max flow m³/h, pressure Pa at the nominal flow. */
+const AHU_CAT = {
+  'komf-r700f': {
+    n: 'Komfovent Domekt R 700 F (ОТД-R-700-F)',
+    L: 1240,
+    W: 850,
+    H: 420,
+    d: 250,
+    q: 535,
+    qmax: 764,
+    pa: 100,
+    mount: 'ceil'
+  },
+  'komf-r400f': {
+    n: 'Komfovent Domekt R 400 F',
+    L: 1170,
+    W: 700,
+    H: 310,
+    d: 200,
+    q: 295,
+    qmax: 421,
+    pa: 100,
+    mount: 'ceil'
+  },
+  'komf-r700v': {
+    n: 'Komfovent Domekt R 700 V',
+    L: 1070,
+    W: 637,
+    H: 950,
+    d: 250,
+    q: 517,
+    qmax: 738,
+    pa: 100,
+    mount: 'floor'
+  },
+  'komf-r450v': {
+    n: 'Komfovent Domekt R 450 V',
+    L: 680,
+    W: 585,
+    H: 655,
+    d: 160,
+    q: 347,
+    qmax: 496,
+    pa: 100,
+    mount: 'floor'
+  },
+  'brz-900re': { n: 'Breezart 900 Lux RE', L: 950, W: 887, H: 460, d: 200, q: 550, qmax: 700, pa: 150, mount: 'ceil' },
+  'brz-500rp': { n: 'Breezart 500 Lux RP', L: 1195, W: 787, H: 369, d: 160, q: 400, qmax: 500, pa: 150, mount: 'ceil' }
+};
+/** Silencers: the round CSR series — connection Ø, length, outer Ø. */
+const SIL_D = [100, 125, 160, 200, 250, 315];
+const SIL_L = [600, 900, 1200];
+const silOuter = d => d + (d <= 125 ? 100 : 100);
+const HV_KIND = {
+  ahu: 'Приточно-вытяжная установка',
+  sil: 'Шумоглушитель',
+  plen: 'Адаптер решётки'
+};
+/** Colours of the air streams outside the systems: outdoor air and exhaust to the street. */
+const HV_ODA = '#3aa655',
+  HV_EHA = '#8d6e63';
+
+/* ---------- geometry ---------- */
+const ahuOf = e => AHU_CAT[e.model] || AHU_CAT['komf-r700f'];
+/** The height of the unit's reference: ahu and plen — the bottom of the body, sil — its axis. */
+function hvZ(e) {
+  const ceil = S.ceil || 2700;
+  if (e.z != null && isFinite(+e.z)) return +e.z;
+  if (e.kind === 'ahu') return ahuOf(e).mount === 'floor' ? 0 : ceil + 40;
+  if (e.kind === 'plen') return ceil;
+  return ceil + 150;
+}
+/** Body size in the local frame: [length along x, depth along y, height]. */
+function hvDim(e) {
+  if (e.kind === 'ahu') {
+    const a = ahuOf(e);
+    return [a.L, a.W, a.H];
+  }
+  if (e.kind === 'sil') {
+    const D = silOuter(+e.d || 160);
+    return [+e.L || 900, D, D];
+  }
+  return [+e.L || 1000, +e.W || 150, +e.H || 250];
+}
+/**
+ * Spigots in the local frame: { x, y, z, dir:[dx,dy,dz], d, role, sys, n }. Roles: sup / eta / oda / eha for an
+ * air handling unit, in / out for a silencer, conn for a plenum.
+ */
+function hvSpigotsL(e) {
+  const [L, W, H] = hvDim(e);
+  const out = [];
+  if (e.kind === 'ahu') {
+    const a = ahuOf(e),
+      d = a.d,
+      zc = H / 2;
+    const ext = 90;
+    out.push(
+      { x: -L / 2 - ext, y: -W / 4, z: zc, dir: [-1, 0, 0], d, role: 'oda', sys: null, n: 'Наружный воздух' },
+      { x: -L / 2 - ext, y: W / 4, z: zc, dir: [-1, 0, 0], d, role: 'eha', sys: null, n: 'Выброс' },
+      { x: L / 2 + ext, y: -W / 4, z: zc, dir: [1, 0, 0], d, role: 'sup', sys: e.sysS || null, n: 'Приток' },
+      { x: L / 2 + ext, y: W / 4, z: zc, dir: [1, 0, 0], d, role: 'eta', sys: e.sysE || null, n: 'Вытяжка' }
+    );
+  } else if (e.kind === 'sil') {
+    const d = +e.d || 160;
+    out.push(
+      { x: -L / 2 - 50, y: 0, z: 0, dir: [-1, 0, 0], d, role: 'in', sys: e.sys || null, n: 'Вход' },
+      { x: L / 2 + 50, y: 0, z: 0, dir: [1, 0, 0], d, role: 'out', sys: e.sys || null, n: 'Выход' }
+    );
+  } else {
+    const n = Math.max(1, Math.round(+e.n || 2)),
+      d = +e.d || 125;
+    const side = e.conn === 'side';
+    for (let i = 0; i < n; i++) {
+      const x = -L / 2 + (L * (i + 0.5)) / n;
+      out.push(
+        side
+          ? {
+              x,
+              y: -W / 2 - 60,
+              z: H / 2,
+              dir: [0, -1, 0],
+              d,
+              role: 'conn',
+              sys: e.sys || null,
+              n: `Патрубок ${i + 1}`
+            }
+          : { x, y: 0, z: H + 60, dir: [0, 0, 1], d, role: 'conn', sys: e.sys || null, n: `Патрубок ${i + 1}` }
+      );
+    }
+  }
+  return out;
+}
+/** Spigots in the world: { p:[x,y,z] (the end of the spigot), dir, d, role, sys, n, e }. */
+function hvSpigots(e) {
+  const s = devS(e),
+    f = devF(e),
+    z0 = hvZ(e);
+  return hvSpigotsL(e).map(q => {
+    const w = add(add(e.p, mul(s, q.x)), mul(f, q.y));
+    return {
+      ...q,
+      p: [w.x, w.y, z0 + q.z],
+      dir: [s.x * q.dir[0] + f.x * q.dir[1], s.y * q.dir[0] + f.y * q.dir[1], q.dir[2]],
+      e
+    };
+  });
+}
+/** Plan outline of the body. */
+function hvPoly(e) {
+  const [L, W] = hvDim(e);
+  return [
+    [-L / 2, -W / 2],
+    [L / 2, -W / 2],
+    [L / 2, W / 2],
+    [-L / 2, W / 2]
+  ].map(([x, y]) => LP(e, x, y));
+}
+/** Free area of the slot grille of a plenum, m², and the air velocity in the slots. */
+function plenSlot(e) {
+  const L = hvDim(e)[0];
+  const ns = Math.max(1, Math.round(+e.slots || 2)),
+    sw = +e.sw || 30;
+  const A = (L * sw * ns) / 1e6;
+  const q = +e.flow || 0;
+  return { L, ns, sw, A, v: A > 0 ? q / 3600 / A : 0 };
+}
+const n1 = v => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+/** The text of a leader (taken from the model each time it is drawn). */
+function hvLabel(e) {
+  if (e.kind === 'ahu') {
+    const a = ahuOf(e);
+    return `${e.name ? e.name + ' · ' : ''}${a.n}\nL=${fmt(+e.flow || a.q)} м³/ч`;
+  }
+  if (e.kind === 'sil') return `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`;
+  const s = plenSlot(e);
+  const [L, W] = hvDim(e);
+  return `Адаптер ${fmt(L)}×${fmt(W)}, ${Math.round(+e.n || 2)}×ø${+e.d || 125}\n${fmt(s.L)} мм, ${s.ns} щел${s.ns === 1 ? 'ь' : s.ns < 5 ? 'и' : 'ей'} ${s.sw} мм\nL=${e.flowTxt || fmt(+e.flow || 0)} м³/ч\nV=${n1(s.v)} м/с`;
+}
+
+/* ---------- 3D ---------- */
+const hvShade = (h, k) => {
+  const n = parseInt(String(h).replace('#', ''), 16) || 0;
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v =>
+    Math.max(0, Math.min(255, Math.round(k > 0 ? v + (255 - v) * k : v * (1 + k))))
+  );
+  return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+};
+/** A flat arrow lying on a plane: tail at a, pointing along u (local x/y), at height z. */
+function arrow(mb, x, y, z, ux, uy, len, w, col) {
+  const nx = -uy,
+    ny = ux;
+  const t = [x + ux * len, y + uy * len];
+  const b = [x + ux * len * 0.55, y + uy * len * 0.55];
+  const q = (p, k) => [p[0] + nx * k, p[1] + ny * k];
+  const tri = (a, b_, c) => mb.tri3(col, [a[0], a[1], z], [b_[0], b_[1], z], [c[0], c[1], z]);
+  const a0 = q([x, y], -w / 4),
+    a1 = q([x, y], w / 4),
+    b0 = q(b, -w / 4),
+    b1 = q(b, w / 4);
+  tri(a0, b0, b1);
+  tri(a0, b1, a1);
+  tri(q(b, -w / 2), t, q(b, w / 2));
+  // the same from below, so that it is seen from any side
+  tri(a0, b1, b0);
+  tri(a0, a1, b1);
+  tri(q(b, -w / 2), q(b, w / 2), t);
+}
+function spigotTube(mb, q, col, dark) {
+  const r = q.d / 2;
+  const base = [q.x - q.dir[0] * 90, q.y - q.dir[1] * 90, q.z - q.dir[2] * 60];
+  mb.smooth(true);
+  mb.tube(base, [q.x, q.y, q.z], r, col, 24);
+  mb.tube(
+    [q.x - q.dir[0] * 34, q.y - q.dir[1] * 34, q.z - q.dir[2] * 34],
+    [q.x - q.dir[0] * 22, q.y - q.dir[1] * 22, q.z - q.dir[2] * 22],
+    r + 3,
+    dark,
+    24
+  );
+  mb.smooth(false);
+}
+function hvBuild(e, mb) {
+  const [L, W, H] = hvDim(e);
+  const SP = hvSpigotsL(e);
+  if (e.kind === 'ahu') {
+    const a = ahuOf(e);
+    mb.tag(`${a.n}: корпус`);
+    mb.rbox(-L / 2, -W / 2, 0, L / 2, W / 2, H, 12, '#d9dde1');
+    mb.tag('Панель обслуживания');
+    mb.box(-L / 2 + 40, -W / 2 - 3, 30, L / 2 - 40, -W / 2, H - 30, '#c4c9cf');
+    mb.tag('Блок автоматики');
+    mb.box(-L / 4, -W / 2 - 70, H / 2 - 90, L / 8, -W / 2 - 3, H / 2 + 90, '#3d4248');
+    mb.tag('Патрубки');
+    const colOf = q =>
+      q.role === 'sup'
+        ? sysOf(e.sysS || '').col
+        : q.role === 'eta'
+          ? sysOf(e.sysE || '').col
+          : q.role === 'oda'
+            ? HV_ODA
+            : HV_EHA;
+    for (const q of SP) spigotTube(mb, q, '#c7ccd2', '#7d848c');
+    mb.tag('Стрелки потока');
+    for (const q of SP) {
+      // into the unit for outdoor air and extract, out of it for supply and exhaust
+      const inward = q.role === 'oda' || q.role === 'eta';
+      const ux = q.dir[0] * (inward ? -1 : 1);
+      const x0 = q.x - q.dir[0] * (inward ? 60 : 280);
+      arrow(mb, x0, q.y, H + 2, ux, 0, 200, Math.min(160, q.d), colOf(q));
+    }
+    if (a.mount !== 'floor') {
+      mb.tag('Подвесы');
+      for (const [x, y] of [
+        [-L / 2 + 40, -W / 2 + 40],
+        [L / 2 - 40, -W / 2 + 40],
+        [-L / 2 + 40, W / 2 - 40],
+        [L / 2 - 40, W / 2 - 40]
+      ])
+        mb.box(x - 4, y - 4, H, x + 4, y + 4, H + 220, '#9aa1a9');
+    }
+  } else if (e.kind === 'sil') {
+    const col = sysOf(e.sys || '').col;
+    const D = W;
+    mb.tag(`Шумоглушитель CSR ${+e.d || 160}/${L}`);
+    mb.smooth(true);
+    mb.tube([-L / 2, 0, 0], [L / 2, 0, 0], D / 2, hvShade(col, 0.15), 32);
+    for (const x of [-L / 2, L / 2]) mb.tube([x - 8, 0, 0], [x + 8, 0, 0], D / 2 + 3, hvShade(col, -0.25), 32);
+    // the cones to the spigots
+    mb.sweep(
+      [
+        [-L / 2 - 50, 0, 0],
+        [-L / 2, 0, 0]
+      ],
+      [(+e.d || 160) / 2, D / 2 - 2],
+      hvShade(col, 0.15),
+      28
+    );
+    mb.sweep(
+      [
+        [L / 2, 0, 0],
+        [L / 2 + 50, 0, 0]
+      ],
+      [D / 2 - 2, (+e.d || 160) / 2],
+      hvShade(col, 0.15),
+      28
+    );
+    mb.smooth(false);
+  } else {
+    const col = sysOf(e.sys || '').col;
+    mb.tag(`Адаптер решётки ${L}×${W}`);
+    mb.box(-L / 2, -W / 2, 0, L / 2, W / 2, H, hvShade(col, 0.35));
+    mb.tag('Патрубки адаптера');
+    for (const q of SP) spigotTube(mb, q, hvShade(col, 0.35), hvShade(col, -0.3));
+    const s = plenSlot(e);
+    mb.tag(`Решётка щелевая ${s.L} мм, ${s.ns}×${s.sw} мм`);
+    const fw = s.ns * s.sw + (s.ns + 1) * 12;
+    mb.box(-L / 2 - 15, -fw / 2 - 15, -4, L / 2 + 15, fw / 2 + 15, 0, '#f2f3f4');
+    for (let i = 0; i < s.ns; i++) {
+      const y0 = -fw / 2 + 12 + i * (s.sw + 12);
+      mb.box(-L / 2 + 10, y0, -5, L / 2 - 10, y0 + s.sw, -4, '#2b2f35');
+    }
+  }
+}
+
+/* ---------- flexible ducts ---------- */
+/** 3D path of a duct: per-point z (flexible connections) or the duct's axis height. */
+const ductPath3 = e => e.pts.map(p => [p.x, p.y, p.z != null ? +p.z : +e.z || 0]);
+function ductLen3(e) {
+  const q = ductPath3(e);
+  let L = 0;
+  for (let i = 1; i < q.length; i++)
+    L += Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1], q[i][2] - q[i - 1][2]);
+  return L;
+}
+/** The smallest bend radius the path allows (each corner rounded inside its shorter leg). */
+function flexMinR(e) {
+  const q = ductPath3(e);
+  let m = Infinity;
+  for (let i = 1; i < q.length - 1; i++) {
+    const a = q[i - 1],
+      b = q[i],
+      c = q[i + 1];
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+      v = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+    const lu = Math.hypot(...u),
+      lv = Math.hypot(...v);
+    if (lu < 1 || lv < 1) continue;
+    const cs = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / lu / lv;
+    const th = Math.acos(Math.max(-1, Math.min(1, cs)));
+    if (th < 0.05) continue;
+    const t = Math.tan(th / 2);
+    m = Math.min(m, Math.min(lu, lv) / 2 / t);
+  }
+  return m;
+}
+/** Builds a flexible duct: a coiled sleeve along the rounded path. */
+function flexBuild(e, mb, col) {
+  const r = ductW(e) / 2 + (+e.ins || 0);
+  const path = roundPath(ductPath3(e), Math.max(r * 2.2, 140)).pts;
+  // resample with a step, radius alternating — the wire coils
+  const step = 22;
+  const pts = [],
+    rs = [];
+  let k = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1],
+      b = path[i];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const n = Math.max(1, Math.round(l / (step / 2)));
+    for (let j = i === 1 ? 0 : 1; j <= n; j++) {
+      const t = j / n;
+      pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+      rs.push(k++ % 2 ? r * 0.93 : r);
+    }
+  }
+  mb.tag(`Гибкий воздуховод ø${ductW(e)}${e.ins ? ' в изоляции' : ''}`);
+  mb.smooth(true);
+  mb.sweep(pts, rs, col, 18);
+  mb.smooth(false);
+  mb.tag('Хомуты');
+  for (const [i, j] of [
+    [0, 1],
+    [path.length - 1, path.length - 2]
+  ]) {
+    const a = path[i],
+      b = path[j];
+    if (!a || !b) continue;
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
+    const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
+    mb.tube(
+      [a[0] + u[0] * 20, a[1] + u[1] * 20, a[2] + u[2] * 20],
+      [a[0] + u[0] * 34, a[1] + u[1] * 34, a[2] + u[2] * 34],
+      r + 2,
+      '#8b939d',
+      20
+    );
+  }
+}
+/** Rigid duct: rings (round) or flanges (rectangular) at the joints of the 1250 mm sections. */
+function ductJoints(e, mb, col, W, Hh) {
+  const q = ductPath3(e);
+  const dark = hvShade(col, -0.28);
+  const SEC = 1250;
+  mb.tag(e.shape === 'rect' ? 'Фланцы' : 'Ниппели (стыки секций)');
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1],
+      b = q[i];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    if (l < SEC * 0.6) continue;
+    const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
+    for (let s = SEC; s < l - 200; s += SEC) {
+      const c = [a[0] + u[0] * s, a[1] + u[1] * s, a[2] + u[2] * s];
+      const A = [c[0] - u[0] * 8, c[1] - u[1] * 8, c[2] - u[2] * 8],
+        B = [c[0] + u[0] * 8, c[1] + u[1] * 8, c[2] + u[2] * 8];
+      if (e.shape === 'rect') mb.obox(A, B, W + 16, Hh + 16, dark);
+      else mb.tube(A, B, W / 2 + 2.5, dark, 24);
+    }
+  }
+}
+
+/* ---------- plan ---------- */
+function hvDraw(e, color, o, ghost) {
+  const sc = e.kind === 'ahu' ? '#5d646c' : sysOf(e.sys || '').col;
+  const c = ghost ? C.ghost : o.sel ? C.sel : sc;
+  ctx.save();
+  ctx.strokeStyle = c;
+  ctx.fillStyle = c;
+  ctx.lineWidth = o.hover ? 2.2 : 1.3;
+  const poly = hvPoly(e);
+  pathPoly(poly);
+  ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(e.kind === 'ahu' ? '#9aa1a9' : sc, 0.22);
+  ctx.fill();
+  ctx.stroke();
+  const [L, W] = hvDim(e);
+  // spigots and flow arrows
+  for (const q of hvSpigotsL(e)) {
+    const r = q.d / 2;
+    const col =
+      q.role === 'sup'
+        ? sysOf(e.sysS || '').col
+        : q.role === 'eta'
+          ? sysOf(e.sysE || '').col
+          : q.role === 'oda'
+            ? HV_ODA
+            : q.role === 'eha'
+              ? HV_EHA
+              : sc;
+    ctx.strokeStyle = ghost ? C.ghost : col;
+    if (q.dir[2] === 0) {
+      const ax = q.dir[0],
+        ay = q.dir[1];
+      const nx = -ay,
+        ny = ax;
+      const b = [q.x - ax * 90, q.y - ay * 90];
+      pathPoly([
+        LP(e, b[0] + nx * r, b[1] + ny * r),
+        LP(e, q.x + nx * r, q.y + ny * r),
+        LP(e, q.x - nx * r, q.y - ny * r),
+        LP(e, b[0] - nx * r, b[1] - ny * r)
+      ]);
+      ctx.stroke();
+    } else {
+      const s = w2s(LP(e, q.x, q.y));
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, Math.max(2, r * view.k), 0, TAU);
+      ctx.stroke();
+    }
+    if (e.kind === 'ahu' && !ghost) {
+      const inward = q.role === 'oda' || q.role === 'eta';
+      const ux = q.dir[0] * (inward ? -1 : 1);
+      const x0 = q.x - q.dir[0] * (inward ? 60 : 280);
+      const a = LP(e, x0, q.y),
+        t = LP(e, x0 + ux * 200, q.y),
+        u = nrm(sub(t, a)),
+        n = P(-u.y, u.x),
+        hw = Math.min(80, q.d / 2);
+      ctx.fillStyle = col;
+      pathPoly([t, add(sub(t, mul(u, 90)), mul(n, hw)), sub(sub(t, mul(u, 90)), mul(n, hw))]);
+      ctx.fill();
+      ctx.beginPath();
+      const s0 = w2s(a),
+        s1 = w2s(sub(t, mul(u, 90)));
+      ctx.lineWidth = Math.max(1.2, hw * 0.5 * view.k);
+      ctx.moveTo(s0.x, s0.y);
+      ctx.lineTo(s1.x, s1.y);
+      ctx.stroke();
+      ctx.lineWidth = o.hover ? 2.2 : 1.3;
+    }
+  }
+  if (e.kind === 'plen') {
+    // the slots of the grille under it
+    const s = plenSlot(e);
+    ctx.strokeStyle = ghost ? C.ghost : c;
+    ctx.lineWidth = 0.8;
+    const fw = s.ns * s.sw + (s.ns + 1) * 12;
+    for (let i = 0; i < s.ns; i++) {
+      const y0 = -fw / 2 + 12 + i * (s.sw + 12);
+      pathPoly([
+        LP(e, -L / 2 + 10, y0),
+        LP(e, L / 2 - 10, y0),
+        LP(e, L / 2 - 10, y0 + s.sw),
+        LP(e, -L / 2 + 10, y0 + s.sw)
+      ]);
+      ctx.stroke();
+    }
+  }
+  if (e.kind === 'sil') {
+    ctx.setLineDash([4, 3]);
+    pathPoly([LP(e, -L / 2, 0), LP(e, L / 2, 0)], false);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (!ghost && view.k > 0.04) {
+    const s = w2s(LP(e, 0, W / 2 + 60));
+    ctx.fillStyle = c;
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const t = e.kind === 'ahu' ? ahuOf(e).n : e.kind === 'sil' ? `CSR ${+e.d || 160}/${L}` : `${fmt(L)}×${fmt(W)}`;
+    ctx.fillText(t, s.x, s.y);
+  }
+  ctx.restore();
+}
+
+/* ---------- checks ---------- */
+function hvChecks(e) {
+  const out = [];
+  if (e.kind === 'ahu') {
+    const a = ahuOf(e);
+    const q = +e.flow || a.q;
+    if (q > a.qmax) out.push(['bad', `${a.n}: расход ${fmt(q)} м³/ч больше предельного ${fmt(a.qmax)} м³/ч.`]);
+    if (!e.sysS || !e.sysE) out.push(['warn', 'Установке не назначены системы притока и вытяжки.']);
+  }
+  if (e.kind === 'plen') {
+    const s = plenSlot(e);
+    if (s.v > 3)
+      out.push(['warn', `Скорость в щелях ${n1(s.v)} м/с — выше 3 м/с: шумно. Добавьте щель или удлините решётку.`]);
+  }
+  const free = hvSpigots(e).filter(q => q.sys !== null && !spigotLinked(q));
+  if (free.length && e.kind !== 'ahu') out.push(['info', `Свободных патрубков: ${free.length}.`]);
+  return out;
+}
+/** A duct end at the spigot. */
+function spigotLinked(q) {
+  return S.ents.some(
+    d =>
+      d.type === 'duct' &&
+      d.pts.length &&
+      [d.pts[0], d.pts[d.pts.length - 1]].some(p => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 30)
+  );
+}
+/** Checks of a flexible duct: the length limit and the bend radius. */
+function flexChecks(e) {
+  if (!e.flex) return [];
+  const out = [];
+  const L = ductLen3(e),
+    Lmax = +(S.vent && S.vent.flexMax) || 3000;
+  if (L > Lmax)
+    out.push([
+      'warn',
+      `Гибкая подводка ${n1(L / 1000)} м длиннее ${n1(Lmax / 1000)} м — большие потери, замените часть жёстким.`
+    ]);
+  const r = flexMinR(e),
+    d = ductW(e);
+  if (r < d * 0.9) out.push(['warn', `Гибкая подводка ø${d}: изгиб круче радиуса ${fmt(Math.round(d))} мм — пережим.`]);
+  return out;
+}
+
+/* ---------- element type ---------- */
+XT.hvu = {
+  net: 'vt',
+  layer: 'Вентиляция',
+  prims: e => {
+    const q = hvPoly(e);
+    return q.map((p, i) => ({ t: 's', a: p, b: q[(i + 1) % q.length] }));
+  },
+  dist: (e, p) => {
+    const q = hvPoly(e);
+    let inside = false;
+    for (let i = 0, j = q.length - 1; i < q.length; j = i++)
+      if (q[i].y > p.y !== q[j].y > p.y && p.x < ((q[j].x - q[i].x) * (p.y - q[i].y)) / (q[j].y - q[i].y) + q[i].x)
+        inside = !inside;
+    if (inside) return -0.3;
+    let m = Infinity;
+    for (let i = 0; i < q.length; i++) m = Math.min(m, dist(segPt(q[i], q[(i + 1) % q.length], p), p));
+    return m;
+  },
+  keys: e => [{ p: e.p, k: 'ins' }, ...hvSpigots(e).map(q => ({ p: P(q.p[0], q.p[1]), k: 'end' }))],
+  sample: e => hvPoly(e),
+  map: (n, e, f, dA) => {
+    n.p = f(e.p);
+    n.rot = (e.rot || 0) + (dA || 0);
+  },
+  grips: (e, set) => [
+    {
+      p: e.p,
+      apply: set((n, p) => {
+        n.p = p;
+      })
+    }
+  ],
+  draw: hvDraw,
+  k3: e => [hvZ(e), sysOf(e.sys || e.sysS || '').col, sysOf(e.sysE || '').col, S.ceil],
+  build3(e) {
+    const mb = MB(xfLocal(e, hvZ(e)));
+    hvBuild(e, mb);
+    return meshGroup(mb.meshes(), { edges: e.kind !== 'sil' });
+  },
+  group: e =>
+    e.kind === 'ahu'
+      ? ahuOf(e).n
+      : e.kind === 'sil'
+        ? `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`
+        : 'Адаптер решётки',
+  label: hvLabel,
+  checks: hvChecks,
+  panel(e) {
+    const sysOpts = [['', '—'], ...S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`])];
+    const rows =
+      e.kind === 'ahu'
+        ? [
+            ['Модель', 'model', 's', Object.entries(AHU_CAT).map(([k, v]) => [k, v.n])],
+            ['Расход, м³/ч', 'flow', 'n'],
+            ['Система притока', 'sysS', 's', sysOpts],
+            ['Система вытяжки', 'sysE', 's', sysOpts],
+            ['Отметка низа, мм', 'z', 'n'],
+            ['Поворот, °', 'rotd', 'n'],
+            ['Обозначение', 'name', 't']
+          ]
+        : e.kind === 'sil'
+          ? [
+              ['Ø подключения', 'd', 's', SIL_D.map(d => [d, 'ø' + d])],
+              ['Длина, мм', 'L', 's', SIL_L.map(l => [l, String(l)])],
+              ['Система', 'sys', 's', sysOpts],
+              ['Отметка оси, мм', 'z', 'n'],
+              ['Поворот, °', 'rotd', 'n']
+            ]
+          : [
+              ['Длина, мм', 'L', 'n'],
+              ['Ширина, мм', 'W', 'n'],
+              ['Высота, мм', 'H', 'n'],
+              ['Патрубков', 'n', 'n'],
+              ['Ø патрубков', 'd', 's', [100, 125, 160, 200].map(d => [d, 'ø' + d])],
+              [
+                'Подвод',
+                'conn',
+                's',
+                [
+                  ['top', 'сверху'],
+                  ['side', 'сбоку']
+                ]
+              ],
+              ['Щелей', 'slots', 'n'],
+              ['Ширина щели, мм', 'sw', 's', [20, 25, 30].map(v => [v, String(v)])],
+              ['Расход, м³/ч', 'flow', 'n'],
+              ['Система', 'sys', 's', sysOpts],
+              ['Отметка низа (потолок), мм', 'z', 'n'],
+              ['Поворот, °', 'rotd', 'n']
+            ];
+    const sp = hvSpigots(e);
+    const chk = hvChecks(e);
+    return xGroups(e, [
+      [HV_KIND[e.kind], esc(XT.hvu.group(e)), rows],
+      [
+        'Патрубки',
+        `${sp.length}`,
+        sp
+          .map(q =>
+            cR(
+              q.n,
+              `ø${q.d}${q.sys ? ' · ' + esc(q.sys) : ''}${q.sys !== null && !spigotLinked(q) ? ' · свободен' : ''}`
+            )
+          )
+          .join('') +
+          (e.kind !== 'ahu'
+            ? `<dt></dt><dd><button class="btn" data-xa="hvflex" title="Гибкие подводки от ближайшего воздуховода системы к каждому патрубку">Подвести гибкими</button></dd>`
+            : '')
+      ],
+      ['Выноска', '', `<dt></dt><dd style="text-align:left;white-space:pre-line">${esc(hvLabel(e))}</dd>`],
+      [
+        'Проверки',
+        '',
+        chk.map(([l, m]) => `<dt></dt><dd class="${l}" style="text-align:left">${esc(m)}</dd>`).join('') ||
+          cR('Нормы', '✓')
+      ]
+    ]);
+  },
+  onSet(e, p, v) {
+    if (p === 'model') {
+      const a = AHU_CAT[v];
+      if (a) e.flow = a.q;
+      delete e.z;
+    }
+  },
+  action(e, a) {
+    if (a === 'hvflex') {
+      const n = flexConnect(e);
+      log(n ? `Гибких подводок: ${n}` : 'Нет воздуховода системы рядом или все патрубки уже подключены', !n);
+    }
+  },
+  fields: () => [],
+  spec(e, put) {
+    const S_ = 'Вентиляция';
+    const one = (k, name, u = 'шт', q = 1) =>
+      put(S_, k, { name, u }, r => {
+        r.q += q;
+        r.ids.push(e.id);
+      });
+    if (e.kind === 'ahu') {
+      const a = ahuOf(e);
+      one('hvahu' + e.model, `Приточно-вытяжная установка с рекуператором ${a.n}, ${fmt(a.q)} м³/ч`);
+      if (a.mount !== 'floor') one('hvahang', 'Подвес установки: шпилька М8 + виброизолятор, комплект', 'компл');
+      one('hvavib', `Вставка гибкая (антивибрационная) ø${a.d}`, 'шт', 4);
+    } else if (e.kind === 'sil') one(`hvsil${e.d}-${e.L}`, `Шумоглушитель круглый CSR ${+e.d || 160}/${+e.L || 900}`);
+    else {
+      const s = plenSlot(e);
+      const [L, W, H] = hvDim(e);
+      one(
+        `hvpl${L}-${W}-${H}-${e.n}-${e.d}`,
+        `Адаптер решётки (камера) ${fmt(L)}×${fmt(W)}×${fmt(H)}, ${Math.round(+e.n || 2)} патр. ø${+e.d || 125}`
+      );
+      one(`hvsl${s.L}-${s.ns}-${s.sw}`, `Решётка щелевая ${fmt(s.L)} мм, ${s.ns} щ. × ${s.sw} мм`);
+    }
+  }
+};
+
+/* ---------- connections ---------- */
+/** The nearest point on the rigid ducts of a system (or any, if the system has none near). */
+function nearMain(q, sys, maxD = 4500) {
+  let best = null;
+  for (const d of S.ents) {
+    if (d.type !== 'duct' || d.flex || !visible(d) || d.pts.length < 2) continue;
+    const zs = ductPath3(d);
+    for (let i = 1; i < d.pts.length; i++) {
+      const c = segPt(d.pts[i - 1], d.pts[i], P(q.p[0], q.p[1]));
+      const t = dist(d.pts[i - 1], d.pts[i]) > 1e-6 ? dist(d.pts[i - 1], c) / dist(d.pts[i - 1], d.pts[i]) : 0;
+      const z = zs[i - 1][2] + (zs[i][2] - zs[i - 1][2]) * t;
+      const dd = Math.hypot(c.x - q.p[0], c.y - q.p[1]) + (sys && d.sys !== sys ? 1e5 : 0);
+      if (dd < maxD + (sys && d.sys !== sys ? 1e5 : 0) && (!best || dd < best.dd)) best = { d, c, z, dd };
+    }
+  }
+  return best && best.dd < 1e5 ? best : best && !sys ? best : best;
+}
+/** The flexible duct path from a spigot to a point on the main: out of the spigot, then to the main's axis. */
+function flexPath(q, m) {
+  const T = q.p;
+  // straight out of the spigot first, but not past the main when it lies ahead
+  const ahead = (m.c.x - T[0]) * q.dir[0] + (m.c.y - T[1]) * q.dir[1] + (m.z - T[2]) * q.dir[2];
+  const out = ahead > 60 ? Math.min(120 + q.d * 0.5, ahead * 0.5) : 120 + q.d * 0.5;
+  const A = [T[0] + q.dir[0] * out, T[1] + q.dir[1] * out, T[2] + q.dir[2] * out];
+  const pts = [T, A];
+  if (Math.abs(q.dir[2]) > 0.5) {
+    // a spigot on top: up to the main's height, then across
+    const zz = q.dir[2] > 0 ? Math.max(A[2], m.z) : Math.min(A[2], m.z);
+    pts.push([A[0], A[1], zz]);
+  } else {
+    pts.push([A[0], A[1], m.z]);
+  }
+  pts.push([m.c.x, m.c.y, m.z]);
+  // drop repeated points
+  const o = [];
+  for (const p of pts) {
+    const l = o[o.length - 1];
+    if (!l || Math.hypot(p[0] - l[0], p[1] - l[1], p[2] - l[2]) > 5) o.push(p);
+  }
+  return o;
+}
+/** Runs one flexible duct to every free spigot of the unit. Returns how many were made. */
+function flexConnect(e, main) {
+  const sp = (e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e)).filter(q => q.sys !== null && !spigotLinked(q));
+  if (!sp.length) return 0;
+  pushUndo();
+  let n = 0;
+  for (const q of sp) {
+    const m = main
+      ? (() => {
+          let best = null;
+          for (let i = 1; i < main.pts.length; i++) {
+            const c = segPt(main.pts[i - 1], main.pts[i], P(q.p[0], q.p[1]));
+            const dd = dist(c, P(q.p[0], q.p[1]));
+            if (!best || dd < best.dd) best = { d: main, c, z: ductPath3(main)[i][2], dd };
+          }
+          return best;
+        })()
+      : nearMain(q, q.sys);
+    if (!m) continue;
+    const pts = flexPath(q, m).map(p => {
+      const v = P(Math.round(p[0]), Math.round(p[1]));
+      v.z = Math.round(p[2]);
+      return v;
+    });
+    addEnt({
+      type: 'duct',
+      flex: true,
+      pts,
+      shape: 'round',
+      d: q.d,
+      w: q.d,
+      hh: q.d,
+      z: pts[0].z,
+      sys: q.sys || m.d.sys,
+      flow: Math.round(
+        (+e.flow || +m.d.flow || 0) / (e.type === 'hvu' && e.kind === 'plen' ? Math.max(1, +e.n || 1) : 1)
+      ),
+      mat: 'Гибкий алюминиевый',
+      ins: 0,
+      from: null,
+      to: null,
+      layer: ensureLayer('Вентиляция')
+    });
+    n++;
+  }
+  if (n) changed();
+  return n;
+}
+/** Spigots of other units (ducted air conditioners with chambers) — filled by air-conditioners.js. */
+const hvHooks = { acSpigots: null };
+const uiSpigots = e => (e.type === 'ac' && hvHooks.acSpigots ? hvHooks.acSpigots(e) : []);
+/** All spigots of the model, for the duct command and the snaps. */
+function allSpigots() {
+  const out = [];
+  for (const e of S.ents) {
+    if (!visible(e)) continue;
+    if (e.type === 'hvu') out.push(...hvSpigots(e));
+    else if (e.type === 'ac') out.push(...uiSpigots(e));
+  }
+  return out;
+}
+function spigotAt(p, r = 160) {
+  let best = null,
+    bd = r;
+  for (const q of allSpigots()) {
+    const d = Math.hypot(q.p[0] - p.x, q.p[1] - p.y);
+    if (d < bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  return best;
+}
+
+/* ---------- labels ---------- */
+/** The label text of a ventilation element, or null. */
+function ventLabel(t) {
+  if (!t) return null;
+  if (t.type === 'duct') return t.shape === 'rect' ? `${fmt(t.w)}×${fmt(t.hh)}` : `ø${fmt(t.d)}`;
+  if (t.type === 'hvu') return hvLabel(t);
+  if (t.type === 'ac' && hvHooks.acLabel) return hvHooks.acLabel(t);
+  return null;
+}
+/** Anchor of an element's leader on the plan. */
+function labelAnchor(t) {
+  if (t.type === 'duct') {
+    let bi = 0,
+      bl = -1;
+    for (let i = 1; i < t.pts.length; i++) {
+      const l = dist(t.pts[i - 1], t.pts[i]);
+      if (l > bl) {
+        bl = l;
+        bi = i;
+      }
+    }
+    const a = t.pts[bi - 1] || t.pts[0],
+      b = t.pts[bi] || t.pts[0];
+    return P((a.x + b.x) / 2, (a.y + b.y) / 2);
+  }
+  return t.p;
+}
+/**
+ * Puts a leader on every ventilation element of the shown systems that has none (rigid ducts longer than 600 mm,
+ * units, ducted air conditioners): the text shelf goes to the free side among 8 directions so that the boxes do
+ * not overlap each other. Returns the number of leaders added.
+ */
+function labelSystems(ids) {
+  const els = S.ents.filter(
+    t =>
+      visible(t) &&
+      (ids ? ids.has(t.id) : true) &&
+      ((t.type === 'duct' && !t.flex && ductLen3(t) > 600) ||
+        t.type === 'hvu' ||
+        (t.type === 'ac' && t.kind === 'duct'))
+  );
+  const have = new Set(S.ents.filter(n => n.type === 'note' && n.target != null).map(n => n.target));
+  const todo = els.filter(t => !have.has(t.id));
+  if (!todo.length) return 0;
+  pushUndo();
+  const boxes = [];
+  for (const n of S.ents)
+    if (n.type === 'note' && n.p) boxes.push({ x0: n.p.x - 50, y0: n.p.y - 50, x1: n.p.x + 1600, y1: n.p.y + 600 });
+  const hit = b => boxes.some(o => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
+  let n = 0;
+  for (const t of todo) {
+    const a = labelAnchor(t);
+    const txt = ventLabel(t) || '';
+    const lines = txt.split('\n');
+    const w = Math.max(...lines.map(l => l.length)) * 95 + 200,
+      h = lines.length * 230 + 120;
+    let pick = null;
+    for (const R of [900, 1400, 2000, 2800])
+      for (let k = 0; k < 8 && !pick; k++) {
+        const an = (k * Math.PI) / 4 + Math.PI / 4;
+        const p = P(a.x + Math.cos(an) * R, a.y + Math.sin(an) * R);
+        const b = { x0: p.x - 50, y0: p.y - h, x1: p.x + w, y1: p.y + 50 };
+        if (!hit(b)) pick = { p, b };
+      }
+    if (!pick) pick = { p: P(a.x + 900, a.y + 900), b: { x0: a.x + 850, y0: a.y, x1: a.x + 900 + w, y1: a.y + 950 } };
+    boxes.push(pick.b);
+    addEnt({ type: 'note', target: t.id, a, p: pick.p, text: '', auto: 'vent', layer: ensureLayer('Аннотации') });
+    n++;
+  }
+  changed();
+  return n;
+}
+/** Elements of the ventilation and air conditioning (for the scheme sheet). */
+function ventIds() {
+  return S.ents
+    .filter(
+      e =>
+        visible(e) &&
+        (e.type === 'duct' ||
+          e.type === 'hvu' ||
+          e.type === 'acl' ||
+          e.type === 'ac' ||
+          (e.type === 'dev' && e.kind && /^v/.test(e.kind)) ||
+          e.type === 'vshaft')
+    )
+    .map(e => e.id);
+}
+
+/* ---------- commands ---------- */
+function mkHvu(kind0) {
+  const kind = kind0 || 'ahu';
+  let rot = mkHvu['r' + kind] || 0,
+    o = mkHvu['o' + kind] || {},
+    dk = null;
+  const base = p => {
+    const e = {
+      type: 'hvu',
+      kind,
+      p,
+      rot,
+      ...(kind === 'ahu'
+        ? {
+            model: o.model || 'komf-r700f',
+            flow: AHU_CAT[o.model || 'komf-r700f'].q,
+            sysS: S.vent.systems.find(s => /прит/i.test(s.kind))?.id || '',
+            sysE: S.vent.systems.find(s => /выт/i.test(s.kind))?.id || ''
+          }
+        : kind === 'sil'
+          ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
+          : {
+              L: o.L || 1000,
+              W: 150,
+              H: 250,
+              n: 2,
+              d: 125,
+              conn: 'top',
+              slots: 2,
+              sw: 30,
+              flow: 200,
+              sys: S.vent.cur || S.vent.systems[0].id
+            })
+    };
+    return e;
+  };
+  const onDuct = p => {
+    // a silencer clicked onto a straight run takes its axis, height, Ø and system
+    let best = null;
+    for (const d of S.ents) {
+      if (d.type !== 'duct' || d.flex || !visible(d) || d.shape === 'rect') continue;
+      for (let i = 1; i < d.pts.length; i++) {
+        const c = segPt(d.pts[i - 1], d.pts[i], p);
+        const dd = dist(c, p);
+        if (dd < Math.max(150, d.d) && (!best || dd < best.dd)) best = { d, i, c, dd };
+      }
+    }
+    return best;
+  };
+  return {
+    name: 'hvu',
+    base: () => null,
+    prompt: () =>
+      kind === 'sil'
+        ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
+        : `${HV_KIND[kind]}: место [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
+    hasValue: () => dk != null,
+    onValue(v) {
+      if (dk === 'L' && v > 100) o.L = v;
+      if (dk === 'd' && v > 50) o.d = v;
+      mkHvu['o' + kind] = o;
+      dk = null;
+    },
+    onInput(s) {
+      if (kw(s, 'п', 'повернуть', 'r')) {
+        rot += Math.PI / 2;
+        mkHvu['r' + kind] = rot;
+        return true;
+      }
+      if (kw(s, 'д', 'длина')) return !!(dk = 'L');
+      if (kind === 'sil' && kw(s, 'ø', 'диаметр', 'd')) return !!(dk = 'd');
+      if (kind === 'ahu' && kw(s, 'м', 'модель')) {
+        const ks = Object.keys(AHU_CAT);
+        o.model = ks[(ks.indexOf(o.model || 'komf-r700f') + 1) % ks.length];
+        mkHvu['o' + kind] = o;
+        log('Модель: ' + AHU_CAT[o.model].n);
+        return true;
+      }
+      return false;
+    },
+    onPoint(p) {
+      if (kind === 'sil') {
+        const h = onDuct(p);
+        if (h) {
+          insertSilencer(h.d, h.i, h.c, o);
+          return 'end';
+        }
+      }
+      addEnt({ ...base(p), layer: ensureLayer('Вентиляция') });
+      return 'end';
+    },
+    preview(cur) {
+      XT.hvu.draw(base(cur), 'ghost', {}, true);
+    }
+  };
+}
+/** Cuts a duct at a point and puts a silencer into the gap (axis, height, Ø and system of the duct). */
+function insertSilencer(d, i, c, o = {}) {
+  const L = +o.L || 900,
+    dd = SIL_SNAP(d.d || 160);
+  const a = d.pts[i - 1],
+    b = d.pts[i];
+  const u = nrm(sub(b, a));
+  const half = L / 2 + 50;
+  const p0 = sub(c, mul(u, half)),
+    p1 = add(c, mul(u, half));
+  if (dist(a, p0) < 50 || dist(b, p1) < 50) {
+    log('Слишком близко к повороту — нужен прямой участок длиннее шумоглушителя', true);
+    return null;
+  }
+  pushUndo();
+  const zs = ductPath3(d);
+  const zc = zs[i - 1][2];
+  const keepZ = (p, j) => {
+    const q = P(p.x, p.y);
+    if (d.pts[j] && d.pts[j].z != null) q.z = d.pts[j].z;
+    return q;
+  };
+  const A = d.pts
+    .slice(0, i)
+    .map(keepZ)
+    .concat([P(p0.x, p0.y)]);
+  const B = [P(p1.x, p1.y)].concat(d.pts.slice(i).map((p, j) => keepZ(p, i + j)));
+  const { id, ...rest } = d;
+  d.pts = A;
+  d.to = null;
+  addEnt({ ...rest, pts: B, from: null });
+  const rot = Math.atan2(u.y, u.x);
+  const s = addEnt({
+    type: 'hvu',
+    kind: 'sil',
+    p: c,
+    rot,
+    d: dd,
+    L,
+    sys: d.sys,
+    z: zc,
+    layer: ensureLayer('Вентиляция')
+  });
+  changed();
+  return s;
+}
+const SIL_SNAP = d => SIL_D.reduce((a, x) => (Math.abs(x - d) < Math.abs(a - d) ? x : a), 160);
+/** «Подводки»: a main duct, then a unit (plenum, silencer, ducted air conditioner). */
+function mkFlex() {
+  let main = null;
+  return {
+    name: 'flexconn',
+    base: () => null,
+    prompt: () =>
+      !main
+        ? 'Гибкие подводки: магистраль (воздуховод), Enter — брать ближайшую магистраль системы:'
+        : 'Адаптер решётки, шумоглушитель или канальный кондиционер с камерами:',
+    onPoint(p) {
+      if (!main) {
+        let best = null;
+        for (const d of S.ents)
+          if (d.type === 'duct' && !d.flex && visible(d))
+            for (let i = 1; i < d.pts.length; i++) {
+              const dd = dist(segPt(d.pts[i - 1], d.pts[i], p), p);
+              if (dd < ductW(d) / 2 + 120 && (!best || dd < best.dd)) best = { d, dd };
+            }
+        if (best) {
+          main = best.d;
+          log(`Магистраль ${main.sys} ${secTxt(main)}`);
+          return;
+        }
+      }
+      const u = S.ents.find(
+        e =>
+          visible(e) &&
+          ((e.type === 'hvu' && XT.hvu.dist(e, p) < 120) ||
+            (e.type === 'ac' && XT.ac && XT.ac.dist(e, p) != null && XT.ac.dist(e, p) < 120))
+      );
+      if (!u) {
+        log('Здесь нет оборудования с патрубками', true);
+        return;
+      }
+      const n = flexConnect(u, main);
+      log(n ? `Гибких подводок: ${n}` : 'Все патрубки уже подключены или магистрали рядом нет', !n);
+      return 'end';
+    },
+    onEnter() {
+      return main ? 'end' : undefined;
+    }
+  };
+}
+function mkLabels() {
+  const n = labelSystems(null);
+  log(n ? `Выносок поставлено: ${n}. Их можно передвинуть за полку.` : 'Все элементы систем уже подписаны');
+  return null;
+}
+/**
+ * Album sheets of the ventilation: the plan (systems over the dimmed architecture, with the leaders), the
+ * axonometric scheme (systems only, with leaders) and the 3D view with the walls and without the ceilings.
+ */
+function ventAlbum() {
+  const ids = ventIds();
+  if (!ids.length) {
+    log('В проекте нет воздуховодов и оборудования вентиляции', true);
+    return null;
+  }
+  labelSystems(null);
+  const s1 = addSheet('Вентиляция и кондиционирование — план');
+  addPlanVp(s1, { preset: 'vent', title: 'План систем вентиляции и кондиционирования' });
+  const s2 = addSheet('Вентиляция — аксонометрическая схема');
+  const [x0, y0, x1, y1] = shInner(s2);
+  addCamVp(s2, {
+    ids,
+    view: 'iso',
+    style: 'revit',
+    title: 'Аксонометрическая схема систем',
+    x: x0 + 5,
+    y: y0 + 5,
+    w: x1 - x0 - 10,
+    h: y1 - y0 - 70
+  }).src.tags = true;
+  const walls = S.ents
+    .filter(
+      e => visible(e) && !['ceil', 'roof', 'room', 'note', 'dim', 'text', 'sect', 'node', 'view3'].includes(e.type)
+    )
+    .map(e => e.id);
+  const s3 = addSheet('Вентиляция — 3D со стенами');
+  const r = shInner(s3);
+  addCamVp(s3, {
+    ids: walls,
+    view: 'iso',
+    style: 'revit',
+    title: '3D: системы над помещениями, потолок скрыт',
+    x: r[0] + 5,
+    y: r[1] + 5,
+    w: r[2] - r[0] - 10,
+    h: r[3] - r[1] - 70
+  }).src.tags = true;
+  changed();
+  log('Листы: план, аксонометрическая схема и 3D-вид систем — в «Листах».');
+  return [s1, s2, s3];
+}
+defineTools({
+  ventsheet: {
+    command: {
+      t: 'СХЕМАВЕНТИЛЯЦИИ',
+      m: () => {
+        ventAlbum();
+        return null;
+      },
+      a: ['схемавентиляции', 'аксонометрия', 'аксонометрическая схема', 'схема вентиляции']
+    },
+    title: 'Листы вентиляции: план, аксонометрия, 3D · СХЕМАВЕНТИЛЯЦИИ',
+    icon: '<path d="M3 15l5-3 5 3 4-2.5M8 12V5M13 15V8"/><rect x="2" y="2" width="16" height="16" rx="1"/>',
+    help: 'Листы альбома: план систем с выносками, аксонометрическая схема (только системы, с выносками) и 3D-вид со стенами без потолка.'
+  },
+  ahu: {
+    command: { t: 'УСТАНОВКА', m: () => mkHvu('ahu'), a: ['установка', 'пву', 'ahu', 'рекуператор', 'приточка'] },
+    title: 'Приточно-вытяжная установка · УСТАНОВКА',
+    icon: '<rect x="3" y="6" width="14" height="8" rx="1"/><path d="M1 8h2M1 12h2M17 8h2M17 12h2M7 10h6M11 8l2 2-2 2"/>',
+    help: 'Приточно-вытяжная установка с рекуператором: щелчок — место; «Модель» — следующая из каталога, «Повернуть» — на 90°. Четыре патрубка: наружный воздух, выброс, приток, вытяжка; системы — в свойствах.'
+  },
+  silencer: {
+    command: { t: 'ШУМОГЛУШИТЕЛЬ', m: () => mkHvu('sil'), a: ['шумоглушитель', 'глушитель', 'csr', 'silencer'] },
+    title: 'Шумоглушитель · ШУМОГЛУШИТЕЛЬ',
+    icon: '<path d="M2 10h3M15 10h3"/><rect x="5" y="6" width="10" height="8" rx="4"/>',
+    help: 'Шумоглушитель: щелчок по круглому воздуховоду — разрежет его и встанет в разрыв, взяв Ø, отметку и систему. [Длина] 600/900/1200.'
+  },
+  plenum: {
+    command: { t: 'АДАПТЕР', m: () => mkHvu('plen'), a: ['адаптер', 'пленум', 'камера', 'щелевая', 'plenum'] },
+    title: 'Адаптер решётки со щелевой решёткой · АДАПТЕР',
+    icon: '<rect x="3" y="9" width="14" height="5"/><path d="M6 9V6M14 9V6M5 15.5h10M5 17h10"/>',
+    help: 'Адаптер решётки (камера статического давления) с щелевой решёткой: щелчок — место на потолке. Патрубки, щели, расход — в свойствах; «Подвести гибкими» — подводки от магистрали.'
+  },
+  flexconn: {
+    command: { t: 'ПОДВОДКИ', m: mkFlex, a: ['подводки', 'гибкие', 'flex', 'гибкий'] },
+    title: 'Гибкие подводки к патрубкам · ПОДВОДКИ',
+    icon: '<path d="M3 4h14M6 4c0 5 8 3 8 8v4"/><path d="M5 7.5l2 -1M7 10l2-1M10 12l2-1"/>',
+    help: 'Гибкие подводки: щелчок по магистрали, затем по адаптеру, шумоглушителю или канальному кондиционеру — по одной подводке на каждый свободный патрубок.'
+  },
+  ventlabel: {
+    command: { t: 'ПОДПИСАТЬСИСТЕМУ', m: mkLabels, a: ['подписать', 'подписатьсистему', 'выноски вентиляции'] },
+    title: 'Подписать системы · ПОДПИСАТЬСИСТЕМУ',
+    icon: '<path d="M3 16l6-6h8"/><circle cx="3" cy="16" r="1.4"/><path d="M11 7h6"/>',
+    help: 'Подписать системы: выноски с сечениями воздуховодов, моделями и расходами оборудования, данными решёток. Текст берётся из модели и обновляется сам; выноски не накладываются друг на друга.'
+  }
+});
+
 // ===== mep/hvac/air-conditioners.js =====
 /**
  * mep/hvac/air-conditioners.js
  *
  * Air conditioners: split, ducted, cassette; routes, grilles, checks.
  */
+
+
 
 
 
@@ -62609,8 +64325,92 @@ var ACP = {
   5: ['1/4″', '1/2″', 6.35, 12.7],
   7: ['3/8″', '5/8″', 9.52, 15.88]
 };
-const acCap = e => [2.5, 3.5, 5, 7].reduce((a, c) => (Math.abs(c - e.cap) < Math.abs(a - e.cap) ? c : a), 3.5);
-const acDim = e => ACD[e.kind][acCap(e)] || ACD.split[3.5];
+/**
+ * Ducted indoor units by model (sources: Midea MTI(U) 2025 leaflet, Haier, Gree, Hisense datasheets — see
+ * docs/hvac-catalog-sources.md): cooling kW, airflow m³/h (high speed), max external static pressure Pa,
+ * body W × D × H mm.
+ */
+const AC_CAT = {
+  'midea-mtiu12': { n: 'Midea MTIU-12HW1FNXP', cap: 3.52, q: 600, esp: 60, dim: [700, 506, 200] },
+  'midea-mtiu18': { n: 'Midea MTIU-18HW1FNXP', cap: 5.28, q: 911, esp: 100, dim: [880, 674, 210] },
+  'midea-mti24': { n: 'Midea MTI-24HW1FNXP', cap: 7.03, q: 1229, esp: 160, dim: [1100, 774, 249] },
+  'midea-mti36': { n: 'Midea MTI-36HW1FNXP', cap: 10.55, q: 2100, esp: 160, dim: [1360, 774, 249] },
+  'midea-mti48': { n: 'Midea MTI-48HW1FNXP', cap: 14.07, q: 2400, esp: 160, dim: [1200, 874, 300] },
+  'midea-mti55': { n: 'Midea MTI-55HW1FNXP', cap: 16.12, q: 2600, esp: 160, dim: [1200, 874, 300] },
+  'midea-mtb09': { n: 'Midea MTBI-09 (низконапорный)', cap: 2.64, q: 530, esp: 40, dim: [700, 635, 210] },
+  'haier-ad12': { n: 'Haier AD12MS1ERA', cap: 3.5, q: 550, esp: 100, dim: [720, 650, 270] },
+  'haier-ad24': { n: 'Haier AD24MS1ERA', cap: 7.1, q: 1050, esp: 100, dim: [950, 650, 270] },
+  'haier-ad36': { n: 'Haier AD36NS1ERA', cap: 9.9, q: 2090, esp: 150, dim: [1135, 742, 270] },
+  'gree-gfh12': { n: 'Gree GFH12EAK3DNA1A', cap: 3.5, q: 550, esp: 0, dim: [700, 615, 200] },
+  'gree-gfh24': { n: 'Gree GFH24EAK3DNA1A', cap: 7.1, q: 1000, esp: 0, dim: [1100, 615, 200] },
+  'hisense-aud24': { n: 'Hisense AUD24HX4SLH1', cap: 7.05, q: 1250, esp: 80, dim: [900, 720, 270] },
+  'hisense-aud36': { n: 'Hisense AUD36HX4SHH1', cap: 10.55, q: 1800, esp: 80, dim: [1386, 800, 350] }
+};
+const acModel = e => (e.kind === 'duct' && e.model && AC_CAT[e.model]) || null;
+const acCap = e => {
+  const m = acModel(e);
+  const c = m ? m.cap : e.cap;
+  return [2.5, 3.5, 5, 7].reduce((a, x) => (Math.abs(x - c) < Math.abs(a - c) ? x : a), 3.5);
+};
+const acDim = e => (acModel(e) ? acModel(e).dim : ACD[e.kind][acCap(e)] || ACD.split[3.5]);
+/**
+ * Chambers of a ducted unit with round spigots (supply in front, return behind), in the local frame of the unit:
+ * [{ x, y, z, dir, d, role, sys, n }]; empty when the unit keeps the built-in plenum and grille.
+ */
+function acSpigotsL(e) {
+  if (e.kind !== 'duct' || !e.cams) return [];
+  const [w, d, h] = acDim(e);
+  const out = [];
+  const n = Math.max(1, Math.round(+e.cn || 3)),
+    cd = +e.cd || 160,
+    rn = Math.max(0, Math.round(+e.rn || 2)),
+    rd = +e.rd || 200;
+  const CH = 260;
+  for (let i = 0; i < n; i++)
+    out.push({
+      x: -w / 2 + (w * (i + 0.5)) / n,
+      y: d + CH + 60,
+      z: h / 2,
+      dir: [0, 1, 0],
+      d: cd,
+      role: 'sup',
+      sys: e.sysS || null,
+      n: `Подача ${i + 1}`
+    });
+  for (let i = 0; i < rn; i++)
+    out.push({
+      x: -w / 2 + (w * (i + 0.5)) / rn,
+      y: -CH - 60,
+      z: h / 2,
+      dir: [0, -1, 0],
+      d: rd,
+      role: 'ret',
+      sys: e.sysR || null,
+      n: `Забор ${i + 1}`
+    });
+  return out;
+}
+function acSpigots(e) {
+  const z0 = acZ(e);
+  const s = P(Math.cos(e.rot || 0), Math.sin(e.rot || 0)),
+    f = P(Math.sin(e.rot || 0), -Math.cos(e.rot || 0));
+  return acSpigotsL(e).map(q => {
+    const w = LP(e, q.x, q.y);
+    return {
+      ...q,
+      p: [w.x, w.y, z0 + q.z],
+      dir: [s.x * q.dir[0] + f.x * q.dir[1], s.y * q.dir[0] + f.y * q.dir[1], q.dir[2]],
+      e
+    };
+  });
+}
+function acLabel(e) {
+  const m = acModel(e);
+  const q = +e.flow || (m ? m.q : 0);
+  return `${e.name ? e.name + ' · ' : ''}${m ? m.n : 'Канальный кондиционер ' + String(acCap(e)).replace('.', ',') + ' кВт'}${q ? `\nL=${fmt(q)} м³/ч` : ''}`;
+}
+hvHooks.acSpigots = acSpigots;
+hvHooks.acLabel = acLabel;
 function acZ(e) {
   const c = lvCur();
   const ceil = S.ceil || 2700;
@@ -62649,6 +64449,45 @@ function acOutF(e) {
 }
 /** Separate freon / drain lines drawn for this unit (mep/hvac/ac-lines.js) replace the built-in line set. */
 const acHasLine = (e, k) => S.ents.some(l => l.type === 'acl' && l.ac === e.id && l.kind === k);
+/** Supply and return chambers with spigots, a flow arrow on the body. */
+function acChambers(e, mb, box, L_, z, w, d, h) {
+  const CH = 260;
+  const cs = sysOf(e.sysS || '').col,
+    cr = sysOf(e.sysR || '').col;
+  mb.tag('Камера подачи с патрубками');
+  box(-w / 2 + 20, d, z + 10, w / 2 - 20, d + CH, z + h - 10, cs);
+  mb.tag('Камера забора с патрубками');
+  box(-w / 2 + 20, -CH, z + 10, w / 2 - 20, 0, z + h - 10, cr);
+  mb.tag('Патрубки камер');
+  mb.smooth(true);
+  for (const q of acSpigotsL(e)) {
+    const r = q.d / 2;
+    const a = L_(q.x, q.y - q.dir[1] * 70, z + q.z),
+      b = L_(q.x, q.y, z + q.z);
+    mb.tube(a, b, r, q.role === 'sup' ? cs : cr, 24);
+  }
+  mb.smooth(false);
+  mb.tag('Стрелка потока');
+  const A = L_(0, -CH / 2, z + h + 2),
+    B = L_(0, d + CH / 2, z + h + 2);
+  const ux = B[0] - A[0],
+    uy = B[1] - A[1],
+    l = Math.hypot(ux, uy) || 1;
+  const nx = -uy / l,
+    ny = ux / l,
+    hw = Math.min(140, w / 6);
+  const T = [B[0], B[1], B[2]],
+    K = [B[0] - (ux / l) * hw * 1.6, B[1] - (uy / l) * hw * 1.6, B[2]];
+  const p = (P0, k) => [P0[0] + nx * k, P0[1] + ny * k, P0[2]];
+  for (const [a, b, c] of [
+    [p(A, -hw / 3), p(K, -hw / 3), p(K, hw / 3)],
+    [p(A, -hw / 3), p(K, hw / 3), p(A, hw / 3)],
+    [p(K, -hw), T, p(K, hw)]
+  ]) {
+    mb.tri3('#c2185b', a, b, c);
+    mb.tri3('#c2185b', a, c, b);
+  }
+}
 function acBuild(e, mb) {
   const D = acDim(e),
     z = acZ(e),
@@ -62699,33 +64538,37 @@ function acBuild(e, mb) {
         '#9aa1a9'
       );
     }
-    const sd = +e.sdist || 1500,
-      gl = +e.gl || 1000;
-    mb.tag('Камера статического давления (приток)');
-    box(-w / 2 + 40, d, z + 20, w / 2 - 40, d + 300, z + h - 10, '#b9c0c8');
-    mb.tag('Воздуховод приточный (утеплённый)');
-    box(-gl / 2, d + 300, z + 40, gl / 2, d + sd - 150, z + h - 30, '#a9b0b8');
-    mb.tag('Пленум решётки');
-    box(-gl / 2 - 20, d + sd - 150, (S.ceil || 2700) + 5, gl / 2 + 20, d + sd + 50, z + h - 30, '#a9b0b8');
-    mb.tag(`Щелевая решётка приточная ${gl} мм`);
-    box(-gl / 2, d + sd - 80, (S.ceil || 2700) - 6, gl / 2, d + sd + 30, S.ceil || 2700, W);
-    for (let k = 0; k < 3; k++)
-      box(
-        -gl / 2 + 20,
-        d + sd - 65 + k * 32,
-        (S.ceil || 2700) - 7,
-        gl / 2 - 20,
-        d + sd - 50 + k * 32,
-        (S.ceil || 2700) - 6,
-        GR
-      );
-    st.grilles++;
-    mb.tag('Возвратная решётка с фильтром 600×300');
-    box(-300, -260, (S.ceil || 2700) - 6, 300, 40, S.ceil || 2700, W);
-    for (let k = 0; k < 8; k++)
-      box(-280, -245 + k * 35, (S.ceil || 2700) - 7, 280, -230 + k * 35, (S.ceil || 2700) - 6, GR);
-    box(-300, -260, S.ceil || 2700, 300, 40, z + 30, '#b9c0c8', 0.9);
-    st.grilles++;
+    if (e.cams) {
+      acChambers(e, mb, box, L_, z, w, d, h);
+    } else {
+      const sd = +e.sdist || 1500,
+        gl = +e.gl || 1000;
+      mb.tag('Камера статического давления (приток)');
+      box(-w / 2 + 40, d, z + 20, w / 2 - 40, d + 300, z + h - 10, '#b9c0c8');
+      mb.tag('Воздуховод приточный (утеплённый)');
+      box(-gl / 2, d + 300, z + 40, gl / 2, d + sd - 150, z + h - 30, '#a9b0b8');
+      mb.tag('Пленум решётки');
+      box(-gl / 2 - 20, d + sd - 150, (S.ceil || 2700) + 5, gl / 2 + 20, d + sd + 50, z + h - 30, '#a9b0b8');
+      mb.tag(`Щелевая решётка приточная ${gl} мм`);
+      box(-gl / 2, d + sd - 80, (S.ceil || 2700) - 6, gl / 2, d + sd + 30, S.ceil || 2700, W);
+      for (let k = 0; k < 3; k++)
+        box(
+          -gl / 2 + 20,
+          d + sd - 65 + k * 32,
+          (S.ceil || 2700) - 7,
+          gl / 2 - 20,
+          d + sd - 50 + k * 32,
+          (S.ceil || 2700) - 6,
+          GR
+        );
+      st.grilles++;
+      mb.tag('Возвратная решётка с фильтром 600×300');
+      box(-300, -260, (S.ceil || 2700) - 6, 300, 40, S.ceil || 2700, W);
+      for (let k = 0; k < 8; k++)
+        box(-280, -245 + k * 35, (S.ceil || 2700) - 7, 280, -230 + k * 35, (S.ceil || 2700) - 6, GR);
+      box(-300, -260, S.ceil || 2700, 300, 40, z + 30, '#b9c0c8', 0.9);
+      st.grilles++;
+    }
     if (e.drain === 'pump' || !e.drain) {
       mb.tag('Дренажная помпа');
       box(w / 2 - 160, d - 120, z - 90, w / 2 - 40, d - 20, z, '#eef0f2');
@@ -62797,15 +64640,15 @@ function acBuild(e, mb) {
       rg = roundPath(off(pts, 14, 0), 120).pts;
     if (!sepF) {
       mb.tag(`Медь ${pp[0]} (жидкость) в изоляции 9 мм`);
-      mb.sweep(rp, pp[2] / 2 + 9, '#2b2f35', 14);
+      mb.sweep(rp, pp[2] / 2 + 9, '#2e9d4a', 14);
       mb.tag(`Медь ${pp[1]} (газ) в изоляции 9 мм`);
-      mb.sweep(rg, pp[3] / 2 + 9, '#2b2f35', 14);
+      mb.sweep(rg, pp[3] / 2 + 9, '#2e9d4a', 14);
       mb.tag('Кабель межблочный');
       mb.sweep(roundPath(off(pts, 0, 28), 120).pts, 5, '#3d4248', 10);
     }
     if (!sepD) {
       mb.tag('Дренаж Ø16');
-      mb.sweep(roundPath(off(pts, 0, -38), 120).pts, 8, '#e9ecef', 12);
+      mb.sweep(roundPath(off(pts, 0, -38), 120).pts, 8, '#e6b800', 12);
     }
   }
   return st;
@@ -62914,7 +64757,39 @@ XT.ac = {
     pathPoly(acPoly(e));
     ctx.stroke();
     ctx.setLineDash([]);
-    if (e.kind === 'duct') {
+    if (e.kind === 'duct' && e.cams) {
+      const D = acDim(e),
+        CH = 260;
+      for (const [y0, y1, sy] of [
+        [D[1], D[1] + CH, e.sysS],
+        [-CH, 0, e.sysR]
+      ]) {
+        ctx.strokeStyle = ghost ? C.ghost : sysOf(sy || '').col;
+        pathPoly([
+          LP(e, -D[0] / 2 + 20, y0),
+          LP(e, D[0] / 2 - 20, y0),
+          LP(e, D[0] / 2 - 20, y1),
+          LP(e, -D[0] / 2 + 20, y1)
+        ]);
+        ctx.stroke();
+      }
+      for (const q of acSpigotsL(e)) {
+        ctx.strokeStyle = ghost ? C.ghost : sysOf((q.role === 'sup' ? e.sysS : e.sysR) || '').col;
+        const r = q.d / 2,
+          y0 = q.y - q.dir[1] * 70;
+        pathPoly([LP(e, q.x - r, y0), LP(e, q.x + r, y0), LP(e, q.x + r, q.y), LP(e, q.x - r, q.y)]);
+        ctx.stroke();
+      }
+      // the flow arrow through the unit
+      ctx.fillStyle = ghost ? C.ghost : sysOf(e.sysS || '').col;
+      const t = LP(e, 0, D[1] * 0.85),
+        b0 = LP(e, -60, D[1] * 0.55),
+        b1 = LP(e, 60, D[1] * 0.55);
+      pathPoly([t, b0, b1]);
+      ctx.fill();
+      ctx.strokeStyle = c;
+    }
+    if (e.kind === 'duct' && !e.cams) {
       const D = acDim(e),
         sd = +e.sdist || 1500,
         gl = +e.gl || 1000;
@@ -62992,8 +64867,40 @@ XT.ac = {
           ['Поворот, °', 'rotd', 'n'],
           ...(e.kind === 'duct'
             ? [
-                ['Расстояние до приточной решётки, мм', 'sdist', 'n'],
-                ['Длина щелевой решётки, мм', 'gl', 'n']
+                [
+                  'Модель',
+                  'model',
+                  's',
+                  [
+                    ['', 'по мощности (типовой блок)'],
+                    ...Object.entries(AC_CAT).map(([k, v]) => [k, `${v.n} · ${String(v.cap).replace('.', ',')} кВт`])
+                  ]
+                ],
+                ['Камеры с патрубками', 'cams', 'b'],
+                ...(e.cams
+                  ? [
+                      ['Патрубков подачи', 'cn', 'n'],
+                      ['Ø подачи', 'cd', 's', [125, 160, 200, 250].map(d => [d, 'ø' + d])],
+                      ['Патрубков забора', 'rn', 'n'],
+                      ['Ø забора', 'rd', 's', [125, 160, 200, 250].map(d => [d, 'ø' + d])],
+                      [
+                        'Система подачи',
+                        'sysS',
+                        's',
+                        [['', '—'], ...S.vent.systems.map(x => [x.id, `${x.id} · ${x.name}`])]
+                      ],
+                      [
+                        'Система забора',
+                        'sysR',
+                        's',
+                        [['', '—'], ...S.vent.systems.map(x => [x.id, `${x.id} · ${x.name}`])]
+                      ],
+                      ['Расход, м³/ч', 'flow', 'n']
+                    ]
+                  : [
+                      ['Расстояние до приточной решётки, мм', 'sdist', 'n'],
+                      ['Длина щелевой решётки, мм', 'gl', 'n']
+                    ])
               ]
             : []),
           [
@@ -63043,7 +64950,7 @@ XT.ac = {
           )
           .join(
             ''
-          )}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
+          )}${e.kind === 'duct' && e.cams ? `<dt></dt><dd><button class="btn" data-xa="acflex" title="Гибкие подводки от ближайших воздуховодов систем подачи и забора к патрубкам камер">Подвести гибкими</button></dd>` : ''}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
       ],
       [
         'Проверки',
@@ -63061,9 +64968,28 @@ XT.ac = {
       e.z = null;
       if (v !== 'split' && !e.drain) e.drain = 'pump';
     }
+    if (p === 'model' && AC_CAT[v]) {
+      e.cap = AC_CAT[v].cap;
+      e.flow = AC_CAT[v].q;
+    }
+    if (p === 'cams' && v) {
+      // chambers on: the AC systems by default, three supply spigots, two return
+      const sys = k => (S.vent.systems.find(x => x.kind === k) || {}).id || '';
+      if (!e.sysS) e.sysS = sys('Кондиционер: подача');
+      if (!e.sysR) e.sysR = sys('Кондиционер: забор');
+      if (!e.cn) e.cn = 3;
+      if (!e.cd) e.cd = 160;
+      if (e.rn == null) e.rn = 2;
+      if (!e.rd) e.rd = 200;
+    }
   },
   action(e, a) {
     if (a === 'acsplit') return acSplitLines(e);
+    if (a === 'acflex') {
+      const n = flexConnect(e);
+      log(n ? `Гибких подводок: ${n}` : 'Нет воздуховода системы рядом или все патрубки уже подключены', !n);
+      return;
+    }
     pushUndo();
     if (a === 'acclr') e.route = [];
     if (a === 'acpt') {
@@ -63132,7 +65058,25 @@ XT.ac = {
         r.q++;
         r.ids.push(e.id);
       });
-    if (e.kind === 'duct') {
+    if (e.kind === 'duct' && e.model && AC_CAT[e.model])
+      put(S_, 'acm' + e.model, { name: `Канальный кондиционер ${AC_CAT[e.model].n}`, u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+    if (e.kind === 'duct' && e.cams) {
+      const n = Math.round(+e.cn || 3),
+        rn = Math.round(+e.rn || 2);
+      put(S_, `accs${n}-${e.cd}`, { name: `Камера подачи с ${n} патрубками ø${+e.cd || 160}`, u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+      if (rn)
+        put(S_, `accr${rn}-${e.rd}`, { name: `Камера забора с ${rn} патрубками ø${+e.rd || 200}`, u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+    }
+    if (e.kind === 'duct' && !e.cams) {
       put(S_, 'acksd', { name: 'Камера статического давления (пленум) приточная', u: 'шт' }, r => {
         r.q++;
         r.ids.push(e.id);
@@ -63304,6 +65248,7 @@ defineTools({
 
 
 
+
 const ACL_DRAIN = {
   hose16: { n: 'Дренажный шланг гофрированный Ø16', d: 16, col: '#e9ecef' },
   pvc16: { n: 'Трубка ПВХ жёсткая Ø16', d: 16, col: '#f2f3f4' },
@@ -63319,7 +65264,7 @@ const ACL_DEST = {
 /** recommended / minimal slope of the condensate drain (manufacturers: ≥ 1 %, better 2–3 %) */
 const ACL_IMIN = 0.01,
   ACL_IREC = 0.02;
-const ACL_COL = { freon: '#62c7f0', drain: '#58b88f' };
+const ACL_COL = ACL_STD;
 
 /** Ports of a unit: where the line set and the drain leave it, and the outdoor valves. */
 function acPorts(ac) {
@@ -63659,9 +65604,9 @@ function aclBuild(e) {
       });
     const g = pp[3] / 2 + ins + 3;
     mb.tag(`Медь ${pp[0]} (жидкость) в изоляции ${ins} мм`);
-    mb.sweep(roundPath(side(-g, 0), 110).pts, pp[2] / 2 + ins, '#2b2f35', 14);
+    mb.sweep(roundPath(side(-g, 0), 110).pts, pp[2] / 2 + ins, ACL_STD.freon, 14);
     mb.tag(`Медь ${pp[1]} (газ) в изоляции ${ins} мм`);
-    mb.sweep(roundPath(side(g, 0), 110).pts, pp[3] / 2 + ins, '#2b2f35', 14);
+    mb.sweep(roundPath(side(g, 0), 110).pts, pp[3] / 2 + ins, ACL_STD.freon, 14);
     if (e.cable) {
       mb.tag('Кабель межблочный');
       mb.sweep(roundPath(side(0, g + 6), 110).pts, 5, '#3d4248', 10);
@@ -63672,7 +65617,7 @@ function aclBuild(e) {
   } else {
     const M = drainOf(e);
     mb.tag(`Дренаж: ${M.n}`);
-    mb.sweep(roundPath(pts, 40).pts, M.d / 2, M.col, 12);
+    mb.sweep(roundPath(pts, 40).pts, M.d / 2, ACL_STD.drain, 12);
     if (e.dest === 'trap') {
       const q = pts[pts.length - 1];
       mb.tag('Гидрозатвор сухой для кондиционера');
@@ -73234,16 +75179,39 @@ function kitBuild(e, mb) {
       slabCut(mb, outer, sg.holes, zt, zt + c.top, c.topCol, (x, y, z) => xf(x, y, z));
       if (c.apron !== 'none') {
         mb.tag(c.apron === 'glass' ? 'Фартук: стекло (скинали)' : 'Фартук: плитка');
-        const a = [
-          xf(sg.s0, 0, zt + c.top),
-          xf(sg.s1, 0, zt + c.top),
-          xf(sg.s1, 6, zt + c.top),
-          xf(sg.s0, 6, zt + c.top)
-        ];
+        // in a corner the plates of the two walls meet on the bisector (под 45) or one butts into the other
+        const AT = 6,
+          kA = kitApronCorner(e, L, r, sg, 'a'),
+          kB = kitApronCorner(e, L, r, sg, 'b');
+        const butt = c.apronJ === 'butt';
+        const a0 = kA == null ? sg.s0 : butt ? sg.s0 + AT : sg.s0,
+          b0 = kA == null ? sg.s0 : butt ? sg.s0 + AT : sg.s0 + AT * kA;
+        const a1 = kB == null ? sg.s1 : sg.s1,
+          b1 = kB == null || butt ? sg.s1 : sg.s1 - AT * kB;
+        const a = [xf(a0, 0, zt + c.top), xf(a1, 0, zt + c.top), xf(b1, AT, zt + c.top), xf(b0, AT, zt + c.top)];
         prism3(mb, a, [0, 0, c.wallZ - zt - c.top], c.apronCol);
       }
     }
   }
+}
+/**
+ * The corner joint of the apron at the start ('a') or the end ('b') of a worktop piece: the mitre factor
+ * cot(φ/2) of the corner angle φ, or null when the piece does not meet another wall's apron there.
+ */
+function kitApronCorner(e, L, r, sg, end) {
+  const R = L.runs;
+  const o = end === 'a' ? (r.corner ? R[r.i - 1] : null) : R[r.i + 1] && R[r.i + 1].corner ? R[r.i + 1] : null;
+  if (!o) return null;
+  if (end === 'a' ? sg.s0 > 1 : sg.s1 < r.L - 1) return null;
+  const os = kitTopSegs(e, L, o);
+  const meet = end === 'a' ? os.length && os[os.length - 1].s1 >= o.L - 1 : os.length && os[0].s0 <= 1;
+  if (!meet) return null;
+  const ua = end === 'a' ? o.u : r.u,
+    ub = end === 'a' ? r.u : o.u;
+  const cs = -(ua.x * ub.x + ua.y * ub.y),
+    sn = Math.abs(ua.x * ub.y - ua.y * ub.x);
+  if (sn < 1e-3) return null;
+  return (1 + cs) / sn;
 }
 /** Pieces of the worktop of a run (they stop at tall units and freestanding appliances) with their cut-outs. */
 function kitTopSegs(e, L, r) {
@@ -73691,9 +75659,22 @@ function kitHoodOpen(mb, e, it, B, ht) {
 function r_n(r) {
   return r.n;
 }
+/** Hood height modes: flush with the wall row (default), by the norm (gas 750 / electric 650 over the worktop), custom. */
+const HOOD_H = {
+  flush: 'вровень с навесными',
+  norm: 'по норме (газ 750, электро 650)',
+  custom: 'своя высота'
+};
+/** Height of the hood over the worktop by the norm: gas 750, electric 650 mm. */
+const kitHoodNorm = e => (kitHobGas(e) ? 750 : 650);
+/** Bottom of the hood (its cabinet) above the floor. Flush: at the wall row; a gas hob still keeps 750 mm. */
 function kitHoodZ(e) {
   const c = e.cfg;
-  return Math.max(c.wallZ, c.legs + c.baseH + c.top + (kitHobGas(e) ? 750 : 680));
+  const zt = c.legs + c.baseH + c.top;
+  const mode = c.hoodH || 'flush';
+  if (mode === 'custom') return zt + (+c.hoodZc > 0 ? +c.hoodZc : kitHoodNorm(e));
+  if (mode === 'norm') return zt + kitHoodNorm(e);
+  return kitHobGas(e) ? Math.max(c.wallZ, zt + 750) : c.wallZ;
 }
 const kitHobGas = e => e.cfg.hob === 'gas' || (e.mods || []).some(m => m.hobT === 'gas');
 /** Bottom of the cabinet of a hood module (raised over the hob so that the hood is high enough). */
@@ -73934,8 +75915,13 @@ function kitChecks(e) {
       ]);
     else {
       const hz = Math.round(kitHoodBottom(e, hood.m) - zt);
-      if (hz < 650)
-        out.push(['bad', `Вытяжка ${hz} мм над варочной — меньше 650 мм (электрическая 650–750, газовая 750–850).`]);
+      const gas = kitHobGas(e),
+        nrm = gas ? 750 : 650;
+      if (hz < nrm)
+        out.push([
+          gas || hz < 550 ? 'bad' : 'warn',
+          `Вытяжка ${hz} мм над ${gas ? 'газовой' : 'электрической'} панелью — ниже нормы ${nrm} мм. Высота вытяжки → «по норме» или поднимите навесные.`
+        ]);
       if (hz > 850) out.push(['info', `Вытяжка высоко (${hz} мм) — хуже тяга.`]);
     }
   }
@@ -74442,14 +76428,20 @@ function renderKitchen() {
         : `<div class="sech" style="margin-top:10px">Торцы стены ${KD.run + 1}</div><div style="display:grid;gap:6px">${sel('Слева', 'endA', run.endA || 'auto', ENDS, 'data-kr')}${sel('Справа', 'endB', run.endB || 'auto', ENDS, 'data-kr')}${num('Толщина боковины, мм', 'endT', c.endT || 18)}</div>`
     }
     <div class="sech" style="margin-top:10px">Параметры</div><div style="display:grid;gap:6px">${num('Опоры / цоколь, мм', 'legs', c.legs)}${isl ? '' : num('Корпус нижний, мм', 'baseH', c.baseH)}${isl ? '' : num('Столешница, мм', 'top', c.top) + num('Глубина столешницы', 'depth', c.depth)}${isl ? '' : num('Низ навесных, мм', 'wallZ', c.wallZ) + num('Высота навесных', 'wallH', c.wallH) + num('Глубина навесных', 'wallD', c.wallD)}
-    ${sel('Фасады: исполнение', 'fstyle', c.fstyle || 'flat', Object.entries(KFS))}${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${['bar', 'edge', 'knob'].includes(c.handle) ? sel('Цвет ручек', 'hcol', c.hcol || '#1c1c1c', KHC) : ''}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${isl ? '' : sel('Вытяжка (по умолчанию)', 'hood', c.hood || 'built', Object.entries(HOOD_T))}${sel('Варочная (по умолчанию)', 'hobT', c.hobT || 'ind', Object.entries(HOB_T))}${sel('Материал мойки', 'sink', c.sink, Object.entries(SINK_MAT))}${
+    ${sel('Фасады: исполнение', 'fstyle', c.fstyle || 'flat', Object.entries(KFS))}${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${['bar', 'edge', 'knob'].includes(c.handle) ? sel('Цвет ручек', 'hcol', c.hcol || '#1c1c1c', KHC) : ''}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${isl ? '' : sel('Вытяжка (по умолчанию)', 'hood', c.hood || 'built', Object.entries(HOOD_T)) + sel('Высота вытяжки', 'hoodH', c.hoodH || 'flush', Object.entries(HOOD_H)) + ((c.hoodH || 'flush') === 'custom' ? num('Над столешницей, мм', 'hoodZc', c.hoodZc || kitHoodNorm(e)) : '')}${sel('Варочная (по умолчанию)', 'hobT', c.hobT || 'ind', Object.entries(HOB_T))}${sel('Материал мойки', 'sink', c.sink, Object.entries(SINK_MAT))}${
       isl
         ? ''
         : sel('Фартук', 'apron', c.apron, [
             ['tile', 'плитка'],
             ['glass', 'стекло'],
             ['none', 'нет']
-          ])
+          ]) +
+          (R.some(r => r.corner) && c.apron !== 'none'
+            ? sel('Фартук в углу', 'apronJ', c.apronJ || 'mitre', [
+                ['mitre', 'под 45°'],
+                ['butt', 'встык']
+              ])
+            : '')
     }
     ${col('Фасады', 'fcol', c.fcol)}${col('Корпуса', 'ccol', c.ccol)}${isl ? '' : col('Столешница', 'topCol', c.topCol)}${isl ? '' : '<button class="btn" id="kdAuto">Заполнить автоматически</button>'}</div>`;
   const groups = {};
@@ -86506,6 +88498,8 @@ function elecSchemeSvg() {
 
 
 
+
+
 /** Sheet runtime state (not saved): on, the paper view, the active viewport (model space), the selected item. */
 const SHT = {
   on: false,
@@ -87031,6 +89025,82 @@ function drawDims3(it, cam) {
   }
   ctx.restore();
 }
+/**
+ * Leaders of the ventilation elements on a 3D / axonometric viewport (it.src.tags): from a point of the element to a
+ * shelf with the text taken from the model; shelves go to free places so that they do not overlap.
+ */
+function vent3Anchor(e) {
+  if (e.type === 'duct') {
+    const q = ductPath3(e);
+    let bi = 1,
+      bl = -1;
+    for (let i = 1; i < q.length; i++) {
+      const l = Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1], q[i][2] - q[i - 1][2]);
+      if (l > bl) {
+        bl = l;
+        bi = i;
+      }
+    }
+    const a = q[bi - 1] || q[0],
+      b = q[bi] || q[0];
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+  }
+  if (e.type === 'hvu') return [e.p.x, e.p.y, hvZ(e) + hvDim(e)[2] / (e.kind === 'sil' ? 2 : 1)];
+  if (e.type === 'ac') return [e.p.x, e.p.y, acZ(e) + acDim(e)[2]];
+  return null;
+}
+function drawVentTags(it, cam) {
+  if (!it.src.tags) return;
+  const ids = it.src.ids ? new Set(it.src.ids) : null;
+  const els = S.ents.filter(
+    e =>
+      (!ids || ids.has(e.id)) &&
+      visible(e) &&
+      ((e.type === 'duct' && !e.flex && ductLen3(e) > 900) ||
+        e.type === 'hvu' ||
+        (e.type === 'ac' && e.kind === 'duct'))
+  );
+  const h = 2.2,
+    boxes = [];
+  ctx.save();
+  ctx.strokeStyle = '#222';
+  for (const e of els) {
+    const P3 = vent3Anchor(e);
+    const A = P3 && camToPaper(it, cam, P3);
+    if (!A || A.x < it.x || A.x > it.x + it.w || A.y < it.y || A.y > it.y + it.h) continue;
+    const lines = (ventLabel(e) || '').split('\n').filter(Boolean);
+    if (!lines.length) continue;
+    const w = Math.max(...lines.map(l => l.length)) * h * 0.52 + 1.5,
+      H = lines.length * h * 1.3 + 0.8;
+    let pick = null;
+    for (const R of [8, 13, 19, 26])
+      for (const [dx, dy] of [
+        [1, -1],
+        [-1, -1],
+        [1, 1],
+        [-1, 1]
+      ]) {
+        if (pick) break;
+        const x0 = A.x + dx * R + (dx < 0 ? -w : 0),
+          y1 = A.y + dy * R;
+        const b = { x0, y0: y1 - H, x1: x0 + w, y1 };
+        if (b.x0 < it.x || b.x1 > it.x + it.w || b.y0 < it.y || b.y1 > it.y + it.h) continue;
+        if (!boxes.some(o => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0)) pick = { b, dx };
+      }
+    if (!pick) continue;
+    boxes.push(pick.b);
+    const sx = pick.dx > 0 ? pick.b.x0 : pick.b.x1;
+    L(A.x, A.y, sx, pick.b.y1, 0.18);
+    L(pick.b.x0, pick.b.y1, pick.b.x1, pick.b.y1, 0.18);
+    const c = sp(A.x, A.y);
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, Math.max(1, px(0.5)), 0, Math.PI * 2);
+    ctx.fill();
+    lines.forEach((l, i) => T(pick.b.x0 + 0.6, pick.b.y1 - 0.5 - (lines.length - 1 - i) * h * 1.3, l, h));
+  }
+  ctx.restore();
+}
 function drawCamVp(it, direct) {
   const r = screenRect(it);
   if (ctx.__cadRecorder) {
@@ -87058,13 +89128,16 @@ function drawCamVp(it, direct) {
     soft3dPaint(ctx, G, cam, { k: view.k, w: it.w, h: it.h, clip: camClip(it), style: it.src.style || 'lines' });
     ctx.restore();
     drawDims3(it, cam);
+    drawVentTags(it, cam);
     return;
   }
   const c = camRaster(it);
   if (c) ctx.drawImage(c.cv, r.x, r.y, r.w, r.h);
   try {
     const G = camGeo(it);
-    drawDims3(it, camFor(it, G));
+    const cam = camFor(it, G);
+    drawDims3(it, cam);
+    drawVentTags(it, cam);
   } catch (err) {}
 }
 /** Snap points of a camera viewport in paper coords: [{p, w (world), k}]. */
@@ -106107,6 +108180,8 @@ defineTools({
 
 
 
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -106231,6 +108306,8 @@ function xBoot() {
   });
   /** test/debug handle used by tests/browser (not an API) */
   const hooks = {
+    kit: { kitDefaults, kitAutofill, kitChecks },
+    vent: { flexConnect, insertSilencer, labelSystems, ventAlbum, hvSpigots, acSpigots },
     vault: {
       vaultState,
       vaultSetPassword,
@@ -108561,6 +110638,28 @@ function drawGlass(e, color, o, ghost, col) {
   const t = Math.max(+c.t, 1.6 / view.k);
   ctx.save();
   ctx.lineCap = 'butt';
+  // the bottom profile under the fixed panes, mitred where two runs meet in a corner (as walls do)
+  const PB = GL_PROF[c.fixB];
+  if (PB && !ghost)
+    for (const p of R.panels) {
+      if (p.kind !== 'fix') continue;
+      const r = glassProfRun(p);
+      const kL = r.mL ? p.cL.k : 0,
+        kR = r.mR ? p.cR.k : 0,
+        hw = PB.w / 2;
+      const nx = -p.u.y,
+        ny = p.u.x;
+      const W = (s, y) => w2s({ x: p.a.x + p.u.x * s + nx * y, y: p.a.y + p.u.y * s + ny * y });
+      const q = [W(r.s0 - hw * kL, -hw), W(r.s1 + hw * kR, -hw), W(r.s1 - hw * kR, hw), W(r.s0 + hw * kL, hw)];
+      ctx.beginPath();
+      q.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(139,145,152,0.28)';
+      ctx.fill();
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = '#8b9198';
+      ctx.stroke();
+    }
   for (const p of R.panels) {
     const off = p.kind === 'door' && (p.door || {}).type === 'slide' ? 35 : 0;
     const nx = -p.u.y,
@@ -109019,6 +111118,25 @@ function g3WallHit(o, d, max) {
 }
 
 /* ---------- parts (panel frame) ---------- */
+/** A straight prism over a convex quad q (four [s, y] points counter-clockwise) from z0 to z1, faces as in mb.box. */
+function g3Prism(mb, q, z0, z1, col, op) {
+  const v = [...q.map(([x, y]) => [x, y, z0]), ...q.map(([x, y]) => [x, y, z1])];
+  for (const f of [
+    [0, 2, 1],
+    [0, 3, 2],
+    [4, 5, 6],
+    [4, 6, 7],
+    [0, 1, 5],
+    [0, 5, 4],
+    [1, 2, 6],
+    [1, 6, 5],
+    [2, 3, 7],
+    [2, 7, 6],
+    [3, 0, 4],
+    [3, 4, 7]
+  ])
+    mb.tri3(col, v[f[0]], v[f[1]], v[f[2]], op);
+}
 /** The glass slab with a darker polished edge band; fluted glass gets ribs on one face. */
 function g3Pane(mb, p, t, G, name) {
   mb.tag(name);
@@ -109205,7 +111323,8 @@ function g3Channel(mb, s0, s1, zf, up, P, t, col, fat, kL, kR) {
   // kL / kR — tan of half the signed turn at the start / the end (0 — a square end)
   const strip = (y0, y1, z0, z1) => {
     if (!kL && !kR) return mb.box(s0, y0, z0, s1, y1, z1, col);
-    mb.extrude(
+    g3Prism(
+      mb,
       [
         [s0 + y0 * (kL || 0), y0],
         [s1 - y0 * (kR || 0), y0],
@@ -109475,11 +111594,31 @@ function buildGlass(e, R, ceil) {
     // threshold
     if (c.thr === 'alu' || c.thr === 'glass' || c.thr === 'step') {
       m0.tag(GL_THR[c.thr]);
-      if (c.thr === 'alu') m0.rbox(0, -15, zf, p.w, 15, zf + 15, 6, met, 3);
-      else if (c.thr === 'step') m0.box(0, -30, zf, p.w, 30, zf + 40, '#d9d6cf');
+      // at a corner of the run the threshold goes to the vertex and is mitred like the profiles
+      const tr = glassThrRun(p);
+      const strip = (y0, y1, z0, z1, col, op) =>
+        tr.kL || tr.kR
+          ? g3Prism(
+              m0,
+              [
+                [tr.s0 + y0 * tr.kL, y0],
+                [tr.s1 - y0 * tr.kR, y0],
+                [tr.s1 - y1 * tr.kR, y1],
+                [tr.s0 + y1 * tr.kL, y1]
+              ],
+              z0,
+              z1,
+              col,
+              op
+            )
+          : m0.box(tr.s0, y0, z0, tr.s1, y1, z1, col, op);
+      if (c.thr === 'alu') {
+        if (tr.kL || tr.kR) strip(-15, 15, zf, zf + 15, met);
+        else m0.rbox(0, -15, zf, p.w, 15, zf + 15, 6, met, 3);
+      } else if (c.thr === 'step') strip(-30, 30, zf, zf + 40, '#d9d6cf');
       else {
-        m0.box(0, -t / 2, zf + 4, p.w, t / 2, zf + 50, G.col, Math.min(1, G.op + 0.15));
-        m0.box(0, -t / 2 - 3, zf, p.w, t / 2 + 3, zf + 6, met);
+        strip(-t / 2, t / 2, zf + 4, zf + 50, G.col, Math.min(1, G.op + 0.15));
+        strip(-t / 2 - 3, t / 2 + 3, zf, zf + 6, met);
       }
     }
     merge(m);
@@ -109824,6 +111963,16 @@ function glassProfRun(p) {
     mL: mit(p.cL, p.nL),
     mR: mit(p.cR, p.nR)
   };
+}
+/**
+ * The run of a threshold under a pane (any kind: it runs under doors too): to the vertex at a corner of the run
+ * where there is a neighbour pane on the other segment, with the mitre k (0 — a square end).
+ */
+function glassThrRun(p) {
+  const mit = (c, nb) => !!(c && nb && nb.seg !== p.seg);
+  const mL = mit(p.cL, p.nL),
+    mR = mit(p.cR, p.nR);
+  return { s0: mL ? p.cL.sv : 0, s1: mR ? p.cR.sv : p.w, kL: mL ? p.cL.k : 0, kR: mR ? p.cR.k : 0 };
 }
 /** The length of that profile to order: by the long side of each mitre. */
 function glassProfLen(p, P) {
@@ -123814,6 +125963,7 @@ function buildLoads(out) {
 
 
 
+
 /** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
 const AV_NORM = {
   person: 60, // m³/h per person in living rooms
@@ -123944,9 +126094,12 @@ function avRole(sysId) {
   if (/конд|рецирк|возв/.test(k)) return 'ac';
   return 'sup';
 }
+/** Air terminals; grille adapters with slot grilles count as terminals of their system. */
 const avTerms = () =>
   S.ents.filter(
-    e => e.type === 'dev' && visible(e) && DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && !/vunit|vfan/.test(e.kind)
+    e =>
+      (e.type === 'dev' && visible(e) && DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && !/vunit|vfan/.test(e.kind)) ||
+      (e.type === 'hvu' && e.kind === 'plen' && visible(e))
   );
 
 /** Required and placed air of every room + the flat balance. */
@@ -124235,7 +126388,7 @@ function avNet(sysId) {
   const tAt = new Map();
   for (const t of avTerms().filter(t => t.sys === sysId)) {
     let best = null,
-      bd = 450;
+      bd = t.type === 'hvu' ? hvDim(t)[0] / 2 + 500 : 450;
     for (const d of ducts)
       for (const [id, i] of [
         [d.from, 0],
@@ -124264,17 +126417,25 @@ function avNet(sysId) {
     e =>
       visible(e) &&
       ((e.type === 'dev' && (e.kind === 'vunit' || (e.kind === 'vfan' && (!e.sys || e.sys === sysId)))) ||
-        (e.type === 'ac' && e.kind === 'duct'))
+        (e.type === 'ac' && e.kind === 'duct') ||
+        (e.type === 'hvu' && e.kind === 'ahu' && (e.sysS === sysId || e.sysE === sysId)))
   );
   for (const u of units) {
     const r =
       u.type === 'ac'
-        ? Math.max(...acDim(u).slice(0, 2)) / 2 + 400
-        : Math.max(sizeWH(u.size).w, sizeWH(u.size).h) / 2 + 400;
+        ? Math.max(...acDim(u).slice(0, 2)) / 2 + 700
+        : u.type === 'hvu'
+          ? Math.max(...hvDim(u).slice(0, 2)) / 2 + 500
+          : Math.max(sizeWH(u.size).w, sizeWH(u.size).h) / 2 + 400;
     for (const [k, p] of nodeP)
       if (dist(p, u.p) < r && !tAt.has(k)) {
         src = k;
-        srcName = u.type === 'ac' ? `канальный кондиционер ${acCap(u)} кВт` : DEVK[u.kind].n.toLowerCase();
+        srcName =
+          u.type === 'ac'
+            ? `канальный кондиционер ${acCap(u)} кВт`
+            : u.type === 'hvu'
+              ? hvLabel(u).split('\n')[0]
+              : DEVK[u.kind].n.toLowerCase();
         res.unit = u;
         break;
       }
