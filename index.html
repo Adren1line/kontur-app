@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.6';
+const APP_VER = '59.7';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -22527,6 +22527,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -22781,6 +22782,8 @@ function fieldGet(e, k) {
       return !!(ty && ty.ins);
     case 'sec':
       return e.shape === 'rect' ? `${fmt(e.w)}x${fmt(e.hh)}` : fmt(e.d);
+    case 'z':
+      return e.type === 'duct' ? Math.round(ductAxisZ(e)) : (e.z ?? '');
     case 'dza':
       return e.pts[0].z != null ? e.pts[0].z : e.z || 0;
     case 'dzb':
@@ -22935,6 +22938,16 @@ function fieldSet(e, k, raw) {
       }
       const [d_, k_] = String(raw).split('|');
       e.sw = { dev: +d_, key: k_ };
+      return;
+    }
+    case 'z': {
+      if (e.type !== 'duct') break;
+      // the axis height of a duct: the whole run goes up or down, its vertical steps stay
+      const v2 = parseFloat(String(raw).replace(',', '.'));
+      if (!isFinite(v2)) return;
+      const dz = v2 - ductAxisZ(e);
+      for (const p of e.pts) if (p.z != null) p.z = Math.round(p.z + dz);
+      e.z = Math.round((+e.z || 0) + dz);
       return;
     }
     case 'dza':
@@ -28908,10 +28921,13 @@ function xBindForm(el, e, after) {
         if (inp.dataset.xt === 'n' && !isFinite(v)) return;
         if (inp.tagName === 'SELECT' && /^-?\d+(\.\d+)?$/.test(v) && typeof getPath(e, p) === 'number') v = +v;
         pushUndo();
+        const X = XT[e.type];
+        // connected things follow the ports of the element (duct ends at the spigots of a fitting)
+        const tok = X && X.portsOf ? X.portsOf(e) : null;
         if (p === 'rotd') e.rot = v * D2R;
         else setPathX(e, p, v);
-        const X = XT[e.type];
         if (X && X.onSet) X.onSet(e, p, v);
+        if (tok && X.followPorts) X.followPorts(e, tok);
         if (after) after(p, v);
         changed();
       })
@@ -63909,7 +63925,16 @@ function hvDraw(e, color, o, ghost) {
     ctx.font = '10px "IBM Plex Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const t = e.kind === 'ahu' ? ahuOf(e).n : e.kind === 'sil' ? `CSR ${+e.d || 160}/${L}` : `${fmt(L)}×${fmt(W)}`;
+    const t =
+      e.kind === 'ahu'
+        ? ahuOf(e).n
+        : e.kind === 'sil'
+          ? `CSR ${+e.d || 160}/${L}`
+          : e.kind === 'red'
+            ? `ø${+e.d || 200}/ø${+e.d2 || 160}`
+            : e.kind === 'tee'
+              ? `${e.cross ? '✚' : 'T'} ø${+e.d || 200}/ø${+e.d2 || 160}`
+              : `${fmt(L)}×${fmt(W)}`;
     ctx.fillText(t, s.x, s.y);
   }
   ctx.restore();
@@ -64070,6 +64095,8 @@ XT.hvu = {
     }
   ],
   draw: hvDraw,
+  portsOf: hvPorts,
+  followPorts: hvFollow,
   k3: e => [hvZ(e), sysOf(e.sys || e.sysS || '').col, sysOf(e.sysE || '').col, S.ceil],
   build3(e) {
     const mb = MB(xfLocal(e, hvZ(e)));
@@ -64250,6 +64277,58 @@ XT.hvu = {
 };
 
 /* ---------- connections ---------- */
+/** The duct ends standing at the spigots of a unit: [{ d: duct, i: point index, k: spigot index }]. */
+function hvPorts(e) {
+  const sp = e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e);
+  const out = [];
+  for (const d of S.ents) {
+    if (d.type !== 'duct' || !d.pts || d.pts.length < 2) continue;
+    for (const i of [0, d.pts.length - 1]) {
+      const p = d.pts[i],
+        z = p.z != null ? +p.z : +d.z || 0;
+      const k = sp.findIndex(q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 && Math.abs(z - q.p[2]) < 40);
+      if (k >= 0) out.push({ d, i, k });
+    }
+  }
+  return out;
+}
+/**
+ * After a unit changed (height, turn, size), the duct ends that stood at its spigots go with them: the end point
+ * moves to the spigot, its neighbour keeps the run, a change of height becomes a vertical step; a reducer or a
+ * tee also passes its new Ø to the duct.
+ */
+function hvFollow(e, links) {
+  const sp = e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e);
+  for (const { d, i, k } of links) {
+    const q = sp[k];
+    if (!q) continue;
+    const z0 = +d.z || 0;
+    for (const p of d.pts) if (p.z == null) p.z = z0;
+    const end = d.pts[i],
+      j = i === 0 ? 1 : d.pts.length - 2,
+      nb = d.pts[j];
+    const nz = Math.round(q.p[2]);
+    const moved = Math.hypot(end.x - q.p[0], end.y - q.p[1]) > 0.5;
+    end.x = q.p[0];
+    end.y = q.p[1];
+    if (Math.abs(end.z - nz) > 1) {
+      if (Math.abs(nb.z - end.z) < 1 && !moved && d.pts.length >= 2 && Math.hypot(nb.x - end.x, nb.y - end.y) > 5) {
+        // the run stays, the end comes to the new height by a vertical step
+        const u = { x: nb.x - end.x, y: nb.y - end.y },
+          l = Math.hypot(u.x, u.y);
+        const step = Object.assign(P(end.x + u.x / l, end.y + u.y / l), { z: end.z });
+        d.pts.splice(i === 0 ? 1 : d.pts.length - 1, 0, step);
+      }
+      end.z = nz;
+    }
+    if (q.shape !== 'rect' && !d.flex && Math.abs((+d.d || 0) - q.d) > 0.5 && d.shape !== 'rect' && e.kind !== 'ahu')
+      d.d = d.w = d.hh = q.d;
+    if (d.pts.every(p => Math.abs(p.z - d.pts[0].z) < 1)) {
+      d.z = d.pts[0].z;
+      for (const p of d.pts) delete p.z;
+    }
+  }
+}
 /** The nearest point on the rigid ducts of a system (or any, if the system has none near). */
 function nearMain(q, sys, maxD = 6000, skip) {
   let best = null;
@@ -64413,6 +64492,21 @@ function flexConnect(e, main, opt = {}) {
   return n;
 }
 flexConnect.why = '';
+/** The axis height of a duct: the height of its longest horizontal run. */
+function ductAxisZ(e) {
+  const q = ductPath3(e);
+  let best = q[0][2],
+    bl = -1;
+  for (let i = 1; i < q.length; i++) {
+    if (Math.abs(q[i][2] - q[i - 1][2]) > 1) continue;
+    const l = Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]);
+    if (l > bl) {
+      bl = l;
+      best = q[i][2];
+    }
+  }
+  return best;
+}
 /** Bend angles of a duct with a 3D path (per-point heights), rounded to 15°. */
 function ductBends3(e) {
   const q = ductPath3(e),
@@ -64666,6 +64760,8 @@ function mkHvu(kind0) {
     },
     onPoint(p) {
       if (kind === 'sil' || kind === 'red' || kind === 'tee') {
+        const at = attachAtEnd(kind, p, o);
+        if (at) return 'end';
         const h = onDuct(p);
         if (h) {
           insertInline(kind, h.d, h.i, h.c, o);
@@ -64680,6 +64776,66 @@ function mkHvu(kind0) {
     }
   };
 }
+/** The free end of a duct near a point: { d, i, u (outward direction in plan), z } or null. */
+function ductEndAt(p, tol) {
+  const t = tol != null ? tol : Math.max(150, 14 / (view.k || 1));
+  let best = null;
+  for (const d of S.ents) {
+    if (d.type !== 'duct' || !visible(d) || !d.pts || d.pts.length < 2) continue;
+    for (const i of [0, d.pts.length - 1]) {
+      const e = d.pts[i];
+      const dd = dist(e, p);
+      if (dd > t || (best && dd >= best.dd)) continue;
+      // the direction of the last horizontal run towards this end
+      const seq = i === 0 ? d.pts.slice(1) : d.pts.slice(0, -1).reverse();
+      const nb = seq.find(q => dist(q, e) > 5);
+      if (!nb) continue;
+      const zs = ductPath3(d);
+      best = { d, i, u: nrm(sub(e, nb)), z: zs[i][2], dd };
+    }
+  }
+  return best;
+}
+/**
+ * A fitting clicked at the free end of a duct goes onto it: its inlet on the end, the duct's height, Ø and system,
+ * turned along the run (a vertical end is skipped — fittings stand on horizontal runs).
+ */
+function attachAtEnd(kind, p, o = {}) {
+  const h = ductEndAt(p);
+  if (!h || h.d.shape === 'rect') return null;
+  const nb = h.i === 0 ? h.d.pts[1] : h.d.pts[h.d.pts.length - 2];
+  const zs = ductPath3(h.d);
+  const zn = zs[h.i === 0 ? 1 : zs.length - 2][2];
+  if (dist(nb, h.d.pts[h.i]) < 5 && Math.abs(zn - h.z) > 30) {
+    log('Конец воздуховода вертикальный — деталь ставится на горизонтальный участок', true);
+    return null;
+  }
+  const dd = +h.d.d || 160;
+  const part =
+    kind === 'sil'
+      ? { d: SIL_SNAP(dd), L: +o.L || 900 }
+      : kind === 'red'
+        ? { d: dd, d2: +o.d2 && +o.d2 < dd ? +o.d2 : FIT_D.filter(x => x < dd).pop() || Math.max(100, dd - 40) }
+        : { d: dd, d2: Math.min(dd, +o.d2 || 160), ang: +o.ang || 90 };
+  const L = hvDim({ kind, ...part })[0];
+  const off = L / 2 + (kind === 'sil' ? 50 : 40);
+  pushUndo();
+  const end = h.d.pts[h.i];
+  const u = Object.keys(h).length ? h.u : P(1, 0);
+  const e = addEnt({
+    type: 'hvu',
+    kind,
+    p: add(end, mul(u, off)),
+    rot: Math.atan2(u.y, u.x),
+    ...part,
+    sys: h.d.sys,
+    z: Math.round(h.z),
+    layer: ensureLayer('Вентиляция')
+  });
+  changed();
+  log(`${HV_KIND[kind]} на конце воздуховода: ${hvLabel(e).split('\n')[0]}, ось ${Math.round(h.z)}`);
+  return e;
+}
 /** Cuts a duct at a point and puts a silencer into the gap (axis, height, Ø and system of the duct). */
 const insertSilencer = (d, i, c, o = {}) => insertInline('sil', d, i, c, o);
 /**
@@ -64692,10 +64848,7 @@ function insertInline(kind, d, i, c, o = {}) {
     kind === 'sil'
       ? { d: dd, L: +o.L || 900 }
       : kind === 'red'
-        ? {
-            d: Math.max(dd, +o.d2 || 125),
-            d2: Math.min(dd, +o.d2 || 125) === dd ? Math.max(100, dd - 40) : Math.min(dd, +o.d2 || 125)
-          }
+        ? { d: dd, d2: +o.d2 && +o.d2 < dd ? +o.d2 : FIT_D.filter(x => x < dd).pop() || Math.max(100, dd - 40) }
         : { d: dd, d2: Math.min(dd, +o.d2 || 160), ang: +o.ang || 90 };
   const L = kind === 'sil' ? part.L : hvDim({ kind, ...part })[0];
   const a = d.pts[i - 1],
@@ -64710,17 +64863,24 @@ function insertInline(kind, d, i, c, o = {}) {
   }
   pushUndo();
   const zs = ductPath3(d);
-  const zc = zs[i - 1][2];
+  const tc = dist(a, b) > 1e-6 ? dist(a, c) / dist(a, b) : 0;
+  const zc = Math.round(zs[i - 1][2] + (zs[i][2] - zs[i - 1][2]) * tc);
+  if (Math.abs(zs[i][2] - zs[i - 1][2]) > 30) {
+    log('Здесь участок с уклоном — поставьте деталь на горизонтальный участок', true);
+    return null;
+  }
   const keepZ = (p, j) => {
     const q = P(p.x, p.y);
     if (d.pts[j] && d.pts[j].z != null) q.z = d.pts[j].z;
     return q;
   };
+  const hasZ = d.pts.some(p => p.z != null);
+  const zp = p => (hasZ ? Object.assign(p, { z: zc }) : p);
   const A = d.pts
     .slice(0, i)
     .map(keepZ)
-    .concat([P(p0.x, p0.y)]);
-  const B = [P(p1.x, p1.y)].concat(d.pts.slice(i).map((p, j) => keepZ(p, i + j)));
+    .concat([zp(P(p0.x, p0.y))]);
+  const B = [zp(P(p1.x, p1.y))].concat(d.pts.slice(i).map((p, j) => keepZ(p, i + j)));
   const { id, ...rest } = d;
   d.pts = A;
   d.to = null;
@@ -65401,6 +65561,8 @@ XT.ac = {
     ...acSpigots(e).map(q => ({ p: P(q.p[0], q.p[1]), k: 'end' }))
   ],
   sample: e => [...acPoly(e), ...(e.out ? [e.out.p] : [])],
+  portsOf: hvPorts,
+  followPorts: hvFollow,
   map: (n, e, f, dA) => {
     n.p = f(e.p);
     n.rot = (e.rot || 0) + (dA || 0);
@@ -109041,7 +109203,19 @@ function xBoot() {
   /** test/debug handle used by tests/browser (not an API) */
   const hooks = {
     kit: { kitDefaults, kitAutofill, kitChecks },
-    vent: { flexConnect, insertSilencer, labelSystems, ventAlbum, hvSpigots, acSpigots },
+    vent: {
+      flexConnect,
+      insertSilencer,
+      insertInline,
+      attachAtEnd,
+      labelSystems,
+      ventAlbum,
+      hvSpigots,
+      acSpigots,
+      mkDuct,
+      hvPorts,
+      hvFollow
+    },
     vault: {
       vaultState,
       vaultSetPassword,
