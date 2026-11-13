@@ -2624,11 +2624,12 @@ ul.calc li.hint {
   transform: translate(-50%, -50%);
   font-size: 11px;
   background: rgba(22, 25, 29, 0.82);
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 3px;
   padding: 1px 6px;
   white-space: nowrap;
-  color: var(--fg);
+  /* the pill is dark in every theme: its text stays light (a light theme's --fg is dark) */
+  color: #eef1f4;
 }
 #odBar {
   position: absolute;
@@ -7178,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.10';
+const APP_VER = '59.11';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -50291,13 +50292,13 @@ function make3View(host, bg) {
       if (V.before) V.before();
       r.render(scene, cam);
       if (V.after) V.after();
-      lab.innerHTML = V.parts
-        .slice(0, 30)
-        .map(p => {
+      lab.innerHTML = labelsApart(
+        V.parts.slice(0, 30).map(p => {
           const v = p.pc.clone().project(cam);
-          if (v.z > 1) return '';
-          return `<span style="left:${(((v.x + 1) / 2) * w).toFixed(0)}px;top:${(((1 - v.y) / 2) * h).toFixed(0)}px">${esc(p.label || p.name)}</span>`;
+          return v.z > 1 ? null : { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h, t: p.label || p.name };
         })
+      )
+        .map(q => `<span style="left:${q.x.toFixed(0)}px;top:${q.y.toFixed(0)}px">${esc(q.t)}</span>`)
         .join('');
     },
     set(g, fit) {
@@ -94486,15 +94487,13 @@ function odRender() {
   const lab = $('#odLab');
   const w = OD.host.clientWidth,
     h = OD.host.clientHeight;
-  lab.innerHTML = (OD.view === 'exp' || OD.view === 'frame' ? OD.parts : [])
-    .slice(0, 24)
-    .map(p => {
+  lab.innerHTML = labelsApart(
+    (OD.view === 'exp' || OD.view === 'frame' ? OD.parts : []).slice(0, 24).map(p => {
       const v = p.pc.clone().project(OD.cam);
-      if (v.z > 1) return '';
-      const x = ((v.x + 1) / 2) * w,
-        y = ((1 - v.y) / 2) * h;
-      return `<span style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px">${esc(p.name)}</span>`;
+      return v.z > 1 ? null : { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h, t: p.name };
     })
+  )
+    .map(q => `<span style="left:${q.x.toFixed(0)}px;top:${q.y.toFixed(0)}px">${esc(q.t)}</span>`)
     .join('');
 }
 function odFormHtml(e) {
@@ -94702,6 +94701,24 @@ function bindXA(el, e) {
   });
 }
 
+/**
+ * Labels of the parts over a 3D view, moved apart: a label that would cover another drops a row lower
+ * (approximate box: 6.5 px a letter at 11 px, 20 px a row).
+ */
+function labelsApart(list) {
+  const out = [];
+  for (const q of list.filter(Boolean).sort((a, b) => a.y - b.y)) {
+    const w = String(q.t || '').length * 6.5 + 14;
+    let y = q.y;
+    for (let k = 0; k < 12; k++) {
+      const hit = out.find(o => Math.abs(o.x - q.x) < (o.w + w) / 2 && Math.abs(o.y - y) < 20);
+      if (!hit) break;
+      y = hit.y + 20;
+    }
+    out.push({ ...q, y, w });
+  }
+  return out;
+}
 /** Axis along which the parts of an element are exploded in the object dialog. */
 function odAxis(e) {
   return (e && e.type === 'rhatch' && hatchAxis(e)) || odAxisDefault(e);
@@ -111563,6 +111580,7 @@ function xBoot() {
     jbAll,
     S,
     validate,
+    OD,
     sample,
     openObj,
     openMEP,
@@ -113409,16 +113427,17 @@ function hingeSet(mb, lm, l, M, c, hz) {
       capDown(mb, z - 55, 7);
       capUp(lm, z + 55, 7);
       mb.cyl(hs, dp + 4, z - 1, z + 1, 5.5, '#8f9396', 12);
-      // the cards in the rabbet: seen when the door is open, with their screws
+      // the cards in the rabbet: from the knuckle on the face (dp, +y outwards) INTO the thickness of the leaf
+      // and of the frame — seen when the door is open, with their screws
       for (const [m, sg] of [
         [mb, -1],
         [lm, 1]
       ]) {
         const s0 = hs + sg * dir * 0.2,
           s1 = hs + sg * dir * 2.6;
-        bx(m, s0, dp + 2, z - 50, s1, dp + 28, z + 50, hc);
+        bx(m, s0, dp - 28, z - 50, s1, dp - 2, z + 50, hc);
         for (const zz of [z - 32, z, z + 32])
-          m.tube([s1, dp + 15, zz], [s1 + sg * dir * 0.8, dp + 15, zz], 3.2, '#8f9396', 10);
+          m.tube([s1, dp - 15, zz], [s1 + sg * dir * 0.8, dp - 15, zz], 3.2, '#8f9396', 10);
       }
       mb.lod('');
       lm.lod('');
