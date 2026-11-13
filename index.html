@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.4';
+const APP_VER = '59.5';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -16525,7 +16525,9 @@ function drawDuct(e, color, o = {}) {
       if (L < 1) continue;
       const u = nrm(sub(b, a)),
         n = P(-u.y, u.x);
-      for (let t = 20; t < L; t += 40) {
+      // coils: every 40 mm, but never closer than 5 px on the screen
+      const cs = Math.max(40, 5 / view.k);
+      for (let t = cs / 2; t < L; t += cs) {
         const c = add(a, mul(u, t));
         const s0 = w2s(add(c, mul(n, hw))),
           s1 = w2s(sub(c, mul(n, hw)));
@@ -63165,6 +63167,7 @@ function galvSpec(e, L, H, put, S_) {
 
 
 
+
 /* ---------- catalogue ---------- */
 /** Air handling units with heat recovery: body L × W × H (mm), spigot Ø, nominal / max flow m³/h, pressure Pa at the nominal flow. */
 const AHU_CAT = {
@@ -63228,9 +63231,6 @@ const HV_KIND = {
   tee: 'Тройник',
   plen: 'Адаптер решётки'
 };
-/** Colours of the air streams outside the systems: outdoor air and exhaust to the street. */
-const HV_ODA = '#3aa655',
-  HV_EHA = '#8d6e63';
 
 /* ---------- geometry ---------- */
 const ahuOf = e => AHU_CAT[e.model] || AHU_CAT['komf-r700f'];
@@ -63238,9 +63238,12 @@ const ahuOf = e => AHU_CAT[e.model] || AHU_CAT['komf-r700f'];
 function hvZ(e) {
   const ceil = S.ceil || 2700;
   if (e.z != null && isFinite(+e.z)) return +e.z;
-  if (e.kind === 'ahu') return ahuOf(e).mount === 'floor' ? 0 : ceil + 40;
-  if (e.kind === 'plen') return e.mount === 'wall' ? ceil - 350 : ceil;
-  return ceil + 150;
+  // everything hangs under the slab: above the suspended ceiling when there is room, never inside the slab
+  const slab = avSlabU();
+  const [, , H] = hvDim(e);
+  if (e.kind === 'ahu') return ahuOf(e).mount === 'floor' ? 0 : Math.round(Math.min(ceil + 40, slab - H - 20));
+  if (e.kind === 'plen') return e.mount === 'wall' ? ceil - 350 : Math.round(Math.min(ceil, slab - H - 90));
+  return Math.round(Math.min(ceil + 150, slab - H / 2 - 30));
 }
 /** Body size in the local frame: [length along x, depth along y, height]. */
 /** A reducer: the length of the cone by the difference of the diameters; a tee: the branch plus the collars. */
@@ -63278,8 +63281,8 @@ function hvSpigotsL(e) {
       zc = H / 2;
     const ext = 90;
     out.push(
-      { x: -L / 2 - ext, y: -W / 4, z: zc, dir: [-1, 0, 0], d, role: 'oda', sys: null, n: 'Наружный воздух' },
-      { x: -L / 2 - ext, y: W / 4, z: zc, dir: [-1, 0, 0], d, role: 'eha', sys: null, n: 'Выброс' },
+      { x: -L / 2 - ext, y: -W / 4, z: zc, dir: [-1, 0, 0], d, role: 'oda', sys: e.sysS || null, n: 'Наружный воздух' },
+      { x: -L / 2 - ext, y: W / 4, z: zc, dir: [-1, 0, 0], d, role: 'eha', sys: e.sysE || null, n: 'Выброс' },
       { x: L / 2 + ext, y: -W / 4, z: zc, dir: [1, 0, 0], d, role: 'sup', sys: e.sysS || null, n: 'Приток' },
       { x: L / 2 + ext, y: W / 4, z: zc, dir: [1, 0, 0], d, role: 'eta', sys: e.sysE || null, n: 'Вытяжка' }
     );
@@ -63453,8 +63456,8 @@ function hvBuild(e, mb) {
         : q.role === 'eta'
           ? sysOf(e.sysE || '').col
           : q.role === 'oda'
-            ? HV_ODA
-            : HV_EHA;
+            ? sysOf(e.sysS || '').col
+            : sysOf(e.sysE || '').col;
     for (const q of SP) spigotTube(mb, q, '#c7ccd2', '#7d848c');
     mb.tag('Стрелки потока');
     for (const q of SP) {
@@ -63694,9 +63697,9 @@ function hvDraw(e, color, o, ghost) {
         : q.role === 'eta'
           ? sysOf(e.sysE || '').col
           : q.role === 'oda'
-            ? HV_ODA
+            ? sysOf(e.sysS || '').col
             : q.role === 'eha'
-              ? HV_EHA
+              ? sysOf(e.sysE || '').col
               : sc;
     ctx.strokeStyle = ghost ? C.ghost : col;
     if (q.dir[2] === 0) {
@@ -64780,6 +64783,7 @@ defineTools({
 
 
 
+
 /* кондиционеры: настенный сплит, канальный (с камерой статического давления, щелевыми решётками, возвратом с фильтром, помпой), кассетный;
    наружный блок (фасад/балкон/корзина), трасса: фреон (медь в изоляции), дренаж, межблочный кабель */
 var ACK = {
@@ -64841,10 +64845,21 @@ const AC_SIDE = {
 };
 const acSup = e => (AC_SIDE[e.supply] && e.supply !== 'free' ? e.supply : 'cam');
 const acRet = e => (AC_SIDE[e.ret] ? e.ret : 'cam');
-const acSysOf = (e, k) =>
-  e[k] ||
-  (S.vent.systems.find(x => x.kind === (k === 'sysS' ? 'Кондиционер: подача' : 'Кондиционер: забор')) || {}).id ||
-  null;
+/** The system of a side of the unit: its own, else the project's system of that kind (made when the project has none). */
+function acSysOf(e, k) {
+  if (e[k]) return e[k];
+  const kind = k === 'sysS' ? 'Кондиционер: подача' : 'Кондиционер: забор';
+  let x = S.vent.systems.find(y => y.kind === kind);
+  if (!x) {
+    const base = k === 'sysS' ? 'К1п' : 'К1з';
+    let id = base,
+      i = 1;
+    while (S.vent.systems.some(y => y.id === id)) id = base + ++i;
+    x = { id, name: kind, kind, col: VKCOL[kind] };
+    S.vent.systems.push(x);
+  }
+  return x.id;
+}
 /** Depth of the chamber of a side. */
 const acCH = (e, side) => Math.max(120, +(side === 'sup' ? e.ch : e.rch) || 260);
 function acSpigotsL(e) {
@@ -64914,7 +64929,7 @@ function acZ(e) {
   const c = lvCur();
   const ceil = S.ceil || 2700;
   if (e.kind === 'split') return e.z ?? ceil - 200 - acDim(e)[2];
-  if (e.kind === 'duct') return e.z ?? ceil + 80;
+  if (e.kind === 'duct') return e.z ?? Math.round(Math.min(ceil + 80, avSlabU() - acDim(e)[2] - 20));
   return ceil;
 }
 // route: indoor exit → user points → outdoor unit, all at the route height
@@ -65003,8 +65018,8 @@ function acChambers(e, mb, box, L_, z, w, d, h) {
     [p(A, -hw / 3), p(K, hw / 3), p(A, hw / 3)],
     [p(K, -hw), T, p(K, hw)]
   ]) {
-    mb.tri3('#c2185b', a, b, c);
-    mb.tri3('#c2185b', a, c, b);
+    mb.tri3(cs, a, b, c);
+    mb.tri3(cs, a, c, b);
   }
 }
 function acBuild(e, mb) {
@@ -65224,7 +65239,11 @@ XT.ac = {
   prims: e => closedSegs(acPoly(e)),
   dist: (e, p) => (inPoly(p, acPoly(e)) ? -0.3 : e.out && dist(p, e.out.p) < 400 ? -0.2 : null),
   inside: (e, p) => inPoly(p, acPoly(e)),
-  keys: e => [{ p: e.p, k: 'ins' }, ...(e.out ? [{ p: e.out.p, k: 'end' }] : [])],
+  keys: e => [
+    { p: e.p, k: 'ins' },
+    ...(e.out ? [{ p: e.out.p, k: 'end' }] : []),
+    ...acSpigots(e).map(q => ({ p: P(q.p[0], q.p[1]), k: 'end' }))
+  ],
   sample: e => [...acPoly(e), ...(e.out ? [e.out.p] : [])],
   map: (n, e, f, dA) => {
     n.p = f(e.p);
