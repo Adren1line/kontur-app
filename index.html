@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.7';
+const APP_VER = '59.8';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -14219,7 +14219,8 @@ function mkDuct(opt = {}) {
   const pts = [];
   // a flexible connection drawn by hand: the same command, the duct is flexible; the end spigot gives its own height
   let flex = !!opt.flex,
-    zEnd = null;
+    zEnd = null,
+    startSp = null;
   let sec = mkDuct.sec || { shape: 'round', d: 160 },
     z = mkDuct.z ?? S.ceil - 150,
     sys = S.vent.cur || S.vent.systems[0].id,
@@ -14339,12 +14340,14 @@ function mkDuct(opt = {}) {
     onPoint(p) {
       if (ask) return;
       // a spigot of a unit: the duct takes its Ø, system and height and starts (or ends) at its end
-      const sp = spigotAt(p);
+      // the spigot the duct started from does not end it (a short first leg next to it)
+      const sp = spigotAt(p, null, q => !!startSp && q.e === startSp.e && q.n === startSp.n);
       if (sp) {
         const q = P(sp.p[0], sp.p[1]),
           zs = Math.round(sp.p[2]),
           vert = Math.abs(sp.dir[2]) > 0.5;
         if (!pts.length) {
+          startSp = sp;
           sec = sp.shape === 'rect' ? { shape: 'rect', w: sp.w, hh: sp.hh } : { shape: 'round', d: sp.d };
           if (sp.sys) sys = sp.sys;
           put(q, zs);
@@ -26368,7 +26371,8 @@ const WSDEF = [
     ab: 'Клим.',
     g: [
       ['Отопление', ['rad', 'ufh']],
-      ['Вентиляция', ['duct', 'vterm', 'vshaft', 'avcalc']],
+      ['Вентиляция', ['duct', 'vterm', 'vshaft']],
+      ['Расчёт', ['avcalc', 'acalc']],
       ['Оборудование', ['ahu', 'silencer', 'plenum']],
       ['Детали', ['reducer', 'ductee', 'flexconn']],
       ['Кондиционеры', ['ac', 'acfreon', 'acdrain']],
@@ -26489,7 +26493,7 @@ const TLBL = {
   duct: 'Воздуховод',
   vterm: 'Решётка',
   vshaft: 'Вентканал',
-  avcalc: 'Расчёт',
+  avcalc: 'Климат',
   ac: 'Кондиционер',
   acfreon: 'Фреон',
   acdrain: 'Дренаж',
@@ -26501,6 +26505,7 @@ const TLBL = {
   ductee: 'Тройник',
   ventlabel: 'Подписать',
   ventsheet: 'Листы схем',
+  acalc: 'Воздух',
   sect: 'Разрез',
   elev: 'Развёртка',
   node: 'Узел',
@@ -64536,12 +64541,14 @@ function allSpigots() {
   }
   return out;
 }
-function spigotAt(p, r) {
-  // the whole spigot counts (its tube from the body to the end), with a tolerance of 14 px on the screen
-  const tol = r != null ? r : Math.max(120, 14 / (view.k || 1));
+function spigotAt(p, r, skip) {
+  // the whole spigot counts (its tube from the body to the end) plus 12 px on the screen — never a fixed distance in
+  // mm: zoomed in, a click 100 mm in front of a spigot is far from it
+  const tol = r != null ? r : 12 / (view.k || 1);
   let best = null,
     bd = Infinity;
   for (const q of allSpigots()) {
+    if (skip && skip(q)) continue;
     const hl = Math.hypot(q.dir[0], q.dir[1]);
     const tip = P(q.p[0], q.p[1]);
     const base = hl > 0.3 ? P(q.p[0] - (q.dir[0] / hl) * 110, q.p[1] - (q.dir[1] / hl) * 110) : tip;
@@ -65509,7 +65516,13 @@ function acChecks(e) {
   const L = acLen(e) / 1000,
     cap = acCap(e);
   const max = cap >= 5 ? 25 : 15;
-  if (!e.out) out.push(['warn', 'Не задан наружный блок — укажите место (фасад, балкон, корзина).']);
+  if (!e.out && e.fc !== 'water')
+    out.push(['warn', 'Не задан наружный блок — укажите место (фасад, балкон, корзина).']);
+  if (e.fc === 'water')
+    out.push([
+      'info',
+      'Фанкойл: подача и обратка теплоносителя / холодоносителя от чиллера или котла, узел обвязки с клапаном и балансировкой, дренаж.'
+    ]);
   else {
     if (L > max) out.push(['bad', `Трасса ${L.toFixed(1)} м длиннее допустимой ${max} м для ${cap} кВт.`]);
     if (L > 5)
@@ -65719,7 +65732,40 @@ XT.ac = {
         `${String(acCap(e)).replace('.', ',')} кВт`,
         [
           ['Тип', 'kind', 's', Object.entries(ACK)],
+          [
+            'Агрегат',
+            'fc',
+            's',
+            [
+              ['', 'кондиционер (фреон, наружный блок)'],
+              ['water', 'фанкойл (вода: охлаждение и нагрев)']
+            ]
+          ],
           ['Мощность охлаждения', 'cap', 's', ACCAP.map(c => [c, String(c).replace('.', ',') + ' кВт'])],
+          ['Нагрев, кВт (пусто — по типу)', 'heat', 't'],
+          [
+            'Работает на нагрев зимой',
+            'heatOn',
+            's',
+            [
+              ['', 'да'],
+              ['0', 'нет (только охлаждение)']
+            ]
+          ],
+          ['Расход воздуха, м³/ч (пусто — по мощности)', 'flow', 't'],
+          ...(e.kind === 'split'
+            ? [
+                [
+                  'Установка',
+                  'mnt',
+                  's',
+                  [
+                    ['', 'настенный, под потолком'],
+                    ['floor', 'напольно-потолочный у пола (консоль)']
+                  ]
+                ]
+              ]
+            : []),
           ['Обозначение', 'name', 't'],
           ['Отметка низа блока, мм', e.kind === 'cassette' ? 'z' : 'z', 'n'],
           ['Поворот, °', 'rotd', 'n'],
@@ -65843,6 +65889,10 @@ XT.ac = {
       e.z = null;
       if (v !== 'split' && !e.drain) e.drain = 'pump';
     }
+    if (p === 'mnt') e.z = v === 'floor' ? 100 : null;
+    if (p === 'fc' && v === 'water' && e.out) e.outOld = e.out;
+    if (p === 'fc' && v === 'water') e.out = null;
+    if (p === 'fc' && v === '' && e.outOld) e.out = e.outOld;
     if (p === 'model' && AC_CAT[v]) {
       e.cap = AC_CAT[v].cap;
       e.flow = AC_CAT[v].q;
@@ -65876,13 +65926,32 @@ XT.ac = {
     put(
       S_,
       'ac' + e.kind + cap,
-      { name: `${ACK[e.kind]} ${String(cap).replace('.', ',')} кВт (внутр. + наружн. блок)`, u: 'компл' },
+      {
+        name:
+          e.fc === 'water'
+            ? `Фанкойл ${ACK[e.kind]
+                .replace(/^Настенная сплит-система/, 'настенный')
+                .replace(/кондиционер /i, '')
+                .toLowerCase()} ${String(cap).replace('.', ',')} кВт холод / ${String(e.heat || Math.round(cap * 15) / 10).replace('.', ',')} кВт тепло`
+            : `${ACK[e.kind]} ${String(cap).replace('.', ',')} кВт (внутр. + наружн. блок)`,
+        u: e.fc === 'water' ? 'шт' : 'компл'
+      },
       r => {
         r.q++;
         r.ids.push(e.id);
       }
     );
-    if (!acHasLine(e, 'freon')) {
+    if (e.fc === 'water')
+      put(
+        S_,
+        'acfcnode',
+        { name: 'Узел обвязки фанкойла (клапаны, балансировочный, гибкие подводки)', u: 'компл' },
+        r => {
+          r.q++;
+          r.ids.push(e.id);
+        }
+      );
+    if (!acHasLine(e, 'freon') && e.fc !== 'water') {
       put(S_, 'acp' + pp[0] + pp[1], { name: `Медная труба ${pp[0]} + ${pp[1]} в изоляции 9 мм, м`, u: 'м' }, r => {
         r.q = Math.round((r.q + L) * 10) / 10;
         r.ids.push(e.id);
@@ -66046,7 +66115,7 @@ function mkAC() {
     prompt: () =>
       ins
         ? 'Наружный блок: точка на фасаде/балконе (Enter — без него):'
-        : `Кондиционер ${ACK[kind]} ${String(cap).replace('.', ',')} кВт: место внутреннего блока [Сплит/Канальный/Кассетный/2.5/3.5/5/7]:`,
+        : `${mkAC.fc === 'water' ? 'Фанкойл' : 'Кондиционер'} ${ACK[kind]} ${String(cap).replace('.', ',')} кВт: место внутреннего блока [Сплит/Канальный/Кассетный/Фанкойл/2.5/3.5/5/7]:`,
     hasValue: () => !ins,
     onValue(v) {
       const c = [2.5, 3.5, 5, 7].find(x => Math.abs(x - v) < 0.3);
@@ -66059,11 +66128,21 @@ function mkAC() {
         kind = mkAC.k = k;
         return true;
       }
+      if (/^ф(анкойл)?$/i.test(s.trim())) {
+        mkAC.fc = mkAC.fc === 'water' ? '' : 'water';
+        log(mkAC.fc ? 'Фанкойл: без наружного блока, охлаждение и нагрев' : 'Кондиционер с наружным блоком');
+        return true;
+      }
       return false;
     },
     onPoint(p) {
       if (!ins) {
-        ins = mk(p);
+        ins = { ...mk(p), ...(mkAC.fc === 'water' ? { fc: 'water' } : {}) };
+        // a fan coil has no outdoor unit
+        if (ins.fc === 'water') {
+          addEnt({ ...ins, out: null, name: acName(), layer: ensureLayer('Кондиционирование') });
+          return 'end';
+        }
         return;
       }
       const O = { p, z: (S.ceil || 2700) - 900, mount: 'facade', rot: ins.rot || 0 };
@@ -109253,6 +109332,7 @@ function xBoot() {
     goSheet,
     camSnaps,
     startCmd,
+    commandsState,
     mkDim3,
     sheetsHTML,
     enterMS,
@@ -127689,6 +127769,823 @@ function avSeparate(noUndo) {
   changed();
   return rep;
 }
+
+// ===== mep/hvac/air-room.js =====
+/**
+ * mep/hvac/air-room.js
+ *
+ * Air of a room (type 'acalc', a calculation zone over a room, like the lighting calculation):
+ *   - what the room needs by the norms: air exchange (supply / extract), cooling (heat gains in summer), heating
+ *     (heat losses in winter) — from the climate calculation (air-calc.js) and the heating (heating.js);
+ *   - what the placed equipment gives: supply and extract terminals, grille adapters, air conditioners and fan coils
+ *     (cooling and heating), radiators and underfloor heating;
+ *   - the air velocity map in the occupied zone at a chosen height: every supply outlet is a jet — compact (grille,
+ *     diffuser branch) or plane (slot, split louvre) — with the classic decay of the centreline velocity, spreading
+ *     with distance; a jet near the ceiling sticks to it, turns down at a wall and runs back along the floor;
+ *     a cold jet falls, a warm one rises (Archimedes number). The map shows where it blows (draught over the norm of
+ *     ГОСТ 30494) and where the air stands still.
+ * The model is an engineering estimate for checking the layout, not CFD.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ---------- modes and limits ---------- */
+/** Season of the calculation: temperature difference supply − room, K, by the kind of the outlet; velocity limits. */
+const AR_MODE = {
+  cool: { n: 'Лето: охлаждение', ac: -9, vent: -2, vmax: 0.3, vopt: 0.2 },
+  heat: { n: 'Зима: отопление', ac: 14, vent: -3, vmax: 0.2, vopt: 0.15 },
+  vent: { n: 'Межсезонье: только вентиляция', ac: 0, vent: -1, vmax: 0.25, vopt: 0.2 }
+};
+/** Heights of the check: ankles, the head of a sitting person, the head of a standing one. */
+const AR_H = { 100: '100 мм — щиколотки', 1100: '1100 мм — голова сидящего', 1700: '1700 мм — голова стоящего' };
+function acalcDefaults() {
+  return { mode: 'cool', h: 1100, step: 0, show: true, jets: true };
+}
+
+/* ---------- the room ---------- */
+/** The room of a zone: the drawn room (floor zone) under its centre, else the zone itself as a room. */
+function zoneRoom(e) {
+  const c = polyCentroid(e.pts);
+  return avRooms().find(z => inPoly(c, z.pts)) || { pts: e.pts, name: '', id: null, pseudo: true };
+}
+/** Supply air of an air conditioner, m³/h: its own, by the model, else ≈ 160 m³/h per kW. */
+const acFlow = e => +e.flow || Math.round(((+e.cap || 3.5) * 160) / 10) * 10;
+/** Heating of an air conditioner / fan coil, kW. */
+const acHeat = e =>
+  e.heat != null && e.heat !== ''
+    ? +e.heat
+    : e.fc === 'water'
+      ? Math.round((+e.cap || 3.5) * 1.5 * 10) / 10
+      : Math.round((+e.cap || 3.5) * 1.1 * 10) / 10;
+
+/* ---------- outlets → jets ---------- */
+/**
+ * A jet: { o: [x,y,z] outlet, d: [dx,dy,dz] direction, v0 (m/s), A0 (m², compact) or b0 (m, slot width) with a
+ * length w (m), dT (K), col, n (name), m (decay coefficient), att (sticks to the ceiling) }.
+ */
+function jetsOf(R, ceil, mode) {
+  const M = AR_MODE[mode] || AR_MODE.cool;
+  const out = [];
+  const inRoom = p => inPoly(p, R.pts);
+  const into = (p, n) => (inRoom(add(p, mul(n, 300))) ? n : mul(n, -1));
+  const push = j => {
+    if (j.v0 > 0.05) out.push(j);
+  };
+  for (const e of S.ents) {
+    if (!visible(e)) continue;
+    if (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && !/vunit|vfan/.test(e.kind)) {
+      const wallDev = DEVK[e.kind].mount !== 'ceil';
+      if (!inRoom(e.p) && !(wallDev && (inRoom(add(e.p, mul(devF(e), 200))) || inRoom(add(e.p, mul(devF(e), -200)))))) continue;
+      const role = avRole(e.sys);
+      if (role === 'ex') continue;
+      const L = +e.flow || 0;
+      if (!L) continue;
+      const sz = sizeWH(e.size || DEVK[e.kind].size);
+      const A = sz.round ? (Math.PI * sz.d * sz.d) / 4e6 : (sz.w * sz.h) / 1e6;
+      const dT = role === 'ac' ? M.ac : M.vent;
+      const col = sysOf(e.sys || '').col;
+      const name = DEVK[e.kind].n;
+      if (e.kind === 'vdiff') {
+        // a ceiling diffuser: four jets along the ceiling
+        for (let k = 0; k < 4; k++) {
+          const a = (e.rot || 0) + (k * Math.PI) / 2;
+          push({
+            o: [e.p.x, e.p.y, ceil - 40],
+            d: [Math.cos(a), Math.sin(a), 0],
+            v0: L / 3600 / (A * 0.6),
+            A0: (A * 0.6) / 4,
+            m: 2.2,
+            dT,
+            col,
+            n: name,
+            att: true,
+            L: L / 4
+          });
+        }
+      } else if (DEVK[e.kind].mount === 'ceil') {
+        const s = devS(e);
+        push({
+          o: [e.p.x, e.p.y, ceil - 40],
+          d: [s.x, s.y, 0],
+          v0: L / 3600 / (A * 0.7),
+          A0: A * 0.7,
+          m: 4.5,
+          dT,
+          col,
+          n: name,
+          att: true,
+          L
+        });
+      } else {
+        // a wall grille or a valve: into the room, horizontally
+        const n = into(e.p, devF(e));
+        const z = +e.z || DEVK[e.kind].z || 2200;
+        const v = L / 3600 / (A * (e.kind === 'vvalve' ? 0.3 : 0.7));
+        push({
+          o: [e.p.x + n.x * 30, e.p.y + n.y * 30, z],
+          d: [n.x, n.y, 0],
+          v0: Math.min(v, 6),
+          A0: A * 0.7,
+          m: e.kind === 'vvalve' ? 3 : 4.5,
+          dT: e.kind === 'vvalve' ? (mode === 'heat' ? -25 : 5) : dT,
+          col,
+          n: name,
+          att: ceil - z < 400,
+          L
+        });
+      }
+    } else if (e.type === 'hvu' && e.kind === 'plen') {
+      if (!inRoom(e.p)) continue;
+      const role = avRole(e.sys);
+      if (role === 'ex') continue;
+      const s = plenSlot(e);
+      if (!(+e.flow > 0)) continue;
+      const v0 = +e.flow / 3600 / Math.max(1e-3, s.A);
+      const dT = role === 'ac' ? M.ac : M.vent;
+      const col = sysOf(e.sys || '').col;
+      const L = hvDim(e)[0];
+      const S_ = devS(e),
+        F = devF(e);
+      const z = hvZ(e);
+      if (e.mount === 'wall') {
+        const n = into(e.p, mul(F, -1));
+        const zc = z + (+e.W || 150) / 2;
+        push({
+          o: [e.p.x, e.p.y, zc],
+          d: [n.x, n.y, 0],
+          v0,
+          b0: (s.sw * s.ns) / 1000,
+          w: L / 1000,
+          ax: [S_.x, S_.y],
+          m: 2.5,
+          dT,
+          col,
+          n: 'Щелевая решётка настенная',
+          att: ceil - zc < 400,
+          L: +e.flow
+        });
+      } else {
+        // a ceiling slot: across the slot, to the side of the room's centre, along the ceiling
+        const c = polyCentroid(R.pts);
+        const toC = sub(c, e.p);
+        const n = toC.x * F.x + toC.y * F.y >= 0 ? F : mul(F, -1);
+        push({
+          o: [e.p.x, e.p.y, Math.min(ceil, z) - 20],
+          d: [n.x, n.y, 0],
+          v0,
+          b0: (s.sw * s.ns) / 1000,
+          w: L / 1000,
+          ax: [S_.x, S_.y],
+          m: 2.5,
+          dT,
+          col,
+          n: 'Щелевая решётка',
+          att: true,
+          L: +e.flow
+        });
+      }
+    } else if (e.type === 'ac') {
+      // a wall unit stands on the wall line: check a point in front of it
+      const front = e.kind === 'split' ? add(e.p, mul(devF(e), 200)) : e.p;
+      if (!inRoom(front) && !inRoom(add(e.p, mul(devF(e), -200))) && e.kind !== 'duct') continue;
+      const L = acFlow(e);
+      const dT = mode === 'heat' ? (+e.heatOn === 0 ? 0 : M.ac) : mode === 'cool' ? M.ac : 0;
+      const col = sysOf((S.vent.systems.find(x => x.kind === 'Кондиционер: подача') || {}).id || '').col;
+      const D = acDim(e),
+        z = acZ(e);
+      const name = e.fc === 'water' ? 'Фанкойл' : 'Кондиционер';
+      if (e.kind === 'split') {
+        const F = devF(e);
+        const n = into(e.p, F);
+        // the louvre throws forward and down: in heating more down (warm air rises)
+        const tilt = mode === 'heat' ? 0.75 : 0.25;
+        const nz = Math.hypot(1, tilt);
+        const floor = z < 900;
+        push({
+          o: [e.p.x + n.x * D[1], e.p.y + n.y * D[1], floor ? z + D[2] : z + 20],
+          d: floor ? [n.x * 0.5, n.y * 0.5, 0.87] : [n.x / nz, n.y / nz, -tilt / nz],
+          v0: L / 3600 / ((D[0] / 1000) * 0.07),
+          b0: 0.07,
+          w: (D[0] - 120) / 1000,
+          ax: [devS(e).x, devS(e).y],
+          m: 2.5,
+          dT,
+          col,
+          n: name,
+          att: false,
+          L
+        });
+      } else if (e.kind === 'cassette') {
+        for (let k = 0; k < 4; k++) {
+          const a = (e.rot || 0) + (k * Math.PI) / 2;
+          const c = LP(e, 0, D[1] / 2);
+          const w = (D[0] * 0.7) / 1000;
+          push({
+            o: [c.x + Math.cos(a) * D[0] * 0.4, c.y + Math.sin(a) * D[0] * 0.4, ceil - 30],
+            d: [Math.cos(a), Math.sin(a), 0],
+            v0: L / 4 / 3600 / (w * 0.06),
+            b0: 0.06,
+            w,
+            ax: [-Math.sin(a), Math.cos(a)],
+            m: 2.5,
+            dT,
+            col,
+            n: name,
+            att: true,
+            L: L / 4
+          });
+        }
+      } else if (e.kind === 'duct' && (e.supply === 'grille' || (!e.supply && !acSpigotsL(e).length))) {
+        // the built-in supply box with a slot grille in front of the unit
+        const sd = +e.sdist || 1500,
+          gl = (+e.gl || 1000) / 1000;
+        const g = LP(e, 0, D[1] + sd);
+        if (!inRoom(g)) continue;
+        const F = devF(e);
+        push({
+          o: [g.x, g.y, ceil - 20],
+          d: [F.x, F.y, 0],
+          v0: L / 3600 / (gl * 0.05),
+          b0: 0.05,
+          w: gl,
+          ax: [devS(e).x, devS(e).y],
+          m: 2.5,
+          dT,
+          col,
+          n: name,
+          att: true,
+          L
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/* ---------- jet propagation ---------- */
+/**
+ * The axis of a jet as samples { p: [x,y,z], s (m from the outlet), v (centreline m/s), b (half-width m) }:
+ * a ceiling jet keeps to the ceiling; at a wall any jet turns down along it, at the floor it runs back along it;
+ * a free jet bends by its temperature (cold falls, warm rises).
+ */
+function jetPath(j, R, ceil) {
+  const out = [];
+  let p = j.o.slice(),
+    d = j.d.slice();
+  const g = 9.81,
+    T = 293;
+  const ds = 0.08; // m
+  let s = 0,
+    att = j.att,
+    phase = 0; // 0 — in the room, 1 — down a wall, 2 — back along the floor
+  const d0 = j.A0 ? Math.sqrt(j.A0) : j.b0;
+  // Archimedes number: the bend of a non-isothermal jet
+  const Ar = (g * Math.max(0.01, d0) * j.dT) / (T * j.v0 * j.v0);
+  const segs = closedSegs(R.pts);
+  for (let k = 0; k < 400; k++) {
+    s += ds;
+    // centreline velocity: compact v = m·v0·√A0 / s, plane v = m·v0·√(b0 / s); a ceiling jet loses less (it
+    // spreads to one side) — the coefficient grows by √2
+    const kAtt = att && phase === 0 ? 1.41 : 1;
+    let v = j.A0 ? (j.m * kAtt * j.v0 * Math.sqrt(j.A0)) / s : j.m * kAtt * j.v0 * Math.sqrt(j.b0 / s);
+    // a plane jet of finite length becomes compact after ~ its length
+    if (!j.A0 && j.w && s > j.w * 2) v *= Math.sqrt((j.w * 2) / s);
+    v = Math.min(v, j.v0);
+    const b = 0.11 * s + (j.A0 ? Math.sqrt(j.A0) / 2 : 0);
+    if (v < 0.04) break;
+    // the bend: a cold free jet falls, a warm one rises; at the ceiling it holds while it is fast enough
+    if (phase === 0 && !att && j.dT) {
+      d[2] -= Math.sign(j.dT) * Math.min(0.08, Math.abs(Ar) * 0.9 * (s / Math.max(0.05, d0)) * ds) * (j.dT < 0 ? 1 : 1);
+      const l = Math.hypot(...d);
+      d = d.map(x => x / l);
+    }
+    if (phase === 0 && att && j.dT < 0 && v < 0.35 && s > 1.5) {
+      // a slow cold jet comes off the ceiling and falls
+      att = false;
+    }
+    const np = [p[0] + d[0] * ds * 1000, p[1] + d[1] * ds * 1000, p[2] + d[2] * ds * 1000];
+    if (phase === 0 && att) np[2] = j.o[2];
+    // walls: the room outline
+    if (phase !== 1 && !inPoly(P(np[0], np[1]), R.pts)) {
+      // turn down along the wall (or up for a warm jet near the floor)
+      phase = 1;
+      d = [0, 0, j.dT > 2 && np[2] < 1200 ? 1 : -1];
+      // stay 150 mm off the wall
+      let best = null;
+      for (const q of segs) {
+        const c = segPt(q.a, q.b, P(p[0], p[1]));
+        const dd = dist(c, P(p[0], p[1]));
+        if (!best || dd < best.dd) best = { c, dd };
+      }
+      if (best) {
+        const n = sub(P(p[0], p[1]), best.c),
+          l = Math.hypot(n.x, n.y) || 1;
+        p = [best.c.x + (n.x / l) * 150, best.c.y + (n.y / l) * 150, p[2]];
+      }
+      out.push({ p: p.slice(), s, v, b, ph: 1 });
+      continue;
+    }
+    if (phase === 1 && (np[2] < 120 || np[2] > ceil - 80)) {
+      // at the floor: back into the room along it
+      phase = 2;
+      const h = Math.hypot(j.d[0], j.d[1]) || 1;
+      d = [-j.d[0] / h, -j.d[1] / h, 0];
+      p = [p[0], p[1], np[2] < 120 ? 100 : ceil - 80];
+      out.push({ p: p.slice(), s, v, b, ph: 2 });
+      continue;
+    }
+    if (np[2] < 80) {
+      // a falling jet hits the floor and spreads
+      phase = 2;
+      d = [d[0], d[1], 0];
+      const l = Math.hypot(d[0], d[1]) || 1;
+      d = [d[0] / l, d[1] / l, 0];
+      np[2] = 100;
+    }
+    if (phase === 2 && !inPoly(P(np[0], np[1]), R.pts)) break;
+    if (np[2] > ceil - 30) np[2] = ceil - 30;
+    p = np;
+    out.push({ p: p.slice(), s, v, b, ph: phase });
+  }
+  return out;
+}
+
+/* ---------- the calculation ---------- */
+const ACC = new Map();
+function acalcRun(e) {
+  const key = documentState.docVer + JSON.stringify([e.pts, e.mode, e.h, e.step]);
+  const c = ACC.get(e.id);
+  if (c && c.key === key) return c.r;
+  const R = zoneRoom(e);
+  const c0 = polyCentroid(e.pts);
+  const ceil = avCeil(c0);
+  const A = Math.abs(polyArea(e.pts)) / 1e6;
+  const V = (A * ceil) / 1000;
+  const mode = AR_MODE[e.mode] ? e.mode : 'cool';
+  const M = AR_MODE[mode];
+  // norms
+  const RA = avRoomAir();
+  const row = RA.rows.find(r => r.z === R) || null;
+  const air = row
+    ? { sup: row.sup, ex: row.ex, hs: row.hs, he: row.he, kind: row.k, ppl: row.ppl }
+    : { sup: 0, ex: 0, hs: 0, he: 0, kind: R.pseudo ? 'other' : avKind(R), ppl: 0 };
+  const load = avLoad(R, RA);
+  let loss = null;
+  try {
+    loss = heatLoss(R);
+  } catch (err) {
+    loss = null;
+  }
+  // equipment
+  const acs = S.ents.filter(a => a.type === 'ac' && visible(a));
+  const mine = acs.filter(a => (R.pseudo ? inPoly(a.p, e.pts) : avAcRooms(a, avRooms()).includes(R)));
+  const cool = mine.reduce((s, a) => s + (+a.cap || acCap(a)), 0);
+  const heatAc = mine.reduce((s, a) => s + (a.heatOn === 0 || a.heatOn === '0' ? 0 : acHeat(a)), 0);
+  const heatW = (loss ? loss.rads + loss.ufh : 0) + heatAc * 1000;
+  // jets and the velocity map
+  const jets = jetsOf({ pts: e.pts }, ceil, mode);
+  const paths = jets.map(j => jetPath(j, { pts: e.pts }, ceil));
+  const h = +e.h || 1100;
+  const xs = e.pts.map(p => p.x),
+    ys = e.pts.map(p => p.y);
+  const bb = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  const step = +e.step > 0 ? +e.step : clamp(Math.round(Math.sqrt(A) * 40), 150, 400);
+  const nx = Math.max(1, Math.round((bb.x1 - bb.x0) / step)),
+    ny = Math.max(1, Math.round((bb.y1 - bb.y0) / step));
+  const sx = (bb.x1 - bb.x0) / nx,
+    sy = (bb.y1 - bb.y0) / ny;
+  // the background: the air the room gets, spread over its section
+  const Lsum = jets.reduce((s, j) => s + (j.L || 0), 0);
+  const vbg = Math.min(0.08, 0.02 + Lsum / 3600 / Math.max(1, (Math.sqrt(A) * ceil) / 1000) / 2);
+  const pts = [];
+  for (let jj = 0; jj < ny; jj++)
+    for (let i = 0; i < nx; i++) {
+      const x = bb.x0 + (i + 0.5) * sx,
+        y = bb.y0 + (jj + 0.5) * sy;
+      if (!inPoly(P(x, y), e.pts)) continue;
+      let v = vbg,
+        src = -1;
+      for (let k = 0; k < paths.length; k++) {
+        const pa = paths[k],
+          j = jets[k];
+        let best = 0;
+        for (const q of pa) {
+          // distance to the axis; a plane jet is wide along its slot
+          let dx = x - q.p[0],
+            dy = y - q.p[1];
+          const dz = h - q.p[2];
+          if (j.w && j.ax) {
+            const al = dx * j.ax[0] + dy * j.ax[1];
+            const over = Math.max(0, Math.abs(al) - (j.w * 1000) / 2);
+            const ac = al - Math.sign(al) * (Math.abs(al) - over);
+            dx = dx - j.ax[0] * (al - ac);
+            dy = dy - j.ax[1] * (al - ac);
+          }
+          const r = Math.hypot(dx, dy, dz) / 1000;
+          const b = q.b;
+          if (r > 2.6 * b + 0.05) continue;
+          const u = q.v * Math.exp(-0.693 * (r / Math.max(0.05, b)) ** 2);
+          if (u > best) best = u;
+        }
+        if (best > v) {
+          v = Math.max(v, best);
+          src = k;
+        }
+      }
+      pts.push({ x, y, v, src });
+    }
+  const vs = pts.map(p => p.v);
+  const vmax = vs.length ? Math.max(...vs) : 0;
+  const draft = pts.filter(p => p.v > M.vmax).length / Math.max(1, pts.length);
+  const still = pts.filter(p => p.v < 0.05).length / Math.max(1, pts.length);
+  const r = {
+    R,
+    A,
+    V,
+    ceil,
+    mode,
+    M,
+    h,
+    step,
+    sx,
+    sy,
+    pts,
+    jets,
+    paths,
+    vmax,
+    vavg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : 0,
+    draft,
+    still,
+    air,
+    ach: V ? Math.max(air.hs, air.he) / V : 0,
+    load,
+    loss,
+    cool,
+    heatAc,
+    heatW,
+    acs: mine
+  };
+  ACC.set(e.id, { key, r });
+  return r;
+}
+
+/* ---------- drawing ---------- */
+/** Velocity colour: still (grey-blue) → comfort (green) → the norm (yellow) → draught (orange, red). */
+function vCol(v, M, a = 0.55) {
+  const stops = [
+    [0, [120, 140, 170]],
+    [0.05, [90, 170, 220]],
+    [M.vopt * 0.6, [70, 190, 110]],
+    [M.vopt, [200, 210, 70]],
+    [M.vmax, [245, 150, 50]],
+    [M.vmax * 1.6, [225, 50, 50]]
+  ];
+  let k = 0;
+  while (k < stops.length - 2 && v > stops[k + 1][0]) k++;
+  const [t0, c0] = stops[k],
+    [t1, c1] = stops[k + 1];
+  const u = clamp((v - t0) / Math.max(1e-6, t1 - t0), 0, 1);
+  return `rgba(${c0.map((c, i) => Math.round(c + (c1[i] - c) * u)).join(',')},${a})`;
+}
+function drawAcalc(e, color, o, ghost) {
+  ctx.save();
+  if (!ghost && e.show !== false) {
+    const R = acalcRun(e);
+    ctx.save();
+    pathPoly(e.pts);
+    ctx.clip();
+    for (const q of R.pts) {
+      const a = w2s(P(q.x - R.sx / 2, q.y + R.sy / 2)),
+        b = w2s(P(q.x + R.sx / 2, q.y - R.sy / 2));
+      ctx.fillStyle = vCol(q.v, R.M);
+      ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x) + 0.6, Math.abs(b.y - a.y) + 0.6);
+    }
+    // draught cells: hatched
+    ctx.strokeStyle = 'rgba(160,20,20,.55)';
+    ctx.lineWidth = 1;
+    for (const q of R.pts) {
+      if (q.v <= R.M.vmax) continue;
+      const a = w2s(P(q.x - R.sx / 2, q.y + R.sy / 2)),
+        b = w2s(P(q.x + R.sx / 2, q.y - R.sy / 2));
+      ctx.beginPath();
+      ctx.moveTo(a.x, b.y);
+      ctx.lineTo(b.x, a.y);
+      ctx.stroke();
+    }
+    const cell = Math.min(R.sx, R.sy) * view.k;
+    if (cell > 30) {
+      ctx.fillStyle = 'rgba(10,12,14,.85)';
+      ctx.font = `${Math.min(11, cell / 3.2)}px ${TFONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const q of R.pts) {
+        const s = w2s(P(q.x, q.y));
+        ctx.fillText(q.v.toFixed(2).replace('.', ','), s.x, s.y);
+      }
+    }
+    ctx.restore();
+    // jets: the way along the ceiling or in the room — solid, down a wall — a dot, back along the floor — dashed;
+    // the velocity where the jet comes into the occupied zone and where it is the strongest there
+    if (e.jets !== false)
+      for (let k = 0; k < R.paths.length; k++) {
+        const pa = R.paths[k],
+          j = R.jets[k];
+        if (pa.length < 2) continue;
+        ctx.strokeStyle = j.col || '#4fb3e8';
+        ctx.fillStyle = j.col || '#4fb3e8';
+        for (let i = 1; i < pa.length; i++) {
+          if (pa[i].ph === 1) continue;
+          ctx.lineWidth = pa[i].ph === 2 ? 1 : 1.8;
+          ctx.setLineDash(pa[i].ph === 2 ? [4, 4] : []);
+          const a = w2s(P(pa[i - 1].p[0], pa[i - 1].p[1])),
+            b = w2s(P(pa[i].p[0], pa[i].p[1]));
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        const wi = pa.findIndex(q => q.ph === 1);
+        if (wi >= 0) {
+          const w = w2s(P(pa[wi].p[0], pa[wi].p[1]));
+          ctx.beginPath();
+          ctx.arc(w.x, w.y, 3.5, 0, TAU);
+          ctx.fill();
+        }
+        // arrowheads along the first leg, every ~1 m
+        for (let i = 8; i < pa.length; i += 12) {
+          if (pa[i].ph !== 0 || pa[i - 1].ph !== 0) continue;
+          const a = w2s(P(pa[i - 1].p[0], pa[i - 1].p[1])),
+            b = w2s(P(pa[i].p[0], pa[i].p[1]));
+          if (Math.hypot(b.x - a.x, b.y - a.y) < 0.3) continue;
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+          ctx.beginPath();
+          ctx.moveTo(6, 0);
+          ctx.lineTo(-4, -4);
+          ctx.lineTo(-4, 4);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        if (view.k > 0.05) {
+          // in the occupied zone (below 1,9 m): where it enters and its strongest point
+          const occ = pa.map((q, i) => [q, i]).filter(([q]) => q.p[2] < 1900);
+          const tag = (q, t) => {
+            const s = w2s(P(q.p[0], q.p[1]));
+            ctx.font = `600 10px ${TFONT}`;
+            ctx.textAlign = 'left';
+            const tx = `${t}${q.v.toFixed(2).replace('.', ',')} м/с`;
+            const tw = ctx.measureText(tx).width + 6;
+            ctx.fillStyle = 'rgba(255,255,255,.85)';
+            ctx.fillRect(s.x + 5, s.y - 16, tw, 13);
+            ctx.fillStyle = j.col || '#4fb3e8';
+            ctx.fillText(tx, s.x + 8, s.y - 6);
+          };
+          if (occ.length) tag(occ[0][0], '↓ ');
+          else tag(pa[0], '');
+        }
+      }
+    // the summary
+    const g = w2s(polyCentroid(e.pts));
+    ctx.font = `600 12px ${TFONT}`;
+    ctx.textAlign = 'center';
+    const bad = R.draft > 0.02;
+    const txt = R.jets.length
+      ? `${R.h} мм: ${R.draft > 0.005 ? 'задувает на ' + Math.round(R.draft * 100) + ' % площади' : 'сквозняка нет'} · макс. ${R.vmax.toFixed(2).replace('.', ',')} м/с (норма ${R.M.vmax.toString().replace('.', ',')})`
+      : 'нет приточных струй';
+    const tw = ctx.measureText(txt).width + 12;
+    ctx.fillStyle = 'rgba(15,17,20,.78)';
+    ctx.fillRect(g.x - tw / 2, g.y - 24, tw, 18);
+    ctx.fillStyle = bad ? '#ff8a7a' : '#7be08f';
+    ctx.fillText(txt, g.x, g.y - 11);
+  }
+  ctx.strokeStyle = ghost ? C.ghost : o.sel ? C.sel : '#5ec8e8';
+  ctx.setLineDash([8, 4]);
+  ctx.lineWidth = o.hover ? 2 : 1.2;
+  pathPoly(e.pts);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ---------- checks and the panel ---------- */
+const kW = w => (w / 1000).toFixed(2).replace('.', ',');
+function acalcChecks(e) {
+  const R = acalcRun(e),
+    out = [];
+  const nm = R.R.name ? `«${R.R.name}»` : 'Помещение';
+  if (R.air.sup && R.air.hs < R.air.sup * 0.95)
+    out.push(['warn', `${nm}: приток ${fmt(R.air.hs)} из ${fmt(R.air.sup)} м³/ч по норме.`]);
+  if (R.air.ex && R.air.he < R.air.ex * 0.95)
+    out.push(['warn', `${nm}: вытяжка ${fmt(R.air.he)} из ${fmt(R.air.ex)} м³/ч по норме.`]);
+  if (R.load && R.load.Q > 600 && R.cool * 1000 < R.load.Q * 0.95)
+    out.push([
+      R.cool ? 'warn' : 'info',
+      `${nm}: холода ${kW(R.cool * 1000)} кВт при теплопритоках ${kW(R.load.Q)} кВт.`
+    ]);
+  if (R.loss && R.heatW < R.loss.Q * 0.95)
+    out.push(['warn', `${nm}: тепла ${kW(R.heatW)} кВт при теплопотерях ${kW(R.loss.Q)} кВт.`]);
+  if (R.draft > 0.02)
+    out.push([
+      'warn',
+      `${nm}: сквозняк на ${Math.round(R.draft * 100)} % площади (скорость выше ${String(R.M.vmax).replace('.', ',')} м/с на высоте ${R.h} мм) — поверните или отодвиньте струю, снизьте скорость.`
+    ]);
+  if (R.jets.length && R.still > 0.5)
+    out.push(['info', `${nm}: застойная зона на ${Math.round(R.still * 100)} % площади.`]);
+  return out;
+}
+function arLegend(M) {
+  const vals = [0, 0.05, M.vopt, M.vmax, M.vmax * 1.6];
+  return `<dt></dt><dd><div style="height:10px;border-radius:3px;background:linear-gradient(90deg,${[0, 0.03, 0.08, M.vopt * 0.6, M.vopt, M.vmax, M.vmax * 1.3, M.vmax * 1.6].map(v => vCol(v, M, 1)).join(',')})"></div><div style="display:flex;justify-content:space-between;font-size:10px">${vals.map(v => `<span>${v.toFixed(2).replace('.', ',')}</span>`).join('')}</div><div class="hint" style="font-size:10px">м/с · штриховка — сквозняк</div></dd>`;
+}
+XT.acalc = {
+  layer: 'Аэрорасчёт',
+  anno: true,
+  prims: e => closedSegs(e.pts),
+  dist: (e, p) => areaPickDist(e.pts, p),
+  keys: e => e.pts.map(p => ({ p, k: 'end' })),
+  sample: e => e.pts,
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  draw: drawAcalc,
+  k3: () => null,
+  group: e => `Воздух помещения${zoneRoom(e).name ? ': ' + zoneRoom(e).name : ''}`,
+  checks: acalcChecks,
+  panel(e) {
+    const R = acalcRun(e);
+    const ok = (a, b) => `<b class="${a >= b * 0.95 ? 'ok' : 'bad'}">${a >= b * 0.95 ? '✓' : '✗'}</b>`;
+    const air =
+      cR(
+        'Помещение',
+        `${esc(R.R.name || '—')} · ${AV_KIND[R.air.kind] || '—'} · ${R.A.toFixed(1).replace('.', ',')} м² · ${R.V.toFixed(1).replace('.', ',')} м³`
+      ) +
+      cR('Людей', R.air.ppl || '—') +
+      (R.air.sup
+        ? cR('Приток', `${fmt(R.air.hs)} / ${fmt(R.air.sup)} м³/ч по норме ${ok(R.air.hs, R.air.sup)}`)
+        : cR('Приток по норме', '—')) +
+      (R.air.ex
+        ? cR('Вытяжка', `${fmt(R.air.he)} / ${fmt(R.air.ex)} м³/ч по норме ${ok(R.air.he, R.air.ex)}`)
+        : cR('Вытяжка по норме', '—')) +
+      cR('Кратность', `${R.ach.toFixed(1).replace('.', ',')} 1/ч`);
+    const cool =
+      cR('Теплопритоки летом', `${kW(R.load.Q)} кВт (${Math.round(R.load.perM2)} Вт/м²)`) +
+      cR('Холод оборудования', `${kW(R.cool * 1000)} кВт ${R.load.Q > 300 ? ok(R.cool * 1000, R.load.Q) : ''}`) +
+      R.acs
+        .map(a =>
+          cR(
+            '· ' + (a.fc === 'water' ? 'фанкойл' : 'кондиционер'),
+            `${esc(a.name || '')} ${String(+a.cap || acCap(a)).replace('.', ',')} кВт холод / ${String(acHeat(a)).replace('.', ',')} кВт тепло`
+          )
+        )
+        .join('');
+    const heat = R.loss
+      ? cR('Теплопотери зимой', `${kW(R.loss.Q)} кВт при ${R.loss.tin} °C`) +
+        cR('Тепло оборудования', `${kW(R.heatW)} кВт ${ok(R.heatW, R.loss.Q)}`) +
+        cR('· радиаторы и тёплый пол', `${kW(R.loss.rads + R.loss.ufh)} кВт`) +
+        cR('· кондиционеры и фанкойлы', `${kW(R.heatAc * 1000)} кВт`)
+      : cR('Теплопотери', 'нет данных');
+    const flow =
+      cR('Струй', `${R.jets.length}${R.jets.length ? ' · ' + [...new Set(R.jets.map(j => j.n))].join(', ') : ''}`) +
+      cR(
+        'Скорость на ' + R.h + ' мм',
+        `ср. ${R.vavg.toFixed(2).replace('.', ',')} · макс. ${R.vmax.toFixed(2).replace('.', ',')} м/с`
+      ) +
+      cR(
+        'Сквозняк (> ' + String(R.M.vmax).replace('.', ',') + ' м/с)',
+        `<b class="${R.draft > 0.02 ? 'bad' : 'ok'}">${Math.round(R.draft * 100)} % площади</b>`
+      ) +
+      cR('Застой (< 0,05 м/с)', `${Math.round(R.still * 100)} % площади`) +
+      arLegend(R.M) +
+      `<dt></dt><dd class="hint" style="text-align:left">Нормы: воздухообмен — СП 54.13330 / СП 60.13330 (как в «Расчёте климата»); скорость в обслуживаемой зоне — ГОСТ 30494-2011: оптимально ${String(R.M.vopt).replace('.', ',')}, допустимо ${String(R.M.vmax).replace('.', ',')} м/с. Струи — инженерная оценка (затухание и изгиб неизотермических струй), не CFD.</dd>`;
+    const chk = acalcChecks(e);
+    return xGroups(e, [
+      [
+        'Расчёт',
+        AR_MODE[R.mode].n,
+        [
+          ['Режим', 'mode', 's', Object.entries(AR_MODE).map(([k, v]) => [k, v.n])],
+          ['Высота проверки', 'h', 's', Object.entries(AR_H).map(([k, v]) => [k, v])],
+          ['Шаг сетки, мм (0 — авто)', 'step', 'n'],
+          ['Показывать карту скоростей', 'show', 'b'],
+          ['Показывать струи', 'jets', 'b']
+        ]
+      ],
+      ['Воздухообмен', `${fmt(Math.max(R.air.hs, R.air.he))} м³/ч`, air],
+      ['Охлаждение', `${kW(R.cool * 1000)} / ${kW(R.load.Q)} кВт`, cool],
+      ['Отопление', R.loss ? `${kW(R.heatW)} / ${kW(R.loss.Q)} кВт` : '—', heat],
+      ['Движение воздуха', `${Math.round(R.draft * 100)} % сквозняк`, flow],
+      [
+        'Проверки',
+        chk.length ? String(chk.length) : '✓',
+        chk.map(([l, m]) => `<dt></dt><dd class="${l}" style="text-align:left">${esc(m)}</dd>`).join('') ||
+          cR('Нормы', '✓')
+      ]
+    ]);
+  },
+  fields: () => [],
+  spec() {}
+};
+
+/* ---------- command ---------- */
+function mkAcalc() {
+  let a = null;
+  return {
+    name: 'acalc',
+    prompt: () =>
+      a === 'rect'
+        ? 'Первый угол зоны:'
+        : a
+          ? 'Второй угол зоны:'
+          : 'Воздух помещения: щёлкните внутри помещения (контур — по стенам) или [Прямоугольник/Все помещения]:',
+    onInput(s) {
+      if (kw(s, 'п', 'прямоугольник', 'r')) {
+        a = 'rect';
+        return true;
+      }
+      if (kw(s, 'в', 'все', 'all')) {
+        let n = 0;
+        for (const z of avRooms()) {
+          if (S.ents.some(x => x.type === 'acalc' && inPoly(polyCentroid(z.pts), x.pts))) continue;
+          addEnt({
+            type: 'acalc',
+            pts: z.pts.map(p => P(p.x, p.y)),
+            ...acalcDefaults(),
+            layer: ensureLayer('Аэрорасчёт')
+          });
+          n++;
+        }
+        log(n ? `Зон расчёта: ${n}` : 'Помещений без расчёта нет (нарисуйте зоны пола с именами)', !n);
+        return 'end';
+      }
+      return false;
+    },
+    onPoint(p) {
+      if (a && a !== 'rect') {
+        addEnt({
+          type: 'acalc',
+          pts: [a, P(p.x, a.y), p, P(a.x, p.y)],
+          ...acalcDefaults(),
+          layer: ensureLayer('Аэрорасчёт')
+        });
+        return 'end';
+      }
+      if (a === 'rect') {
+        a = p;
+        return;
+      }
+      const z = avRooms().find(r => inPoly(p, r.pts));
+      const R = z ? { poly: z.pts } : roomAt(p);
+      if (!R || !R.poly || R.poly.length < 3) {
+        log('Помещение не найдено — задайте зону прямоугольником (П)', true);
+        a = 'rect';
+        return;
+      }
+      addEnt({
+        type: 'acalc',
+        pts: R.poly.map(q => P(q.x, q.y)),
+        ...acalcDefaults(),
+        layer: ensureLayer('Аэрорасчёт')
+      });
+      return 'end';
+    },
+    preview(cur) {
+      if (a && a !== 'rect')
+        drawEnt({ type: 'acalc', pts: [a, P(cur.x, a.y), cur, P(a.x, cur.y)], show: false }, 'ghost');
+    }
+  };
+}
+defineTools({
+  acalc: {
+    command: {
+      t: 'ВОЗДУХПОМЕЩЕНИЯ',
+      m: mkAcalc,
+      a: ['воздух', 'аэрорасчет', 'аэрорасчёт', 'воздухпомещения', 'сквозняк', 'acalc']
+    },
+    title: 'Воздух помещения: нормы, холод, тепло, карта скоростей · ВОЗДУХПОМЕЩЕНИЯ',
+    icon: '<path d="M2 7h10a2.5 2.5 0 1 0-2.5-2.5M2 11h14a2.5 2.5 0 1 1-2.5 2.5M2 15h7"/>',
+    help: 'Воздух помещения: щелчок в помещении — зона расчёта. Воздухообмен по нормам, холод (теплопритоки) и тепло (теплопотери) против поставленного оборудования; карта скоростей воздуха на высоте головы или щиколоток со струями решёток, кондиционеров и фанкойлов — видно, где задувает и где застой. [Все помещения] — зоны для всех.'
+  }
+});
 
 // ===== mep/hvac/hvac-clash.js =====
 /**
