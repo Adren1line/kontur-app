@@ -7179,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.12';
+const APP_VER = '59.13';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -8588,6 +8588,7 @@ const HINGE_T = {
 };
 const HANDLE_T = {
   rosette: 'На розетке',
+  norose: 'Без розетки (скрытая)',
   knob: 'Кноб',
   plate: 'На планке',
   pull: 'Скоба',
@@ -8601,7 +8602,7 @@ const LOCK_T = {
   cyl: 'Замок с цилиндром',
   none: 'Без замка'
 };
-const STOP_T = { floor: 'Напольный', wall: 'Настенный', none: 'Без стопора' };
+const STOP_T = { floor: 'Напольный', wall: 'Настенный', hidden: 'Скрытый (в полотне)', none: 'Без стопора' };
 const GLASS_T = { none: 'Глухое', center: 'Со стеклом по центру', full: 'Остеклённое' };
 const DCOL = [
   ['#e8e2d6', 'Белёный дуб'],
@@ -19242,6 +19243,7 @@ function buildDoor3(e) {
       stopSet(mb, l, M, c, c.stop.type === 'floor' ? stopPos(M, l) : null);
     }
     closerSet(mb, lm, l, M, c, open);
+    doorInner3(mb, lm, l, M, c);
     lm.meshes().forEach(m => {
       mb.tag(m.tag);
       mb.lod(m.lod);
@@ -19253,6 +19255,7 @@ function buildDoor3(e) {
     mb.tag('');
   }
   if (c.mode === 'entry') entryFrame(mb, M, c);
+  doorSeal3(mb, M, c);
   return meshGroup(mb.meshes(), { edges: true });
 }
 function buildWin3(e) {
@@ -22579,6 +22582,8 @@ function initBrowserPanel() {
 
 
 
+
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -23261,6 +23266,18 @@ function doorPanel(e) {
     STOP_T[c.stop.type],
     cR('Тип', cS('stop.type', Object.entries(STOP_T), c.stop.type)) + cR('Цвет', cC('stop.color', c.stop.color, MCOL))
   );
+  const thr = (c.thr && c.thr.type) || 'none';
+  const sl = sealCalc(e, M);
+  h += cGrp(
+    'Порог и уплотнитель',
+    (thr !== 'none' ? 'порог · ' : '') + (sl.len ? sl.buy.toFixed(1).replace('.', ',') + ' м' : 'без уплотнителя'),
+    cR('Порог', cS('thr.type', Object.entries(THR_T), thr)) +
+      cR('Уплотнитель', cS('seal.type', Object.entries(SEAL_T), sl.type || 'none')) +
+      cR(
+        'Длина',
+        `<span class="hint" title="Контур притвора: 2 × высота полотна + ширина${M.leaves.length > 1 ? ' + притвор пассивной створки' : ''}, запас 5 %">${sl.len ? sl.len.toFixed(2).replace('.', ',') + ' м, к закупке ' + sl.buy.toFixed(1).replace('.', ',') + ' м' : '—'}</span>`
+      )
+  );
   if (c.mode === 'entry') {
     const en = c.entry || (c.entry = defEntry());
     const o_ = a => a.map(x => [x, x]);
@@ -23302,7 +23319,10 @@ function doorPanel(e) {
         cR('Порог', cB('entry.thr', en.thr))
     );
   }
-  return h + `<div class="btnrow"><button class="btn" id="bProf">Профили сечений…</button></div>`;
+  return (
+    h +
+    `<div class="btnrow"><button class="btn" id="bDoorDraw" title="Чертежи двери: полотно с наполнением, коробка, доборы и наличники, фрезеровки под фурнитуру, уплотнитель, схема сборки">Чертежи…</button><button class="btn" id="bProf">Профили сечений…</button></div>`
+  );
 }
 function winPanel(e) {
   const c = e.cfg;
@@ -23468,6 +23488,8 @@ function winPanel(e) {
 }
 function setPath(o, path, v) {
   const ks = path.split('.');
+  if (ks[0] === 'thr' && !o.thr) o.thr = { type: 'none' };
+  if (ks[0] === 'seal' && !o.seal) o.seal = {};
   let t = o;
   for (let i = 0; i < ks.length - 1; i++) t = t[ks[i]];
   t[ks[ks.length - 1]] = v;
@@ -23571,6 +23593,8 @@ function bindCfg(el, e) {
       e.cfg.preset = 'custom';
       changed();
     };
+  const bdd = el.querySelector('#bDoorDraw');
+  if (bdd) bdd.onclick = () => openFurnDraw('door', e.id);
   const bp = el.querySelector('#bProf');
   if (bp) bp.onclick = () => openProfiles(e.cfg.frame.prof);
 }
@@ -24305,6 +24329,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -24510,6 +24535,29 @@ function renderSpecLevel() {
       if (c.stop.type !== 'none')
         put(dkit, 'st' + c.stop.type, { name: `Стопор ${STOP_T[c.stop.type].toLowerCase()}`, u: 'шт' }, r => {
           r.q++;
+          r.ids.push(id);
+        });
+      const thr = (c.thr && c.thr.type) || 'none';
+      if (thr === 'drop')
+        for (const l of M.leaves)
+          put(
+            dkit,
+            'thd' + Math.round(l.w - 20),
+            { name: `Порог автоматический выпадающий ${Math.round(l.w - 20)} мм`, u: 'шт' },
+            r => {
+              r.q++;
+              r.ids.push(id);
+            }
+          );
+      if (thr === 'profile')
+        put(dkit, 'thp' + Math.round(M.W), { name: `Порог-профиль алюминиевый ${Math.round(M.W)} мм`, u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(id);
+        });
+      const sl = sealCalc(e, M);
+      if (sl.len)
+        put(dkit, 'seal' + sl.type, { name: `Уплотнитель: ${SEAL_T[sl.type].toLowerCase()} (+5 %)`, u: 'м' }, r => {
+          r.q = Math.round((r.q + sl.len * 1.05) * 10) / 10;
           r.ids.push(id);
         });
     } else if (e.type === 'window') {
@@ -85450,6 +85498,7 @@ function drCSV(M) {
 
 
 
+
 /* корпусная мебель и кухня: комплект чертежей (A3) — общий вид с размерами, деталировка с кромкой и присадкой,
    карты раскроя ЛДСП / ХДФ / МДФ, схема сборки (аксонометрия с разнесением), спецификация материалов и фурнитуры */
 var FD_SHEET = {
@@ -85907,7 +85956,7 @@ function fdFrame(M, title, sheetName, no, tot, scale) {
     svgT(X + 125, Y + 9, M.e.name || 'Изделие №' + M.id, 4, 'middle') +
     svgT(X + 100, Y + 24, title.length > 46 ? title.slice(0, 45) + '…' : title, 3.2, 'middle') +
     svgT(X + 100, Y + 31, sheetName, 3.2, 'middle') +
-    svgT(X + 100, Y + 50, 'ЛДСП 16 · кромка ПВХ', 2.6, 'middle');
+    svgT(X + 100, Y + 50, M.mat || 'ЛДСП 16 · кромка ПВХ', 2.6, 'middle');
   s +=
     svgT(X + 143, Y + 19, 'Лист', 2.4, 'middle') +
     svgT(X + 160, Y + 19, 'Листов', 2.4, 'middle') +
@@ -86823,6 +86872,11 @@ function openFurnDraw(kind, id) {
   renderFurnDraw();
 }
 function fdCur() {
+  if (FDD.kind === 'door') {
+    const e = byId(FDD.id);
+    const D = e && doorDrawModel(e);
+    return D ? { M: D, SH: doorSheets(D) } : null;
+  }
   const M = furnModel(FDD.kind, FDD.id);
   if (!M) return null;
   return { M, SH: furnSheets(M, KD.sel) };
@@ -86832,6 +86886,27 @@ function renderFurnDraw() {
   if (!X) return;
   const { M, SH } = X;
   FDD.i = Math.min(FDD.i, SH.length - 1);
+  const door = FDD.kind === 'door';
+  for (const id of ['#fdCsv', '#fdCad']) $(id).hidden = door;
+  $('#fdJoin').parentElement.hidden = door;
+  $('#fddlg h3').textContent = door
+    ? 'Чертежи двери: полотно, коробка, фрезеровки, сборка'
+    : 'Чертежи: деталировка, раскрой, сборка';
+  if (door) {
+    $('#fdList').innerHTML =
+      SH.map(
+        (s, i) =>
+          `<button class="btn ${i === FDD.i ? 'pri' : ''}" data-fdi="${i}" style="display:block;width:100%;margin:3px 0;text-align:left">${i + 1}. ${esc(s.n)}</button>`
+      ).join('') +
+      `<div class="hint" style="margin-top:10px">Деталей: ${M.parts.reduce((a, p) => a + p.qty, 0)} · фрезеровок: ${M.mills.length}<br>${M.seal.len ? `Уплотнитель: ${M.seal.buy.toFixed(1).replace('.', ',')} м` : 'Без уплотнителя'}</div><p class="hint">Размеры фрезеровок — типовые для выбранной фурнитуры; сверьте с паспортом конкретной модели перед фрезеровкой.</p>`;
+    $('#fdList')
+      .querySelectorAll('[data-fdi]')
+      .forEach(b => (b.onclick = () => ((FDD.i = +b.dataset.fdi), renderFurnDraw())));
+    $('#fdSum').textContent = M.title;
+    $('#fdView').innerHTML =
+      `<div style="background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25);width:min(100%,1300px);aspect-ratio:420/297">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
+    return;
+  }
   $('#fdList').innerHTML =
     SH.map(
       (s, i) =>
@@ -113295,6 +113370,1516 @@ function ceilBoardsMesh(e, mb, col, th) {
   }
 }
 
+// ===== elements/door-drawings.js =====
+/**
+ * elements/door-drawings.js
+ *
+ * Drawing set (A3) of a door, like the one of case furniture: general view with the plan section, the leaf with its
+ * filling and every milling on its edges, the frame parts, the extensions and casings, the milling details of the
+ * hinges, the lock, the handle, a concealed threshold, stop and closer, the seal calculation and the specification,
+ * and an exploded assembly scheme. Every number comes from the door model (doorModel) — nothing is drawn by hand.
+ *
+ * Coordinates of a door (as in doors.js): s — along the wall from the opening edge, d — across it (d = 0 the face of
+ * the swing side, into the wall negative), z — up from the clean floor.
+ */
+
+
+
+
+
+
+/* ---------- hardware and milling data ---------- */
+/** Concealed thresholds: none, an automatic drop seal milled into the leaf bottom, a profile threshold on the floor. */
+const THR_T = {
+  none: 'Без порога',
+  drop: 'Скрытый автоматический (в полотне)',
+  profile: 'Порог-профиль на полу'
+};
+/** Rabbet seals in the frame. */
+const SEAL_T = { none: 'Без уплотнителя', pvc: 'ПВХ в паз коробки', sil: 'Силиконовый в паз коробки' };
+/**
+ * Hinge mortises, mm: in the leaf edge and the frame. card — two cards mortised flush (card 100 × 30 × 2.5);
+ * butterfly — surface mounted, no mortise; barrel — two threaded pins in drilled holes; hidden — a 3D concealed hinge
+ * (body and plate in a two-step pocket).
+ */
+const HINGE_MILL = {
+  card: { n: 'Карточная петля', steps: [{ L: 100, W: 30, D: 2.5, nm: 'карта' }], screws: 4, sd: 4 },
+  butterfly: { n: 'Петля-бабочка', steps: [], screws: 4, sd: 3.5, note: 'накладная, без врезки' },
+  barrel: { n: 'Ввертная петля', holes: [{ d: 6, D: 55, dz: 26 }], note: 'два ввёртных штыря Ø6 в полотно и коробку' },
+  hidden: {
+    n: 'Скрытая петля 3D',
+    steps: [
+      { L: 180, W: 28, D: 1.5, nm: 'планка' },
+      { L: 160, W: 24, D: 28, nm: 'корпус' }
+    ],
+    screws: 6,
+    sd: 4
+  }
+};
+/** Lock mortises in the leaf edge, the strike in the frame, the backset of the handle axis, mm. */
+const LOCK_MILL = {
+  magnetic: {
+    n: 'Магнитная защёлка',
+    face: [24, 110, 3],
+    body: [18, 90, 75],
+    strike: [20, 75, 3],
+    pocket: [14, 52, 12],
+    bs: 50
+  },
+  latch: {
+    n: 'Механическая защёлка',
+    face: [24, 110, 3],
+    body: [18, 85, 60],
+    strike: [20, 75, 3],
+    pocket: [14, 30, 12],
+    bs: 50
+  },
+  wc: {
+    n: 'Сантехническая завёртка',
+    face: [24, 160, 3],
+    body: [18, 140, 75],
+    strike: [20, 110, 3],
+    pocket: [14, 60, 12],
+    bs: 50,
+    turn: 85
+  },
+  cyl: {
+    n: 'Замок с цилиндром',
+    face: [24, 235, 3],
+    body: [18, 170, 85],
+    strike: [20, 160, 3],
+    pocket: [14, 120, 14],
+    bs: 60,
+    cyl: 85
+  },
+  none: null
+};
+/** Backset of the handle axis from the free edge of the leaf, mm. */
+function doorBackset(c) {
+  if (c.mode === 'entry') return 62;
+  const L = LOCK_MILL[c.lock.type];
+  return L ? L.bs : 50;
+}
+/** Holes of a handle through the leaf. */
+const HANDLE_MILL = {
+  rosette: {
+    spindle: 20,
+    bolts: [
+      [0, 19],
+      [0, -19]
+    ],
+    bd: 8,
+    note: 'квадрат 8 мм, розетки на стяжных винтах'
+  },
+  knob: {
+    spindle: 20,
+    bolts: [
+      [0, 19],
+      [0, -19]
+    ],
+    bd: 8,
+    note: 'кноб на розетке'
+  },
+  plate: {
+    spindle: 20,
+    bolts: [
+      [0, 60],
+      [0, -150]
+    ],
+    bd: 8,
+    note: 'планка на стяжных винтах'
+  },
+  norose: {
+    spindle: 20,
+    recess: [52, 4],
+    bolts: [],
+    note: 'скрытая розетка: подложка в выборке Ø52 × 4 заподлицо с полотном'
+  },
+  pull: {
+    bolts: [
+      [0, 150],
+      [0, -150]
+    ],
+    bd: 8,
+    note: 'скоба на сквозных винтах, межосевое 300'
+  },
+  flush: { pocket: [34, 170, 12], note: 'выборка под утопленную ручку с каждой стороны' },
+  none: null
+};
+/** Concealed parts of the top and bottom edges. */
+const STOP_MILL = {
+  hidden: {
+    leaf: [20, 260, 22],
+    frame: [22, 190, 30],
+    n: 'Скрытый стопор (рельс в верхнем торце полотна, корпус в перекладине)'
+  }
+};
+const CLOSER_MILL = {
+  hidden: {
+    leaf: [26, 310, 70],
+    frame: [22, 400, 28],
+    n: 'Скрытый доводчик (корпус в верхнем торце, рельс в перекладине)'
+  }
+};
+const DROP_MILL = { W: 15, D: 30, end: 10 };
+
+/** Filling of the leaf by its kind: the layers through the thickness and the frame of bars inside. */
+function leafBuild(c) {
+  const th = +c.leaf.th || 40;
+  if (c.mode === 'entry') {
+    const en = c.entry || defEntry();
+    return {
+      bar: 40,
+      bars: 'гнутый профиль 40×20, рёбра жёсткости через 400 мм',
+      layers: [
+        ['Лист стали наружный', 2],
+        [en.insul === 'без утеплителя' ? 'Воздух' : 'Утеплитель — ' + en.insul, th - 2 - 1 - 10],
+        ['Лист стали внутренний', 1],
+        [en.inFin, 10]
+      ]
+    };
+  }
+  if (c.leaf.glass && c.leaf.glass !== 'none') {
+    return {
+      bar: c.leaf.glass === 'full' ? 75 : 130,
+      bars: 'клеёный брус хвойных пород, сращённый по длине',
+      layers: [
+        ['Облицовка МДФ', 4],
+        ['Каркас — брус', th - 8],
+        ['Облицовка МДФ', 4]
+      ],
+      glass: '4 мм ' + (GLASS_K[c.leaf.glassK || 'matte'] || '').toLowerCase() + ', в штапике'
+    };
+  }
+  if (c.mode === 'hidden' || c.leaf.paint)
+    return {
+      bar: 40,
+      bars: 'брус LVL 40 мм по периметру',
+      layers: [
+        ['МДФ 6 мм, грунт под покраску', 6],
+        ['ДСП трубчатая', th - 12],
+        ['МДФ 6 мм, грунт под покраску', 6]
+      ]
+    };
+  return {
+    bar: 33,
+    bars: 'брус хвойных пород 33 мм по периметру, бобышки под замок и петли',
+    layers: [
+      ['Облицовка МДФ', 4],
+      ['Сотовое наполнение', th - 8],
+      ['Облицовка МДФ', 4]
+    ]
+  };
+}
+
+/* ---------- the model of the drawings ---------- */
+/** Heights of the hinges above the floor (the same rule as the 3D builder). */
+function hingeZs(M) {
+  const c = M.c;
+  const n = Math.max(2, c.hinges.count | 0);
+  const zt = M.zt - c.hinges.top,
+    zb = M.zb + c.hinges.bottom;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(n === 3 && i === 1 ? zt - 500 : zt - ((zt - zb) * i) / (n - 1));
+  return out.sort((a, b) => b - a);
+}
+const r0 = v => Math.round(v);
+/** Width of a profile across its run (s) and its depth (d), mm. */
+function profWD(pts) {
+  const xs = pts.map(p => p[0]),
+    ys = pts.map(p => p[1]);
+  return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+}
+/**
+ * All numbers of the drawings: the parts with sizes and cuts, the millings with their places, the hardware and the
+ * seal. One model for every sheet and for the specification.
+ */
+function doorDrawModel(e) {
+  const M = doorModel(e);
+  if (!M) return null;
+  const c = M.c,
+    ls = leafSize(e);
+  const fr = M.fr;
+  const [frW, frD] = profWD(fr.pts);
+  const g = c.frame.gap || 0;
+  const join = c.frame.join || '90';
+  const H = M.H,
+    W = M.W;
+  const leafH = M.zt - M.zb;
+  const parts = [];
+  let no = 0;
+  const add = (o, qty = 1) => parts.push({ no: ++no, qty, ...o });
+  const build = leafBuild(c);
+  for (const l of M.leaves)
+    add({
+      key: 'leaf',
+      name: M.leaves.length > 1 ? (l.act ? 'Полотно активное' : 'Полотно пассивное') : 'Полотно',
+      L: r0(leafH),
+      B: r0(l.w),
+      T: c.leaf.th,
+      mat: build.layers.map(x => x[0]).join(' / '),
+      leaf: l
+    });
+  // the frame: two posts and a head; joined at 90° (the head between the posts) or mitred at 45°
+  const postL = H - g;
+  const headL = join === '45' ? W - 2 * g : W - 2 * g - 2 * frW;
+  const frName = fr.name;
+  add({
+    key: 'post-h',
+    name: 'Стойка коробки петлевая',
+    L: r0(postL),
+    B: r0(frD),
+    T: r0(frW),
+    mat: frName,
+    cut: join === '45' ? '45° вверху' : '90°'
+  });
+  add({
+    key: 'post-l',
+    name: 'Стойка коробки притворная',
+    L: r0(postL),
+    B: r0(frD),
+    T: r0(frW),
+    mat: frName,
+    cut: join === '45' ? '45° вверху' : '90°'
+  });
+  add({
+    key: 'head',
+    name: 'Перекладина коробки',
+    L: r0(headL),
+    B: r0(frD),
+    T: r0(frW),
+    mat: frName,
+    cut: join === '45' ? '45° с двух сторон' : '90°, между стойками'
+  });
+  if (M.ext) {
+    const [, extT] = profWD(M.ext.prof.pts);
+    const xw = Math.min(...M.ext.pts.map(p => p[0])),
+      xt = Math.max(...M.ext.pts.map(p => p[0])) - xw;
+    add(
+      {
+        key: 'ext-v',
+        name: 'Добор вертикальный',
+        L: r0(H),
+        B: r0(M.ext.width),
+        T: r0(xt || extT),
+        mat: M.ext.prof.name,
+        cut: '90°'
+      },
+      2
+    );
+    add({
+      key: 'ext-h',
+      name: 'Добор горизонтальный',
+      L: r0(W - 2 * (xt || 10)),
+      B: r0(M.ext.width),
+      T: r0(xt || 10),
+      mat: M.ext.prof.name,
+      cut: '90°, между вертикальными'
+    });
+  }
+  const casN = (c.casing.a ? 1 : 0) + (c.casing.b ? 1 : 0);
+  let cw = 0,
+    ct = 0;
+  if (casN) {
+    const cp = getProf(c.casing.prof, 'casing');
+    [cw, ct] = profWD(cp.pts);
+    const in0 = M.Cx; // the inner edge of the casing from the opening edge
+    const m45 = c.casing.join !== '90';
+    add(
+      {
+        key: 'cas-v',
+        name: 'Наличник вертикальный',
+        L: r0(m45 ? H - in0 + cw : H - in0),
+        B: r0(cw),
+        T: r0(ct),
+        mat: cp.name,
+        cut: m45 ? '45° вверху' : '90°'
+      },
+      2 * casN
+    );
+    add(
+      {
+        key: 'cas-h',
+        name: 'Наличник горизонтальный',
+        L: r0(W - 2 * in0 + 2 * cw),
+        B: r0(cw),
+        T: r0(ct),
+        mat: cp.name,
+        cut: m45 ? '45° с двух сторон' : '90°, на вертикальные'
+      },
+      casN
+    );
+  }
+  // millings: place along the part, size, depth
+  const mills = [];
+  const hz = hingeZs(M);
+  const HM = HINGE_MILL[c.hinges.type];
+  for (const l of M.leaves)
+    for (const z of hz)
+      mills.push({ part: 'leaf', leaf: l, edge: 'hinge', z: z - M.zb, kind: 'hinge', d: HM, name: HM.n });
+  for (const z of hz) mills.push({ part: 'post-h', z: z, kind: 'hinge', d: HM, name: HM.n });
+  const act = M.leaves.find(l => l.act) || M.leaves[0];
+  const LM = LOCK_MILL[c.lock.type];
+  const hzAbs = c.handle.h;
+  const bs = doorBackset(c);
+  if (LM) {
+    mills.push({ part: 'leaf', leaf: act, edge: 'lock', z: hzAbs - M.zb, kind: 'lock', d: LM, name: LM.n });
+    mills.push({
+      part: M.leaves.length > 1 ? 'leaf2' : 'post-l',
+      z: hzAbs,
+      kind: 'strike',
+      d: LM,
+      name: 'Ответная планка'
+    });
+  }
+  const HDM = HANDLE_MILL[c.handle.type];
+  if (HDM)
+    mills.push({
+      part: 'leaf',
+      leaf: act,
+      edge: 'face',
+      z: hzAbs - M.zb,
+      x: bs,
+      kind: 'handle',
+      d: HDM,
+      name: 'Ручка: ' + HANDLE_T[c.handle.type]
+    });
+  if (LM && (LM.cyl || LM.turn))
+    mills.push({
+      part: 'leaf',
+      leaf: act,
+      edge: 'face',
+      z: hzAbs - M.zb - (LM.cyl || LM.turn),
+      x: bs,
+      kind: LM.cyl ? 'cyl' : 'turn',
+      d: LM,
+      name: LM.cyl ? 'Цилиндр (профиль 17×33)' : 'Завёртка (Ø20)'
+    });
+  const thr = (c.thr && c.thr.type) || 'none';
+  if (thr === 'drop')
+    for (const l of M.leaves)
+      mills.push({
+        part: 'leaf',
+        leaf: l,
+        edge: 'bottom',
+        kind: 'drop',
+        L: r0(l.w - 2 * DROP_MILL.end),
+        d: DROP_MILL,
+        name: 'Паз под автоматический порог'
+      });
+  if (c.stop.type === 'hidden') {
+    mills.push({
+      part: 'leaf',
+      leaf: act,
+      edge: 'top',
+      kind: 'stop',
+      d: STOP_MILL.hidden,
+      name: 'Скрытый стопор: рельс'
+    });
+    mills.push({ part: 'head', kind: 'stop', d: STOP_MILL.hidden, name: 'Скрытый стопор: корпус' });
+  }
+  if (c.closer && c.closer.type === 'hidden') {
+    mills.push({
+      part: 'leaf',
+      leaf: act,
+      edge: 'top',
+      kind: 'closer',
+      d: CLOSER_MILL.hidden,
+      name: 'Скрытый доводчик: корпус'
+    });
+    mills.push({ part: 'head', kind: 'closer', d: CLOSER_MILL.hidden, name: 'Скрытый доводчик: рельс' });
+  }
+  // the seal: the rabbet of the frame round every leaf (two posts and the head), a centre post between two leaves
+  const seal = sealCalc(e, M);
+  // hardware
+  const hw = [];
+  const hwa = (name, q, u = 'шт') => q && hw.push({ name, q, u });
+  hwa(`Петля: ${HINGE_T[c.hinges.type].toLowerCase()}`, c.hinges.count * M.leaves.length);
+  if (c.handle.type !== 'none')
+    hwa(
+      `Ручка ${HANDLE_T[c.handle.type].toLowerCase()}${!['flush', 'pull'].includes(c.handle.type) ? ', серия «' + (HANDLE_SER[c.handle.series || 'round'] || '') + '»' : ''} (комплект на две стороны)`,
+      1
+    );
+  if (LM) hwa(LM.n + ` (бэксет ${bs} мм) с ответной планкой`, 1);
+  if (LM && LM.cyl) hwa('Цилиндр ключ/ключ или ключ/вертушка', 1);
+  if (LM && LM.turn) hwa('Завёртка сантехническая с индикатором', 1);
+  if (c.stop.type !== 'none')
+    hwa(c.stop.type === 'hidden' ? STOP_MILL.hidden.n : `Стопор ${STOP_T[c.stop.type].toLowerCase()}`, 1);
+  if (c.closer && c.closer.type !== 'none') hwa(CLOSER_T[c.closer.type], 1);
+  if (thr === 'drop') hwa(`Порог автоматический выпадающий ${r0(act.w - 2 * DROP_MILL.end)} мм`, M.leaves.length);
+  if (thr === 'profile') hwa(`Порог-профиль алюминиевый ${r0(W)} мм`, 1);
+  if (seal.len) hwa(seal.name, Math.round(seal.buy * 10) / 10, 'м');
+  if (c.mode === 'entry') {
+    const en = c.entry || defEntry();
+    if (en.locks > 1) hwa('Замок дополнительный сувальдный', 1);
+    if (en.peep) hwa('Глазок 200°', 1);
+  }
+  return {
+    e,
+    M,
+    c,
+    id: e.id,
+    ls,
+    parts,
+    mills,
+    hw,
+    seal,
+    hz,
+    bs,
+    build,
+    frW,
+    frD,
+    cw,
+    ct,
+    join,
+    thr,
+    title: `Дверь ${c.mode === 'hidden' ? 'скрытая' : c.mode === 'entry' ? 'входная' : 'распашная'} ${r0(ls.w)}×${r0(ls.h)}${M.leaves.length > 1 ? ', 2 створки' : ''}`,
+    mat: `${(DCOL.find(x => x[0] === c.leaf.color) || [0, c.leaf.paint ? 'под покраску' : 'свой цвет'])[1]} · ${fr.name}`
+  };
+}
+/** Rabbet seal of the door: contours, length with a reserve. */
+function sealCalc(e, M) {
+  M = M || (e && doorModel(e));
+  if (!M) return { len: 0, buy: 0 };
+  const c = M.c;
+  const leafH = M.zt - M.zb;
+  const st = (c.seal && c.seal.type) || (c.mode === 'hidden' || c.mode === 'entry' ? 'sil' : 'pvc');
+  if (st === 'none') return { len: 0, buy: 0, type: 'none' };
+  const contours = c.mode === 'entry' ? (c.entry || defEntry()).seal || 2 : 1;
+  const span = M.leaves.reduce((a, l) => a + l.w, 0);
+  // two posts, the head; with two leaves the meeting edge of the passive leaf as well
+  const one = 2 * leafH + span + (M.leaves.length > 1 ? leafH : 0);
+  const len = (one * contours) / 1000;
+  const thr = (c.thr && c.thr.type) || 'none';
+  return {
+    type: st,
+    contours,
+    one: one / 1000,
+    len,
+    buy: Math.ceil(len * 1.05 * 10) / 10,
+    bottom:
+      thr === 'drop'
+        ? 'низ — автоматический порог'
+        : thr === 'profile'
+          ? 'низ — порог с уплотнителем'
+          : 'низ — без уплотнения (зазор ' + (c.leaf.gapFloor || 0) + ' мм)',
+    name: `Уплотнитель ${SEAL_T[st] ? SEAL_T[st].toLowerCase() : ''}${contours > 1 ? `, ${contours} контура` : ''}`
+  };
+}
+
+/* ---------- drawing helpers ---------- */
+/** A rectangle that may be given with a negative width or height (drawn towards the hinge edge). */
+function ddR(x, y, w, h, ...a) {
+  return svgR(w < 0 ? x + w : x, h < 0 ? y + h : y, Math.abs(w), Math.abs(h), ...a);
+}
+const fmt0 = v => String(Math.round(v));
+function poly(pts, sw = 0.35, fill = 'none', col = '#000', dash = '') {
+  return `<polygon points="${pts.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ')}" fill="${fill}" stroke="${col}" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+}
+const HATCH = `<defs><pattern id="ddH" width="2.2" height="2.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="2.2" stroke="#000" stroke-width="0.18"/></pattern><pattern id="ddW" width="1.2" height="1.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.2" stroke="#777" stroke-width="0.12"/></pattern></defs>`;
+function circ(x, y, r, sw = 0.25, fill = 'none') {
+  return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${fill}" stroke="#000" stroke-width="${sw}"/>`;
+}
+function note(x, y, lines, sz = 2.8, lh = 4.2) {
+  return lines.map((t, i) => svgT(x, y + i * lh, t, sz)).join('');
+}
+/** Leader with a numbered circle. */
+function pos(x, y, tx, ty, n) {
+  return svgL(x, y, tx, ty, 0.18) + circ(tx, ty, 3.2, 0.25, '#fff') + svgT(tx, ty + 1.2, n, 3.2, 'middle');
+}
+
+/* ---------- sheet 1: general view ---------- */
+function ddGeneral(D) {
+  const { M, c } = D;
+  const W = M.W,
+    H = M.H,
+    cw = D.cw;
+  let s = HATCH;
+  // elevation from the swing side
+  const k = niceK(Math.min(180 / (W + 2 * cw + 500), 205 / (H + cw + 250)));
+  const ox = 32 + (cw + 250) * k,
+    oy = 220;
+  const X = x => ox + x * k,
+    Y = z => oy - z * k;
+  s += svgT(32, 14, `Вид со стороны открывания  М ${fdScale(k)}`, 3.4, 'start', 'font-weight="600"');
+  // wall around the opening
+  const wx = 250;
+  s += ddR(X(-wx - cw), Y(H + cw + 150), (W + 2 * wx + 2 * cw) * k, (H + cw + 150) * k, 0.25, 'url(#ddW)', '#777');
+  if (c.casing.a && cw) {
+    const m45 = c.casing.join !== '90';
+    s += ddR(X(M.Cx - cw), Y(H - M.Cx + cw), (W - 2 * M.Cx + 2 * cw) * k, (H - M.Cx + cw) * k, 0.45, '#fff');
+    if (m45) {
+      s += svgL(X(M.Cx - cw), Y(H - M.Cx + cw), X(M.Cx), Y(H - M.Cx), 0.25);
+      s += svgL(X(W - M.Cx + cw), Y(H - M.Cx + cw), X(W - M.Cx), Y(H - M.Cx), 0.25);
+    } else {
+      s += svgL(X(M.Cx - cw), Y(H - M.Cx), X(M.Cx), Y(H - M.Cx), 0.25);
+      s += svgL(X(W - M.Cx + cw), Y(H - M.Cx), X(W - M.Cx), Y(H - M.Cx), 0.25);
+    }
+  } else s += ddR(X(0), Y(H), W * k, H * k, 0.45, '#fff');
+  // the opening (hidden behind the casing) and the frame
+  s += ddR(X(0), Y(H), W * k, H * k, 0.2, 'none', '#000', 'stroke-dasharray="1.5 1"');
+  s += ddR(X(M.Cx), Y(H - M.Cx), (W - 2 * M.Cx) * k, (H - M.Cx) * k, 0.3);
+  // leaves
+  for (const l of M.leaves) {
+    s += ddR(X(l.sa), Y(M.zt), l.w * k, (M.zt - M.zb) * k, 0.5, '#f6f3ec');
+    // opening triangle: the apex on the hinge side
+    const fx = l.dir > 0 ? l.sb : l.sa;
+    s += svgL(X(fx), Y(M.zt), X(l.hs), Y((M.zt + M.zb) / 2), 0.18, '#000', '3 1.5');
+    s += svgL(X(fx), Y(M.zb), X(l.hs), Y((M.zt + M.zb) / 2), 0.18, '#000', '3 1.5');
+    for (const z of D.hz) s += ddR(X(l.hs) - (l.dir > 0 ? 0 : 1.6), Y(z + 50), 1.6, 100 * k, 0.25, '#888');
+    if (l.act && c.handle.type !== 'none') {
+      const hx = (l.dir > 0 ? l.sb : l.sa) - l.dir * D.bs;
+      s += circ(X(hx), Y(c.handle.h), 1.5, 0.3, '#fff');
+      s += svgL(X(hx), Y(c.handle.h), X(hx - l.dir * 120), Y(c.handle.h), 0.6);
+    }
+  }
+  // dimensions
+  const l0 = M.leaves[0];
+  s += dimS(X(0), Y(0), X(W), Y(0), 9, W);
+  s += dimS(X(M.leaves[0].sa), Y(M.zb), X(M.leaves[M.leaves.length - 1].sb), Y(M.zb), 16, M.span);
+  if (c.casing.a && cw)
+    s += dimS(X(M.Cx - cw), Y(H - M.Cx + cw), X(W - M.Cx + cw), Y(H - M.Cx + cw), -6, W - 2 * M.Cx + 2 * cw);
+  s += dimS(X(W + cw + 40), Y(0), X(W + cw + 40), Y(H), 7, H);
+  s += dimS(X(-cw - 40), Y(M.zb), X(-cw - 40), Y(M.zt), -7, M.zt - M.zb);
+  if (c.handle.type !== 'none') s += dimS(X(W + cw + 40), Y(0), X(W + cw + 40), Y(c.handle.h), 15, c.handle.h);
+  const hs = l0.hs;
+  s += dimS(X(hs), Y(M.zt), X(hs), Y(D.hz[0]), l0.dir > 0 ? 6 : -6, M.zt - D.hz[0], 2.6);
+  s += dimS(X(hs), Y(D.hz[D.hz.length - 1]), X(hs), Y(M.zb), l0.dir > 0 ? 6 : -6, D.hz[D.hz.length - 1] - M.zb, 2.6);
+  // plan section
+  const T = M.T;
+  const R0 = Math.max(...M.leaves.map(l => l.w));
+  const k2 = niceK(Math.min(150 / (W + 2 * cw + 400), 100 / (T + R0 + 60)));
+  const px = 240 + (cw + 180) * k2,
+    py = 24 + (R0 + 30) * k2;
+  const PX = x => px + x * k2,
+    PY = d => py - d * k2;
+  s += svgT(240, 14, `Разрез горизонтальный  М ${fdScale(k2)}`, 3.4, 'start', 'font-weight="600"');
+  s += poly(
+    [
+      [PX(-180 - cw), PY(0)],
+      [PX(0), PY(0)],
+      [PX(0), PY(-T)],
+      [PX(-180 - cw), PY(-T)]
+    ],
+    0.45,
+    'url(#ddH)'
+  );
+  s += poly(
+    [
+      [PX(W), PY(0)],
+      [PX(W + 180 + cw), PY(0)],
+      [PX(W + 180 + cw), PY(-T)],
+      [PX(W), PY(-T)]
+    ],
+    0.45,
+    'url(#ddH)'
+  );
+  const side = (pts, fill) => {
+    const dm = p => M.Dm(p[1]);
+    return (
+      poly(
+        pts.map(p => [PX(p[0]), PY(dm(p))]),
+        0.3,
+        fill
+      ) +
+      poly(
+        pts.map(p => [PX(W - p[0]), PY(dm(p))]),
+        0.3,
+        fill
+      )
+    );
+  };
+  s += side(M.frPts, '#e8e1d2');
+  if (M.ext) s += side(M.ext.pts, '#f2ede2');
+  if (M.casA) s += side(M.casA.pts, '#fff');
+  if (M.casB) s += side(M.casB.pts, '#fff');
+  for (const l of M.leaves) {
+    s += ddR(PX(l.sa), PY(l.dhi), l.w * k2, (l.dhi - l.dlo) * k2, 0.4, '#f6f3ec');
+    // open at 90°: the leaf and its arc
+    const R = l.w;
+    const ex = l.hs,
+      ey = l.dhi;
+    s += ddR(
+      PX(ex) - (l.dir > 0 ? 0 : (l.dhi - l.dlo) * k2),
+      PY(ey + R),
+      (l.dhi - l.dlo) * k2,
+      R * k2,
+      0.25,
+      'none',
+      '#000',
+      'stroke-dasharray="2 1"'
+    );
+    const fx = l.dir > 0 ? l.sb : l.sa;
+    s += `<path d="M${PX(fx).toFixed(2)},${PY(ey).toFixed(2)} A${(R * k2).toFixed(2)},${(R * k2).toFixed(2)} 0 0 ${l.dir > 0 ? 0 : 1} ${PX(ex).toFixed(2)},${PY(ey + R).toFixed(2)}" fill="none" stroke="#000" stroke-width="0.2" stroke-dasharray="2 1"/>`;
+  }
+  s += dimS(PX(0), PY(-T), PX(W), PY(-T), -8, W);
+  s += dimS(PX(-60), PY(0), PX(-60), PY(-T), 8, T, 2.6);
+  if (M.ext) s += svgT(PX(W + 40), PY(-T) + 9, `добор ${fmt0(M.ext.width)} мм`, 2.6);
+  // characteristics
+  const L = [];
+  L.push(
+    `Тип: ${c.mode === 'hidden' ? 'скрытая, короб заподлицо со стеной' : c.mode === 'entry' ? 'входная металлическая' : 'распашная'}`
+  );
+  L.push(`Проём в стене ${fmt0(W)} × ${fmt0(H)}, стена ${fmt0(T)} мм`);
+  L.push(
+    `Полотно ${fmt0(D.ls.w)} × ${fmt0(D.ls.h)} × ${c.leaf.th} мм, ${M.leaves.length > 1 ? '2 створки' : '1 створка'}`
+  );
+  L.push(
+    `Исполнение: ${GLASS_T[c.leaf.glass] || ''}${c.leaf.glass === 'none' ? ', ' + (LEAF_ST[c.leaf.style || 'flat'] || '').toLowerCase() : ''}`
+  );
+  L.push(`Коробка: ${M.fr.name}, монтажный зазор ${c.frame.gap || 0} мм`);
+  L.push(
+    `Наличники: ${c.casing.a || c.casing.b ? [c.casing.a ? 'А' : '', c.casing.b ? 'Б' : ''].filter(Boolean).join(' + ') + ', стык ' + (c.casing.join === '90' ? '90°' : '45°') : 'нет'}`
+  );
+  L.push(`Петли: ${HINGE_T[c.hinges.type]} × ${c.hinges.count * M.leaves.length}`);
+  L.push(`Ручка: ${HANDLE_T[c.handle.type]}, ось на ${c.handle.h} мм от пола, ${D.bs} мм от кромки`);
+  L.push(`Замок: ${LOCK_T[c.lock.type]}`);
+  L.push(`Стопор: ${STOP_T[c.stop.type] || '—'} · порог: ${THR_T[D.thr] || '—'}`);
+  L.push(
+    `Уплотнитель: ${D.seal.len ? D.seal.buy.toFixed(1).replace('.', ',') + ' м' : 'нет'} · зазор под полотном ${c.leaf.gapFloor} мм`
+  );
+  s += svgT(240, 140, 'Характеристики', 3.2, 'start', 'font-weight="600"') + note(240, 146, L, 2.7, 4.3);
+  return { body: s, scale: fdScale(k) };
+}
+
+/* ---------- sheet 2: the leaf, its filling and millings ---------- */
+function ddLeaf(D, li) {
+  const { M, c } = D;
+  const l = M.leaves[li || 0];
+  const h = M.zt - M.zb,
+    w = l.w,
+    th = c.leaf.th;
+  let s = HATCH;
+  const k = niceK(Math.min(110 / w, 212 / h));
+  const ox = 34,
+    oy = 228;
+  const X = x => ox + x * k,
+    Y = z => oy - z * k;
+  const B = D.build;
+  s += svgT(
+    32,
+    14,
+    `${D.parts.find(p => p.leaf === l).name}: вид спереди  М ${fdScale(k)}`,
+    3.4,
+    'start',
+    'font-weight="600"'
+  );
+  s += ddR(X(0), Y(h), w * k, h * k, 0.5, '#f6f3ec');
+  // the frame of bars inside (hidden lines)
+  const b = B.bar;
+  s += ddR(X(b), Y(h - b), (w - 2 * b) * k, (h - 2 * b) * k, 0.18, 'none', '#000', 'stroke-dasharray="2 1"');
+  if (B.glass) {
+    const full = c.leaf.glass === 'full';
+    const st = full ? 75 : 130,
+      rt = full ? 75 : 130,
+      rb = full ? 140 : 220;
+    s += ddR(X(st), Y(h - rt), (w - 2 * st) * k, (h - rt - rb) * k, 0.35, '#e3edf1');
+    s += dimS(X(st), Y(h - rt), X(w - st), Y(h - rt), 4, w - 2 * st, 2.4);
+    s += dimS(X(w - st), Y(rb), X(w - st), Y(h - rt), -4, h - rt - rb, 2.4);
+  } else if (c.leaf.style === 'panel') {
+    const n = Math.max(1, Math.min(5, c.leaf.panels | 0 || 2)),
+      S_ = Math.min(110, w * 0.16),
+      TR = 110,
+      BR = 170,
+      MR = 100;
+    const ph = (h - TR - BR - (n - 1) * MR) / n;
+    let zt = h - TR;
+    for (let i = 0; i < n; i++) {
+      s += ddR(X(S_), Y(zt), (w - 2 * S_) * k, ph * k, 0.3);
+      s += ddR(X(S_ + 32), Y(zt - 32), (w - 2 * S_ - 64) * k, (ph - 64) * k, 0.2);
+      zt -= ph + MR;
+    }
+  } else if (c.leaf.style === 'lines') {
+    const n = Math.max(1, Math.min(12, c.leaf.lines | 0 || 4));
+    for (let i = 1; i <= n; i++) s += svgL(X(0), Y((h * i) / (n + 1)), X(w), Y((h * i) / (n + 1)), 0.3);
+  } else if (c.leaf.style === 'ribs') {
+    for (let x = 44; x < w - 44; x += 30) s += svgL(X(x), Y(44), X(x), Y(h - 44), 0.15);
+  }
+  // millings seen from the face: hinges at the hinge edge, the lock at the free edge, handle holes
+  const hingeX = l.dir > 0 ? 0 : w,
+    freeX = l.dir > 0 ? w : 0,
+    inw = l.dir > 0 ? 1 : -1;
+  const my = D.mills.filter(m => m.part === 'leaf' && m.leaf === l);
+  for (const m of my) {
+    if (m.kind === 'hinge') {
+      const L_ = (m.d.steps && m.d.steps.length ? m.d.steps[m.d.steps.length - 1].L : 100) * k;
+      s += ddR(X(hingeX) - (inw > 0 ? 0 : 1.4), Y(m.z) - L_ / 2, 1.4, L_, 0.25, '#bbb');
+    } else if (m.kind === 'lock') {
+      s += ddR(X(freeX) - (inw > 0 ? 1.4 : 0), Y(m.z) - (m.d.face[1] * k) / 2, 1.4, m.d.face[1] * k, 0.25, '#bbb');
+      s += ddR(
+        X(freeX - inw * m.d.body[2]) - (inw > 0 ? 0 : 0),
+        Y(m.z) - (m.d.body[1] * k) / 2,
+        m.d.body[2] * k * inw,
+        m.d.body[1] * k,
+        0.18,
+        'none',
+        '#000',
+        'stroke-dasharray="1.2 0.8"'
+      );
+    } else if (m.kind === 'handle' && m.d.spindle) s += circ(X(freeX - inw * m.x), Y(m.z), (m.d.spindle / 2) * k + 0.3);
+    else if (m.kind === 'cyl') s += ddR(X(freeX - inw * m.x) - 8.5 * k, Y(m.z) - 16.5 * k, 17 * k, 33 * k, 0.25);
+    else if (m.kind === 'turn') s += circ(X(freeX - inw * m.x), Y(m.z), 10 * k + 0.2);
+    else if (m.kind === 'drop')
+      s += ddR(
+        X(DROP_MILL.end),
+        Y(DROP_MILL.D),
+        (w - 2 * DROP_MILL.end) * k,
+        DROP_MILL.D * k,
+        0.2,
+        'none',
+        '#000',
+        'stroke-dasharray="1.2 0.8"'
+      );
+    else if (m.kind === 'stop' || m.kind === 'closer')
+      s += ddR(
+        X(hingeX + inw * 80) - (inw > 0 ? 0 : m.d.leaf[1] * k),
+        Y(h),
+        m.d.leaf[1] * k,
+        m.d.leaf[2] * k,
+        0.2,
+        'none',
+        '#000',
+        'stroke-dasharray="1.2 0.8"'
+      );
+  }
+  s += dimS(X(0), Y(0), X(w), Y(0), 8, w);
+  s += dimS(X(freeX), Y(0), X(freeX), Y(h), inw > 0 ? 8 : -8, h);
+  // hinge heights from the top of the leaf, the handle from the bottom
+  const hs = my.filter(m => m.kind === 'hinge').map(m => m.z);
+  let prevZ = h;
+  hs.forEach((z, i) => {
+    s += dimS(X(hingeX), Y(prevZ), X(hingeX), Y(z), inw > 0 ? 9 + i * 0 : -9, prevZ - z, 2.4);
+    prevZ = z;
+  });
+  s += dimS(X(hingeX), Y(prevZ), X(hingeX), Y(0), inw > 0 ? 9 : -9, prevZ, 2.4);
+  const lk = my.find(m => m.kind === 'handle' || m.kind === 'lock');
+  if (lk) s += dimS(X(freeX), Y(0), X(freeX), Y(lk.z), inw > 0 ? 16 : -16, lk.z, 2.4);
+  // edge views: hinge edge and lock edge (thickness × height), same scale
+  const ex0 = ox + w * k + 30;
+  const edge = (x0, title, list) => {
+    let t = svgT(x0 - 2, Y(h) - 3, title, 2.6);
+    t += ddR(x0, Y(h), th * k, h * k, 0.45, '#f6f3ec');
+    for (const m of list) {
+      if (m.kind === 'hinge') {
+        for (const st of m.d.steps || [])
+          t += ddR(x0 + ((th - st.W) / 2) * k, Y(m.z + st.L / 2), st.W * k, st.L * k, 0.25, st.D > 5 ? '#999' : '#ccc');
+        if (m.d.holes) for (const ho of m.d.holes) t += circ(x0 + (th / 2) * k, Y(m.z + ho.dz), (ho.d / 2) * k + 0.25);
+        if (!m.d.steps || !m.d.steps.length) t += svgL(x0, Y(m.z), x0 + th * k, Y(m.z), 0.25, '#000', '1 0.6');
+      }
+      if (m.kind === 'lock') {
+        t += ddR(
+          x0 + ((th - m.d.face[0]) / 2) * k,
+          Y(m.z + m.d.face[1] / 2),
+          m.d.face[0] * k,
+          m.d.face[1] * k,
+          0.25,
+          '#ccc'
+        );
+        t += ddR(
+          x0 + ((th - m.d.body[0]) / 2) * k,
+          Y(m.z + m.d.body[1] / 2),
+          m.d.body[0] * k,
+          m.d.body[1] * k,
+          0.25,
+          '#999'
+        );
+      }
+    }
+    return t;
+  };
+  s += edge(
+    ex0,
+    'Торец петель',
+    my.filter(m => m.kind === 'hinge')
+  );
+  s += edge(
+    ex0 + 34,
+    'Торец замка',
+    my.filter(m => m.kind === 'lock')
+  );
+  s += dimS(ex0, Y(h), ex0 + th * k, Y(h), 5, th, 2.4);
+  // section through the thickness: the filling, at a large scale
+  const k3 = niceK(Math.min(60 / th, 1));
+  const sx0 = 272,
+    sy0 = 40;
+  s += svgT(sx0 - 10, 22, `Разрез по толщине  М ${fdScale(k3)}`, 3.2, 'start', 'font-weight="600"');
+  const sw = Math.min(w / 2, 55 / k3);
+  let yy = sy0;
+  for (const [name, t] of B.layers) {
+    const fill = /брус|Каркас|LVL|профиль/i.test(name)
+      ? 'url(#ddH)'
+      : /сот|наполн|ДСП|Утепл|Воздух/i.test(name)
+        ? '#efe7d4'
+        : '#fff';
+    s += ddR(sx0, yy, sw * k3, t * k3, 0.3, fill);
+    s +=
+      svgL(sx0 + sw * k3, yy + (t * k3) / 2, sx0 + sw * k3 + 6, yy + (t * k3) / 2, 0.15) +
+      svgT(sx0 + sw * k3 + 7, yy + (t * k3) / 2 + 1, `${name} — ${fmt0(t)} мм`, 2.5);
+    yy += t * k3;
+  }
+  // the edge bar in the section
+  s += ddR(
+    sx0,
+    sy0 + B.layers[0][1] * k3,
+    b * k3,
+    (th - B.layers[0][1] - B.layers[B.layers.length - 1][1]) * k3,
+    0.35,
+    'url(#ddH)'
+  );
+  s += dimS(sx0 - 2, sy0, sx0 - 2, sy0 + th * k3, 6, th, 2.4);
+  s += dimS(sx0, sy0 + th * k3 + 2, sx0 + b * k3, sy0 + th * k3 + 2, -5, b, 2.4);
+  const notes = [`Каркас: ${B.bars}`];
+  if (B.glass) notes.push(`Стекло ${B.glass}`);
+  notes.push(`Под петли и замок — бобышки из бруса в зоне врезки`);
+  if (D.thr === 'drop')
+    notes.push(
+      `Низ: паз ${DROP_MILL.W}×${DROP_MILL.D} под автоматический порог по всей длине − ${DROP_MILL.end} мм с краёв`
+    );
+  s += note(sx0 - 10, yy + 20, notes, 2.5, 4);
+  // list of millings of this leaf
+  let ly = yy + 24 + notes.length * 4;
+  s += svgT(sx0 - 10, ly, 'Фрезеровки полотна', 3, 'start', 'font-weight="600"');
+  ly += 5;
+  for (const m of my) {
+    s += svgT(sx0 - 10, ly, `• ${m.name}: ${millText(m)}`, 2.4);
+    ly += 3.8;
+    if (ly > 228) break;
+  }
+  return { body: s, scale: fdScale(k) };
+}
+/** Short text of a milling: size and place. */
+function millText(m) {
+  const d = m.d;
+  const at = m.z != null ? ` на ${fmt0(m.z)} мм от низа` : '';
+  if (m.kind === 'hinge') {
+    if (d.holes) return d.holes.map(h => `2 отв. Ø${h.d}×${h.D}`).join(', ') + at;
+    if (!d.steps || !d.steps.length) return 'без врезки' + at;
+    return d.steps.map(st => `${st.nm} ${st.L}×${st.W}×${st.D}`).join(' + ') + at;
+  }
+  if (m.kind === 'lock')
+    return `планка ${d.face.join('×')}, корпус ${d.body[0]}×${d.body[1]} глубиной ${d.body[2]}` + at;
+  if (m.kind === 'strike')
+    return (
+      `планка ${d.strike.join('×')}, карман ${d.pocket.join('×')}` + (m.z != null ? ` на ${fmt0(m.z)} мм от пола` : '')
+    );
+  if (m.kind === 'handle')
+    return (
+      (d.spindle
+        ? `отв. Ø${d.spindle} насквозь в ${m.x} мм от кромки`
+        : d.pocket
+          ? `выборка ${d.pocket.join('×')} с двух сторон`
+          : `${d.bolts.length} отв. Ø${d.bd}`) +
+      (d.recess ? `, выборка Ø${d.recess[0]}×${d.recess[1]}` : '') +
+      at
+    );
+  if (m.kind === 'cyl') return `профиль 17×33 насквозь` + at;
+  if (m.kind === 'turn') return `отв. Ø20 насквозь` + at;
+  if (m.kind === 'drop') return `паз ${d.W}×${d.D}, длина ${m.L} мм`;
+  if (m.kind === 'stop' || m.kind === 'closer')
+    return m.part === 'head' ? `карман ${d.frame.join('×')}` : `паз ${d.leaf.join('×')}`;
+  return '';
+}
+
+/* ---------- sheet 3: frame parts ---------- */
+function ddFrame(D) {
+  const { M, c } = D;
+  let s = HATCH;
+  const k = niceK(Math.min(330 / (D.parts.find(p => p.key === 'post-h').L + 50), 1));
+  const ox = 40;
+  s += svgT(32, 14, `Коробка: детали, вид на четверть  М ${fdScale(k)}`, 3.4, 'start', 'font-weight="600"');
+  const bar = (p, y, list) => {
+    let t = svgT(ox, y - 3, `Поз. ${p.no}. ${p.name} — ${p.qty} шт, рез ${p.cut}`, 2.8, 'start', 'font-weight="600"');
+    const Lk = p.L * k,
+      Bk = Math.max(6, p.B * k);
+    t += ddR(ox, y, Lk, Bk, 0.4, '#f1ebdd');
+    // the rabbet seal groove along the part
+    if (D.seal.len) t += svgL(ox, y + Bk * 0.42, ox + Lk, y + Bk * 0.42, 0.18, '#000', '2 1');
+    for (const m of list) {
+      const z = m.z != null ? m.z : p.L / 2;
+      const ln =
+        m.kind === 'hinge'
+          ? m.d.steps && m.d.steps.length
+            ? m.d.steps[0].L
+            : 60
+          : m.kind === 'strike'
+            ? m.d.strike[1]
+            : m.d.frame
+              ? m.d.frame[1]
+              : 60;
+      t += ddR(ox + (z - ln / 2) * k, y + Bk * 0.15, ln * k, Bk * 0.7, 0.25, '#bbb');
+      t += svgT(ox + z * k, y + Bk + 3.6, `${fmt0(z)}`, 2.2, 'middle');
+    }
+    t += dimS(ox, y + Bk, ox + Lk, y + Bk, 9, p.L, 2.6);
+    return t;
+  };
+  const ph = D.parts.find(p => p.key === 'post-h'),
+    pl = D.parts.find(p => p.key === 'post-l'),
+    hd = D.parts.find(p => p.key === 'head');
+  s += bar(
+    ph,
+    30,
+    D.mills.filter(m => m.part === 'post-h')
+  );
+  s += bar(
+    pl,
+    64,
+    D.mills.filter(m => m.part === 'post-l')
+  );
+  s += bar(
+    hd,
+    98,
+    D.mills
+      .filter(m => m.part === 'head')
+      .map(m => ({ ...m, z: hd.L / 2 + (D.M.leaves[0].dir > 0 ? -1 : 1) * (hd.L / 2 - 200) }))
+  );
+  s += note(
+    ox,
+    128,
+    [
+      'Размеры фрезеровок по стойкам — от низа стойки (от чистого пола), по перекладине — от её края.',
+      'Пунктир — паз под уплотнитель.'
+    ],
+    2.5
+  );
+  // the profile section, large
+  const k2 = niceK(Math.min(60 / D.frD, 90 / D.frW, 2));
+  const sx = 60,
+    sy = 150;
+  s += svgT(sx - 20, sy - 6, `Сечение коробки  М ${fdScale(k2)}`, 3.2, 'start', 'font-weight="600"');
+  const pts = M.fr.pts.map(p => [sx + p[0] * k2, sy - p[1] * k2]);
+  s += poly(pts, 0.45, 'url(#ddH)');
+  s += dimS(sx, sy - 0 * k2 - 3, sx + D.frW * k2, sy - 3, 5, D.frW, 2.6);
+  s += dimS(sx + D.frW * k2 + 3, sy, sx + D.frW * k2 + 3, sy + D.frD * k2, -5, D.frD, 2.6);
+  s += note(
+    sx + D.frW * k2 + 22,
+    sy + 4,
+    [
+      M.fr.name,
+      `монтажный зазор ${c.frame.gap || 0} мм на пену`,
+      `соединение ${D.join === '45' ? 'под 45°' : 'под 90° (перекладина между стойками)'}`,
+      D.seal.len ? `уплотнитель: ${SEAL_T[D.seal.type] || ''}` : 'без уплотнителя'
+    ],
+    2.6
+  );
+  return { body: s, scale: fdScale(k) };
+}
+
+/* ---------- sheet 4: extensions and casings ---------- */
+function ddTrim(D) {
+  const { M, c } = D;
+  let s = HATCH;
+  s += svgT(32, 14, 'Доборы и наличники', 3.4, 'start', 'font-weight="600"');
+  let x = 50;
+  const sec = (title, pts) => {
+    const [pw, pd] = profWD(pts);
+    const k = niceK(Math.min(70 / Math.max(pd, 1), 70 / Math.max(pw, 1), 2));
+    const x0 = Math.min(...pts.map(p => p[0])),
+      y0 = Math.max(...pts.map(p => p[1]));
+    let t = svgT(x - 10, 26, `${title}  М ${fdScale(k)}`, 3, 'start', 'font-weight="600"');
+    t += poly(
+      pts.map(p => [x + (p[0] - x0) * k, 40 + (y0 - p[1]) * k]),
+      0.45,
+      'url(#ddH)'
+    );
+    t += dimS(x, 37, x + pw * k, 37, 4, pw, 2.4);
+    t += dimS(x + pw * k + 3, 40, x + pw * k + 3, 40 + pd * k, -5, pd, 2.4);
+    x += pw * k + 70;
+    return t;
+  };
+  if (M.ext) s += sec('Добор', M.ext.prof.pts);
+  if (M.casA || M.casB) s += sec('Наличник', (M.casA || M.casB).prof.pts);
+  if (!M.ext && !M.casA && !M.casB)
+    s += svgT(40, 40, 'У двери нет доборов и наличников (скрытая коробка заподлицо со стенами).', 3);
+  // table of pieces
+  const rows = D.parts.filter(p => /^ext|^cas/.test(p.key));
+  if (rows.length) {
+    let y = 130;
+    const cols = [
+      [0, 12, 'Поз.'],
+      [12, 70, 'Деталь'],
+      [82, 24, 'Длина'],
+      [106, 24, 'Ширина'],
+      [130, 18, 'Толщ.'],
+      [148, 44, 'Рез'],
+      [192, 14, 'Кол.']
+    ];
+    const x0 = 30;
+    s += ddR(x0, y, 206, 7, 0.4, '#f1efe9');
+    for (const [cx, w, t] of cols) s += svgT(x0 + cx + w / 2, y + 5, t, 2.7, 'middle', 'font-weight="600"');
+    y += 7;
+    for (const p of rows) {
+      s += ddR(x0, y, 206, 6, 0.2);
+      const v = [p.no, p.name, p.L, p.B, p.T, p.cut, p.qty];
+      cols.forEach(
+        ([cx, w], i) =>
+          (s += svgT(
+            x0 + cx + (i === 1 || i === 5 ? 1.5 : w / 2),
+            y + 4.3,
+            v[i],
+            2.6,
+            i === 1 || i === 5 ? 'start' : 'middle'
+          ))
+      );
+      y += 6;
+    }
+    s += note(
+      x0,
+      y + 8,
+      [
+        c.casing.join === '90'
+          ? 'Наличники: горизонтальный ставится на вертикальные, стык 90°.'
+          : 'Наличники: углы под 45°, длина — по наружной кромке.',
+        'Доборы: вертикальные во всю высоту проёма, горизонтальный — между ними.',
+        'Длины даны без припуска; на подрезку по месту добавьте 10–20 мм.'
+      ],
+      2.6
+    );
+  }
+  return { body: s, scale: '—' };
+}
+
+/* ---------- sheet 5: milling details ---------- */
+function ddMills(D, page = 0) {
+  let s = HATCH;
+  s += svgT(32, 14, 'Узлы врезки фурнитуры  М 1:2', 3.4, 'start', 'font-weight="600"');
+  const k = 0.5;
+  const seen = new Set();
+  const cells = [];
+  for (const m of D.mills) {
+    const key = m.kind + (m.part === 'leaf' ? 'L' : 'F');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cells.push(m);
+  }
+  const th = D.c.leaf.th;
+  let gx = 30,
+    gy = 26,
+    rowH = 0,
+    pg = 0;
+  for (const m of cells) {
+    const d = m.d;
+    const cx = 0,
+      cy = 0;
+    let t = '',
+      wC = 70,
+      hC = 70;
+    const title = (m.part === 'leaf' ? 'Полотно: ' : 'Коробка: ') + m.name;
+    if (m.kind === 'hinge') {
+      const st = d.steps || [];
+      const Lm = st.length ? st[0].L : 100;
+      hC = Lm * k + 22;
+      wC = 70;
+      t += ddR(cx + 10, cy + 8, th * k, Lm * k + 8, 0.4, '#f6f3ec');
+      for (const x of st)
+        t += ddR(
+          cx + 10 + ((th - x.W) / 2) * k,
+          cy + 12 + ((Lm - x.L) / 2) * k,
+          x.W * k,
+          x.L * k,
+          0.3,
+          x.D > 5 ? '#999' : '#ccc'
+        );
+      if (d.holes)
+        for (const h of d.holes) t += circ(cx + 10 + (th / 2) * k, cy + 12 + (Lm / 2 - h.dz) * k, (h.d / 2) * k + 0.2);
+      if (st.length)
+        t += dimS(
+          cx + 10 + ((th - st[st.length - 1].W) / 2) * k,
+          cy + 12 + Lm * k + 2,
+          cx + 10 + ((th + st[st.length - 1].W) / 2) * k,
+          cy + 12 + Lm * k + 2,
+          -4,
+          st[st.length - 1].W,
+          2.2
+        );
+      if (st.length)
+        t += dimS(cx + 10 + th * k + 2, cy + 12, cx + 10 + th * k + 2, cy + 12 + st[0].L * k, -4, st[0].L, 2.2);
+      t += note(
+        cx + 10 + th * k + 12,
+        cy + 14,
+        st.length
+          ? st.map(x => `${x.nm}: ${x.L}×${x.W}, глубина ${x.D}`)
+          : d.holes
+            ? d.holes.map(h => `Ø${h.d} глубиной ${h.D}`)
+            : [d.note || 'без врезки'],
+        2.3,
+        3.6
+      );
+    } else if (m.kind === 'lock') {
+      const Lm = d.face[1];
+      hC = Lm * k + 24;
+      wC = 90;
+      t += ddR(cx + 10, cy + 8, th * k, Lm * k + 8, 0.4, '#f6f3ec');
+      t += ddR(cx + 10 + ((th - d.face[0]) / 2) * k, cy + 12, d.face[0] * k, d.face[1] * k, 0.3, '#ccc');
+      t += ddR(
+        cx + 10 + ((th - d.body[0]) / 2) * k,
+        cy + 12 + ((d.face[1] - d.body[1]) / 2) * k,
+        d.body[0] * k,
+        d.body[1] * k,
+        0.3,
+        '#999'
+      );
+      // the side view: the body depth and the spindle hole at the backset
+      const sx = cx + 40;
+      t += ddR(sx, cy + 8, 50, Lm * k + 8, 0.3, '#f6f3ec');
+      t += ddR(
+        sx,
+        cy + 12 + ((d.face[1] - d.body[1]) / 2) * k,
+        d.body[2] * k,
+        d.body[1] * k,
+        0.25,
+        'none',
+        '#000',
+        'stroke-dasharray="1.2 0.8"'
+      );
+      t += circ(sx + D.bs * k, cy + 12 + (d.face[1] / 2) * k, 10 * k + 0.2);
+      t += dimS(sx, cy + 6, sx + D.bs * k, cy + 6, 3, D.bs, 2.2);
+      t += note(
+        cx + 10,
+        cy + Lm * k + 26,
+        [
+          `планка ${d.face.join('×')}`,
+          `корпус ${d.body[0]}×${d.body[1]}, глубина ${d.body[2]}`,
+          `под ручку Ø20 насквозь, бэксет ${D.bs}`
+        ],
+        2.3,
+        3.6
+      );
+      hC += 12;
+    } else if (m.kind === 'strike') {
+      hC = d.strike[1] * k + 22;
+      wC = 60;
+      t += ddR(cx + 10, cy + 8, 26, d.strike[1] * k + 8, 0.4, '#f1ebdd');
+      t += ddR(cx + 12, cy + 12, d.strike[0] * k, d.strike[1] * k, 0.3, '#ccc');
+      t += ddR(
+        cx + 12 + ((d.strike[0] - d.pocket[0]) / 2) * k,
+        cy + 12 + ((d.strike[1] - d.pocket[1]) / 2) * k,
+        d.pocket[0] * k,
+        d.pocket[1] * k,
+        0.3,
+        '#999'
+      );
+      t += note(cx + 40, cy + 14, [`планка ${d.strike.join('×')}`, `карман ${d.pocket.join('×')}`], 2.3, 3.6);
+    } else if (m.kind === 'handle') {
+      hC = 70;
+      wC = 80;
+      const hx = cx + 30,
+        hy = cy + 36;
+      t += ddR(cx + 8, cy + 8, 60, 60, 0.3, '#f6f3ec');
+      if (d.spindle) t += circ(hx, hy, (d.spindle / 2) * k + 0.2);
+      if (d.recess) t += circ(hx, hy, (d.recess[0] / 2) * k, 0.2, 'none');
+      for (const [bx, bz] of d.bolts || []) t += circ(hx + bx * k, hy - bz * k, (d.bd / 2) * k + 0.2);
+      if (d.pocket)
+        t += ddR(hx - (d.pocket[0] / 2) * k, hy - (d.pocket[1] / 2) * k, d.pocket[0] * k, d.pocket[1] * k, 0.3, '#ccc');
+      t += note(cx + 8, cy + 74, [d.note || ''], 2.2, 3.4);
+      hC += 8;
+    } else if (m.kind === 'drop') {
+      hC = 40;
+      wC = 90;
+      t += ddR(cx + 10, cy + 10, th * k * 2, 20, 0.4, '#f6f3ec');
+      t += ddR(cx + 10 + ((th - d.W) / 2) * k * 2, cy + 30 - d.D * k * 0.6, d.W * k * 2, d.D * k * 0.6, 0.3, '#999');
+      t += note(
+        cx + 10 + th * k * 2 + 6,
+        cy + 16,
+        [
+          `паз ${d.W}×${d.D} в нижнем торце`,
+          `длина ${m.L} мм, по ${d.end} мм от краёв`,
+          'порог опускается при закрывании'
+        ],
+        2.3,
+        3.6
+      );
+    } else if (m.kind === 'cyl' || m.kind === 'turn') {
+      hC = 40;
+      wC = 80;
+      const x = cx + 20,
+        y = cy + 20;
+      if (m.kind === 'cyl') {
+        t += circ(x, y - 4.25, 8.5 * k * 2);
+        t += ddR(x - 5 * k * 2, y - 4.25, 10 * k * 2, 16.5 * k * 2, 0.25);
+      } else t += circ(x, y, 10 * k * 2);
+      t += note(
+        cx + 40,
+        cy + 16,
+        [millText(m), 'на чертеже М 1:1', `ось на ${m.d.cyl || m.d.turn} мм ниже ручки`],
+        2.3,
+        3.6
+      );
+    } else if (m.kind === 'stop' || m.kind === 'closer') {
+      hC = 34;
+      wC = 90;
+      const a = m.part === 'head' ? d.frame : d.leaf;
+      if (a) t += ddR(cx + 10, cy + 10, Math.min(70, a[1] * k), Math.max(4, a[0] * k), 0.3, '#999');
+      t += note(cx + 10, cy + 24, [millText(m)], 2.3, 3.6);
+    }
+    if (gx + wC > 410) {
+      gx = 30;
+      gy += rowH + 8;
+      rowH = 0;
+    }
+    // the title block takes the lower right corner
+    if (gy + hC > (gx + wC > 228 ? 232 : 285)) {
+      pg++;
+      gx = 30;
+      gy = 26;
+      rowH = 0;
+    }
+    if (pg === page)
+      s += `<g transform="translate(${gx.toFixed(2)} ${gy.toFixed(2)})">${svgT(cx, cy + 4, title, 2.6, 'start', 'font-weight="600"')}${t}</g>`;
+    gx += wC + 18;
+    rowH = Math.max(rowH, hC);
+  }
+  return { body: s, scale: '1:2', pages: pg + 1 };
+}
+
+/* ---------- sheet 6: seal and specification ---------- */
+function ddSpec(D) {
+  let s = '';
+  s += svgT(32, 14, 'Уплотнитель', 3.4, 'start', 'font-weight="600"');
+  const S_ = D.seal;
+  const L = S_.len
+    ? [
+        `${SEAL_T[S_.type] || ''}, контуров: ${S_.contours}`,
+        `Контур: 2 × высота полотна + ширина${D.M.leaves.length > 1 ? ' + притвор пассивной створки' : ''} = ${S_.one.toFixed(2).replace('.', ',')} м`,
+        `Итого ${S_.len.toFixed(2).replace('.', ',')} м, к закупке с запасом 5 % — ${S_.buy.toFixed(1).replace('.', ',')} м`,
+        S_.bottom
+      ]
+    : ['Уплотнитель не предусмотрен'];
+  s += note(32, 22, L, 2.8, 4.4);
+  // the table: parts and hardware
+  let y = 46;
+  const x0 = 25;
+  const cols = [
+    [0, 12, 'Поз.'],
+    [12, 120, 'Наименование'],
+    [132, 22, 'Длина'],
+    [154, 22, 'Ширина'],
+    [176, 16, 'Толщ.'],
+    [192, 96, 'Материал / примечание'],
+    [288, 18, 'Кол.'],
+    [306, 12, 'Ед.']
+  ];
+  s += svgT(x0, y - 3, 'Спецификация', 3.2, 'start', 'font-weight="600"');
+  s += ddR(x0, y, 318, 7, 0.45, '#f1efe9');
+  for (const [cx, w, t] of cols) s += svgT(x0 + cx + w / 2, y + 5, t, 2.7, 'middle', 'font-weight="600"');
+  y += 7;
+  const rows = [
+    ...D.parts.map(p => [p.no, p.name, p.L, p.B, p.T, p.mat, p.qty, 'шт']),
+    ...D.hw.map((h, i) => [D.parts.length + i + 1, h.name, '', '', '', '', h.q, h.u])
+  ];
+  for (const r of rows) {
+    if (y > 228) break;
+    s += ddR(x0, y, 318, 6, 0.2);
+    cols.forEach(([cx, w], i) => {
+      let v = String(r[i] ?? '');
+      const max = Math.floor(w / 1.45);
+      if (v.length > max) v = v.slice(0, max - 1) + '…';
+      s += svgT(x0 + cx + (i === 1 || i === 5 ? 1.5 : w / 2), y + 4.3, v, 2.5, i === 1 || i === 5 ? 'start' : 'middle');
+    });
+    y += 6;
+  }
+  return { body: s, scale: '—' };
+}
+
+/* ---------- sheet 7: exploded assembly ---------- */
+/**
+ * Exploded scheme in a cabinet projection: s to the right, the depth across the wall up-right at half scale, z up.
+ * The frame stays in the wall plane; the leaf, the hardware and the casing are pulled out towards the viewer, the
+ * extensions and the far casing behind the wall; the lock body comes out of the leaf edge, the cylinder and the handle
+ * out of its face.
+ */
+function ddAssembly(D) {
+  const { M, c } = D;
+  const W = M.W,
+    H = M.H,
+    th = c.leaf.th;
+  const pr = (x, y, z) => [x + y * 0.55, -z - y * 0.32];
+  const boxes = [];
+  const B = (x0, y0, z0, x1, y1, z1, no, fill) =>
+    boxes.push({
+      b: [Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1), Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)],
+      no,
+      fill
+    });
+  const P = key => D.parts.find(p => p.key === key);
+  const hwNo = re => {
+    const i = D.hw.findIndex(h => re.test(h.name));
+    return i < 0 ? null : D.parts.length + 1 + i;
+  };
+  const ex = Math.max(380, 0.45 * W); // the explode step across the wall
+  const fw = D.frW,
+    fd = D.frD;
+  // the frame in the wall plane (y from 0 into the wall)
+  B(0, 0, 0, fw, fd, H, P('post-h').no, '#e8e1d2');
+  B(W - fw, 0, 0, W, fd, H, P('post-l').no, '#e8e1d2');
+  B(D.join === '45' ? 0 : fw, 0, H - fw, D.join === '45' ? W : W - fw, fd, H, P('head').no, '#e8e1d2');
+  if (D.seal.len) B(fw - 2, -3, M.zb, fw + 6, 0, M.zt, hwNo(/Уплотнитель/), '#3a3b3d');
+  // extensions behind the frame
+  if (M.ext) {
+    const v = P('ext-v'),
+      hh = P('ext-h'),
+      y0 = fd + 0.5 * ex,
+      xw = v.T;
+    B(-xw - 30, y0, 0, -30, y0 + v.B, H, v.no, '#f2ede2');
+    B(W + 30, y0, 0, W + 30 + xw, y0 + v.B, H, v.no, '#f2ede2');
+    B(0, y0, H + 40, W, y0 + v.B, H + 40 + hh.T, hh.no, '#f2ede2');
+  }
+  // the leaves pulled out
+  const yL = -ex;
+  for (const l of M.leaves) B(l.sa, yL - th, M.zb, l.sb, yL, M.zt, D.parts.find(p => p.leaf === l).no, '#f6f3ec');
+  const l0 = M.leaves.find(l => l.act) || M.leaves[0];
+  const free = l0.dir > 0 ? l0.sb : l0.sa;
+  // hinges between the frame and the leaf
+  const hn = hwNo(/^Петля/);
+  for (const z of D.hz)
+    B(l0.hs - l0.dir * 60, yL * 0.5 - 6, z - 50, l0.hs - l0.dir * 76, yL * 0.5 + 6, z + 50, hn, '#a9adb0');
+  // the lock body out of the leaf edge, the strike at the frame
+  const LM = LOCK_MILL[c.lock.type];
+  if (LM && c.mode !== 'entry') {
+    const hz = c.handle.h,
+      xo = free + l0.dir * 160;
+    B(
+      xo,
+      yL - th / 2 - LM.body[0] / 2,
+      hz - LM.body[1] / 2,
+      xo - l0.dir * LM.body[2],
+      yL - th / 2 + LM.body[0] / 2,
+      hz + LM.body[1] / 2,
+      hwNo(/защёлка|завёртка|цилиндром/),
+      '#8d9196'
+    );
+    B(
+      W - fw - 2,
+      -3,
+      hz - LM.strike[1] / 2,
+      W - fw + 2,
+      0,
+      hz + LM.strike[1] / 2,
+      hwNo(/защёлка|завёртка|цилиндром/),
+      '#a9adb0'
+    );
+    if (LM.cyl)
+      B(
+        free - l0.dir * D.bs - 9,
+        yL - th - 140,
+        hz - LM.cyl - 17,
+        free - l0.dir * D.bs + 9,
+        yL - th - 100,
+        hz - LM.cyl + 17,
+        hwNo(/^Цилиндр/),
+        '#c2a35a'
+      );
+  }
+  if (c.handle.type !== 'none') {
+    const hx = free - l0.dir * D.bs;
+    B(hx - 26, yL - th - 260, c.handle.h - 26, hx + 26, yL - th - 200, c.handle.h + 26, hwNo(/^Ручка/), '#555');
+  }
+  if (c.stop.type === 'hidden')
+    B(
+      l0.hs - l0.dir * 80,
+      yL - th / 2 - 10,
+      M.zt + 120,
+      l0.hs - l0.dir * 340,
+      yL - th / 2 + 10,
+      M.zt + 142,
+      hwNo(/стопор/i),
+      '#a9adb0'
+    );
+  if (D.thr === 'drop')
+    B(l0.sa + 10, yL - th / 2 - 7, M.zb - 150, l0.sb - 10, yL - th / 2 + 7, M.zb - 120, hwNo(/Порог/), '#a9adb0');
+  // the casing of the swing side in front of everything
+  if (c.casing.a && D.cw) {
+    const v = P('cas-v'),
+      hh = P('cas-h'),
+      y0 = yL - th - 2 * ex,
+      in0 = M.Cx;
+    B(in0 - D.cw - 60, y0 - D.ct, 0, in0 - 60, y0, H - in0, v.no, '#fff');
+    B(W - in0 + 60, y0 - D.ct, 0, W - in0 + 60 + D.cw, y0, H - in0, v.no, '#fff');
+    B(in0 - D.cw, y0 - D.ct, H - in0 + 80, W - in0 + D.cw, y0, H - in0 + 80 + D.cw, hh.no, '#fff');
+  }
+  // projection and painter order: far boxes first, then left to right
+  let mnx = 1e9,
+    mny = 1e9,
+    mxx = -1e9,
+    mxy = -1e9;
+  const prj = boxes.map(o => {
+    const [x0, y0, z0, x1, y1, z1] = o.b;
+    const v = [
+      [x0, y0, z0],
+      [x1, y0, z0],
+      [x1, y1, z0],
+      [x0, y1, z0],
+      [x0, y0, z1],
+      [x1, y0, z1],
+      [x1, y1, z1],
+      [x0, y1, z1]
+    ].map(p => pr(...p));
+    for (const [x, y] of v) {
+      mnx = Math.min(mnx, x);
+      mny = Math.min(mny, y);
+      mxx = Math.max(mxx, x);
+      mxy = Math.max(mxy, y);
+    }
+    return { ...o, v };
+  });
+  const k = Math.min(290 / (mxx - mnx), 196 / (mxy - mny));
+  const ox = 36 - mnx * k,
+    oy = 26 - mny * k;
+  const T = ([x, y]) => [ox + x * k, oy + y * k];
+  let s = svgT(32, 14, 'Схема сборки (с разнесением)', 3.4, 'start', 'font-weight="600"');
+  prj.sort((a, b) => b.b[1] - a.b[1] || a.b[0] - b.b[0] || a.b[2] - b.b[2]);
+  const marks = [];
+  for (const o of prj) {
+    const v = o.v.map(T);
+    // the visible faces: the front (nearest the viewer), the top and the right side
+    s += poly([v[0], v[1], v[5], v[4]], 0.25, o.fill);
+    s += poly([v[4], v[5], v[6], v[7]], 0.25, o.fill);
+    s += poly([v[1], v[2], v[6], v[5]], 0.25, o.fill);
+    if (o.no == null || marks.some(m => m.no === o.no)) continue;
+    const f = [v[0], v[1], v[5], v[4]];
+    marks.push({
+      no: o.no,
+      x: (f[0][0] + f[1][0] + f[2][0] + f[3][0]) / 4,
+      y: (f[0][1] + f[1][1] + f[2][1] + f[3][1]) / 4
+    });
+  }
+  // the balloons in a column on the right, in the order of their parts from the top: leaders do not cross
+  marks.sort((a, b) => a.y - b.y);
+  const gap = Math.min(11, 200 / Math.max(1, marks.length));
+  marks.forEach(
+    (m, i) =>
+      (s += `<circle cx="${m.x.toFixed(2)}" cy="${m.y.toFixed(2)}" r="0.6"/>` + pos(m.x, m.y, 372, 30 + i * gap, m.no))
+  );
+  s += note(
+    32,
+    228,
+    ['Порядок: коробка в проём на клинья → пена → петли и полотно → доборы → наличники → ручка и замок.'],
+    2.6
+  );
+  return { body: s, scale: '—' };
+}
+
+/** Sheets of the door drawing set (the same dialog as the furniture drawings). */
+function doorSheets(D) {
+  const out = [{ n: 'Общий вид и разрез', f: () => ddGeneral(D) }];
+  D.M.leaves.forEach((l, i) =>
+    out.push({ n: D.M.leaves.length > 1 ? `Полотно ${i + 1}` : 'Полотно и наполнение', f: () => ddLeaf(D, i) })
+  );
+  out.push({ n: 'Коробка', f: () => ddFrame(D) });
+  out.push({ n: 'Доборы и наличники', f: () => ddTrim(D) });
+  const mp = ddMills(D).pages;
+  for (let i = 0; i < mp; i++) out.push({ n: `Узлы врезки${mp > 1 ? ' ' + (i + 1) : ''}`, f: () => ddMills(D, i) });
+  out.push({ n: 'Уплотнитель и спецификация', f: () => ddSpec(D) });
+  out.push({ n: 'Схема сборки', f: () => ddAssembly(D) });
+  return out.map((sh, i, arr) => ({
+    n: sh.n,
+    svg: () => {
+      const r = sh.f();
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm" viewBox="0 0 420 297"><rect width="420" height="297" fill="#fff"/>${r.body}${fdFrame({ ...D, e: { name: D.e.name || 'Дверь Д-' + D.e.id } }, D.title, sh.n, i + 1, arr.length, r.scale)}</svg>`;
+    }
+  }));
+}
+const ddEsc = esc;
+
 // ===== elements/door-hw.js =====
 /**
  * elements/door-hw.js
@@ -113307,6 +114892,7 @@ function ceilBoardsMesh(e, mb, col, th) {
  * Detail by distance: screws, keyways, caps and indicators are near-only (mb.lod('n')); far away a door keeps its leaf,
  * frame and the silhouette of the hardware.
  */
+
 
 
 
@@ -113730,7 +115316,7 @@ function lockFit(lm, c, ser, x, df, sg, zl, col) {
 function handleSet(lm, mb, l, M, c) {
   const { sa, sb, dlo, dhi, dir } = l;
   const free = dir > 0 ? sb : sa,
-    hx = free - dir * 62,
+    hx = free - dir * doorBackset(c),
     hz = c.handle.h,
     col = c.handle.color,
     ser = c.handle.series || 'round',
@@ -113748,6 +115334,21 @@ function handleSet(lm, mb, l, M, c) {
       lever(lm, ser, hx, df + sg * (ser === 'slim' ? 4.5 : 9.5), sg, hz, dir, col);
       lm.tag('Замок');
       lockFit(lm, c, ser, hx, df, sg, zl, col);
+      lm.tag('Ручка');
+    } else if (ty === 'norose') {
+      // no rosette: the lever rises straight from a thin disc set flush into the leaf
+      lm.sweep(
+        [
+          [hx, df - sg * 4, hz],
+          [hx, df + sg * 0.6, hz]
+        ],
+        25,
+        col,
+        40
+      );
+      lever(lm, ser === 'square' ? 'square' : 'slim', hx, df, sg, hz, dir, col);
+      lm.tag('Замок');
+      lockFit(lm, c, 'slim', hx, df, sg, zl, col);
       lm.tag('Ручка');
     } else if (ty === 'knob') {
       rosette(lm, ser === 'square' ? 'round' : ser, hx, df, sg, hz, col);
@@ -113860,7 +115461,72 @@ function stopSet(mb, l, M, c, sp) {
     );
     mb.tube([sxw, 6, 150], [sxw, 40, 150], 12, col, 24);
     mb.tube([sxw, 40, 150], [sxw, 50, 150], 13.5, RUBBER, 24);
+  } else if (c.stop.type === 'hidden') {
+    // concealed stop: the body in the frame head over the leaf; its rail is in the leaf top (doorInner3)
+    const s0 = l.hs - l.dir * 80,
+      dm = (l.dlo + l.dhi) / 2;
+    bx(mb, s0, dm - 11, M.zt + 2, s0 - l.dir * 190, dm + 11, M.zt + 30, DARK);
   }
+}
+
+/**
+ * Concealed parts of a door: the lock body in its mortise, the rabbet seal in the frame, an automatic drop threshold
+ * in the leaf bottom and the rail of a concealed stop in the leaf top. Inside the leaf they show in the transparent
+ * and exploded views of the object dialog; in the model they are covered by the leaf.
+ */
+function doorInner3(mb, lm, l, M, c) {
+  const { sa, sb, dlo, dhi, dir } = l;
+  const dm = (dlo + dhi) / 2;
+  const free = dir > 0 ? sb : sa;
+  if (l.act && c.mode !== 'entry') {
+    const L = LOCK_MILL[c.lock.type];
+    if (L) {
+      const hz = c.handle.h;
+      lm.tag('Замок (корпус)');
+      bx(
+        lm,
+        free,
+        dm - L.body[0] / 2,
+        hz - L.body[1] / 2,
+        free - dir * L.body[2],
+        dm + L.body[0] / 2,
+        hz + L.body[1] / 2,
+        '#8d9196'
+      );
+      bx(
+        lm,
+        free,
+        dm - L.face[0] / 2,
+        hz - L.face[1] / 2,
+        free + dir * 0.4,
+        dm + L.face[0] / 2,
+        hz + L.face[1] / 2,
+        ALU
+      );
+    }
+    if (c.stop.type === 'hidden') {
+      lm.tag('Стопор (рельс)');
+      const s0 = l.hs - dir * 80;
+      bx(lm, s0, dm - 9, M.zt - 20, s0 - dir * 260, dm + 9, M.zt - 0.5, ALU);
+    }
+  }
+  const thr = (c.thr && c.thr.type) || 'none';
+  if (thr === 'drop') {
+    lm.tag('Порог автоматический');
+    bx(lm, sa + 10, dm - 7, M.zb + 0.5, sb - 10, dm + 7, M.zb + 29, ALU);
+    bx(lm, sa + 12, dm - 6, M.zb - 1.5, sb - 12, dm + 6, M.zb + 0.5, RUBBER);
+  }
+}
+/** The rabbet seal of the frame round the leaves (stays with the frame). */
+function doorSeal3(mb, M, c) {
+  if (!sealCalc(null, M).len) return;
+  mb.tag('Уплотнитель');
+  const sa = Math.min(...M.leaves.map(l => l.sa)),
+    sb = Math.max(...M.leaves.map(l => l.sb));
+  const d0 = Math.min(...M.leaves.map(l => l.dlo));
+  bx(mb, sa + 3, d0 - 0.5, M.zb + 2, sa + 11, d0 - 4.5, M.zt - 3, RUBBER);
+  bx(mb, sb - 3, d0 - 0.5, M.zb + 2, sb - 11, d0 - 4.5, M.zt - 3, RUBBER);
+  bx(mb, sa + 3, d0 - 0.5, M.zt - 11, sb - 3, d0 - 4.5, M.zt - 3, RUBBER);
 }
 
 /* ---------- overhead closer with a working arm ---------- */
