@@ -7154,7 +7154,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.5';
+const APP_VER = '59.6';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -14190,6 +14190,31 @@ function mkWire() {
     }
   };
 }
+/**
+ * Points of a duct with vertical steps: where two points stand one over the other, one of them is moved 1 mm
+ * along the neighbouring run, so that the plan keeps a direction there and the riser stays vertical.
+ */
+function ductRisers(pts) {
+  const out = pts.map(p => Object.assign(P(p.x, p.y), p.z != null ? { z: p.z } : {}));
+  for (let i = 0; i + 1 < out.length; i++) {
+    if (dist(out[i], out[i + 1]) > 0.5) continue;
+    const nx = out.slice(i + 2).find(q => dist(q, out[i + 1]) > 1),
+      pv = out
+        .slice(0, i)
+        .reverse()
+        .find(q => dist(q, out[i]) > 1);
+    if (nx) {
+      const u = nrm(sub(nx, out[i + 1]));
+      out[i + 1].x += u.x;
+      out[i + 1].y += u.y;
+    } else if (pv) {
+      const u = nrm(sub(pv, out[i]));
+      out[i].x += u.x;
+      out[i].y += u.y;
+    } else out[i + 1].x += 1;
+  }
+  return out;
+}
 function mkDuct(opt = {}) {
   const pts = [];
   // a flexible connection drawn by hand: the same command, the duct is flexible; the end spigot gives its own height
@@ -14201,22 +14226,25 @@ function mkDuct(opt = {}) {
     flow = mkDuct.flow || 100,
     ask = null;
   const full = () => ({ shape: sec.shape, d: sec.d || 160, w: sec.w || 200, hh: sec.hh || 100 });
+  // every point keeps the height it was put at: a change of height is a vertical step at that point
+  const put = (p, zz) => {
+    const q = P(p.x, p.y);
+    q.z = Math.round(zz);
+    pts.push(q);
+  };
   const fin = () => {
     if (pts.length >= 2) {
       const a = devAt(pts[0], 'vterm'),
         b = devAt(pts[pts.length - 1], 'vterm');
-      const out = pts.map(p => P(p.x, p.y));
-      if (zEnd != null && Math.abs(zEnd - z) > 1) {
-        // the run keeps its height and comes to the spigot at the spigot's height
-        out.forEach(p => (p.z = z));
-        out[out.length - 1].z = zEnd;
-      }
+      const out = ductRisers(pts);
+      const flat = out.every(p => Math.abs(p.z - out[0].z) < 1);
+      if (flat) out.forEach(p => delete p.z);
       addEnt({
         type: 'duct',
         pts: out,
         ...full(),
         ...(flex && sec.shape !== 'rect' ? { flex: true } : {}),
-        z,
+        z: pts[0].z,
         sys,
         flow,
         mat: flex && sec.shape !== 'rect' ? 'Гибкий алюминиевый' : DUCT_MATS[0],
@@ -14240,12 +14268,18 @@ function mkDuct(opt = {}) {
             ? `Расход, м³/ч <${flow}>:`
             : ask === 's'
               ? `Система (${S.vent.systems.map(s => s.id).join(', ')}) <${sys}>:`
-              : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${z}) или [Сечение/Высота/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}${pts.length ? '/Отменить' : ''}]:`,
+              : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${Math.round(z)}) или [Сечение/Высота (подъём, опуск)/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}${pts.length ? '/Отменить' : ''}]:`,
     hasValue: () => ask === 'z' || ask === 'q',
     onValue(v) {
       if (ask === 'z') {
+        // a new height in the middle of a run: a vertical step at the last point
+        if (pts.length && Math.abs(v - z) > 1) {
+          put(pts[pts.length - 1], v);
+          log(
+            `${v > z ? 'Подъём' : 'Опуск'} на ${Math.abs(Math.round(v - z))} мм в этой точке — дальше на отметке ${Math.round(v)}`
+          );
+        } else mkDuct.z = v;
         z = v;
-        mkDuct.z = v;
       }
       if (ask === 'q' && v > 0) {
         flow = v;
@@ -14307,20 +14341,34 @@ function mkDuct(opt = {}) {
       // a spigot of a unit: the duct takes its Ø, system and height and starts (or ends) at its end
       const sp = spigotAt(p);
       if (sp) {
-        const q = P(sp.p[0], sp.p[1]);
+        const q = P(sp.p[0], sp.p[1]),
+          zs = Math.round(sp.p[2]),
+          vert = Math.abs(sp.dir[2]) > 0.5;
         if (!pts.length) {
           sec = sp.shape === 'rect' ? { shape: 'rect', w: sp.w, hh: sp.hh } : { shape: 'round', d: sp.d };
           if (sp.sys) sys = sp.sys;
-          z = Math.round(sp.p[2]);
-          log(`От патрубка «${sp.n}»: ø${sp.d}${sp.sys ? ', ' + sp.sys : ''}, ось ${z}`);
-          pts.push(q);
+          put(q, zs);
+          if (vert) {
+            // a spigot that looks up or down: straight out of it first, then the run at its own height
+            const want = mkDuct.z ?? zs + sp.dir[2] * 250;
+            z = (want - zs) * sp.dir[2] > 120 ? want : zs + sp.dir[2] * 250;
+            put(q, z);
+          } else z = zs;
+          log(
+            `От патрубка «${sp.n}»: ${sp.shape === 'rect' ? sp.w + '×' + sp.hh : 'ø' + sp.d}${sp.sys ? ', ' + sp.sys : ''}, ${vert ? `вертикально до отметки ${Math.round(z)}` : 'ось ' + zs}`
+          );
           return;
         }
-        pts.push(q);
-        zEnd = Math.round(sp.p[2]);
+        // onto a vertical spigot the duct comes from straight above (or below) it: the run first goes over its end
+        if (vert && (z - zs) * sp.dir[2] < 120) {
+          z = zs + sp.dir[2] * 250;
+          put(pts[pts.length - 1], z);
+        }
+        if (vert || Math.abs(zs - z) > 1) put(q, z);
+        put(q, zs);
         return fin();
       }
-      if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) pts.push(p);
+      if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) put(p, z);
     },
     onEnter() {
       if (ask) {
@@ -14331,7 +14379,18 @@ function mkDuct(opt = {}) {
     },
     preview(cur) {
       if (pts.length && !ask)
-        drawDuct({ type: 'duct', pts: pts.concat([cur]), ...full(), z, sys, flow, flex }, 'ghost');
+        drawDuct(
+          {
+            type: 'duct',
+            pts: ductRisers(pts.concat([Object.assign(P(cur.x, cur.y), { z })])),
+            ...full(),
+            z,
+            sys,
+            flow,
+            flex
+          },
+          'ghost'
+        );
     }
   };
 }
@@ -16513,6 +16572,23 @@ function drawDuct(e, color, o = {}) {
   pathPoly(l.concat(r.slice().reverse()));
   ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(sy.col, 0.3);
   ctx.fill();
+  // vertical steps: a circle with a cross where the duct goes up or down
+  for (let i = 1; i < e.pts.length; i++) {
+    const a = e.pts[i - 1],
+      b = e.pts[i];
+    if (a.z == null || b.z == null || Math.abs(a.z - b.z) < 30 || dist(a, b) > 5) continue;
+    const s = w2s(a),
+      rr = Math.max(3, hw * view.k);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, rr, 0, TAU);
+    ctx.moveTo(s.x - rr * 0.7, s.y - rr * 0.7);
+    ctx.lineTo(s.x + rr * 0.7, s.y + rr * 0.7);
+    ctx.moveTo(s.x - rr * 0.7, s.y + rr * 0.7);
+    ctx.lineTo(s.x + rr * 0.7, s.y - rr * 0.7);
+    ctx.stroke();
+  }
   if (e.flex) {
     // the coils of a flexible duct: short strokes across it every 40 mm
     ctx.strokeStyle = col;
@@ -22642,6 +22718,8 @@ function fieldsFor(e) {
       { l: 'Система', k: 'sys', sel: sysOpts() },
       { l: 'Сечение (Ø или Ш×В)', k: 'sec', txt: true },
       { l: 'Отметка оси', k: 'z', num: true },
+      { l: 'Отметка начала', k: 'dza', num: true },
+      { l: 'Отметка конца', k: 'dzb', num: true },
       { l: 'Расход, м³/ч', k: 'flow', num: true },
       { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
       { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
@@ -22703,6 +22781,10 @@ function fieldGet(e, k) {
       return !!(ty && ty.ins);
     case 'sec':
       return e.shape === 'rect' ? `${fmt(e.w)}x${fmt(e.hh)}` : fmt(e.d);
+    case 'dza':
+      return e.pts[0].z != null ? e.pts[0].z : e.z || 0;
+    case 'dzb':
+      return e.pts[e.pts.length - 1].z != null ? e.pts[e.pts.length - 1].z : e.z || 0;
   }
   return e[k] ?? '';
 }
@@ -22853,6 +22935,29 @@ function fieldSet(e, k, raw) {
       }
       const [d_, k_] = String(raw).split('|');
       e.sw = { dev: +d_, key: k_ };
+      return;
+    }
+    case 'dza':
+    case 'dzb': {
+      // the height of an end: the run keeps its height, the end comes to the new one by a vertical step
+      const v = parseFloat(String(raw).replace(',', '.'));
+      if (!isFinite(v)) return;
+      const z0 = e.z || 0;
+      for (const p of e.pts) if (p.z == null) p.z = z0;
+      const i = k === 'dza' ? 0 : e.pts.length - 1,
+        j = k === 'dza' ? 1 : e.pts.length - 2;
+      const end = e.pts[i],
+        nb = e.pts[j];
+      if (Math.hypot(end.x - nb.x, end.y - nb.y) < 5) end.z = Math.round(v);
+      else {
+        const u = { x: nb.x - end.x, y: nb.y - end.y },
+          l = Math.hypot(u.x, u.y);
+        const top = { x: end.x + u.x / l, y: end.y + u.y / l, z: end.z };
+        end.z = Math.round(v);
+        if (k === 'dza') e.pts.splice(1, 0, top);
+        else e.pts.splice(e.pts.length - 1, 0, top);
+      }
+      if (k === 'dza') e.z = e.pts[0].z;
       return;
     }
     case 'sec': {
@@ -63234,6 +63339,9 @@ const HV_KIND = {
 
 /* ---------- geometry ---------- */
 const ahuOf = e => AHU_CAT[e.model] || AHU_CAT['komf-r700f'];
+/** A unit set vertically (on a wall or on the floor): by its own setting, else as the model is made. */
+const ahuVert = e =>
+  e.vert != null && e.vert !== '' ? e.vert === true || e.vert === 1 || e.vert === '1' : ahuOf(e).mount === 'floor';
 /** The height of the unit's reference: ahu and plen — the bottom of the body, sil — its axis. */
 function hvZ(e) {
   const ceil = S.ceil || 2700;
@@ -63241,7 +63349,8 @@ function hvZ(e) {
   // everything hangs under the slab: above the suspended ceiling when there is room, never inside the slab
   const slab = avSlabU();
   const [, , H] = hvDim(e);
-  if (e.kind === 'ahu') return ahuOf(e).mount === 'floor' ? 0 : Math.round(Math.min(ceil + 40, slab - H - 20));
+  if (e.kind === 'ahu')
+    return ahuVert(e) ? (ahuOf(e).mount === 'floor' ? 0 : 400) : Math.round(Math.min(ceil + 40, slab - H - 20));
   if (e.kind === 'plen') return e.mount === 'wall' ? ceil - 350 : Math.round(Math.min(ceil, slab - H - 90));
   return Math.round(Math.min(ceil + 150, slab - H / 2 - 30));
 }
@@ -63252,7 +63361,8 @@ const teeLen = e => Math.round((+e.d2 || 160) * (+e.ang === 45 ? 1.5 : 1) + 120)
 function hvDim(e) {
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
-    return [a.L, a.W, a.H];
+    // standing: the long side is vertical, the spigots are on top
+    return ahuVert(e) ? [a.W, a.H, a.L] : [a.L, a.W, a.H];
   }
   if (e.kind === 'sil') {
     const D = silOuter(+e.d || 160);
@@ -63280,6 +63390,17 @@ function hvSpigotsL(e) {
       d = a.d,
       zc = H / 2;
     const ext = 90;
+    if (ahuVert(e)) {
+      const dy = Math.max(W / 4, d / 2 + 15),
+        dx = Math.max(L / 4, d / 2 + 15);
+      out.push(
+        { x: -dx, y: -dy, z: H + ext, dir: [0, 0, 1], d, role: 'oda', sys: e.sysS || null, n: 'Наружный воздух' },
+        { x: -dx, y: dy, z: H + ext, dir: [0, 0, 1], d, role: 'eha', sys: e.sysE || null, n: 'Выброс' },
+        { x: dx, y: -dy, z: H + ext, dir: [0, 0, 1], d, role: 'sup', sys: e.sysS || null, n: 'Приток' },
+        { x: dx, y: dy, z: H + ext, dir: [0, 0, 1], d, role: 'eta', sys: e.sysE || null, n: 'Вытяжка' }
+      );
+      return out;
+    }
     out.push(
       { x: -L / 2 - ext, y: -W / 4, z: zc, dir: [-1, 0, 0], d, role: 'oda', sys: e.sysS || null, n: 'Наружный воздух' },
       { x: -L / 2 - ext, y: W / 4, z: zc, dir: [-1, 0, 0], d, role: 'eha', sys: e.sysE || null, n: 'Выброс' },
@@ -63461,13 +63582,18 @@ function hvBuild(e, mb) {
     for (const q of SP) spigotTube(mb, q, '#c7ccd2', '#7d848c');
     mb.tag('Стрелки потока');
     for (const q of SP) {
+      if (q.dir[2]) {
+        // a standing unit: a coloured band on each spigot instead of the arrow on the lid
+        mb.tube([q.x, q.y, q.z - 50], [q.x, q.y, q.z - 20], q.d / 2 + 4, colOf(q), 24);
+        continue;
+      }
       // into the unit for outdoor air and extract, out of it for supply and exhaust
       const inward = q.role === 'oda' || q.role === 'eta';
       const ux = q.dir[0] * (inward ? -1 : 1);
       const x0 = q.x - q.dir[0] * (inward ? 60 : 280);
       arrow(mb, x0, q.y, H + 2, ux, 0, 200, Math.min(160, q.d), colOf(q));
     }
-    if (a.mount !== 'floor') {
+    if (a.mount !== 'floor' && !ahuVert(e)) {
       mb.tag('Подвесы');
       for (const [x, y] of [
         [-L / 2 + 40, -W / 2 + 40],
@@ -63721,7 +63847,7 @@ function hvDraw(e, color, o, ghost) {
       ctx.arc(s.x, s.y, Math.max(2, r * view.k), 0, TAU);
       ctx.stroke();
     }
-    if (e.kind === 'ahu' && !ghost) {
+    if (e.kind === 'ahu' && !ghost && !q.dir[2]) {
       const inward = q.role === 'oda' || q.role === 'eta';
       const ux = q.dir[0] * (inward ? -1 : 1);
       const x0 = q.x - q.dir[0] * (inward ? 60 : 280);
@@ -63967,6 +64093,16 @@ XT.hvu = {
         ? [
             ['Модель', 'model', 's', Object.entries(AHU_CAT).map(([k, v]) => [k, v.n])],
             ['Расход, м³/ч', 'flow', 'n'],
+            [
+              'Положение',
+              'vert',
+              's',
+              [
+                ['', 'как у модели'],
+                ['0', 'горизонтально (под потолком)'],
+                ['1', 'вертикально (патрубки вверх)']
+              ]
+            ],
             ['Система притока', 'sysS', 's', sysOpts],
             ['Система вытяжки', 'sysE', 's', sysOpts],
             ['Отметка низа, мм', 'z', 'n'],
@@ -64065,6 +64201,10 @@ XT.hvu = {
       const a = AHU_CAT[v];
       if (a) e.flow = a.q;
       delete e.z;
+    }
+    if (p === 'vert') {
+      delete e.z;
+      if (v === '') delete e.vert;
     }
     if (p === 'mount') {
       delete e.z;
@@ -64302,13 +64442,19 @@ function allSpigots() {
   }
   return out;
 }
-function spigotAt(p, r = 160) {
+function spigotAt(p, r) {
+  // the whole spigot counts (its tube from the body to the end), with a tolerance of 14 px on the screen
+  const tol = r != null ? r : Math.max(120, 14 / (view.k || 1));
   let best = null,
-    bd = r;
+    bd = Infinity;
   for (const q of allSpigots()) {
-    const d = Math.hypot(q.p[0] - p.x, q.p[1] - p.y);
-    if (d < bd) {
-      bd = d;
+    const hl = Math.hypot(q.dir[0], q.dir[1]);
+    const tip = P(q.p[0], q.p[1]);
+    const base = hl > 0.3 ? P(q.p[0] - (q.dir[0] / hl) * 110, q.p[1] - (q.dir[1] / hl) * 110) : tip;
+    const rr = (q.shape === 'rect' ? q.w : q.d) / 2;
+    const d = Math.max(0, dist(segPt(base, tip, p), p) - rr);
+    if (d < tol && d + dist(tip, p) * 0.01 < bd) {
+      bd = d + dist(tip, p) * 0.01;
       best = q;
     }
   }
@@ -64415,6 +64561,8 @@ function mkHvu(kind0) {
       kind,
       p,
       rot,
+      ...(o.z != null ? { z: o.z } : {}),
+      ...(kind === 'ahu' && o.vert != null ? { vert: o.vert } : {}),
       ...(kind === 'ahu'
         ? {
             model: o.model || 'komf-r700f',
@@ -64480,6 +64628,7 @@ function mkHvu(kind0) {
     hasValue: () => dk != null,
     onValue(v) {
       if (dk === 'L' && v > 100) o.L = v;
+      if (dk === 'z') o.z = v;
       if (dk === 'd' && v > 50) o.d = v;
       if (dk === 'd2' && v > 50) o.d2 = v;
       mkHvu['o' + kind] = o;
@@ -64492,6 +64641,13 @@ function mkHvu(kind0) {
         return true;
       }
       if (kw(s, 'д', 'длина')) return !!(dk = 'L');
+      if (kw(s, 'в', 'высота', 'h')) return !!(dk = 'z');
+      if (kind === 'ahu' && kw(s, 'верт', 'вертикально')) {
+        o.vert = o.vert === '1' ? '0' : '1';
+        mkHvu['o' + kind] = o;
+        log(o.vert === '1' ? 'Установка вертикально, патрубки вверх' : 'Установка горизонтально');
+        return true;
+      }
       if (kind !== 'ahu' && kind !== 'plen' && kw(s, 'ø', 'диаметр', 'd')) return !!(dk = 'd');
       if ((kind === 'red' || kind === 'tee') && kw(s, 'в', 'второй', 'd2')) return !!(dk = 'd2');
       if (kw(s, 'з', 'зеркально', 'm')) {
