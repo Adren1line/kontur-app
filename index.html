@@ -3784,14 +3784,17 @@ label.ck {
 .mf3hud {
   position: absolute;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+  justify-content: center;
   padding: 4px 6px;
+  /* narrow screen: the bar goes to a second row instead of running off the view */
+  max-width: calc(100% - 12px);
   background: rgba(20, 23, 28, 0.94);
   border: 1px solid #f0b45e;
   border-radius: 6px;
   z-index: 3;
-  white-space: nowrap;
 }
 .mf3hud[hidden] {
   display: none;
@@ -6478,6 +6481,26 @@ html[data-form='phone'] #v3cats {
   top: 120px;
 }
 
+/* ---------- manifold 3D editor: the bar over the view works under a finger ---------- */
+html[data-touch='1'] .mf3hud {
+  gap: 6px;
+  padding: 6px;
+}
+html[data-touch='1'] .mf3hud .btn,
+html[data-touch='1'] .mf3hud button.btn {
+  min-width: 44px;
+  min-height: 38px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+html[data-touch='1'] .mf3hud .mf3hv input {
+  width: 78px;
+  min-height: 34px;
+}
+html[data-touch='1'] #mf3dynw input {
+  min-height: 34px;
+}
+
 /* ===== touch screens (v40.4): selection bar, dialogs, specification ===== */
 
 /* ---------- selection bar: phone and tablet ---------- */
@@ -7154,7 +7177,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.8';
+const APP_VER = '59.9';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7689,6 +7712,8 @@ const visible = e => {
   const L = layerOf(e);
   return !!(L && L.on) && vpVis(e) && !sysOff(e);
 };
+/** A shown leader points at this element: its own caption would only double that text on the drawing. */
+const hasLeader = e => S.ents.some(n => n.type === 'note' && n.target === e.id && visible(n));
 const pickable = e => {
   const L = layerOf(e);
   return !!(L && L.on && !L.lock) && in2d(e);
@@ -16638,7 +16663,8 @@ function drawDuct(e, color, o = {}) {
       bi = i;
     }
   }
-  if (!ghost && bl * view.k > 90) {
+  // a leader on the duct already carries this text: drawing it along the duct as well only crowds the sheet
+  if (!ghost && bl * view.k > 90 && !hasLeader(e)) {
     const a = e.pts[bi],
       b = e.pts[bi + 1],
       u = nrm(sub(b, a)),
@@ -42848,15 +42874,31 @@ function mf3Overlay() {
   c.clearRect(0, 0, ov.width, ov.height);
   c.font = '12px "IBM Plex Mono", monospace';
   c.textBaseline = 'middle';
+  // the strip the HUD takes at the top of the view: on a phone it wraps to two rows
+  const hudEl = document.getElementById('mf3hud');
+  const hud =
+    hudEl && !hudEl.hidden
+      ? { x0: hudEl.offsetLeft, x1: hudEl.offsetLeft + hudEl.offsetWidth, y1: hudEl.offsetTop + hudEl.offsetHeight + 4 }
+      : null;
+  const moved = [];
   const lab = (p, t, col) => {
     const q = mf3Proj(p);
     if (!q.ok) return;
     const w = c.measureText(t).width + 10;
+    let y = q.y;
+    // a label under the HUD would be read through it: it drops below the bar, and each next one a row lower
+    if (hud && y - 10 < hud.y1 && q.x + w / 2 > hud.x0 && q.x - w / 2 < hud.x1) {
+      const x0 = q.x - w / 2,
+        x1 = q.x + w / 2;
+      y = hud.y1 + 10;
+      while (moved.some(m => m.y === y && x0 < m.x1 && x1 > m.x0)) y += 22;
+      moved.push({ x0, x1, y });
+    }
     c.fillStyle = 'rgba(20,23,28,.88)';
-    c.fillRect(q.x - w / 2, q.y - 10, w, 20);
+    c.fillRect(q.x - w / 2, y - 10, w, 20);
     c.fillStyle = col || '#f0b45e';
     c.textAlign = 'center';
-    c.fillText(t, q.x, q.y);
+    c.fillText(t, q.x, y);
   };
   const dim = (a, b, t) => {
     const A = mf3Proj(a),
@@ -44092,7 +44134,7 @@ function renderColl3D(el, e) {
          ''
        )}</select><button class="btn ${MF3.tool ? 'pri' : ''}" data-m3t="pipe" title="Рисовать трубу в узле">⟋ Труба</button>
      <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Привязка <select id="mf3snap">${[1, 5, 10, 25, 50].map(v => `<option value="${v}" ${MF3.snap === v ? 'selected' : ''}>${v} мм</option>`).join('')}</select></label>
-     <label class="fl" style="flex-direction:row;align-items:center;gap:6px" title="Перетаскивание деталей мышью (порог 8 px). Без него — щелчок выбирает, двигают стрелки, кнопки у детали и ввод числа"><input type="checkbox" id="mf3drag" ${MF3.noDrag ? '' : 'checked'}>Тянуть мышью</label>
+     <label class="fl" style="flex-direction:row;align-items:center;gap:6px" title="Перетаскивание деталей (порог 8 px). Без него — щелчок выбирает, двигают стрелки, кнопки у детали и ввод числа"><input type="checkbox" id="mf3drag" ${MF3.noDrag ? '' : 'checked'}>${matchMedia('(pointer: coarse)').matches ? 'Тянуть пальцем' : 'Тянуть мышью'}</label>
      <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Узел от стены <input id="mf3dy" type="number" step="5" value="${c.dy}" style="width:70px"></label>
      <span style="flex:1"></span>${['front:Спереди', 'side:Сбоку', 'top:Сверху', 'iso:3D', 'fit:Вписать']
        .map(s => {
@@ -51695,8 +51737,9 @@ function noteText(e) {
   const own = (e.text || '').trim();
   if (own) return own;
   if (t && t.meta && t.meta.note) return t.meta.note;
-  // ventilation and air conditioning: the text comes from the model (section, model and flow, grille data)
-  const v = t ? ventLabel(t) : null;
+  // ventilation and air conditioning: the text comes from the model — the drawing form, with the mark and
+  // the figures read off the sheet; the catalogue model stays in the properties and the specification
+  const v = t ? ventLabel(t, true) : null;
   if (v) return v;
   return t ? groupName(t) : 'Заметка';
 }
@@ -63524,10 +63567,25 @@ function plenSlot(e) {
 }
 const n1 = v => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
 /** The text of a leader (taken from the model each time it is drawn). */
-function hvLabel(e) {
+/** Mark of a unit for the drawing: its own name, else the systems it serves, else the kind. */
+function hvMark(e) {
+  if (e.name) return String(e.name);
+  if (e.kind === 'ahu') {
+    const s = [e.sysS, e.sysE].filter(Boolean).join('/');
+    return s || 'ПВУ';
+  }
+  return e.sys || '';
+}
+/**
+ * The text of a unit. `short` is the drawing form: a mark and the figures that are read off the sheet; the
+ * model of the catalogue stays in the properties and in the specification.
+ */
+function hvLabel(e, short) {
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
-    return `${e.name ? e.name + ' · ' : ''}${a.n}\nL=${fmt(+e.flow || a.q)} м³/ч`;
+    const q = `L=${fmt(+e.flow || a.q)} м³/ч`;
+    if (short) return `${hvMark(e)}\n${q}`;
+    return `${e.name ? e.name + ' · ' : ''}${a.n}\n${q}`;
   }
   if (e.kind === 'sil') return `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`;
   if (e.kind === 'red') return `Переход ø${+e.d || 200}/ø${+e.d2 || 160}`;
@@ -63535,7 +63593,10 @@ function hvLabel(e) {
     return `${e.cross ? 'Крестовина' : 'Тройник'} ø${+e.d || 200}/ø${+e.d2 || 160}${+e.ang === 45 ? ' 45°' : ''}`;
   const s = plenSlot(e);
   const [L, W] = hvDim(e);
-  return `${e.mount === 'wall' ? 'Решётка настенная с адаптером' : 'Адаптер'} ${fmt(L)}×${fmt(W)}, ${Math.round(+e.n || 2)}×ø${+e.d || 125}\n${fmt(s.L)} мм, ${s.ns} щел${s.ns === 1 ? 'ь' : s.ns < 5 ? 'и' : 'ей'} ${s.sw} мм\nL=${e.flowTxt || fmt(+e.flow || 0)} м³/ч\nV=${n1(s.v)} м/с`;
+  const wall = e.mount === 'wall';
+  const tail = `L=${e.flowTxt || fmt(+e.flow || 0)} м³/ч\nV=${n1(s.v)} м/с`;
+  if (short) return `${e.sys ? e.sys + ' · ' : ''}${wall ? 'Решётка' : 'Адаптер'} ${fmt(L)}×${fmt(W)}\n${tail}`;
+  return `${wall ? 'Решётка настенная с адаптером' : 'Адаптер'} ${fmt(L)}×${fmt(W)}, ${Math.round(+e.n || 2)}×ø${+e.d || 125}\n${fmt(s.L)} мм, ${s.ns} щел${s.ns === 1 ? 'ь' : s.ns < 5 ? 'и' : 'ей'} ${s.sw} мм\n${tail}`;
 }
 
 /* ---------- 3D ---------- */
@@ -63924,7 +63985,8 @@ function hvDraw(e, color, o, ghost) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  if (!ghost && view.k > 0.04) {
+  // a leader already says it: the caption under the unit would only double it on the sheet
+  if (!ghost && view.k > 0.04 && !hasLeader(e)) {
     const s = w2s(LP(e, 0, W / 2 + 60));
     ctx.fillStyle = c;
     ctx.font = '10px "IBM Plex Mono", monospace';
@@ -63932,7 +63994,7 @@ function hvDraw(e, color, o, ghost) {
     ctx.textBaseline = 'top';
     const t =
       e.kind === 'ahu'
-        ? ahuOf(e).n
+        ? hvMark(e)
         : e.kind === 'sil'
           ? `CSR ${+e.d || 160}/${L}`
           : e.kind === 'red'
@@ -64564,11 +64626,11 @@ function spigotAt(p, r, skip) {
 
 /* ---------- labels ---------- */
 /** The label text of a ventilation element, or null. */
-function ventLabel(t) {
+function ventLabel(t, short) {
   if (!t) return null;
   if (t.type === 'duct') return t.shape === 'rect' ? `${fmt(t.w)}×${fmt(t.hh)}` : `ø${fmt(t.d)}`;
-  if (t.type === 'hvu') return hvLabel(t);
-  if (t.type === 'ac' && hvHooks.acLabel) return hvHooks.acLabel(t);
+  if (t.type === 'hvu') return hvLabel(t, short);
+  if (t.type === 'ac' && hvHooks.acLabel) return hvHooks.acLabel(t, short);
   return null;
 }
 /** Anchor of an element's leader on the plan. */
@@ -64983,7 +65045,11 @@ function ventAlbum() {
   }
   labelSystems(null);
   const s1 = addSheet('Вентиляция и кондиционирование — план');
-  addPlanVp(s1, { preset: 'vent', title: 'План систем вентиляции и кондиционирования' });
+  const vp1 = addPlanVp(s1, { preset: 'vent', title: 'План систем вентиляции и кондиционирования' });
+  // the only drawing of the sheet stands in the middle of the field, not in a corner
+  const i1 = shInner(s1);
+  vp1.x = Math.round(i1[0] + (i1[2] - i1[0] - vp1.w) / 2);
+  vp1.y = Math.round(i1[1] + (i1[3] - i1[1] - 40 - vp1.h) / 2);
   const s2 = addSheet('Вентиляция — аксонометрическая схема');
   const [x0, y0, x1, y1] = shInner(s2);
   addCamVp(s2, {
@@ -65241,10 +65307,16 @@ function acSpigots(e) {
     };
   });
 }
-function acLabel(e) {
+/** `short` is the drawing form: the mark and the figures; the catalogue model stays in the properties. */
+function acLabel(e, short) {
   const m = acModel(e);
   const q = +e.flow || (m ? m.q : 0);
-  return `${e.name ? e.name + ' · ' : ''}${m ? m.n : 'Канальный кондиционер ' + String(acCap(e)).replace('.', ',') + ' кВт'}${q ? `\nL=${fmt(q)} м³/ч` : ''}`;
+  const ql = q ? `\nL=${fmt(q)} м³/ч` : '';
+  if (short) {
+    const mark = e.name || [e.sysS, e.sysR].filter(Boolean).join('/') || 'КБ';
+    return `${mark} · ${String(acCap(e)).replace('.', ',')} кВт${ql}`;
+  }
+  return `${e.name ? e.name + ' · ' : ''}${m ? m.n : 'Канальный кондиционер ' + String(acCap(e)).replace('.', ',') + ' кВт'}${ql}`;
 }
 hvHooks.acSpigots = acSpigots;
 hvHooks.acLabel = acLabel;
@@ -90019,7 +90091,7 @@ function drawVentTags(it, cam) {
         e.type === 'hvu' ||
         (e.type === 'ac' && e.kind === 'duct'))
   );
-  const h = 2.2,
+  const h = 2.5, // ГОСТ 2.304: the smallest text of a drawing
     boxes = [];
   ctx.save();
   ctx.strokeStyle = '#222';
@@ -90027,7 +90099,7 @@ function drawVentTags(it, cam) {
     const P3 = vent3Anchor(e);
     const A = P3 && camToPaper(it, cam, P3);
     if (!A || A.x < it.x || A.x > it.x + it.w || A.y < it.y || A.y > it.y + it.h) continue;
-    const lines = (ventLabel(e) || '').split('\n').filter(Boolean);
+    const lines = (ventLabel(e, true) || '').split('\n').filter(Boolean);
     if (!lines.length) continue;
     const w = Math.max(...lines.map(l => l.length)) * h * 0.52 + 1.5,
       H = lines.length * h * 1.3 + 0.8;
@@ -92110,15 +92182,36 @@ const SHEET_SHORT = [
   [/развёртк|развертк/i, 'Развёртки'],
   [/разрез/i, 'Разрезы']
 ];
+// a tail after the dash tells the sheets of one section apart («Вентиляция — аксонометрическая схема»)
+const SHEET_TAIL = [
+  [/аксонометр|изометр/i, 'аксонометрия'],
+  [/\b3d\b/i, '3D'],
+  [/^план/i, 'план'],
+  [/разрез/i, 'разрезы'],
+  [/развёртк|развертк/i, 'развёртки'],
+  [/схем/i, 'схема'],
+  [/узл/i, 'узлы'],
+  [/специф/i, 'спецификация']
+];
+function shortHead(n) {
+  for (const [rx, s] of SHEET_SHORT) if (rx.test(n)) return s;
+  const t = n.replace(/^(план|схема|чертёж|чертеж)\s+/i, '');
+  const r = t.charAt(0).toUpperCase() + t.slice(1);
+  return r.length > 14 ? r.slice(0, 13) + '…' : r;
+}
 function sheetShort(name) {
   const n = String(name || '');
   // the electrical plan's name is 14 letters: the tab shows «Электрика» (the full name stays in the tab's title)
   if (/^план электрики$/i.test(n)) return 'Электрика';
   if (n.length <= 14) return n;
-  for (const [rx, s] of SHEET_SHORT) if (rx.test(n)) return s;
-  const t = n.replace(/^(план|схема|чертёж|чертеж)\s+/i, '');
-  const r = t.charAt(0).toUpperCase() + t.slice(1);
-  return r.length > 14 ? r.slice(0, 13) + '…' : r;
+  const m = n.split(/\s*[—–]\s*|\s+-\s+/);
+  if (m.length > 1 && m[1].trim()) {
+    const tail = m.slice(1).join(' ').trim();
+    const t = (SHEET_TAIL.find(([rx]) => rx.test(tail)) || [])[1] || tail;
+    const r = `${shortHead(m[0].trim())} · ${t}`;
+    return r.length > 22 ? r.slice(0, 21) + '…' : r;
+  }
+  return shortHead(n);
 }
 
 // ===== sheets/sbox-view.js =====
@@ -127852,7 +127945,8 @@ function jetsOf(R, ceil, mode) {
     if (!visible(e)) continue;
     if (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && !/vunit|vfan/.test(e.kind)) {
       const wallDev = DEVK[e.kind].mount !== 'ceil';
-      if (!inRoom(e.p) && !(wallDev && (inRoom(add(e.p, mul(devF(e), 200))) || inRoom(add(e.p, mul(devF(e), -200)))))) continue;
+      if (!inRoom(e.p) && !(wallDev && (inRoom(add(e.p, mul(devF(e), 200))) || inRoom(add(e.p, mul(devF(e), -200))))))
+        continue;
       const role = avRole(e.sys);
       if (role === 'ex') continue;
       const L = +e.flow || 0;
