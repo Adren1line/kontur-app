@@ -7062,6 +7062,7 @@ html[data-form='phone'] .modal table.cards td::before {
   <hr>
   <button data-f="sample">Пример: дом со вторым светом</button>
   <button data-f="sampleFlat">Пример: двухуровневая квартира</button>
+  <button data-f="sampleVilla">Пример: дом 139 м², все разделы</button>
   <button data-f="new">Новый чертёж</button>
 </div>
 
@@ -7177,7 +7178,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.9';
+const APP_VER = '59.10';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12639,6 +12640,7 @@ function eraseIds(ids) {
 
 
 
+
 /* ---- sample project ---- */
 function defaultLayers() {
   return [
@@ -12678,7 +12680,8 @@ function sample(kind) {
     S.ents.push(o);
     return o;
   };
-  if (kind === 'flat') sampleDuplex(E);
+  if (kind === 'villa') sampleVilla(E);
+  else if (kind === 'flat') sampleDuplex(E);
   else sampleHouse(E);
   documentState.undoS = [];
   documentState.redoS = [];
@@ -21156,6 +21159,7 @@ const MENUS = [
       { n: 'Открыть проект…', k: '.kontur', a: () => pickFile('.kontur,.txt,.json') },
       { n: 'Пример: дом со вторым светом', a: () => fileAct('sample') },
       { n: 'Пример: квартира, 2 уровня', k: 'двухуровневая', a: () => fileAct('sampleFlat') },
+      { n: 'Пример: дом 139 м², все разделы', k: 'тестовая модель', a: () => fileAct('sampleVilla') },
       '-',
       {
         n: 'Сохранить в браузере',
@@ -22221,16 +22225,18 @@ function initToolbar() {
     if (f === 'import' || f === 'open') pickFile(f === 'open' ? '.json' : '.ifc,.glb,.gltf,.obj');
     if (f === 'expProj') exportProject();
     if (f === 'expCat') exportCatalog();
-    if (f === 'sample' || f === 'sampleFlat') {
+    if (f === 'sample' || f === 'sampleFlat' || f === 'sampleVilla') {
       const u = snapshot();
-      sample(f === 'sampleFlat' ? 'flat' : 'house');
+      sample(f === 'sampleVilla' ? 'villa' : f === 'sampleFlat' ? 'flat' : 'house');
       documentState.undoS = [u];
       changed();
       zoomExtents();
       log(
-        f === 'sampleFlat'
-          ? 'Загружен пример: двухуровневая квартира с кухней, санузлами и инженерией'
-          : 'Загружен пример: дом 14 × 10 м со вторым светом, прачечной, кухней и спальнями'
+        f === 'sampleVilla'
+          ? 'Загружен пример: одноэтажный дом 139 м² — все разделы, от отделки до вентиляции и листов'
+          : f === 'sampleFlat'
+            ? 'Загружен пример: двухуровневая квартира с кухней, санузлами и инженерией'
+            : 'Загружен пример: дом 14 × 10 м со вторым светом, прачечной, кухней и спальнями'
       );
       if (is3D()) setTimeout(() => camTo('iso'), 60);
     }
@@ -47523,14 +47529,16 @@ function autoWirePanel() {
   };
   for (const g of S.elec.groups) {
     if (String(g.brk) === '—') continue;
+    // a light on a switch key takes its power through the switch: the tree feeds the switch, not the light
     const devs = S.ents.filter(
-      d => d.type === 'dev' && visible(d) && d.group === g.n && d.kind !== 'panel' && !isLV(d)
+      d => d.type === 'dev' && visible(d) && d.group === g.n && d.kind !== 'panel' && !isLV(d) && !d.swk
     );
     if (!devs.length) continue;
     const ids = new Set([pd.id, ...devs.map(d => d.id)]);
     const adj = new Map([...ids].map(i => [i, new Set()]));
+    // a switched line brings no power: a switch reached only through its own lights still needs a feed
     for (const w of S.ents)
-      if (w.type === 'wire' && ids.has(w.from) && ids.has(w.to)) {
+      if (w.type === 'wire' && !w.sw && ids.has(w.from) && ids.has(w.to)) {
         adj.get(w.from).add(w.to);
         adj.get(w.to).add(w.from);
       }
@@ -47558,8 +47566,10 @@ function autoWirePanel() {
       const corner = Math.abs(a.p.x - b.p.x) > Math.abs(a.p.y - b.p.y) ? P(b.p.x, a.p.y) : P(a.p.x, b.p.y);
       const pts = [a.p, corner, b.p].filter((p, i, arr) => i === 0 || dist(p, arr[i - 1]) > 1);
       const sw = isSwitch(b) ? b : isSwitch(a) ? a : null;
+      const lamp = x => DEVK[x.kind] && DEVK[x.kind].f === 'light';
       let swr = null;
-      if (sw) {
+      // only a switch → light line is switched; a line to the switch from the tree is its feed
+      if (sw && lamp(sw === b ? a : b)) {
         const ks = switchKeys(sw);
         const k = ks.find(k => !keyConnected(sw, k.id)) || ks[0];
         if (k) swr = { dev: sw.id, key: k.id };
@@ -63303,6 +63313,960 @@ function galvSpec(e, L, H, put, S_) {
     });
 }
 
+// ===== mep/hvac/air-calc.js =====
+/**
+ * mep/hvac/air-calc.js
+ *
+ * Design calculations for ventilation and air conditioning (simplified engineering models):
+ * - air exchange per room by the norms (per person for living rooms, fixed exhaust for kitchens and bathrooms,
+ *   air changes for wardrobes) against the terminals actually placed; the balance of the flat;
+ * - cooling load of a room: sun through glazing by orientation, conduction of glazing / walls / roof, people,
+ *   lighting and appliances, fresh air; the air conditioner it needs and the check of placed units;
+ * - duct network of a system: graph from the source (air handling unit, fan, ducted AC) to the terminals, flows
+ *   summed along the tree, section selection by velocity limits and the ceiling void, friction (Altshul) and local
+ *   losses, the critical path and the pressure the unit must develop, branches that need a balancing damper;
+ * - noise at a terminal by its face velocity, against the room limit.
+ * Norms are defaults the project can change (S.vent.norm).
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+/** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
+const AV_NORM = {
+  person: 60, // m³/h per person in living rooms
+  perM2: 3, // m³/h per m² of a living room when it has less than 20 m² per person
+  kitchen: 120, // exhaust of a kitchen, m³/h
+  bath: 100, // bathroom with a bath / shower
+  wc: 50, // toilet
+  ward: 1, // wardrobe, storage, laundry: air changes per hour
+  minAch: 0.35, // whole flat, air changes per hour
+  vMain: 4, // m/s in mains
+  vLeaf: 2.5, // m/s in branches to terminals
+  vBed: 2, // m/s in branches to bedrooms
+  vFace: 2, // m/s on the face of a grille
+  noise: 30, // dB(A) in living rooms
+  noiseOther: 35, // dB(A) elsewhere
+  eta: 0.75, // heat recovery efficiency of the air handling unit
+  tIn: 24, // °C indoor in summer
+  dpTerm: 25, // Pa: terminal with its plenum
+  hVoid: 0, // mm: ceiling void (0 — from the false ceilings / the slab)
+  drop: 350, // mm: false ceiling below the slab where no ceiling is drawn
+  shape: 'auto' // 'auto' | 'round' | 'rect'
+};
+/** Summer design temperature (°C) for the cities of the heating module. */
+const AV_TSUM = {
+  msk: 28.5,
+  spb: 25,
+  ekb: 29,
+  nsk: 28,
+  kzn: 29,
+  krd: 33,
+  sochi: 30,
+  ala: 33,
+  ast: 31,
+  kzo: 38,
+  tash: 37,
+  minsk: 27
+};
+function avNorm() {
+  if (!S.vent) return { ...AV_NORM };
+  return { ...AV_NORM, ...(S.vent.norm || {}) };
+}
+function avTSum() {
+  const n = (S.vent && S.vent.norm) || {};
+  if (n.tSum != null && n.tSum !== '') return +n.tSum;
+  return AV_TSUM[heatCfg().city] ?? 30;
+}
+const avCity = () => (HEAT_CITY[heatCfg().city] || ['—'])[0];
+
+/* ---------- rooms ---------- */
+const AV_KIND = {
+  living: 'Жилая',
+  bed: 'Спальня',
+  kitliv: 'Кухня-гостиная',
+  kitchen: 'Кухня',
+  bath: 'Ванная / душевая',
+  wc: 'Туалет',
+  ward: 'Гардеробная / кладовая',
+  corr: 'Коридор / холл',
+  tech: 'Техническое',
+  other: 'Прочее'
+};
+/** Kind of a room by its name (or z.airT). */
+function avKind(z) {
+  if (z.airT && AV_KIND[z.airT]) return z.airT;
+  const n = (z.name || '').toLowerCase();
+  if (/кухн/.test(n)) return /гостин|столов/.test(n) ? 'kitliv' : 'kitchen';
+  if (/туалет|уборн|\bwc\b/.test(n) && !/ванн|душ/.test(n)) return 'wc';
+  if (/с\/у|сануз|ванн|душ|постир|прачеч/.test(n)) return 'bath';
+  if (/гардер|кладов|хранен/.test(n)) return 'ward';
+  if (/корид|холл|прихож|тамбур|лестн/.test(n)) return 'corr';
+  if (/тех|котел|котёл|бойлер|щитов/.test(n)) return 'tech';
+  if (/спальн|детск/.test(n)) return 'bed';
+  if (/гостин|зал|кабинет|комнат|столов|библиот|игров/.test(n)) return 'living';
+  return 'other';
+}
+const avLiving = k => k === 'living' || k === 'bed' || k === 'kitliv';
+/** People in a room: set in the room, else by its kind. */
+function avPeople(z) {
+  if (z.ppl != null && z.ppl !== '') return +z.ppl;
+  const k = avKind(z),
+    A = avArea(z),
+    n = (z.name || '').toLowerCase();
+  if (k === 'bed') return /детск/.test(n) ? 1 : 2;
+  if (/кабинет/.test(n)) return 1;
+  if (k === 'living' || k === 'kitliv') return Math.max(2, Math.round(A / 20));
+  return 0;
+}
+const avArea = z => Math.abs(polyArea(z.pts)) / 1e6;
+/** Underside of the slab above the level, mm from the finished floor. */
+function avSlabU() {
+  const lv = lvCur();
+  return (lv.h || (S.ceil || 2700) + 300) + (lv.top || 0) - (lv.slab || 200);
+}
+/** Local loss of an inline part, ζ by the velocity in its Ø (silencer ≈ 2 — 15–25 Pa at 4 m/s; reducer — a cone). */
+const AV_PART_ZETA = { sil: 2, red: 0.1, tee: 0 };
+/** Late hooks set by the air units module (a direct import would make a cycle). */
+const hvHooksAv = { spigots: null, acSpigots: null };
+/** Drawn false ceiling under a point, mm; null when no drawn ceiling covers it (over a wall, an open space). */
+function avFcDrawn(p) {
+  let best = null;
+  for (const c of S.ents)
+    if (c.type === 'ceil' && visible(c)) {
+      const pts = ceilOutline(c);
+      if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
+    }
+  return best;
+}
+/** False ceiling level over a point: a drawn ceiling, else the slab underside minus the default drop, mm. */
+function avFc(p) {
+  let best = null;
+  for (const c of S.ents)
+    if (c.type === 'ceil' && visible(c)) {
+      const pts = ceilOutline(c);
+      if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
+    }
+  return best != null ? best : avSlabU() - avNorm().drop;
+}
+/** Height of the room air: false ceiling over its centre, else the level ceiling, mm. */
+function avCeil(p) {
+  let best = null;
+  for (const c of S.ents)
+    if (c.type === 'ceil' && visible(c)) {
+      const pts = ceilOutline(c);
+      if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
+    }
+  return best != null ? best : S.ceil || 2700;
+}
+const avRooms = () => S.ents.filter(e => e.type === 'floorz' && visible(e) && e.pts && e.pts.length > 2);
+function avCenter(z) {
+  let x = 0,
+    y = 0;
+  for (const p of z.pts) {
+    x += p.x;
+    y += p.y;
+  }
+  return P(x / z.pts.length, y / z.pts.length);
+}
+/** Air terminals: supply / exhaust / recirculation by the kind of their system. */
+function avRole(sysId) {
+  const k = (sysOf(sysId).kind || '').toLowerCase();
+  if (/выт/.test(k)) return 'ex';
+  if (/конд|рецирк|возв/.test(k)) return 'ac';
+  return 'sup';
+}
+/** Air terminals; grille adapters with slot grilles count as terminals of their system. */
+const avTerms = () =>
+  S.ents.filter(
+    e =>
+      (e.type === 'dev' && visible(e) && DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && !/vunit|vfan/.test(e.kind)) ||
+      (e.type === 'hvu' && e.kind === 'plen' && visible(e))
+  );
+
+/** Required and placed air of every room + the flat balance. */
+function avRoomAir() {
+  const N = avNorm();
+  const terms = avTerms();
+  const rows = [];
+  let sReq = 0,
+    eReq = 0,
+    sHave = 0,
+    eHave = 0,
+    V = 0;
+  for (const z of avRooms()) {
+    const k = avKind(z),
+      A = avArea(z),
+      h = avCeil(avCenter(z)) / 1000,
+      ppl = avPeople(z);
+    V += A * h;
+    let sup = 0,
+      ex = 0;
+    if (avLiving(k)) {
+      sup = ppl * N.person;
+      if (ppl && A / ppl < 20) sup = Math.max(sup, A * N.perM2);
+    }
+    if (k === 'kitchen' || k === 'kitliv') ex = N.kitchen;
+    if (k === 'bath') ex = N.bath;
+    if (k === 'wc') ex = N.wc;
+    if (k === 'ward' || k === 'tech') ex = Math.round(A * h * N.ward);
+    const mine = terms.filter(t => inPoly(t.p, z.pts));
+    const hs = mine.filter(t => avRole(t.sys) === 'sup').reduce((s, t) => s + (+t.flow || 0), 0);
+    const he = mine.filter(t => avRole(t.sys) === 'ex').reduce((s, t) => s + (+t.flow || 0), 0);
+    sReq += sup;
+    eReq += ex;
+    sHave += hs;
+    eHave += he;
+    rows.push({ z, k, A, h, ppl, sup, ex, hs, he, terms: mine });
+  }
+  const need = Math.max(sReq, eReq, V * N.minAch);
+  return { rows, sReq, eReq, sHave, eHave, V, need, ach: V ? Math.max(sHave, eHave) / V : 0 };
+}
+/** Puts the norm flows on the terminals of each room (equal shares); returns the number of terminals changed. */
+function avApplyRoomFlows(noUndo) {
+  const R = avRoomAir();
+  let n = 0;
+  if (!noUndo) pushUndo();
+  for (const r of R.rows) {
+    for (const [role, q] of [
+      ['sup', r.sup],
+      ['ex', r.ex]
+    ]) {
+      const ts = r.terms.filter(t => avRole(t.sys) === role);
+      if (!ts.length || !q) continue;
+      const each = Math.ceil(q / ts.length / 5) * 5;
+      for (const t of ts)
+        if (+t.flow !== each) {
+          t.flow = each;
+          n++;
+        }
+    }
+  }
+  changed();
+  return n;
+}
+
+/* ---------- cooling load ---------- */
+/** Peak solar gain through glazing, W/m², by the azimuth of the window's outward normal (0 — north, clockwise). */
+function avSun(az) {
+  const T = [60, 180, 380, 330, 260, 360, 400, 200]; // N NE E SE S SW W NW
+  const i = Math.round((((az % 360) + 360) % 360) / 45) % 8;
+  return T[i];
+}
+const AV_SIDE = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'];
+function avAz(n) {
+  // plan north: S.x.geo.north, degrees from +X counter-clockwise (90 — up)
+  const nr = (((S.x && S.x.geo && S.x.geo.north) ?? 90) * Math.PI) / 180;
+  const N = P(Math.cos(nr), Math.sin(nr)),
+    E = P(Math.sin(nr), -Math.cos(nr));
+  return (Math.atan2(dot(n, E), dot(n, N)) * 180) / Math.PI;
+}
+/** Exterior wall pieces of a room with their openings and outward normals. */
+function avOutside(z) {
+  const zones = avRooms().filter(q => q !== z);
+  const out = [];
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !visible(w)) continue;
+    const wi = wallInfo(w);
+    let L = 0,
+      side = 0,
+      t0m = Infinity,
+      t1m = -Infinity;
+    for (let i = 0; i < z.pts.length; i++) {
+      const a = z.pts[i],
+        b = z.pts[(i + 1) % z.pts.length];
+      if (Math.abs(cross(nrm(sub(b, a)), wi.u)) > 0.05) continue;
+      const dn = dot(sub(mid(a, b), w.a), wi.n);
+      if (Math.abs(Math.abs(dn) - w.th / 2) > 60) continue;
+      const t0 = dot(sub(a, w.a), wi.u),
+        t1 = dot(sub(b, w.a), wi.u);
+      const lo = Math.max(Math.min(t0, t1), 0),
+        hi = Math.min(Math.max(t0, t1), wi.L);
+      if (hi - lo > 1) {
+        L += hi - lo;
+        side = Math.sign(dn);
+        t0m = Math.min(t0m, lo);
+        t1m = Math.max(t1m, hi);
+      }
+    }
+    if (L < 100) continue;
+    const c = add(add(w.a, mul(wi.u, wi.L / 2)), mul(wi.n, -side * (w.th / 2 + 300)));
+    if (zones.some(q => inPoly(c, q.pts))) continue;
+    const ops = hosted(w.id).filter(o => {
+      const I = opInfo(o);
+      if (!I) return false;
+      const t = dot(sub(I.c, w.a), wi.u);
+      return t >= t0m - 10 && t <= t1m + 10;
+    });
+    out.push({ w, L, n: mul(wi.n, -side), ops });
+  }
+  return out;
+}
+/** Cooling load of a room, W, with its parts. */
+function avLoad(z, R) {
+  const N = avNorm(),
+    tS = avTSum(),
+    dT = Math.max(0, tS - N.tIn);
+  const A = avArea(z),
+    h = avCeil(avCenter(z)) / 1000,
+    k = avKind(z),
+    ppl = avPeople(z);
+  const parts = [];
+  let sun = 0,
+    glass = 0,
+    walls = 0;
+  for (const o of avOutside(z)) {
+    let Aop = 0;
+    const az = avAz(o.n);
+    for (const op of o.ops) {
+      const Ao = ((+op.w || 0) * (+op.h || 0)) / 1e6;
+      Aop += Ao;
+      if (op.type === 'window' || op.type === 'opening') {
+        const I = avSun(az);
+        sun += Ao * I * 0.6;
+        glass += Ao * (op.type === 'window' ? winU(op) : 2) * dT;
+        parts.push([
+          `Окно ${Math.round(op.w)}×${Math.round(op.h)} на ${AV_SIDE[Math.round((((az % 360) + 360) % 360) / 45) % 8]}: солнце`,
+          Math.round(Ao * I * 0.6)
+        ]);
+      }
+    }
+    walls += Math.max(0, (o.L / 1000) * h - Aop) * wallU(o.w).U * (dT + 4);
+  }
+  if (glass) parts.push(['Окна: теплопередача', Math.round(glass)]);
+  if (walls) parts.push(['Наружные стены', Math.round(walls)]);
+  const ht = z.heat || {};
+  if (ht.ceil === 'roof') parts.push(['Кровля', Math.round(A * 0.22 * (dT + 15))]);
+  if (ppl) parts.push([`Люди: ${ppl} × 125 Вт`, ppl * 125]);
+  parts.push(['Освещение и приборы', Math.round(A * 12)]);
+  if (k === 'kitchen' || k === 'kitliv') parts.push(['Кухня: готовка', 800]);
+  if (/кабинет/i.test(z.name || '')) parts.push(['Компьютер', 250]);
+  if (k === 'living' || k === 'kitliv') parts.push(['Телевизор, техника', 200]);
+  // fresh air into the room (after the recuperator)
+  const row = R && R.rows.find(r => r.z === z);
+  const L = row ? Math.max(row.hs, row.sup) : 0;
+  const rec = S.ents.some(e => e.type === 'dev' && e.kind === 'vunit' && visible(e));
+  const tSup = rec ? tS - N.eta * (tS - N.tIn) : tS;
+  if (L && tSup > N.tIn) parts.push([`Приточный воздух ${Math.round(L)} м³/ч`, Math.round(L * 0.335 * (tSup - N.tIn))]);
+  const Q = parts.reduce((s, p) => s + p[1], 0);
+  return { Q, parts, A, perM2: A ? Q / A : 0 };
+}
+const AV_CAPS = [2.5, 3.5, 5, 7];
+/** Nominal AC size (kW) that covers Q (W) with a 10 % margin, or null when one unit is not enough. */
+function avCapFor(Q) {
+  const need = (Q * 1.1) / 1000;
+  return AV_CAPS.find(c => c >= need) || null;
+}
+/** Rooms an air conditioner serves: its own room, plus rooms reached by its ducts. */
+function avAcRooms(ac, rooms) {
+  const out = new Set();
+  const own = rooms.find(z => inPoly(ac.p, z.pts));
+  if (own) out.add(own);
+  if (ac.kind === 'duct') {
+    const D = acDim(ac),
+      r = Math.max(D[0], D[1]) / 2 + 400;
+    const ds = S.ents.filter(e => e.type === 'duct' && visible(e) && e.pts.some(p => dist(p, ac.p) < r));
+    const sysIds = new Set(ds.map(d => d.sys));
+    for (const t of avTerms()) if (sysIds.has(t.sys)) for (const z of rooms) if (inPoly(t.p, z.pts)) out.add(z);
+  }
+  if (Array.isArray(ac.rooms)) for (const id of ac.rooms) for (const z of rooms) if (z.id === id) out.add(z);
+  return [...out];
+}
+/** Loads of all rooms and the check of the placed air conditioners. */
+function avCooling() {
+  const R = avRoomAir();
+  const rooms = avRooms();
+  const L = new Map(rooms.map(z => [z, avLoad(z, R)]));
+  const acs = S.ents
+    .filter(e => e.type === 'ac' && visible(e))
+    .map(ac => {
+      const zs = avAcRooms(ac, rooms);
+      const Q = zs.reduce((s, z) => s + L.get(z).Q, 0);
+      const cap = acCap(ac);
+      return { ac, rooms: zs, Q, cap, ok: !zs.length || cap * 1000 >= Q * 0.95, fit: avCapFor(Q) };
+    });
+  const served = new Set(acs.flatMap(a => a.rooms));
+  const total = [...L.values()].reduce((s, l) => s + l.Q, 0);
+  return { R, loads: L, acs, served, total };
+}
+
+/* ---------- duct network ---------- */
+const AV_RND = [100, 125, 160, 200, 250, 315, 355, 400, 450, 500, 560, 630];
+const AV_REC = [100, 150, 200, 250, 300, 400, 500, 600, 800, 1000];
+const avKey = p => Math.round(p.x / 30) + ':' + Math.round(p.y / 30);
+/** Hydraulic diameter, m. */
+const avDe = e => (e.shape === 'rect' ? (2 * e.w * e.hh) / (e.w + e.hh) : e.d) / 1000;
+/** Friction loss, Pa/m (Altshul, galvanized steel 0.1 mm). */
+function avFric(e, flow) {
+  const A = ductArea(e),
+    v = flow / 3600 / A,
+    de = avDe(e);
+  if (!v || !de) return { v: 0, R: 0, pd: 0 };
+  const Re = (v * de) / 15.1e-6;
+  const lam = 0.11 * Math.pow(0.0001 / de + 68 / Re, 0.25);
+  const pd = (1.2 * v * v) / 2;
+  return { v, R: (lam / de) * pd, pd };
+}
+/**
+ * The network of one system: pieces of ducts between joints, the source, terminals, flows, pressure.
+ * Returns { sys, src, srcName, pieces, terms, crit, ok, msg }.
+ */
+function avNet(sysId) {
+  const N = avNorm();
+  const ducts = S.ents.filter(e => e.type === 'duct' && visible(e) && e.sys === sysId && e.pts && e.pts.length >= 2);
+  const res = { sys: sysId, pieces: [], terms: [], crit: 0, ok: false, msg: '' };
+  if (!ducts.length) {
+    res.msg = 'нет воздуховодов';
+    return res;
+  }
+  // tees: a duct end that lands inside another duct of the system splits that duct there
+  const cuts = new Map(ducts.map(d => [d, []]));
+  for (const d of ducts)
+    for (const end of [d.pts[0], d.pts[d.pts.length - 1]])
+      for (const o of ducts) {
+        if (o === d) continue;
+        for (let i = 1; i < o.pts.length; i++) {
+          const q = segPt(o.pts[i - 1], o.pts[i], end);
+          // a branch joins the main on its side (a saddle, a flexible tap): its end may stand off the axis by the
+          // radius of the main
+          const r = o.shape === 'rect' ? Math.max(+o.w || 0, +o.hh || 0) / 2 : (+o.d || 0) / 2;
+          if (dist(q, end) < 40 + r && dist(q, o.pts[0]) > 40 && dist(q, o.pts[o.pts.length - 1]) > 40)
+            cuts.get(o).push({ i, p: q, s: dist(o.pts[i - 1], q) });
+        }
+      }
+  // pieces
+  for (const d of ducts) {
+    const seenK = new Set();
+    const cs = cuts
+      .get(d)
+      .sort((a, b) => a.i - b.i || a.s - b.s)
+      .filter(c => {
+        const k = avKey(c.p);
+        if (seenK.has(k) || dist(c.p, d.pts[c.i]) < 1) return false; // a cut at a vertex is taken at the next segment start
+        seenK.add(k);
+        return true;
+      });
+    let cur = [d.pts[0]];
+    let k = 0;
+    for (let i = 1; i < d.pts.length; i++) {
+      while (k < cs.length && cs[k].i === i) {
+        cur.push(cs[k].p);
+        res.pieces.push({ d, pts: cur });
+        cur = [cs[k].p];
+        k++;
+      }
+      cur.push(d.pts[i]);
+    }
+    res.pieces.push({ d, pts: cur });
+  }
+  for (const pc of res.pieces) {
+    pc.a = avKey(pc.pts[0]);
+    pc.b = avKey(pc.pts[pc.pts.length - 1]);
+    pc.L = plen(pc.pts) / 1000;
+  }
+  // inline parts (silencer, reducer, tee) stand in the gap between two ducts: the part is a piece of the run from
+  // its inlet to each outlet, so the network goes on through it
+  const endK = p => {
+    let best = null,
+      bd = 80;
+    for (const pc of res.pieces)
+      for (const [k, q] of [
+        [pc.a, pc.pts[0]],
+        [pc.b, pc.pts[pc.pts.length - 1]]
+      ]) {
+        const d_ = dist(q, p);
+        if (d_ < bd) {
+          bd = d_;
+          best = [k, q];
+        }
+      }
+    return best;
+  };
+  for (const u of S.ents) {
+    if (u.type !== 'hvu' || !visible(u) || !['sil', 'red', 'tee'].includes(u.kind)) continue;
+    const sp = (hvHooksAv.spigots ? hvHooksAv.spigots(u) : []).map(q => endK(P(q.p[0], q.p[1]))).filter(Boolean);
+    if (sp.length < 2) continue;
+    for (let i = 1; i < sp.length; i++)
+      res.pieces.push({
+        d: null,
+        part: u,
+        pts: [sp[0][1], sp[i][1]],
+        a: sp[0][0],
+        b: sp[i][0],
+        L: dist(sp[0][1], sp[i][1]) / 1000
+      });
+  }
+  // terminals at piece ends
+  const nodeP = new Map();
+  for (const pc of res.pieces) {
+    nodeP.set(pc.a, pc.pts[0]);
+    nodeP.set(pc.b, pc.pts[pc.pts.length - 1]);
+  }
+  const tAt = new Map();
+  for (const t of avTerms().filter(t => t.sys === sysId)) {
+    let best = null,
+      bd = t.type === 'hvu' ? hvDim(t)[0] / 2 + 500 : 450;
+    for (const d of ducts)
+      for (const [id, i] of [
+        [d.from, 0],
+        [d.to, d.pts.length - 1]
+      ])
+        if (id === t.id) {
+          best = avKey(d.pts[i]);
+          bd = 0;
+        }
+    if (!best)
+      for (const [k, p] of nodeP)
+        if (dist(p, t.p) < bd) {
+          bd = dist(p, t.p);
+          best = k;
+        }
+    if (best) {
+      if (!tAt.has(best)) tAt.set(best, []);
+      tAt.get(best).push(t);
+      res.terms.push({ t, node: best, flow: +t.flow || 0 });
+    }
+  }
+  // source: air handling unit / fan of the system, a ducted AC, else a free end without terminal
+  let src = null,
+    srcName = '';
+  const units = S.ents.filter(
+    e =>
+      visible(e) &&
+      ((e.type === 'dev' && (e.kind === 'vunit' || (e.kind === 'vfan' && (!e.sys || e.sys === sysId)))) ||
+        (e.type === 'ac' && e.kind === 'duct') ||
+        (e.type === 'hvu' && e.kind === 'ahu' && (e.sysS === sysId || e.sysE === sysId)))
+  );
+  for (const u of units) {
+    // an air handling unit starts the system at its own spigot (supply or extract), not at the outdoor-air duct
+    if (u.type === 'hvu' && hvHooksAv.spigots) {
+      const q = hvHooksAv.spigots(u).find(x => x.role === (u.sysS === sysId ? 'sup' : 'eta'));
+      let bk = null,
+        bd = 300;
+      if (q)
+        for (const [k, p] of nodeP) {
+          const d_ = dist(p, P(q.p[0], q.p[1]));
+          if (d_ < bd && !tAt.has(k)) {
+            bd = d_;
+            bk = k;
+          }
+        }
+      if (bk) {
+        src = bk;
+        srcName = hvLabel(u).split('\n')[0];
+        res.unit = u;
+        break;
+      }
+    }
+    const r =
+      u.type === 'ac'
+        ? Math.max(...acDim(u).slice(0, 2)) / 2 + 700
+        : u.type === 'hvu'
+          ? Math.max(...hvDim(u).slice(0, 2)) / 2 + 500
+          : Math.max(sizeWH(u.size).w, sizeWH(u.size).h) / 2 + 400;
+    for (const [k, p] of nodeP)
+      if (dist(p, u.p) < r && !tAt.has(k)) {
+        src = k;
+        srcName =
+          u.type === 'ac'
+            ? `канальный кондиционер ${acCap(u)} кВт`
+            : u.type === 'hvu'
+              ? hvLabel(u).split('\n')[0]
+              : DEVK[u.kind].n.toLowerCase();
+        res.unit = u;
+        break;
+      }
+    if (src) break;
+  }
+  const deg = new Map();
+  for (const pc of res.pieces) {
+    deg.set(pc.a, (deg.get(pc.a) || 0) + 1);
+    deg.set(pc.b, (deg.get(pc.b) || 0) + 1);
+  }
+  if (!src) {
+    const free = [...deg].filter(([k, n]) => n === 1 && !tAt.has(k)).map(([k]) => k);
+    if (free.length === 1) {
+      src = free[0];
+      srcName = 'свободный конец (установка не найдена)';
+    }
+  }
+  if (!src) {
+    res.msg = 'не найден источник: поставьте приточную установку / вентилятор у начала сети';
+    return res;
+  }
+  res.src = src;
+  res.srcName = srcName;
+  // a unit with several outlets of the system (chambers of a ducted air conditioner, two spigots): every outlet
+  // starts from the unit — a zero piece joins it to the source
+  if (res.unit) {
+    const u = res.unit;
+    const sps =
+      u.type === 'ac' && hvHooksAv.acSpigots
+        ? hvHooksAv.acSpigots(u)
+        : u.type === 'hvu' && hvHooksAv.spigots
+          ? hvHooksAv.spigots(u)
+          : [];
+    const sp0 = nodeP.get(src);
+    for (const q of sps) {
+      if (q.sys && q.sys !== sysId) continue;
+      if (q.role === 'oda' || q.role === 'eha') continue;
+      let bk = null,
+        bd = 120;
+      for (const [k, p] of nodeP) {
+        const d_ = dist(p, P(q.p[0], q.p[1]));
+        if (d_ < bd && k !== src && !tAt.has(k)) {
+          bd = d_;
+          bk = k;
+        }
+      }
+      if (bk) res.pieces.push({ d: null, part: null, chamber: true, pts: [sp0, nodeP.get(bk)], a: src, b: bk, L: 0 });
+    }
+  }
+  // tree from the source
+  const adj = new Map();
+  for (const pc of res.pieces) {
+    (adj.get(pc.a) || adj.set(pc.a, []).get(pc.a)).push(pc);
+    (adj.get(pc.b) || adj.set(pc.b, []).get(pc.b)).push(pc);
+  }
+  const seen = new Set([src]);
+  const order = [];
+  const q = [src];
+  while (q.length) {
+    const n = q.shift();
+    for (const pc of adj.get(n) || []) {
+      if (pc.up) continue;
+      const m = pc.a === n ? pc.b : pc.a;
+      if (seen.has(m)) {
+        if (!pc.up) pc.loop = true;
+        continue;
+      }
+      pc.up = n;
+      pc.down = m;
+      seen.add(m);
+      order.push(pc);
+      q.push(m);
+    }
+  }
+  // the outdoor-air intake and the exhaust of the unit go outside: they are not loose pieces of the network
+  const outside = new Set();
+  if (res.unit && res.unit.type === 'hvu' && hvHooksAv.spigots)
+    for (const q of hvHooksAv.spigots(res.unit).filter(x => x.role === 'oda' || x.role === 'eha'))
+      for (const pc of res.pieces)
+        if ([pc.pts[0], pc.pts[pc.pts.length - 1]].some(p => dist(p, P(q.p[0], q.p[1])) < 80)) outside.add(pc);
+  res.loose = res.pieces.filter(pc => !pc.up && !outside.has(pc)).length;
+  // flows: sum of terminals below
+  for (let i = order.length - 1; i >= 0; i--) {
+    const pc = order[i];
+    const kids = order.filter(c => c.up === pc.down);
+    pc.kids = kids;
+    pc.flow = (tAt.get(pc.down) || []).reduce((s, t) => s + (+t.flow || 0), 0) + kids.reduce((s, c) => s + c.flow, 0);
+    pc.leaf = !kids.length;
+  }
+  // pressure along the tree
+  const bedRooms = avRooms().filter(z => avKind(z) === 'bed');
+  for (const pc of order) {
+    // a part in the run counts as a short duct of its own Ø plus the local loss of the part
+    const pd_ = pc.part ? +pc.part.d || 200 : 250;
+    const e = pc.d || { shape: 'round', d: pd_, w: pd_, hh: pd_, ins: 0 };
+    const f = avFric(e, pc.flow);
+    pc.v = f.v;
+    pc.R = f.R;
+    const sib = order.filter(c => c.up === pc.up);
+    const main = sib.reduce((a, c) => (c.flow > a.flow ? c : a), sib[0]);
+    let zeta = 0;
+    for (const a of ductBends({ pts: pc.pts })) zeta += (e.shape === 'rect' ? 0.4 : 0.25) * (a / 90);
+    if (sib.length > 1) zeta += pc === main ? 0.25 : 0.9;
+    if (pc.part) zeta += AV_PART_ZETA[pc.part.kind] || 0;
+    if (pc.chamber) zeta = 0; // inside the unit
+    pc.zeta = zeta;
+    pc.dp = pc.chamber ? 0 : f.R * pc.L + zeta * f.pd;
+    const parent = order.find(c => c.down === pc.up);
+    pc.P = (parent ? parent.P : 0) + pc.dp;
+    const toBed = pc.leaf && (tAt.get(pc.down) || []).some(t => bedRooms.some(z => inPoly(t.p, z.pts)));
+    pc.vmax = pc.leaf ? (toBed ? N.vBed : N.vLeaf) : N.vMain;
+  }
+  for (const r of res.terms) {
+    const pc = order.find(c => c.down === r.node);
+    r.P = (pc ? pc.P : 0) + N.dpTerm;
+  }
+  res.crit = res.terms.reduce((m, r) => Math.max(m, r.P), 0);
+  for (const r of res.terms) r.damper = res.crit - r.P > Math.max(10, 0.15 * res.crit);
+  res.order = order;
+  res.ok = true;
+  return res;
+}
+/** All systems that have ducts or terminals. */
+function avSystems() {
+  const ids = new Set();
+  for (const e of S.ents)
+    if ((e.type === 'duct' || (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].f === 'vterm')) && e.sys && visible(e))
+      ids.add(e.sys);
+  return [...ids].map(avNet);
+}
+/** Ceiling void available for ducts over a point, mm (slab underside − false ceiling − 50 mm clearance). */
+function avVoid(p) {
+  const N = avNorm();
+  if (N.hVoid) return +N.hVoid;
+  return Math.max(100, avSlabU() - avFc(p) - 50);
+}
+/** Section for a flow at a velocity limit within a height limit. */
+function avSize(flow, vmax, hmax, shape) {
+  const A = flow / 3600 / vmax;
+  const d = AV_RND.find(x => (Math.PI * x * x) / 4e6 >= A) || AV_RND[AV_RND.length - 1];
+  if (shape !== 'rect' && (shape === 'round' || d <= hmax)) return { shape: 'round', d };
+  const hs = AV_REC.filter(x => x <= Math.max(100, hmax));
+  for (const hh of hs.slice().reverse())
+    for (const w of AV_REC) if (w >= hh && w <= 4 * hh && (w * hh) / 1e6 >= A) return { shape: 'rect', w, hh };
+  return { shape: 'rect', w: AV_REC[AV_REC.length - 1], hh: hs[hs.length - 1] || 100 };
+}
+/**
+ * Writes the network flows to the ducts and (sizes=true) selects sections: a duct whose pieces carry different
+ * flows is cut at its tees first, so each piece gets its own section. One undo step. Returns a report.
+ */
+function avApplyNet(sizes, noUndo) {
+  const N = avNorm();
+  const rep = { systems: 0, ducts: 0, split: 0, resized: 0, msgs: [] };
+  if (!noUndo) pushUndo();
+  for (const net0 of avSystems()) {
+    if (!net0.ok) {
+      if (net0.msg !== 'нет воздуховодов') rep.msgs.push(`${net0.sys}: ${net0.msg}`);
+      continue;
+    }
+    rep.systems++;
+    let net = net0;
+    if (sizes) {
+      // cut ducts at tees
+      const by = new Map();
+      for (const pc of net.order) if (pc.d) (by.get(pc.d) || by.set(pc.d, []).get(pc.d)).push(pc);
+      let cut = false;
+      for (const [d, pcs] of by) {
+        if (pcs.length < 2) continue;
+        const parts = net.pieces.filter(pc => pc.d === d);
+        const i = S.ents.indexOf(d);
+        const neu = parts.map((pc, j) => ({
+          ...JSON.parse(JSON.stringify(d)),
+          id: j ? S.nextId++ : d.id,
+          pts: pc.pts.map(p => P(p.x, p.y)),
+          from: j === 0 ? d.from : null,
+          to: j === parts.length - 1 ? d.to : null
+        }));
+        S.ents.splice(i, 1, ...neu);
+        rep.split += parts.length - 1;
+        cut = true;
+      }
+      if (cut) {
+        documentState.docVer++;
+        net = avNet(net0.sys);
+        if (!net.ok) continue;
+      }
+    }
+    for (const pc of net.order) {
+      const e = pc.d;
+      if (!e) continue; // a silencer, a reducer or a tee: the ducts on both sides carry the flow
+      if (Math.round(+e.flow || 0) !== Math.round(pc.flow)) {
+        e.flow = Math.round(pc.flow);
+        rep.ducts++;
+      }
+      if (sizes && pc.flow > 0) {
+        const hm = Math.min(...pc.pts.map(avVoid)) - 2 * (e.ins || 0);
+        const s = avSize(pc.flow, pc.vmax, hm, N.shape === 'auto' ? (e.shape === 'rect' ? 'auto' : 'auto') : N.shape);
+        const same = s.shape === e.shape && (s.shape === 'round' ? s.d === e.d : s.w === e.w && s.hh === e.hh);
+        if (!same) {
+          e.shape = s.shape;
+          if (s.shape === 'round') e.d = s.d;
+          else {
+            e.w = s.w;
+            e.hh = s.hh;
+          }
+          rep.resized++;
+        }
+      }
+    }
+  }
+  changed();
+  return rep;
+}
+
+/* ---------- noise ---------- */
+/** Sound level near a terminal, dB(A), by its face velocity (empirical, ±3 dB). */
+function avNoise(t) {
+  // a slot adapter: its own free area (length × slot width × slots), not the default size of a grille
+  const slot = t.type === 'hvu' && t.kind === 'plen' ? plenSlot(t) : null;
+  const s = sizeWH(t.size || (DEVK[t.kind] || {}).size);
+  const A = slot ? slot.A : s.round ? (Math.PI * s.d * s.d) / 4e6 : (s.w * s.h) / 1e6;
+  const vf = (+t.flow || 0) / 3600 / Math.max(1e-4, slot ? A : A * 0.7);
+  if (!vf) return { vf: 0, L: 0 };
+  return { vf, L: Math.round(32 + 50 * Math.log10(vf / 2) + 10 * Math.log10(Math.max(0.005, A) / 0.045)) };
+}
+
+/* ---------- checks for validate() and the agents ---------- */
+let avIssCache = null,
+  avIssVer = -1;
+/** Issues of the climate design: [{id, lvl, msg, p}] (cached by document version). */
+function avIssues() {
+  if (avIssVer === documentState.docVer && avIssCache) return avIssCache;
+  const out = [];
+  try {
+    if (
+      S.vent &&
+      S.ents.some(
+        e => e.type === 'duct' || e.type === 'ac' || (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].f === 'vterm')
+      )
+    ) {
+      const N = avNorm();
+      const C = avCooling();
+      const anyVent = avTerms().length > 0;
+      if (anyVent)
+        for (const r of C.R.rows) {
+          const nm = r.z.name || AV_KIND[r.k];
+          if (r.sup && r.hs < r.sup * 0.9)
+            out.push({
+              id: r.z.id,
+              lvl: 'warn',
+              msg: `${nm}: приток ${Math.round(r.hs)} из ${Math.round(r.sup)} м³/ч по норме (${r.ppl} чел × ${N.person}).`,
+              p: avCenter(r.z)
+            });
+          if (r.ex && r.he < r.ex * 0.9)
+            out.push({
+              id: r.z.id,
+              lvl: 'warn',
+              msg: `${nm}: вытяжка ${Math.round(r.he)} из ${Math.round(r.ex)} м³/ч по норме.`,
+              p: avCenter(r.z)
+            });
+          for (const t of r.terms) {
+            const nz = avNoise(t);
+            const lim = avLiving(r.k) ? N.noise : N.noiseOther;
+            if (nz.L > lim)
+              out.push({
+                id: t.id,
+                lvl: 'warn',
+                msg: `Шум у решётки ≈ ${nz.L} дБ(А) > ${lim}: скорость на решётке ${nz.vf.toFixed(1)} м/с — увеличьте размер или поставьте две.`,
+                p: t.p
+              });
+          }
+        }
+      if (
+        anyVent &&
+        C.R.sHave &&
+        C.R.eHave &&
+        Math.abs(C.R.sHave - C.R.eHave) > 0.15 * Math.max(C.R.sHave, C.R.eHave)
+      ) {
+        const z0 = avRooms()[0];
+        if (z0)
+          out.push({
+            id: z0.id,
+            lvl: 'warn',
+            msg: `Баланс квартиры: приток ${Math.round(C.R.sHave)}, вытяжка ${Math.round(C.R.eHave)} м³/ч — разница больше 15 %.`,
+            p: avCenter(z0)
+          });
+      }
+      for (const a of C.acs)
+        if (!a.ok)
+          out.push({
+            id: a.ac.id,
+            lvl: 'warn',
+            msg: `Кондиционер ${a.cap} кВт меньше теплопритоков ${(a.Q / 1000).toFixed(1)} кВт (${a.rooms.map(z => z.name).join(', ')}) — нужен ${a.fit ? a.fit + ' кВт' : 'второй блок'}.`,
+            p: a.ac.p
+          });
+      if (C.acs.length)
+        for (const [z, l] of C.loads)
+          if (!C.served.has(z) && avLiving(avKind(z)) && l.Q > 600)
+            out.push({
+              id: z.id,
+              lvl: 'info',
+              msg: `${z.name || 'Помещение'}: теплопритоки ${(l.Q / 1000).toFixed(1)} кВт, кондиционер его не обслуживает.`,
+              p: avCenter(z)
+            });
+      for (const net of avSystems()) {
+        if (!net.ok) continue;
+        for (const pc of net.order) {
+          if (!pc.d) continue;
+          if (pc.v > pc.vmax * 1.1)
+            out.push({
+              id: pc.d.id,
+              lvl: 'warn',
+              msg: `${net.sys}: скорость ${pc.v.toFixed(1)} м/с > ${pc.vmax} на участке ${Math.round(pc.flow)} м³/ч — увеличьте сечение (Подобрать сечения).`,
+              p: pc.pts[0]
+            });
+          if (pc.flow && Math.abs((+pc.d.flow || 0) - pc.flow) > Math.max(10, 0.1 * pc.flow) && pc.d.flow)
+            out.push({
+              id: pc.d.id,
+              lvl: 'info',
+              msg: `${net.sys}: по сети на участке ${Math.round(pc.flow)} м³/ч, в свойствах ${Math.round(pc.d.flow)} — Пересчитать сеть.`,
+              p: pc.pts[0]
+            });
+        }
+        for (const r of net.terms)
+          if (r.damper)
+            out.push({
+              id: r.t.id,
+              lvl: 'info',
+              msg: `${net.sys}: ветка легче на ${Math.round(net.crit - r.P)} Па — нужен регулирующий клапан.`,
+              p: r.t.p
+            });
+        if (net.loose)
+          out.push({
+            id: net.pieces.find(p => !p.up).d.id,
+            lvl: 'warn',
+            msg: `${net.sys}: ${net.loose} участков не связаны с сетью — проверьте стыки.`,
+            p: net.pieces.find(p => !p.up).pts[0]
+          });
+      }
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  avIssVer = documentState.docVer;
+  avIssCache = out;
+  return out;
+}
+
+/**
+ * Resolves duct-to-duct clashes by height: of two crossing ducts the smaller one moves up or down until the gap
+ * is 50 mm, staying between the false ceiling and the slab. One undo step. Returns { moved, left }.
+ */
+function avSeparate(noUndo) {
+  const rep = { moved: 0, left: 0 };
+  const L = hvacClashes().filter(c => (c.kind === 'hard' || c.kind === 'soft') && c.b != null);
+  if (!L.length) return rep;
+  if (!noUndo) pushUndo();
+  const done = new Set();
+  const hOf = e => (e.shape === 'rect' ? e.hh : e.d) + 2 * (e.ins || 0);
+  for (const c of L) {
+    const A = byId(c.a),
+      B = byId(c.b);
+    if (!A || !B || A.type !== 'duct' || B.type !== 'duct' || done.has(A.id) || done.has(B.id)) {
+      rep.left++;
+      continue;
+    }
+    const [m, f] = hOf(A) * ductArea(A) <= hOf(B) * ductArea(B) ? [A, B] : [B, A];
+    const need = (hOf(m) + hOf(f)) / 2 + 50;
+    const top = avSlabU() - 20,
+      bot = Math.max(...m.pts.map(avFc)) + 20;
+    const up = f.z + need,
+      dn = f.z - need;
+    const fits = z => z + hOf(m) / 2 <= top && z - hOf(m) / 2 >= bot;
+    const z = [m.z > f.z ? up : dn, m.z > f.z ? dn : up].find(fits);
+    if (z == null) {
+      rep.left++;
+      continue;
+    }
+    m.z = Math.round(z);
+    done.add(m.id);
+    rep.moved++;
+  }
+  changed();
+  return rep;
+}
+
 // ===== mep/hvac/air-units.js =====
 /**
  * mep/hvac/air-units.js
@@ -63538,6 +64502,7 @@ function hvSpigots(e) {
     };
   });
 }
+hvHooksAv.spigots = e => hvSpigots(e);
 /** Plan outline of the body. */
 function hvPoly(e) {
   const [L, W, H] = hvDim(e);
@@ -63790,7 +64755,19 @@ function ductLen3(e) {
 }
 /** The smallest bend radius the path allows (each corner rounded inside its shorter leg). */
 function flexMinR(e) {
-  const q = ductPath3(e);
+  // points on a straight run (a step put by the drawing, a height mark) do not shorten the leg of a bend
+  const q0 = ductPath3(e);
+  const q = q0.filter((b, i) => {
+    if (i === 0 || i === q0.length - 1) return true;
+    const a = q0[i - 1],
+      c = q0[i + 1];
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+      v = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+    const lu = Math.hypot(...u),
+      lv = Math.hypot(...v);
+    if (lu < 1 || lv < 1) return false;
+    return (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / lu / lv < 0.9988;
+  });
   let m = Infinity;
   for (let i = 1; i < q.length - 1; i++) {
     const a = q[i - 1],
@@ -65307,6 +66284,7 @@ function acSpigots(e) {
     };
   });
 }
+hvHooksAv.acSpigots = e => acSpigots(e);
 /** `short` is the drawing form: the mark and the figures; the catalogue model stays in the properties. */
 function acLabel(e, short) {
   const m = acModel(e);
@@ -68672,7 +69650,9 @@ function refPts(e) {
 function hatchReach(h) {
   const out = [];
   for (const e of S.ents) {
-    if (e.id === h.id || !['fix', 'dev', 'pipe'].includes(e.type)) continue;
+    // and every element that names its own service points (a ducted air conditioner, a unit over the ceiling)
+    if (e.id === h.id || !(['fix', 'dev', 'pipe'].includes(e.type) || (XT[e.type] && XT[e.type].accessPoints)))
+      continue;
     if (refPts(e).some(r => inHatchReach(h, r.p, r.z))) out.push(e);
   }
   return out;
@@ -76703,9 +77683,11 @@ function kitHoodZ(e) {
   const c = e.cfg;
   const zt = c.legs + c.baseH + c.top;
   const mode = c.hoodH || 'flush';
-  if (mode === 'custom') return zt + (+c.hoodZc > 0 ? +c.hoodZc : kitHoodNorm(e));
-  if (mode === 'norm') return zt + kitHoodNorm(e);
-  return kitHobGas(e) ? Math.max(c.wallZ, zt + 750) : c.wallZ;
+  // the norm is for the underside of the hood: a built-in one hangs 20 mm below its cabinet
+  const under = 20;
+  if (mode === 'custom') return zt + (+c.hoodZc > 0 ? +c.hoodZc : kitHoodNorm(e)) + under;
+  if (mode === 'norm') return zt + kitHoodNorm(e) + under;
+  return kitHobGas(e) ? Math.max(c.wallZ, zt + 750 + under) : c.wallZ;
 }
 const kitHobGas = e => e.cfg.hob === 'gas' || (e.mods || []).some(m => m.hobT === 'gas');
 /** Bottom of the cabinet of a hood module (raised over the hob so that the hood is high enough). */
@@ -106041,6 +107023,1130 @@ function initVentTerminals() {
       };
 }
 
+// ===== samples/villa.js =====
+/**
+ * samples/villa.js
+ *
+ * Test project «all the functions»: a one-storey house 12,6 × 11 m inside the walls (≈ 139 m²).
+ *  West strip — прихожая, техническое помещение (щит, бойлер, коллекторы, приточно-вытяжная установка, стирка),
+ *               гостевой санузел с душем, ванная при главной спальне.
+ *  Middle     — кухня-гостиная с островом и витражом на террасу, коридор.
+ *  East       — детская, гардеробная с канальным кондиционером.
+ *  North      — спальня, спальня 2, кабинет.
+ * Every discipline is filled in the way a user would do it: finishes, floors, ceilings, plumbing with generated
+ * water and sewer lines, heating, underfloor heating, electrics with switch keys, light and air calculations,
+ * ventilation with the unit, silencers, fittings and adapters, air conditioning, furniture, sheets.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function sampleVilla(E) {
+  for (const n of [
+    'Конструкции',
+    'Потолки',
+    'Переходные элементы',
+    'Водоснабжение',
+    'Канализация',
+    'Аннотации',
+    'Освещение',
+    'Мебель',
+    'Кухня',
+    'Полы',
+    'Отделка',
+    'Стекло',
+    'Отопление',
+    'Тёплый пол',
+    'Кондиционирование',
+    'Вентиляция',
+    'Ревизионные люки',
+    'Отверстия и проходки',
+    'Кровля',
+    'Светорасчёт',
+    'Аэрорасчёт'
+  ])
+    ensureLayer(n);
+  const step = (name, f) => {
+    try {
+      return f();
+    } catch (err) {
+      console.error('sample villa: ' + name, err);
+      return null;
+    }
+  };
+  const X = 12600,
+    Y = 11000;
+  const XW = 3000, // the west strip
+    XE = 9000, // the east rooms
+    YH = 3200, // hall / tech room
+    YT = 5400, // tech room / guest bathroom
+    YB = 7400, // guest bathroom / master bathroom
+    YC0 = 6000, // corridor
+    YC1 = 7200,
+    YK = 3600, // kids room / wardrobe
+    XB1 = 7000, // bedroom 1 / bedroom 2
+    XB2 = 10000; // bedroom 2 / office
+  const th = computeType(S.wtypes.find(x => x.id === 'wt_gb')).total;
+  const h = th / 2;
+  const tg = computeType(S.wtypes.find(x => x.id === 'wt_gb100')).total / 2;
+  const tp = computeType(S.wtypes.find(x => x.id === 'wt_c112w')).total / 2;
+  const WHITE = { k: 'paint', ral: 'RAL 9010', col: '#f1efe8' },
+    WARM = { k: 'paint', ral: 'RAL 9001', col: '#ece5d6' },
+    SAGE = { k: 'paint', ral: 'RAL 7032', col: '#b8b5a5' },
+    TILE = { k: 'tile', ral: '', col: '#d9dcd8' };
+  const lv = lvCur();
+  lv.n = 'Этаж 1';
+  lv.h = 4000; // 3,7 m to the slab: two levels of ducts and the flexible taps over the false ceilings
+  // 150 mm of floor build-up: screed over the floor heating and the drains of the wet rooms
+  lv.top = -150;
+  S.x.screed = 150;
+  const SU = lv.h + (lv.top || 0) - (lv.slab || 200); // underside of the slab
+  S.ceil = SU; // the structural height: the false ceilings hang under it
+
+  /* ---------- helpers ---------- */
+  const Wt = (ax, ay, bx, by, wt, fa, fb) =>
+    E('Стены', {
+      type: 'wall',
+      a: P(ax, ay),
+      b: P(bx, by),
+      th: computeType(S.wtypes.find(x => x.id === wt)).total,
+      h: SU,
+      z: 0,
+      wt,
+      fa: fa || WHITE,
+      fb: fb || { k: 'none', ral: '', col: '#d3d0c9' }
+    });
+  const g100 = (ax, ay, bx, by, fa, fb) => Wt(ax, ay, bx, by, 'wt_gb100', fa || WHITE, fb || WHITE);
+  const wet = (ax, ay, bx, by, fa, fb) => Wt(ax, ay, bx, by, 'wt_c112w', fa || TILE, fb || TILE);
+  const DOOR = (host, t, w, o = {}) =>
+    E('Двери', {
+      type: 'door',
+      host: host.id,
+      t,
+      w,
+      h: o.h || 2100,
+      sill: 0,
+      flip: !!o.flip,
+      hand: !!o.hand,
+      cfg: defDoorCfg(o.kind)
+    });
+  const WIN = (host, t, w, hh, sill, cfg) =>
+    E('Окна', { type: 'window', host: host.id, t, w, h: hh, sill, flip: false, hand: false, cfg: cfg || defWinCfg(w) });
+  const R4 = (x0, y0, x1, y1) => [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)];
+  const FZ = (pts, pre, o = {}) =>
+    E('Полы', {
+      type: 'floorz',
+      pts,
+      pre,
+      name: o.name || '',
+      ffl: 0,
+      wet: pre === 'wet',
+      ...(o.ppl ? { ppl: o.ppl } : {}),
+      layers: o.layers ? o.layers.map(floorLayer) : floorLayersOf(pre),
+      slope: { mode: 'none', i: 1.5 },
+      ...(o.cover ? { cover: o.cover } : {})
+    });
+  const CL = (pts, z, o = {}) =>
+    E('Потолки', {
+      type: 'ceil',
+      kind: o.kind || 'stretch',
+      pts,
+      z,
+      gap: o.gap ?? SU - z,
+      sys: 'П112',
+      layers: 1,
+      sheet: o.sheet || 'ГКЛ',
+      stepB: 1000,
+      stepC: 500,
+      stepH: 900,
+      str: { mat: 'pvc', fin: o.fin || 'mat', prof: o.prof || 'shadow', col: '#f4f4f2' },
+      fin: { col: '#f1f0ea' }
+    });
+  const FX = (kind, x, y, cfg) => {
+    const pl = placeOnWall(P(x, y), 'wall');
+    return E('Сантехника', {
+      type: 'fix',
+      kind,
+      p: pl.host ? pl.p : P(x, y),
+      rot: pl.host ? pl.rot : 0,
+      host: pl.host || null,
+      z: 0,
+      cfg: Object.assign(FIXK[kind].cfg(), cfg || {})
+    });
+  };
+  const DV = (kind, x, y, o = {}) => {
+    const d = DEVK[kind];
+    let p = P(x, y),
+      rot = o.rot || 0,
+      host = null;
+    const z = d.mount === 'ceil' ? (o.z ?? ceilAt(P(x, y))) : (o.z ?? d.z);
+    if (d.mount === 'wall') {
+      const pl = placeOnWall(p, 'wall');
+      if (pl.host) {
+        p = pl.p;
+        rot = pl.rot;
+        host = pl.host;
+      }
+    }
+    return E(o.layer || FAMS[d.f].cat, {
+      type: 'dev',
+      kind,
+      p,
+      rot,
+      host,
+      z,
+      group: d.f === 'vterm' ? null : (o.group ?? 2),
+      sys: o.sys || null,
+      pw: o.pw ?? d.pw ?? 0,
+      flow: o.flow || 0,
+      size: o.size || '',
+      ...(o.lc ? { lc: o.lc } : {}),
+      ...(o.fo ? { fo: o.fo } : {})
+    });
+  };
+  const RAD = (kind, x, y, cfg = {}) => {
+    const pl = placeOnWall(P(x, y), 'wall');
+    return E('Отопление', {
+      type: 'rad',
+      kind,
+      p: pl.p,
+      rot: pl.rot,
+      host: pl.host,
+      z: null,
+      cfg: { ...radDefaults(kind), ...cfg }
+    });
+  };
+  const I = (asset, x, y, rot = 0) => {
+    const a = ASSETS.get('b_' + asset);
+    return a ? E(a.cat || 'Мебель', { type: 'inst', asset: 'b_' + asset, p: P(x, y), rot, z: 0 }) : null;
+  };
+  const T_ = (x, y, s, hh = 180) => E('Текст', { type: 'text', p: P(x, y), h: hh, s, rot: 0 });
+  const curtain = (x, y, kind, o = {}) => {
+    const c = curtainAtWindow(P(x, y), kind, o.ext ?? 200);
+    if (c) E('Отделка', { ...c, ...o });
+  };
+  const m2 = v => v.toFixed(1).replace('.', ',') + ' м²';
+
+  /* ---------- walls ---------- */
+  const wB = Wt(-h, -h, X + h, -h, 'wt_gb'),
+    wR = Wt(X + h, -h, X + h, Y + h, 'wt_gb'),
+    wT = Wt(X + h, Y + h, -h, Y + h, 'wt_gb'),
+    wL = Wt(-h, Y + h, -h, -h, 'wt_gb');
+  const tB = x => x + h, // position along the south wall
+    tT = x => X + h - x, // along the north wall (runs east → west)
+    tR = y => y + h, // along the east wall
+    tL = y => Y + h - y; // along the west wall (runs north → south)
+  const wW1 = g100(XW, 0, XW, YT, WARM, WHITE); // hall, tech room | living
+  const wW2 = wet(XW, YT, XW, Y, TILE, WHITE); // bathrooms | corridor, bedroom
+  const wHT = g100(0, YH, XW, YH); // hall | tech room
+  const wTB = wet(0, YT, XW, YT, WHITE, TILE); // tech room | guest bathroom
+  const wBB = wet(0, YB, XW, YB); // guest bathroom | master bathroom
+  const wC0 = g100(XW, YC0, X, YC0, WARM, WHITE); // living, wardrobe | corridor
+  const wC1 = g100(XW, YC1, X, YC1); // corridor | bedrooms
+  const wE = g100(XE, 0, XE, YC0, WARM, SAGE); // living | kids room, wardrobe
+  const wKW = g100(XE, YK, X, YK, SAGE, WHITE); // kids room | wardrobe
+  const wS1 = g100(XB1, YC1, XB1, Y); // bedroom 1 | bedroom 2
+  const wS2 = g100(XB2, YC1, XB2, Y); // bedroom 2 | office
+
+  /* ---------- doors and windows ---------- */
+  const dE = DOOR(wB, tB(1500), 960, { h: 2050 });
+  dE.cfg.mode = 'entry';
+  step('entry door', () => applyDoorMode(dE.cfg, 'entry'));
+  DOOR(wW1, 1700, 900, { flip: true }); // hall → living
+  DOOR(wHT, 2100, 800, { hand: true }); // hall → tech room
+  DOOR(wW2, 6650 - YT, 700, { kind: 'hidden' }); // corridor → guest bathroom
+  DOOR(wW2, 9300 - YT, 700, { kind: 'hidden', flip: true }); // bedroom 1 → its bathroom
+  E('Двери', { type: 'opening', host: wC0.id, t: 1700, w: 1400, h: 2300, sill: 0 }); // living → corridor
+  DOOR(wC0, 10800 - XW, 800, { flip: true }); // corridor → wardrobe
+  DOOR(wC1, 5600 - XW, 800); // bedroom 1
+  DOOR(wC1, 8400 - XW, 800); // bedroom 2
+  DOOR(wC1, 11200 - XW, 800); // office
+  DOOR(wE, 1500, 800, { flip: true, hand: true }); // living → kids room
+  // glazing to the terrace with a door, windows
+  const vit = WIN(wB, tB(6400), 3600, 2400, 0, winAluCfg(3600, 2400));
+  step('terrace door', () => {
+    vit.cfg.alu.cells['1,1'] = { t: 'top', hg: 'L', open: 'out' };
+  });
+  WIN(wB, tB(10800), 1500, 1500, 850); // kids room
+  WIN(wR, tR(1800), 1200, 1500, 850); // kids room, east
+  WIN(wR, tR(9100), 1400, 1500, 850); // office
+  WIN(wT, tT(5000), 1800, 1500, 850); // bedroom 1
+  WIN(wT, tT(8500), 1500, 1500, 850); // bedroom 2
+  WIN(wT, tT(1500), 700, 700, 1500); // master bathroom
+  WIN(wL, tL(6400), 600, 600, 1600); // guest bathroom
+  WIN(wL, tL(4300), 800, 600, 1600); // tech room
+  WIN(wR, tR(4800), 600, 900, 1300); // wardrobe
+  // kitchen window over the worktop: the kitchen runs along the south-west of the living room? no — along the
+  // partition to the corridor; daylight comes from the terrace glazing
+
+  /* ---------- structure: slab, roof ---------- */
+  E('Перекрытия', {
+    type: 'slab',
+    pts: [P(-h - 100, -h - 100), P(X + h + 100, -h - 100), P(X + h + 100, Y + h + 100), P(-h - 100, Y + h + 100)],
+    th: 200,
+    z: lv.top
+  });
+  step('roof', () =>
+    E('Кровля', {
+      type: 'roof',
+      pts: [P(-th, -th), P(X + th, -th), P(X + th, Y + th), P(-th, Y + th)],
+      kind: 'gable',
+      slope: 25,
+      ridge: 'along',
+      ov: 500,
+      th: 200,
+      z: lv.h,
+      col: '#4a4f57',
+      gcol: '#e4dfd5'
+    })
+  );
+
+  /* ---------- floors ---------- */
+  const rooms = {
+    hall: R4(0, 0, XW - tg, YH - tg),
+    tech: R4(0, YH + tg, XW - tg, YT - tp),
+    wc: R4(0, YT + tp, XW - tp, YB - tp),
+    bath: R4(0, YB + tp, XW - tp, Y),
+    living: R4(XW + tg, 0, XE - tg, YC0 - tg),
+    corr: R4(XW + tp, YC0 + tg, X, YC1 - tg),
+    kids: R4(XE + tg, 0, X, YK - tg),
+    ward: R4(XE + tg, YK + tg, X, YC0 - tg),
+    bed1: R4(XW + tp, YC1 + tg, XB1 - tg, Y),
+    bed2: R4(XB1 + tg, YC1 + tg, XB2 - tg, Y),
+    office: R4(XB2 + tg, YC1 + tg, X, Y)
+  };
+  FZ(rooms.hall, 'tile', {
+    name: 'Прихожая',
+    cover: { mat: 'stone', pat: 'half', size: '600x600', col: '#cfcac0', trans: {} }
+  });
+  FZ(rooms.tech, 'tile', { name: 'Техническое помещение' });
+  FZ(rooms.wc, 'wet', {
+    name: 'Санузел гостевой',
+    layers: ['screed', 'hydro', 'glue', 'ufhel', 'tile'],
+    cover: { mat: 'stone', pat: 'hex', size: '200x200', col: '#e7e4dd', trans: {} }
+  });
+  FZ(rooms.bath, 'wet', {
+    name: 'Ванная',
+    layers: ['ufh', 'screed', 'hydro', 'glue', 'tile'],
+    cover: { mat: 'stone', pat: 'half', size: '600x1200', col: '#d6d2ca', trans: {} }
+  });
+  FZ(rooms.living, 'eng', {
+    name: 'Кухня-гостиная',
+    ppl: 4,
+    cover: { mat: 'eng', pat: 'herring', size: '120x600', col: '#b48a5e', trans: {} }
+  });
+  FZ(rooms.corr, 'eng', { name: 'Коридор' });
+  FZ(rooms.kids, 'eng', {
+    name: 'Детская',
+    ppl: 1,
+    cover: { mat: 'eng', pat: 'deck', size: '190x1900', col: '#c2a37c', trans: {} }
+  });
+  FZ(rooms.ward, 'vinyl', {
+    name: 'Гардеробная',
+    cover: { mat: 'vinyl', pat: 'deck', size: '180x1220', col: '#b39e82', trans: {} }
+  });
+  FZ(rooms.bed1, 'eng', {
+    name: 'Спальня',
+    ppl: 2,
+    cover: { mat: 'eng', pat: 'deck', size: '190x1900', col: '#a98560', trans: {} }
+  });
+  const zB2 = FZ(rooms.bed2, 'eng', {
+    name: 'Спальня 2',
+    ppl: 1,
+    layers: ['screed', 'pglue', 'parquet'],
+    cover: { mat: 'parquet', pat: 'herring', size: '70x490', base: 'ply', plyTh: 15, col: '#b88a5a', trans: {} }
+  });
+  step('parquet base', () => XT.floorz.onSet(zB2, 'cover.base', 'ply'));
+  FZ(rooms.office, 'eng', { name: 'Кабинет', ppl: 1 });
+
+  /* ---------- ceilings ---------- */
+  CL(rooms.hall, 2700);
+  CL(rooms.tech, 2500, { kind: 'gkl', sheet: 'ГКЛВ' });
+  CL(rooms.wc, 2450);
+  CL(rooms.bath, 2450);
+  CL(rooms.living, 2700, { fin: 'sat', prof: 'float' });
+  CL(rooms.corr, 2600);
+  CL(rooms.kids, 2700);
+  CL(rooms.ward, 2600, { kind: 'gkl' });
+  CL(rooms.bed1, 2700);
+  CL(rooms.bed2, 2700);
+  CL(rooms.office, 2700);
+  documentState.docVer++;
+
+  /* ---------- tech room: water entry, boiler, manifolds, washing ---------- */
+  const rw = FX('riserW', 600, YT - tp, { y: 0, gap: 90 });
+  step('water entry nodes', () => {
+    rw.cfg.nodes = [
+      { ...riserNodeDef('hvs', -45), dir: 'right', z: 700 },
+      { ...riserNodeDef('gvs', 45), dir: 'right', z: 850 }
+    ];
+  });
+  FX('riserK', 250, YT - tp - 200, { y: 0 });
+  step('riser holes', () => {
+    for (const f of S.ents.filter(e => e.type === 'fix' && (e.kind === 'riserK' || e.kind === 'riserW')))
+      E('Отверстия и проходки', {
+        type: 'shole',
+        shape: f.kind === 'riserK' ? 'round' : 'rect',
+        d: 200,
+        w: 260,
+        h: 160,
+        rot: f.rot || 0,
+        p: P(f.p.x, f.p.y),
+        sleeve: true,
+        fire: true
+      });
+  });
+  FX('boiler', 0, 4750, { type: 'round', vol: 150, pw: 2000, z: 1200 });
+  FX('washer', 0, 3650, { type: 'column', w: 600, d: 650, h: 1750 });
+  FX('sink', 1300, YH + tg, { w: 500 });
+  const mk = (kind, x, y, cfg) => {
+    const pl = placeOnWall(P(x, y), 'wall');
+    return E('Сантехника', { type: 'fix', kind, p: pl.p, rot: pl.rot, host: pl.host, z: 0, cfg });
+  };
+  step('manifolds', () => {
+    mk('manifold', 1500, YT - tp, { ...mfDefault('water', 'plumber'), cab: 'cab' });
+    mk('manifold', XW - tg, 3900, mfDefault('heat', 'plumber'));
+    mk('manifold', XW - tg, 4800, mfDefault('ufh', 'plumber'));
+  });
+
+  /* ---------- guest bathroom: shower behind glass, WC, sink with a mirror, electric towel warmer ---------- */
+  FX('shower', 500, YB - tp, { w: 900, d: 900, base: 'tray', glass: 'none' });
+  step('shower glass', () =>
+    E('Стекло', {
+      type: 'glass',
+      pts: [P(1000, YB - tp), P(1000, YB - tp - 950), P(0, YB - tp - 950)],
+      cfg: { use: 'shower', fixB: 'u', fixT: 'u', thr: 'alu' },
+      doors: {}
+    })
+  );
+  FX('wcinst', 0, 5850, { mount: 'wall' });
+  const sk1 = FX('sink', XW - tp, 6050, { w: 500 });
+  FX('towel', 1900, YT + tp, { kind: 'el', shape: 'ladder', w: 500, h: 800, z: 800, pw: 250 });
+  const mirror = (wall, x, y, towards) =>
+    step('mirror', () => {
+      const wi = wallInfo(wall);
+      const sd = Math.sign(dot(sub(towards, wall.a), wi.n)) || -1;
+      E('Отделка', {
+        type: 'mirror',
+        host: wall.id,
+        side: sd,
+        p: P(x, y),
+        pre: 'bath',
+        th: 5,
+        cct: 4000,
+        ...MRPRE.bath[1]
+      });
+    });
+  mirror(wW2, XW, 6050, P(1500, 6050));
+  E('Тёплый пол', {
+    type: 'ufh',
+    kind: 'mat',
+    P: 150,
+    edge: 50,
+    pts: R4(1050, YT + tp + 50, XW - tp - 50, YB - tp - 50)
+  });
+
+  /* ---------- master bathroom: bath, WC, double sink, water towel warmer, water underfloor heating ---------- */
+  const bath = FX('bath', 1000, Y, { type: 'built', inst: 'podium', w: 1700, d: 750, mixer: 'wall', toe: true });
+  FX('wcinst', 0, 8300, { mount: 'wall' });
+  FX('sink', XW - tp, 8100, { w: 800 });
+  FX('towel', 2200, YB + tp, { kind: 'water', shape: 'm', w: 500, h: 800, z: 900, con: 'side', col: 'chrome' });
+  mirror(wW2, XW, 8100, P(1500, 8100));
+  E('Тёплый пол', {
+    type: 'ufh',
+    kind: 'water',
+    lay: 'snake',
+    step: 150,
+    edge: 80,
+    pts: R4(80, YB + tp + 80, XW - tp - 80, Y - 850)
+  });
+  step('bath hatch', () =>
+    E('Ревизионные люки', {
+      type: 'rhatch',
+      plane: 'fix',
+      host: bath.id,
+      lx: -1700 / 2 + 260,
+      kind: 'tile',
+      w: 300,
+      h: 300,
+      z: 120,
+      open: 'push',
+      hinge: 'left',
+      tileTh: 12,
+      name: 'ЛР-1'
+    })
+  );
+
+  /* ---------- kitchen along the corridor partition, island; dining; living ---------- */
+  const kit = E('Кухня', {
+    type: 'kitchen',
+    runs: [
+      { a: P(XW + tg, 2600), b: P(XW + tg, YC0 - tg), n: P(1, 0) },
+      { a: P(XW + tg, YC0 - tg), b: P(4000, YC0 - tg), n: P(0, -1) }
+    ],
+    cfg: { ...kitDefaults(), hoodH: 'norm' },
+    mods: []
+  });
+  step('kitchen', () => kitAutofill(kit));
+  E('Кухня', {
+    type: 'kisland',
+    kind: 'island_seat',
+    p: P(5400, 4300),
+    rot: Math.PI / 2,
+    cfg: { equip: 'hob', L: 2200, ov: 300 },
+    mods: null,
+    kit: kit.id
+  });
+  I('dtable', 7600, 4600, Math.PI / 2);
+  for (const [x, y, r] of [
+    [7100, 4100, -Math.PI / 2],
+    [7100, 5100, -Math.PI / 2],
+    [8100, 4100, Math.PI / 2],
+    [8100, 5100, Math.PI / 2]
+  ])
+    I('chair', x, y, r);
+  I('rug', 6600, 1500, 0);
+  I('sofa', 6600, 2500, Math.PI);
+  I('ctable', 6600, 1450, 0);
+  I('armchair', 4600, 1300, Math.PI / 2);
+  I('floorlamp', 8300, 2600, 0);
+  I('plant', XE - 500, 500);
+  step('tv', () => {
+    const pl = placeOnWall(P(XE - tg, 2900), 'wall');
+    E('Мебель', {
+      type: 'tv',
+      diag: 65,
+      mount: 'wall',
+      bracket: 'swivel',
+      ext: 250,
+      tilt: 5,
+      swa: 0,
+      zc: 1150,
+      p: pl.p,
+      rot: pl.rot,
+      host: pl.host
+    });
+    E('Мебель', { type: 'cab', p: pl.p, rot: pl.rot, host: pl.host, z: 0, cfg: { ...cbDefaults('tvst'), w: 1800 } });
+  });
+  step('molding', () => {
+    const m = moldingAt(P(6000, YC0 - tg - 100), 'two');
+    if (m) E('Отделка', { ...m, z1: 2500, railZ: 950 });
+  });
+  curtain(6400, 300, 'ceil_pl', { ext: 300, open: 0.6, col: '#8b7d6b', rows: 2, z: 2700 });
+
+  /* ---------- hall, wardrobe, bedrooms ---------- */
+  step('hall coupe', () => {
+    const cw = cwCreate([{ a: P(0, 2900), b: P(0, 700), n: P(1, 0) }], 'coupe', o => E('Мебель', o));
+    cw.layer = 'Мебель';
+  });
+  step('walk-in', () => {
+    const cw = cwCreate(
+      [
+        { a: P(X, YK + tg), b: P(X, YC0 - tg), n: P(-1, 0) },
+        { a: P(XE + tg + 1000, YK + tg), b: P(X, YK + tg), n: P(0, 1) }
+      ],
+      'walkin',
+      o => E('Мебель', o)
+    );
+    cw.layer = 'Мебель';
+  });
+  I('bed', 5000, YC1 + tg + 1100, 0);
+  step('wardrobe bed1', () => {
+    const cw = cwCreate([{ a: P(XB1 - tg, Y - 300), b: P(XB1 - tg, Y - 2300), n: P(-1, 0) }], 'wardrobe', o =>
+      E('Мебель', o)
+    );
+    cw.layer = 'Мебель';
+  });
+  curtain(5000, Y - 300, 'niche', { ext: 300, open: 0.4, col: '#6f7f86', ceil: 2650 });
+  I('bed', 8500, Y - 1100, Math.PI);
+  curtain(8500, Y - 300, 'wall_rod', { ext: 250, open: 0.5, col: '#a59b8c' });
+  I('sideboard', 11300, YC1 + tg + 250, 0);
+  I('armchair', 11400, 9800, Math.PI);
+  I('bed', X - 1100, 800, Math.PI / 2);
+  I('plant', XE + 500, 3200);
+  curtain(10800, 300, 'wall_rod', { ext: 250, open: 0.5, col: '#c9b38a' });
+
+  /* ---------- heating ---------- */
+  RAD('conv', 5500, 0, { L: 1600, w: 280, d: 110 });
+  RAD('conv', 7300, 0, { L: 1600, w: 280, d: 110 });
+  RAD('panel', 10800, 0, { type: '22', h: 500 });
+  RAD('panel', 5000, Y, { type: '22', h: 500 });
+  RAD('panel', 8500, Y, { type: '22', h: 500 });
+  RAD('panel', X, 9100, { type: '22', h: 500 });
+  RAD('panel', 2300, 0, { type: '11', h: 500, L: 600 });
+  RAD('vert', XE + tg, 4800, { type: '11', h: 1600, w: 350 });
+  documentState.docVer++;
+  for (const r of S.ents.filter(e => e.type === 'rad')) step('rad fit', () => radFit(r));
+  documentState.docVer++;
+
+  /* ---------- electrics ---------- */
+  S.elec.groups = [
+    { n: 1, name: 'Освещение', brk: 'C10', cable: 'ВВГнг(А)-LS 3×1,5', col: '#f2d15e' },
+    { n: 2, name: 'Освещение спален', brk: 'C10', cable: 'ВВГнг(А)-LS 3×1,5', col: '#e8b84a' },
+    { n: 3, name: 'Розетки комнат', brk: 'C16 + УЗО 30 мА', cable: 'ВВГнг(А)-LS 3×2,5', col: '#c97cf0' },
+    { n: 4, name: 'Розетки кухни', brk: 'Дифавтомат C16 30 мА', cable: 'ВВГнг(А)-LS 3×2,5', col: '#f08a6c' },
+    {
+      n: 5,
+      name: 'Влажные зоны, бойлер, стирка',
+      brk: 'Дифавтомат C16 10 мА',
+      cable: 'ВВГнг(А)-LS 3×2,5',
+      col: '#5aa0e0'
+    },
+    { n: 6, name: 'Варочная панель', brk: 'Дифавтомат C32 30 мА', cable: 'ВВГнг(А)-LS 3×6', col: '#e05a5a' },
+    { n: 7, name: 'Слаботочные сети', brk: '—', cable: 'UTP cat.6', col: '#62c7f0' },
+    {
+      n: 8,
+      name: 'Вентиляция и кондиционирование',
+      brk: 'Дифавтомат C16 30 мА',
+      cable: 'ВВГнг(А)-LS 3×2,5',
+      col: '#6fbf73'
+    }
+  ];
+  S.elec.cur = 3;
+  S.elec.sockMethod = 'wall'; // socket lines in the walls: the screed is taken by the floor heating and the drains
+  DV('panel', 2100, YH + tg, { group: null, z: 1700 });
+  const SW = {
+    hall: DV('sw2', XW - tg, 800, { group: 1, z: 900 }),
+    tech: DV('sw1', 2700, YH + tg, { group: 1, z: 900 }),
+    wc: DV('sw1', XW + tp, 6250, { group: 1, z: 900 }),
+    bath: DV('sw1', XW + tp, 8850, { group: 1, z: 900 }),
+    living: DV('sw2', XW + tg, 900, { group: 1, z: 900 }),
+    corr: DV('sw1', 4900, YC0 + tg, { group: 1, z: 900 }),
+    kids: DV('sw1', XE + tg, 900, { group: 2, z: 900 }),
+    ward: DV('sw1', 11400, YC0 - tg, { group: 1, z: 900 }),
+    bed1: DV('sw1', 6200, YC1 + tg, { group: 2, z: 900 }),
+    bed2: DV('sw1', 9000, YC1 + tg, { group: 2, z: 900 }),
+    office: DV('sw1', 11800, YC1 + tg, { group: 2, z: 900 })
+  };
+  const L = {};
+  const spots = (key, list, kind = 'lspot', o = {}) => {
+    L[key] = (L[key] || []).concat(list.map(([x, y]) => DV(kind, x, y, { group: 1, ...o })));
+  };
+  spots('hall', [
+    [900, 900],
+    [2100, 900],
+    [900, 2300],
+    [2100, 2300]
+  ]);
+  spots('tech', [[1500, 4300]], 'lsurf');
+  spots('wc', [
+    [800, 6000],
+    [2100, 6000],
+    [2100, 6900]
+  ]);
+  spots('bath', [
+    [800, 8200],
+    [2100, 8200],
+    [800, 9700],
+    [2100, 9700]
+  ]);
+  spots('corr', [
+    [4200, 6600],
+    [6000, 6600],
+    [7800, 6600],
+    [9600, 6600],
+    [11400, 6600]
+  ]);
+  spots('ward', [
+    [10200, 4800],
+    [11600, 4800]
+  ]);
+  spots('kids', [[10800, 1800]], 'lchand', { lc: { arms: 5, drop: 400, dia: 600, col: '#2b2f35', shade: '#f2efe6' } });
+  spots('bed1', [[5000, 9200]], 'lchand', { lc: { arms: 6, drop: 450, dia: 650, col: '#c9a640', shade: '#f2efe6' } });
+  spots('bed2', [[8500, 9000]], 'lsurf');
+  spots('office', [
+    [10900, 8300],
+    [11900, 8300],
+    [10900, 9500],
+    [11900, 9500],
+    [10900, 10500],
+    [11900, 10500]
+  ]);
+  spots(
+    'living',
+    [
+      [4200, 3400],
+      [4200, 4600],
+      [5400, 5300],
+      [6600, 5300]
+    ],
+    'lspot'
+  );
+  spots('dining', [[7600, 4600]], 'lpend', { lc: { shape: 'dome', n: 3, drop: 900, dia: 260, col: '#2b2f35' } });
+  // sconces by the beds on their own switches
+  DV('lwall', 3950, YC1 + tg, { z: 1300, group: 2, lc: { sw: 'own', shape: 'cone' } });
+  DV('lwall', 6050, YC1 + tg, { z: 1300, group: 2, lc: { sw: 'own', shape: 'cone' } });
+  // a magnetic track over the sofa zone
+  step('track', () => {
+    const tr = E('Освещение', {
+      type: 'track',
+      kind: 'mag48',
+      mount: 'surface',
+      col: 'black',
+      z: '',
+      drop: 400,
+      stocks: [3000, 2000],
+      pts: [P(4800, 700), P(8300, 700), P(8300, 2600)]
+    });
+    [
+      [500, 'spot'],
+      [1300, 'lin'],
+      [2300, 'spot'],
+      [3100, 'spot'],
+      [3900, 'grid'],
+      [4800, 'spot']
+    ].forEach(([t, k]) =>
+      E('Освещение', {
+        type: 'tmod',
+        track: tr.id,
+        host: tr.id,
+        t,
+        kind: k,
+        pw: TMK[k].pw,
+        cct: 3000,
+        beam: 36,
+        tilt: 30,
+        drop: 500
+      })
+    );
+  });
+  // sockets: general (group 3), wet rooms and appliances, low current
+  for (const [x, y, k, z, g] of [
+    [1200, 0, 'sock2', 300, 3],
+    [0, 4200, 'sockIP', 1000, 5],
+    [0, 4750, 'sockIP', 1700, 5],
+    [XW - tp, 6500, 'sockIP', 1050, 5],
+    [XW - tp, 8600, 'sockIP', 1050, 5],
+    [XW + tg, 3200, 'sock2', 1100, 4],
+    [XW + tg, 4400, 'sock2', 1100, 4],
+    [XW + tg, 5200, 'sock32', 150, 6],
+    [XE - tg, 2500, 'sock2', 650, 3],
+    [XE - tg, 3300, 'tv', 650, 7],
+    [XE - tg, 3500, 'rj45', 650, 7],
+    [4600, 0, 'sock2', 300, 3],
+    [8400, 0, 'sock1', 300, 3],
+    [8000, YC0 - tg, 'sock2', 300, 3],
+    [5200, YC0 + tg, 'sock1', 300, 3],
+    [10000, YC1 - tg, 'sock1', 300, 3],
+    [3950, YC1 + tg, 'sockUSB', 600, 3],
+    [6050, YC1 + tg, 'sockUSB', 600, 3],
+    [XW + tp, 10200, 'sock2', 300, 3],
+    [7650, Y, 'sock2', 600, 3],
+    [9350, Y, 'sock2', 600, 3],
+    [XB1 + tg, 8000, 'sock2', 300, 3],
+    [X, 8200, 'sock2', 300, 3],
+    [X, 10000, 'rj45', 300, 7],
+    [XB2 + tg, 9700, 'sock2', 300, 3],
+    [X, 300, 'sock2', 600, 3],
+    [XE + tg, 2700, 'sock2', 300, 3],
+    [9600, YK - tg, 'sock1', 300, 3]
+  ])
+    DV(k, x, y, { z, group: g });
+  documentState.docVer++;
+  for (const e of S.ents) if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
+  const key = (lights, sw, i) => {
+    for (const l of lights || []) {
+      const k = sw && switchKeys(sw)[i];
+      if (!k) continue;
+      l.swk = sw.id + '|' + k.id;
+      l.group = sw.group;
+    }
+  };
+  key(L.hall.slice(0, 2), SW.hall, 0);
+  key(L.hall.slice(2), SW.hall, 1);
+  key(L.tech, SW.tech, 0);
+  key(L.wc, SW.wc, 0);
+  key(L.bath, SW.bath, 0);
+  key(L.living, SW.living, 0);
+  key(L.dining, SW.living, 1);
+  key(L.corr, SW.corr, 0);
+  key(L.kids, SW.kids, 0);
+  key(L.ward, SW.ward, 0);
+  key(L.bed1, SW.bed1, 0);
+  key(L.bed2, SW.bed2, 0);
+  key(L.office, SW.office, 0);
+  // the whole wiring is laid by the program: panel → switches, switch → lights, sockets on their own lines
+  step('wiring', () => optimizeWiring());
+
+  /* ---------- water and sewer lines: generated like the user does ---------- */
+  documentState.docVer++;
+  step('water', () => waterGenerate({}));
+  step('sewer', () => sewerGenerate({}));
+
+  /* ---------- ventilation: the unit in the tech room, mains in the corridor, adapters in the rooms ---------- */
+  const VL = 'Вентиляция';
+  const duct = (sys, d, pts, z, flow) =>
+    E(VL, {
+      type: 'duct',
+      pts: pts.map(([x, y]) => P(x, y)),
+      shape: 'round',
+      d,
+      w: d,
+      hh: d,
+      z,
+      sys,
+      flow: flow || 300,
+      mat: 'Оцинкованная сталь',
+      ins: 0,
+      from: null,
+      to: null
+    });
+  const plen = (x, y, o) =>
+    E(VL, {
+      type: 'hvu',
+      kind: 'plen',
+      p: P(x, y),
+      rot: o.rot || 0,
+      L: o.L || 1000,
+      W: 150,
+      H: 200,
+      n: o.n || 1,
+      d: o.d || 125,
+      conn: o.conn || 'top',
+      slots: o.slots || 2,
+      sw: o.sw || 25,
+      flow: o.flow,
+      sys: o.sys,
+      z: o.z || 2700
+    });
+  step('ventilation', () => {
+    // two levels over the ceilings: supply right under the slab, extract under it — in plan they cross freely
+    const ZS = SU - 130,
+      ZE = SU - 440;
+    const ahu = E(VL, {
+      type: 'hvu',
+      kind: 'ahu',
+      model: 'komf-r700f',
+      flow: 540,
+      sysS: 'П1',
+      sysE: 'В1',
+      p: P(1500, 4300),
+      rot: 0,
+      z: null
+    });
+    documentState.docVer++;
+    const sp = hvSpigots(ahu);
+    const by = r => sp.find(q => q.role === r);
+    const sup = by('sup'),
+      eta = by('eta'),
+      oda = by('oda'),
+      eha = by('eha');
+    const at = (x, y, z) => {
+      const q = P(x, y);
+      q.z = z;
+      return q;
+    };
+    // a run that leaves a spigot, steps up or down to its own level and goes on there
+    const run = (sys, d, s, z, pts, flow) => {
+      const dx = Math.sign(s.dir[0]) || 1;
+      const e = duct(sys, d, [], z, flow);
+      e.pts = [
+        at(s.p[0], s.p[1], s.p[2]),
+        at(s.p[0] + dx * 300, s.p[1], s.p[2]),
+        at(s.p[0] + dx * 301, s.p[1], z),
+        ...pts.map(([x, y]) => at(x, y, z))
+      ];
+      return e;
+    };
+    // outdoor air and exhaust go through the west wall
+    if (oda)
+      duct(
+        'П1',
+        250,
+        [
+          [oda.p[0], oda.p[1]],
+          [-h, oda.p[1]]
+        ],
+        oda.p[2],
+        540
+      );
+    if (eha)
+      duct(
+        'В1',
+        250,
+        [
+          [eha.p[0], eha.p[1]],
+          [-h, eha.p[1]]
+        ],
+        eha.p[2],
+        540
+      );
+    // supply: through the living room to the corridor, along it and down the east side to the kids room
+    const mS = run(
+      'П1',
+      250,
+      sup,
+      ZS,
+      [
+        [3900, sup.p[1]],
+        [3900, 6800],
+        [12300, 6800],
+        [12300, 1200]
+      ],
+      540
+    );
+    // extract: to the corridor and along it to the wardrobe
+    const mE = run(
+      'В1',
+      250,
+      eta,
+      ZE,
+      [
+        [3500, eta.p[1]],
+        [3500, 6400],
+        [9800, 6400]
+      ],
+      540
+    );
+    documentState.docVer++;
+    // silencers right after the unit
+    step('silencers', () => {
+      insertSilencer(mS, 4, P(3900, 5800), { L: 600 });
+      insertSilencer(mE, 4, P(3500, 5300), { L: 600 });
+    });
+    documentState.docVer++;
+    // after the bedrooms the supply main is thinner: a reducer
+    step('reducer', () => {
+      const d = S.ents.find(
+        e => e.type === 'duct' && e.sys === 'П1' && !e.flex && e.pts.some(q => q.y === 6800 && q.x > 9900)
+      );
+      if (!d) return;
+      const i = d.pts.findIndex(
+        (q, k) => k > 0 && d.pts[k - 1].y === 6800 && q.y === 6800 && d.pts[k - 1].x < 9900 && q.x > 9900
+      );
+      if (i > 0) insertInline('red', d, i, P(9900, 6800), {});
+    });
+    documentState.docVer++;
+    // extract of the wet rooms, the tech room and the wardrobe: thin ducts to the main, diffusers in the ceilings
+    duct(
+      'В1',
+      160,
+      [
+        [1500, 6400],
+        [3500, 6400]
+      ],
+      ZE,
+      200
+    );
+    duct(
+      'В1',
+      125,
+      [
+        [1500, 9000],
+        [3250, 9000],
+        [3250, 6400]
+      ],
+      ZE,
+      100
+    );
+    duct(
+      'В1',
+      100,
+      [
+        [3000 - 200, 3700],
+        [3000 - 200, eta.p[1]]
+      ],
+      ZE,
+      20
+    );
+    duct(
+      'В1',
+      100,
+      [
+        [9800, 5500],
+        [9800, 6400]
+      ],
+      ZE,
+      20
+    );
+    DV('vdiff', 1500, 6400, { sys: 'В1', flow: 100, size: '160', layer: VL });
+    DV('vdiff', 1500, 9000, { sys: 'В1', flow: 100, size: '160', layer: VL });
+    DV('vdiff', 2800, 3700, { sys: 'В1', flow: 20, size: '100', layer: VL });
+    DV('vdiff', 9800, 5500, { sys: 'В1', flow: 20, size: '100', layer: VL });
+    // slot adapters: supply in the living room, the bedrooms, the office and the kids room; extract over the kitchen
+    const pls = [
+      plen(4600, 4500, { sys: 'П1', L: 1200, d: 160, flow: 120, rot: Math.PI / 2 }),
+      plen(4600, 5500, { sys: 'П1', L: 1200, d: 160, flow: 120, rot: Math.PI / 2 }),
+      plen(5000, 7900, { sys: 'П1', L: 1500, d: 160, slots: 3, flow: 120 }),
+      plen(8500, 7900, { sys: 'П1', L: 1000, flow: 60 }),
+      plen(11300, 7900, { sys: 'П1', L: 1000, flow: 60 }),
+      plen(11900, 1200, { sys: 'П1', L: 1000, flow: 60, rot: Math.PI / 2 }),
+      plen(5300, 5600, { sys: 'В1', L: 1000, flow: 100 }),
+      plen(6600, 5600, { sys: 'В1', L: 1000, flow: 100 }),
+      plen(7900, 5600, { sys: 'В1', L: 1000, flow: 100 })
+    ];
+    documentState.docVer++;
+    for (const p of pls) step('flex', () => flexConnect(p));
+    DV('eout', 0, 4050, { group: 8, z: 2500 }).feeds = ahu.id;
+  });
+
+  /* ---------- air conditioning: a ducted unit over the wardrobe for the kids room, a split in the living ---------- */
+  step('ducted ac', () => {
+    const ac = E('Кондиционирование', {
+      type: 'ac',
+      kind: 'duct',
+      model: 'midea-mtiu12',
+      cap: 3.52,
+      p: P(10800, 4700),
+      rot: 0,
+      z: 2750, // hangs over the ceilings: the filter and the pump are within reach of the hatch
+      cams: true,
+      cn: 2,
+      cd: 250,
+      rn: 2,
+      rd: 250,
+      sysS: 'К1п',
+      sysR: 'К1з',
+      flow: 600,
+      drain: 'pump',
+      route: [],
+      out: { p: P(X + th + 50, 4700), z: 600, mount: 'basket', rot: 0 },
+      name: 'К1'
+    });
+    documentState.docVer++;
+    // rigid galvanised runs from the chambers of the unit to the slot adapters
+    const ps = [
+      plen(10100, 2300, { sys: 'К1п', L: 1000, d: 250, slots: 3, flow: 300 }),
+      plen(11300, 2300, { sys: 'К1п', L: 1000, d: 250, slots: 3, flow: 300 }),
+      plen(10350, 5550, { sys: 'К1з', L: 800, d: 250, slots: 3, flow: 300, z: 2600 }),
+      plen(11250, 5550, { sys: 'К1з', L: 800, d: 250, slots: 3, flow: 300, z: 2600 })
+    ];
+    documentState.docVer++;
+    step('ac rigid', () => flexConnect(ac, null, { rigid: true }));
+    DV('eout', X, 4700, { group: 8, z: 2500 }).feeds = ac.id;
+    // a service hatch in the wardrobe ceiling under the unit
+    E('Ревизионные люки', {
+      type: 'rhatch',
+      plane: 'ceil',
+      kind: 'plastic',
+      name: 'ЛР-2',
+      w: 600,
+      h: 600,
+      z: 2600,
+      p: P(10800, 4700),
+      rot: 0,
+      open: 'push',
+      hinge: 'left',
+      tileTh: 12
+    });
+  });
+  step('split ac', () => {
+    const pl = placeOnWall(P(XE - tg, 1000), 'wall');
+    const ac = E('Кондиционирование', {
+      type: 'ac',
+      kind: 'split',
+      cap: 5,
+      p: pl.p,
+      rot: pl.rot,
+      host: pl.host,
+      z: null,
+      drain: 'sewer',
+      route: [],
+      out: { p: P(8300, -th - 50), z: 600, mount: 'basket', rot: -Math.PI / 2 },
+      name: 'К2'
+    });
+    const Pt = acPorts(ac);
+    const fr = [P(Pt.freon.p.x, Pt.freon.p.y)];
+    fr[0].z = Pt.freon.z;
+    if (Pt.out) {
+      const q = P(Pt.out.p.x, Pt.out.p.y);
+      q.z = Pt.out.z;
+      fr.push(P(Pt.freon.p.x, 150), P(Pt.out.p.x, 150), q);
+    }
+    E('Кондиционирование', { type: 'acl', kind: 'freon', ac: ac.id, pts: fr, z: Pt.freon.z, ins: 9, cable: true });
+    const end = P(Pt.drain.p.x, 200);
+    end.z = 450;
+    E('Кондиционирование', {
+      type: 'acl',
+      kind: 'drain',
+      ac: ac.id,
+      pts: [P(Pt.drain.p.x, Pt.drain.p.y), P(Pt.drain.p.x, 200), end],
+      z: Pt.drain.z,
+      slope: 0.02,
+      mat: 'pvc16',
+      dest: 'trap'
+    });
+  });
+
+  /* ---------- calculations: light in the living room and the office, air in the living room and bedroom ---------- */
+  step('light calc', () => {
+    E('Светорасчёт', { type: 'lcalc', pts: rooms.living.map(p => P(p.x, p.y)), ...lcalcDefaults() });
+    E('Светорасчёт', { type: 'lcalc', pts: rooms.office.map(p => P(p.x, p.y)), ...lcalcDefaults() });
+  });
+  step('air calc', () => {
+    E('Аэрорасчёт', { type: 'acalc', pts: rooms.living.map(p => P(p.x, p.y)), ...acalcDefaults() });
+    E('Аэрорасчёт', { type: 'acalc', pts: rooms.kids.map(p => P(p.x, p.y)), ...acalcDefaults(), show: false });
+  });
+
+  /* ---------- annotations ---------- */
+  E('Размеры', { type: 'dim', a: P(-h, -h), b: P(X + h, -h), loc: P(X / 2, -1400) });
+  E('Размеры', { type: 'dim', a: P(X + h, -h), b: P(X + h, Y + h), loc: P(X + 1400, Y / 2) });
+  E('Размеры', { type: 'dim', a: P(0, 0), b: P(XW - tg, 0), loc: P(XW / 2, -800) });
+  E('Размеры', { type: 'dim', a: P(XW + tg, 0), b: P(XE - tg, 0), loc: P(6000, -800) });
+  E('Размеры', { type: 'dim', a: P(XE + tg, 0), b: P(X, 0), loc: P(10800, -800) });
+  step('section', () =>
+    E('Аннотации', {
+      type: 'sect',
+      kind: 'sect',
+      a: P(-1200, 4600),
+      b: P(X + 1200, 4600),
+      flip: false,
+      name: '1',
+      vw: { scale: 50, depth: 6000, sheet: '', layers: {} }
+    })
+  );
+  // room names and areas come from the floor zones; the calculations stay in their layers, switched off
+  for (const n of ['Светорасчёт', 'Аэрорасчёт']) {
+    const l = S.layers.find(x => x.name === n);
+    if (l) l.on = false;
+  }
+  T_(X / 2 - 2500, -1900, `Дом 12,6 × 11 м — ${m2((X * Y) / 1e6)} в стенах`, 180);
+
+  /* ---------- sheets ---------- */
+  documentState.docVer++;
+  step('sheets', () => {
+    const sh0 = addSheet('Общие данные. Схема щита');
+    addStarterSet();
+    addImg(sh0, { k: 'scheme' });
+    ventAlbum();
+    proj().cur = proj().sheets[1].id;
+  });
+  void [wKW, wS1, wS2, wTB, wBB, sk1, dist];
+}
+
 // ===== ui/palette.js =====
 /**
  * ui/palette.js
@@ -109250,6 +111356,7 @@ defineTools({
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -109455,6 +111562,8 @@ function xBoot() {
     bundleSnap,
     jbAll,
     S,
+    validate,
+    sample,
     openObj,
     openMEP,
     openCasework,
@@ -127018,851 +129127,6 @@ function buildLoads(out) {
   }
 }
 
-// ===== mep/hvac/air-calc.js =====
-/**
- * mep/hvac/air-calc.js
- *
- * Design calculations for ventilation and air conditioning (simplified engineering models):
- * - air exchange per room by the norms (per person for living rooms, fixed exhaust for kitchens and bathrooms,
- *   air changes for wardrobes) against the terminals actually placed; the balance of the flat;
- * - cooling load of a room: sun through glazing by orientation, conduction of glazing / walls / roof, people,
- *   lighting and appliances, fresh air; the air conditioner it needs and the check of placed units;
- * - duct network of a system: graph from the source (air handling unit, fan, ducted AC) to the terminals, flows
- *   summed along the tree, section selection by velocity limits and the ceiling void, friction (Altshul) and local
- *   losses, the critical path and the pressure the unit must develop, branches that need a balancing damper;
- * - noise at a terminal by its face velocity, against the room limit.
- * Norms are defaults the project can change (S.vent.norm).
- */
-
-
-
-
-
-
-
-
-
-
-
-
-/** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
-const AV_NORM = {
-  person: 60, // m³/h per person in living rooms
-  perM2: 3, // m³/h per m² of a living room when it has less than 20 m² per person
-  kitchen: 120, // exhaust of a kitchen, m³/h
-  bath: 100, // bathroom with a bath / shower
-  wc: 50, // toilet
-  ward: 1, // wardrobe, storage, laundry: air changes per hour
-  minAch: 0.35, // whole flat, air changes per hour
-  vMain: 4, // m/s in mains
-  vLeaf: 2.5, // m/s in branches to terminals
-  vBed: 2, // m/s in branches to bedrooms
-  vFace: 2, // m/s on the face of a grille
-  noise: 30, // dB(A) in living rooms
-  noiseOther: 35, // dB(A) elsewhere
-  eta: 0.75, // heat recovery efficiency of the air handling unit
-  tIn: 24, // °C indoor in summer
-  dpTerm: 25, // Pa: terminal with its plenum
-  hVoid: 0, // mm: ceiling void (0 — from the false ceilings / the slab)
-  drop: 350, // mm: false ceiling below the slab where no ceiling is drawn
-  shape: 'auto' // 'auto' | 'round' | 'rect'
-};
-/** Summer design temperature (°C) for the cities of the heating module. */
-const AV_TSUM = {
-  msk: 28.5,
-  spb: 25,
-  ekb: 29,
-  nsk: 28,
-  kzn: 29,
-  krd: 33,
-  sochi: 30,
-  ala: 33,
-  ast: 31,
-  kzo: 38,
-  tash: 37,
-  minsk: 27
-};
-function avNorm() {
-  if (!S.vent) return { ...AV_NORM };
-  return { ...AV_NORM, ...(S.vent.norm || {}) };
-}
-function avTSum() {
-  const n = (S.vent && S.vent.norm) || {};
-  if (n.tSum != null && n.tSum !== '') return +n.tSum;
-  return AV_TSUM[heatCfg().city] ?? 30;
-}
-const avCity = () => (HEAT_CITY[heatCfg().city] || ['—'])[0];
-
-/* ---------- rooms ---------- */
-const AV_KIND = {
-  living: 'Жилая',
-  bed: 'Спальня',
-  kitliv: 'Кухня-гостиная',
-  kitchen: 'Кухня',
-  bath: 'Ванная / душевая',
-  wc: 'Туалет',
-  ward: 'Гардеробная / кладовая',
-  corr: 'Коридор / холл',
-  tech: 'Техническое',
-  other: 'Прочее'
-};
-/** Kind of a room by its name (or z.airT). */
-function avKind(z) {
-  if (z.airT && AV_KIND[z.airT]) return z.airT;
-  const n = (z.name || '').toLowerCase();
-  if (/кухн/.test(n)) return /гостин|столов/.test(n) ? 'kitliv' : 'kitchen';
-  if (/туалет|уборн|\bwc\b/.test(n) && !/ванн|душ/.test(n)) return 'wc';
-  if (/с\/у|сануз|ванн|душ|постир|прачеч/.test(n)) return 'bath';
-  if (/гардер|кладов|хранен/.test(n)) return 'ward';
-  if (/корид|холл|прихож|тамбур|лестн/.test(n)) return 'corr';
-  if (/тех|котел|котёл|бойлер|щитов/.test(n)) return 'tech';
-  if (/спальн|детск/.test(n)) return 'bed';
-  if (/гостин|зал|кабинет|комнат|столов|библиот|игров/.test(n)) return 'living';
-  return 'other';
-}
-const avLiving = k => k === 'living' || k === 'bed' || k === 'kitliv';
-/** People in a room: set in the room, else by its kind. */
-function avPeople(z) {
-  if (z.ppl != null && z.ppl !== '') return +z.ppl;
-  const k = avKind(z),
-    A = avArea(z),
-    n = (z.name || '').toLowerCase();
-  if (k === 'bed') return /детск/.test(n) ? 1 : 2;
-  if (/кабинет/.test(n)) return 1;
-  if (k === 'living' || k === 'kitliv') return Math.max(2, Math.round(A / 20));
-  return 0;
-}
-const avArea = z => Math.abs(polyArea(z.pts)) / 1e6;
-/** Underside of the slab above the level, mm from the finished floor. */
-function avSlabU() {
-  const lv = lvCur();
-  return (lv.h || (S.ceil || 2700) + 300) + (lv.top || 0) - (lv.slab || 200);
-}
-/** False ceiling level over a point: a drawn ceiling, else the slab underside minus the default drop, mm. */
-function avFc(p) {
-  let best = null;
-  for (const c of S.ents)
-    if (c.type === 'ceil' && visible(c)) {
-      const pts = ceilOutline(c);
-      if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
-    }
-  return best != null ? best : avSlabU() - avNorm().drop;
-}
-/** Height of the room air: false ceiling over its centre, else the level ceiling, mm. */
-function avCeil(p) {
-  let best = null;
-  for (const c of S.ents)
-    if (c.type === 'ceil' && visible(c)) {
-      const pts = ceilOutline(c);
-      if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
-    }
-  return best != null ? best : S.ceil || 2700;
-}
-const avRooms = () => S.ents.filter(e => e.type === 'floorz' && visible(e) && e.pts && e.pts.length > 2);
-function avCenter(z) {
-  let x = 0,
-    y = 0;
-  for (const p of z.pts) {
-    x += p.x;
-    y += p.y;
-  }
-  return P(x / z.pts.length, y / z.pts.length);
-}
-/** Air terminals: supply / exhaust / recirculation by the kind of their system. */
-function avRole(sysId) {
-  const k = (sysOf(sysId).kind || '').toLowerCase();
-  if (/выт/.test(k)) return 'ex';
-  if (/конд|рецирк|возв/.test(k)) return 'ac';
-  return 'sup';
-}
-/** Air terminals; grille adapters with slot grilles count as terminals of their system. */
-const avTerms = () =>
-  S.ents.filter(
-    e =>
-      (e.type === 'dev' && visible(e) && DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && !/vunit|vfan/.test(e.kind)) ||
-      (e.type === 'hvu' && e.kind === 'plen' && visible(e))
-  );
-
-/** Required and placed air of every room + the flat balance. */
-function avRoomAir() {
-  const N = avNorm();
-  const terms = avTerms();
-  const rows = [];
-  let sReq = 0,
-    eReq = 0,
-    sHave = 0,
-    eHave = 0,
-    V = 0;
-  for (const z of avRooms()) {
-    const k = avKind(z),
-      A = avArea(z),
-      h = avCeil(avCenter(z)) / 1000,
-      ppl = avPeople(z);
-    V += A * h;
-    let sup = 0,
-      ex = 0;
-    if (avLiving(k)) {
-      sup = ppl * N.person;
-      if (ppl && A / ppl < 20) sup = Math.max(sup, A * N.perM2);
-    }
-    if (k === 'kitchen' || k === 'kitliv') ex = N.kitchen;
-    if (k === 'bath') ex = N.bath;
-    if (k === 'wc') ex = N.wc;
-    if (k === 'ward' || k === 'tech') ex = Math.round(A * h * N.ward);
-    const mine = terms.filter(t => inPoly(t.p, z.pts));
-    const hs = mine.filter(t => avRole(t.sys) === 'sup').reduce((s, t) => s + (+t.flow || 0), 0);
-    const he = mine.filter(t => avRole(t.sys) === 'ex').reduce((s, t) => s + (+t.flow || 0), 0);
-    sReq += sup;
-    eReq += ex;
-    sHave += hs;
-    eHave += he;
-    rows.push({ z, k, A, h, ppl, sup, ex, hs, he, terms: mine });
-  }
-  const need = Math.max(sReq, eReq, V * N.minAch);
-  return { rows, sReq, eReq, sHave, eHave, V, need, ach: V ? Math.max(sHave, eHave) / V : 0 };
-}
-/** Puts the norm flows on the terminals of each room (equal shares); returns the number of terminals changed. */
-function avApplyRoomFlows(noUndo) {
-  const R = avRoomAir();
-  let n = 0;
-  if (!noUndo) pushUndo();
-  for (const r of R.rows) {
-    for (const [role, q] of [
-      ['sup', r.sup],
-      ['ex', r.ex]
-    ]) {
-      const ts = r.terms.filter(t => avRole(t.sys) === role);
-      if (!ts.length || !q) continue;
-      const each = Math.ceil(q / ts.length / 5) * 5;
-      for (const t of ts)
-        if (+t.flow !== each) {
-          t.flow = each;
-          n++;
-        }
-    }
-  }
-  changed();
-  return n;
-}
-
-/* ---------- cooling load ---------- */
-/** Peak solar gain through glazing, W/m², by the azimuth of the window's outward normal (0 — north, clockwise). */
-function avSun(az) {
-  const T = [60, 180, 380, 330, 260, 360, 400, 200]; // N NE E SE S SW W NW
-  const i = Math.round((((az % 360) + 360) % 360) / 45) % 8;
-  return T[i];
-}
-const AV_SIDE = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'];
-function avAz(n) {
-  // plan north: S.x.geo.north, degrees from +X counter-clockwise (90 — up)
-  const nr = (((S.x && S.x.geo && S.x.geo.north) ?? 90) * Math.PI) / 180;
-  const N = P(Math.cos(nr), Math.sin(nr)),
-    E = P(Math.sin(nr), -Math.cos(nr));
-  return (Math.atan2(dot(n, E), dot(n, N)) * 180) / Math.PI;
-}
-/** Exterior wall pieces of a room with their openings and outward normals. */
-function avOutside(z) {
-  const zones = avRooms().filter(q => q !== z);
-  const out = [];
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
-    const wi = wallInfo(w);
-    let L = 0,
-      side = 0,
-      t0m = Infinity,
-      t1m = -Infinity;
-    for (let i = 0; i < z.pts.length; i++) {
-      const a = z.pts[i],
-        b = z.pts[(i + 1) % z.pts.length];
-      if (Math.abs(cross(nrm(sub(b, a)), wi.u)) > 0.05) continue;
-      const dn = dot(sub(mid(a, b), w.a), wi.n);
-      if (Math.abs(Math.abs(dn) - w.th / 2) > 60) continue;
-      const t0 = dot(sub(a, w.a), wi.u),
-        t1 = dot(sub(b, w.a), wi.u);
-      const lo = Math.max(Math.min(t0, t1), 0),
-        hi = Math.min(Math.max(t0, t1), wi.L);
-      if (hi - lo > 1) {
-        L += hi - lo;
-        side = Math.sign(dn);
-        t0m = Math.min(t0m, lo);
-        t1m = Math.max(t1m, hi);
-      }
-    }
-    if (L < 100) continue;
-    const c = add(add(w.a, mul(wi.u, wi.L / 2)), mul(wi.n, -side * (w.th / 2 + 300)));
-    if (zones.some(q => inPoly(c, q.pts))) continue;
-    const ops = hosted(w.id).filter(o => {
-      const I = opInfo(o);
-      if (!I) return false;
-      const t = dot(sub(I.c, w.a), wi.u);
-      return t >= t0m - 10 && t <= t1m + 10;
-    });
-    out.push({ w, L, n: mul(wi.n, -side), ops });
-  }
-  return out;
-}
-/** Cooling load of a room, W, with its parts. */
-function avLoad(z, R) {
-  const N = avNorm(),
-    tS = avTSum(),
-    dT = Math.max(0, tS - N.tIn);
-  const A = avArea(z),
-    h = avCeil(avCenter(z)) / 1000,
-    k = avKind(z),
-    ppl = avPeople(z);
-  const parts = [];
-  let sun = 0,
-    glass = 0,
-    walls = 0;
-  for (const o of avOutside(z)) {
-    let Aop = 0;
-    const az = avAz(o.n);
-    for (const op of o.ops) {
-      const Ao = ((+op.w || 0) * (+op.h || 0)) / 1e6;
-      Aop += Ao;
-      if (op.type === 'window' || op.type === 'opening') {
-        const I = avSun(az);
-        sun += Ao * I * 0.6;
-        glass += Ao * (op.type === 'window' ? winU(op) : 2) * dT;
-        parts.push([
-          `Окно ${Math.round(op.w)}×${Math.round(op.h)} на ${AV_SIDE[Math.round((((az % 360) + 360) % 360) / 45) % 8]}: солнце`,
-          Math.round(Ao * I * 0.6)
-        ]);
-      }
-    }
-    walls += Math.max(0, (o.L / 1000) * h - Aop) * wallU(o.w).U * (dT + 4);
-  }
-  if (glass) parts.push(['Окна: теплопередача', Math.round(glass)]);
-  if (walls) parts.push(['Наружные стены', Math.round(walls)]);
-  const ht = z.heat || {};
-  if (ht.ceil === 'roof') parts.push(['Кровля', Math.round(A * 0.22 * (dT + 15))]);
-  if (ppl) parts.push([`Люди: ${ppl} × 125 Вт`, ppl * 125]);
-  parts.push(['Освещение и приборы', Math.round(A * 12)]);
-  if (k === 'kitchen' || k === 'kitliv') parts.push(['Кухня: готовка', 800]);
-  if (/кабинет/i.test(z.name || '')) parts.push(['Компьютер', 250]);
-  if (k === 'living' || k === 'kitliv') parts.push(['Телевизор, техника', 200]);
-  // fresh air into the room (after the recuperator)
-  const row = R && R.rows.find(r => r.z === z);
-  const L = row ? Math.max(row.hs, row.sup) : 0;
-  const rec = S.ents.some(e => e.type === 'dev' && e.kind === 'vunit' && visible(e));
-  const tSup = rec ? tS - N.eta * (tS - N.tIn) : tS;
-  if (L && tSup > N.tIn) parts.push([`Приточный воздух ${Math.round(L)} м³/ч`, Math.round(L * 0.335 * (tSup - N.tIn))]);
-  const Q = parts.reduce((s, p) => s + p[1], 0);
-  return { Q, parts, A, perM2: A ? Q / A : 0 };
-}
-const AV_CAPS = [2.5, 3.5, 5, 7];
-/** Nominal AC size (kW) that covers Q (W) with a 10 % margin, or null when one unit is not enough. */
-function avCapFor(Q) {
-  const need = (Q * 1.1) / 1000;
-  return AV_CAPS.find(c => c >= need) || null;
-}
-/** Rooms an air conditioner serves: its own room, plus rooms reached by its ducts. */
-function avAcRooms(ac, rooms) {
-  const out = new Set();
-  const own = rooms.find(z => inPoly(ac.p, z.pts));
-  if (own) out.add(own);
-  if (ac.kind === 'duct') {
-    const D = acDim(ac),
-      r = Math.max(D[0], D[1]) / 2 + 400;
-    const ds = S.ents.filter(e => e.type === 'duct' && visible(e) && e.pts.some(p => dist(p, ac.p) < r));
-    const sysIds = new Set(ds.map(d => d.sys));
-    for (const t of avTerms()) if (sysIds.has(t.sys)) for (const z of rooms) if (inPoly(t.p, z.pts)) out.add(z);
-  }
-  if (Array.isArray(ac.rooms)) for (const id of ac.rooms) for (const z of rooms) if (z.id === id) out.add(z);
-  return [...out];
-}
-/** Loads of all rooms and the check of the placed air conditioners. */
-function avCooling() {
-  const R = avRoomAir();
-  const rooms = avRooms();
-  const L = new Map(rooms.map(z => [z, avLoad(z, R)]));
-  const acs = S.ents
-    .filter(e => e.type === 'ac' && visible(e))
-    .map(ac => {
-      const zs = avAcRooms(ac, rooms);
-      const Q = zs.reduce((s, z) => s + L.get(z).Q, 0);
-      const cap = acCap(ac);
-      return { ac, rooms: zs, Q, cap, ok: !zs.length || cap * 1000 >= Q * 0.95, fit: avCapFor(Q) };
-    });
-  const served = new Set(acs.flatMap(a => a.rooms));
-  const total = [...L.values()].reduce((s, l) => s + l.Q, 0);
-  return { R, loads: L, acs, served, total };
-}
-
-/* ---------- duct network ---------- */
-const AV_RND = [100, 125, 160, 200, 250, 315, 355, 400, 450, 500, 560, 630];
-const AV_REC = [100, 150, 200, 250, 300, 400, 500, 600, 800, 1000];
-const avKey = p => Math.round(p.x / 30) + ':' + Math.round(p.y / 30);
-/** Hydraulic diameter, m. */
-const avDe = e => (e.shape === 'rect' ? (2 * e.w * e.hh) / (e.w + e.hh) : e.d) / 1000;
-/** Friction loss, Pa/m (Altshul, galvanized steel 0.1 mm). */
-function avFric(e, flow) {
-  const A = ductArea(e),
-    v = flow / 3600 / A,
-    de = avDe(e);
-  if (!v || !de) return { v: 0, R: 0, pd: 0 };
-  const Re = (v * de) / 15.1e-6;
-  const lam = 0.11 * Math.pow(0.0001 / de + 68 / Re, 0.25);
-  const pd = (1.2 * v * v) / 2;
-  return { v, R: (lam / de) * pd, pd };
-}
-/**
- * The network of one system: pieces of ducts between joints, the source, terminals, flows, pressure.
- * Returns { sys, src, srcName, pieces, terms, crit, ok, msg }.
- */
-function avNet(sysId) {
-  const N = avNorm();
-  const ducts = S.ents.filter(e => e.type === 'duct' && visible(e) && e.sys === sysId && e.pts && e.pts.length >= 2);
-  const res = { sys: sysId, pieces: [], terms: [], crit: 0, ok: false, msg: '' };
-  if (!ducts.length) {
-    res.msg = 'нет воздуховодов';
-    return res;
-  }
-  // tees: a duct end that lands inside another duct of the system splits that duct there
-  const cuts = new Map(ducts.map(d => [d, []]));
-  for (const d of ducts)
-    for (const end of [d.pts[0], d.pts[d.pts.length - 1]])
-      for (const o of ducts) {
-        if (o === d) continue;
-        for (let i = 1; i < o.pts.length; i++) {
-          const q = segPt(o.pts[i - 1], o.pts[i], end);
-          if (dist(q, end) < 40 && dist(q, o.pts[0]) > 40 && dist(q, o.pts[o.pts.length - 1]) > 40)
-            cuts.get(o).push({ i, p: q, s: dist(o.pts[i - 1], q) });
-        }
-      }
-  // pieces
-  for (const d of ducts) {
-    const seenK = new Set();
-    const cs = cuts
-      .get(d)
-      .sort((a, b) => a.i - b.i || a.s - b.s)
-      .filter(c => {
-        const k = avKey(c.p);
-        if (seenK.has(k) || dist(c.p, d.pts[c.i]) < 1) return false; // a cut at a vertex is taken at the next segment start
-        seenK.add(k);
-        return true;
-      });
-    let cur = [d.pts[0]];
-    let k = 0;
-    for (let i = 1; i < d.pts.length; i++) {
-      while (k < cs.length && cs[k].i === i) {
-        cur.push(cs[k].p);
-        res.pieces.push({ d, pts: cur });
-        cur = [cs[k].p];
-        k++;
-      }
-      cur.push(d.pts[i]);
-    }
-    res.pieces.push({ d, pts: cur });
-  }
-  for (const pc of res.pieces) {
-    pc.a = avKey(pc.pts[0]);
-    pc.b = avKey(pc.pts[pc.pts.length - 1]);
-    pc.L = plen(pc.pts) / 1000;
-  }
-  // terminals at piece ends
-  const nodeP = new Map();
-  for (const pc of res.pieces) {
-    nodeP.set(pc.a, pc.pts[0]);
-    nodeP.set(pc.b, pc.pts[pc.pts.length - 1]);
-  }
-  const tAt = new Map();
-  for (const t of avTerms().filter(t => t.sys === sysId)) {
-    let best = null,
-      bd = t.type === 'hvu' ? hvDim(t)[0] / 2 + 500 : 450;
-    for (const d of ducts)
-      for (const [id, i] of [
-        [d.from, 0],
-        [d.to, d.pts.length - 1]
-      ])
-        if (id === t.id) {
-          best = avKey(d.pts[i]);
-          bd = 0;
-        }
-    if (!best)
-      for (const [k, p] of nodeP)
-        if (dist(p, t.p) < bd) {
-          bd = dist(p, t.p);
-          best = k;
-        }
-    if (best) {
-      if (!tAt.has(best)) tAt.set(best, []);
-      tAt.get(best).push(t);
-      res.terms.push({ t, node: best, flow: +t.flow || 0 });
-    }
-  }
-  // source: air handling unit / fan of the system, a ducted AC, else a free end without terminal
-  let src = null,
-    srcName = '';
-  const units = S.ents.filter(
-    e =>
-      visible(e) &&
-      ((e.type === 'dev' && (e.kind === 'vunit' || (e.kind === 'vfan' && (!e.sys || e.sys === sysId)))) ||
-        (e.type === 'ac' && e.kind === 'duct') ||
-        (e.type === 'hvu' && e.kind === 'ahu' && (e.sysS === sysId || e.sysE === sysId)))
-  );
-  for (const u of units) {
-    const r =
-      u.type === 'ac'
-        ? Math.max(...acDim(u).slice(0, 2)) / 2 + 700
-        : u.type === 'hvu'
-          ? Math.max(...hvDim(u).slice(0, 2)) / 2 + 500
-          : Math.max(sizeWH(u.size).w, sizeWH(u.size).h) / 2 + 400;
-    for (const [k, p] of nodeP)
-      if (dist(p, u.p) < r && !tAt.has(k)) {
-        src = k;
-        srcName =
-          u.type === 'ac'
-            ? `канальный кондиционер ${acCap(u)} кВт`
-            : u.type === 'hvu'
-              ? hvLabel(u).split('\n')[0]
-              : DEVK[u.kind].n.toLowerCase();
-        res.unit = u;
-        break;
-      }
-    if (src) break;
-  }
-  const deg = new Map();
-  for (const pc of res.pieces) {
-    deg.set(pc.a, (deg.get(pc.a) || 0) + 1);
-    deg.set(pc.b, (deg.get(pc.b) || 0) + 1);
-  }
-  if (!src) {
-    const free = [...deg].filter(([k, n]) => n === 1 && !tAt.has(k)).map(([k]) => k);
-    if (free.length === 1) {
-      src = free[0];
-      srcName = 'свободный конец (установка не найдена)';
-    }
-  }
-  if (!src) {
-    res.msg = 'не найден источник: поставьте приточную установку / вентилятор у начала сети';
-    return res;
-  }
-  res.src = src;
-  res.srcName = srcName;
-  // tree from the source
-  const adj = new Map();
-  for (const pc of res.pieces) {
-    (adj.get(pc.a) || adj.set(pc.a, []).get(pc.a)).push(pc);
-    (adj.get(pc.b) || adj.set(pc.b, []).get(pc.b)).push(pc);
-  }
-  const seen = new Set([src]);
-  const order = [];
-  const q = [src];
-  while (q.length) {
-    const n = q.shift();
-    for (const pc of adj.get(n) || []) {
-      if (pc.up) continue;
-      const m = pc.a === n ? pc.b : pc.a;
-      if (seen.has(m)) {
-        if (!pc.up) pc.loop = true;
-        continue;
-      }
-      pc.up = n;
-      pc.down = m;
-      seen.add(m);
-      order.push(pc);
-      q.push(m);
-    }
-  }
-  res.loose = res.pieces.filter(pc => !pc.up).length;
-  // flows: sum of terminals below
-  for (let i = order.length - 1; i >= 0; i--) {
-    const pc = order[i];
-    const kids = order.filter(c => c.up === pc.down);
-    pc.kids = kids;
-    pc.flow = (tAt.get(pc.down) || []).reduce((s, t) => s + (+t.flow || 0), 0) + kids.reduce((s, c) => s + c.flow, 0);
-    pc.leaf = !kids.length;
-  }
-  // pressure along the tree
-  const bedRooms = avRooms().filter(z => avKind(z) === 'bed');
-  for (const pc of order) {
-    const e = pc.d;
-    const f = avFric(e, pc.flow);
-    pc.v = f.v;
-    pc.R = f.R;
-    const sib = order.filter(c => c.up === pc.up);
-    const main = sib.reduce((a, c) => (c.flow > a.flow ? c : a), sib[0]);
-    let zeta = 0;
-    for (const a of ductBends({ pts: pc.pts })) zeta += (e.shape === 'rect' ? 0.4 : 0.25) * (a / 90);
-    if (sib.length > 1) zeta += pc === main ? 0.25 : 0.9;
-    pc.zeta = zeta;
-    pc.dp = f.R * pc.L + zeta * f.pd;
-    const parent = order.find(c => c.down === pc.up);
-    pc.P = (parent ? parent.P : 0) + pc.dp;
-    const toBed = pc.leaf && (tAt.get(pc.down) || []).some(t => bedRooms.some(z => inPoly(t.p, z.pts)));
-    pc.vmax = pc.leaf ? (toBed ? N.vBed : N.vLeaf) : N.vMain;
-  }
-  for (const r of res.terms) {
-    const pc = order.find(c => c.down === r.node);
-    r.P = (pc ? pc.P : 0) + N.dpTerm;
-  }
-  res.crit = res.terms.reduce((m, r) => Math.max(m, r.P), 0);
-  for (const r of res.terms) r.damper = res.crit - r.P > Math.max(10, 0.15 * res.crit);
-  res.order = order;
-  res.ok = true;
-  return res;
-}
-/** All systems that have ducts or terminals. */
-function avSystems() {
-  const ids = new Set();
-  for (const e of S.ents)
-    if ((e.type === 'duct' || (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].f === 'vterm')) && e.sys && visible(e))
-      ids.add(e.sys);
-  return [...ids].map(avNet);
-}
-/** Ceiling void available for ducts over a point, mm (slab underside − false ceiling − 50 mm clearance). */
-function avVoid(p) {
-  const N = avNorm();
-  if (N.hVoid) return +N.hVoid;
-  return Math.max(100, avSlabU() - avFc(p) - 50);
-}
-/** Section for a flow at a velocity limit within a height limit. */
-function avSize(flow, vmax, hmax, shape) {
-  const A = flow / 3600 / vmax;
-  const d = AV_RND.find(x => (Math.PI * x * x) / 4e6 >= A) || AV_RND[AV_RND.length - 1];
-  if (shape !== 'rect' && (shape === 'round' || d <= hmax)) return { shape: 'round', d };
-  const hs = AV_REC.filter(x => x <= Math.max(100, hmax));
-  for (const hh of hs.slice().reverse())
-    for (const w of AV_REC) if (w >= hh && w <= 4 * hh && (w * hh) / 1e6 >= A) return { shape: 'rect', w, hh };
-  return { shape: 'rect', w: AV_REC[AV_REC.length - 1], hh: hs[hs.length - 1] || 100 };
-}
-/**
- * Writes the network flows to the ducts and (sizes=true) selects sections: a duct whose pieces carry different
- * flows is cut at its tees first, so each piece gets its own section. One undo step. Returns a report.
- */
-function avApplyNet(sizes, noUndo) {
-  const N = avNorm();
-  const rep = { systems: 0, ducts: 0, split: 0, resized: 0, msgs: [] };
-  if (!noUndo) pushUndo();
-  for (const net0 of avSystems()) {
-    if (!net0.ok) {
-      if (net0.msg !== 'нет воздуховодов') rep.msgs.push(`${net0.sys}: ${net0.msg}`);
-      continue;
-    }
-    rep.systems++;
-    let net = net0;
-    if (sizes) {
-      // cut ducts at tees
-      const by = new Map();
-      for (const pc of net.order) (by.get(pc.d) || by.set(pc.d, []).get(pc.d)).push(pc);
-      let cut = false;
-      for (const [d, pcs] of by) {
-        if (pcs.length < 2) continue;
-        const parts = net.pieces.filter(pc => pc.d === d);
-        const i = S.ents.indexOf(d);
-        const neu = parts.map((pc, j) => ({
-          ...JSON.parse(JSON.stringify(d)),
-          id: j ? S.nextId++ : d.id,
-          pts: pc.pts.map(p => P(p.x, p.y)),
-          from: j === 0 ? d.from : null,
-          to: j === parts.length - 1 ? d.to : null
-        }));
-        S.ents.splice(i, 1, ...neu);
-        rep.split += parts.length - 1;
-        cut = true;
-      }
-      if (cut) {
-        documentState.docVer++;
-        net = avNet(net0.sys);
-        if (!net.ok) continue;
-      }
-    }
-    for (const pc of net.order) {
-      const e = pc.d;
-      if (Math.round(+e.flow || 0) !== Math.round(pc.flow)) {
-        e.flow = Math.round(pc.flow);
-        rep.ducts++;
-      }
-      if (sizes && pc.flow > 0) {
-        const hm = Math.min(...pc.pts.map(avVoid)) - 2 * (e.ins || 0);
-        const s = avSize(pc.flow, pc.vmax, hm, N.shape === 'auto' ? (e.shape === 'rect' ? 'auto' : 'auto') : N.shape);
-        const same = s.shape === e.shape && (s.shape === 'round' ? s.d === e.d : s.w === e.w && s.hh === e.hh);
-        if (!same) {
-          e.shape = s.shape;
-          if (s.shape === 'round') e.d = s.d;
-          else {
-            e.w = s.w;
-            e.hh = s.hh;
-          }
-          rep.resized++;
-        }
-      }
-    }
-  }
-  changed();
-  return rep;
-}
-
-/* ---------- noise ---------- */
-/** Sound level near a terminal, dB(A), by its face velocity (empirical, ±3 dB). */
-function avNoise(t) {
-  const s = sizeWH(t.size || (DEVK[t.kind] || {}).size);
-  const A = s.round ? (Math.PI * s.d * s.d) / 4e6 : (s.w * s.h) / 1e6;
-  const vf = (+t.flow || 0) / 3600 / Math.max(1e-4, A * 0.7);
-  if (!vf) return { vf: 0, L: 0 };
-  return { vf, L: Math.round(32 + 50 * Math.log10(vf / 2) + 10 * Math.log10(Math.max(0.005, A) / 0.045)) };
-}
-
-/* ---------- checks for validate() and the agents ---------- */
-let avIssCache = null,
-  avIssVer = -1;
-/** Issues of the climate design: [{id, lvl, msg, p}] (cached by document version). */
-function avIssues() {
-  if (avIssVer === documentState.docVer && avIssCache) return avIssCache;
-  const out = [];
-  try {
-    if (
-      S.vent &&
-      S.ents.some(
-        e => e.type === 'duct' || e.type === 'ac' || (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].f === 'vterm')
-      )
-    ) {
-      const N = avNorm();
-      const C = avCooling();
-      const anyVent = avTerms().length > 0;
-      if (anyVent)
-        for (const r of C.R.rows) {
-          const nm = r.z.name || AV_KIND[r.k];
-          if (r.sup && r.hs < r.sup * 0.9)
-            out.push({
-              id: r.z.id,
-              lvl: 'warn',
-              msg: `${nm}: приток ${Math.round(r.hs)} из ${Math.round(r.sup)} м³/ч по норме (${r.ppl} чел × ${N.person}).`,
-              p: avCenter(r.z)
-            });
-          if (r.ex && r.he < r.ex * 0.9)
-            out.push({
-              id: r.z.id,
-              lvl: 'warn',
-              msg: `${nm}: вытяжка ${Math.round(r.he)} из ${Math.round(r.ex)} м³/ч по норме.`,
-              p: avCenter(r.z)
-            });
-          for (const t of r.terms) {
-            const nz = avNoise(t);
-            const lim = avLiving(r.k) ? N.noise : N.noiseOther;
-            if (nz.L > lim)
-              out.push({
-                id: t.id,
-                lvl: 'warn',
-                msg: `Шум у решётки ≈ ${nz.L} дБ(А) > ${lim}: скорость на решётке ${nz.vf.toFixed(1)} м/с — увеличьте размер или поставьте две.`,
-                p: t.p
-              });
-          }
-        }
-      if (
-        anyVent &&
-        C.R.sHave &&
-        C.R.eHave &&
-        Math.abs(C.R.sHave - C.R.eHave) > 0.15 * Math.max(C.R.sHave, C.R.eHave)
-      ) {
-        const z0 = avRooms()[0];
-        if (z0)
-          out.push({
-            id: z0.id,
-            lvl: 'warn',
-            msg: `Баланс квартиры: приток ${Math.round(C.R.sHave)}, вытяжка ${Math.round(C.R.eHave)} м³/ч — разница больше 15 %.`,
-            p: avCenter(z0)
-          });
-      }
-      for (const a of C.acs)
-        if (!a.ok)
-          out.push({
-            id: a.ac.id,
-            lvl: 'warn',
-            msg: `Кондиционер ${a.cap} кВт меньше теплопритоков ${(a.Q / 1000).toFixed(1)} кВт (${a.rooms.map(z => z.name).join(', ')}) — нужен ${a.fit ? a.fit + ' кВт' : 'второй блок'}.`,
-            p: a.ac.p
-          });
-      if (C.acs.length)
-        for (const [z, l] of C.loads)
-          if (!C.served.has(z) && avLiving(avKind(z)) && l.Q > 600)
-            out.push({
-              id: z.id,
-              lvl: 'info',
-              msg: `${z.name || 'Помещение'}: теплопритоки ${(l.Q / 1000).toFixed(1)} кВт, кондиционер его не обслуживает.`,
-              p: avCenter(z)
-            });
-      for (const net of avSystems()) {
-        if (!net.ok) continue;
-        for (const pc of net.order) {
-          if (pc.v > pc.vmax * 1.1)
-            out.push({
-              id: pc.d.id,
-              lvl: 'warn',
-              msg: `${net.sys}: скорость ${pc.v.toFixed(1)} м/с > ${pc.vmax} на участке ${Math.round(pc.flow)} м³/ч — увеличьте сечение (Подобрать сечения).`,
-              p: pc.pts[0]
-            });
-          if (pc.flow && Math.abs((+pc.d.flow || 0) - pc.flow) > Math.max(10, 0.1 * pc.flow) && pc.d.flow)
-            out.push({
-              id: pc.d.id,
-              lvl: 'info',
-              msg: `${net.sys}: по сети на участке ${Math.round(pc.flow)} м³/ч, в свойствах ${Math.round(pc.d.flow)} — Пересчитать сеть.`,
-              p: pc.pts[0]
-            });
-        }
-        for (const r of net.terms)
-          if (r.damper)
-            out.push({
-              id: r.t.id,
-              lvl: 'info',
-              msg: `${net.sys}: ветка легче на ${Math.round(net.crit - r.P)} Па — нужен регулирующий клапан.`,
-              p: r.t.p
-            });
-        if (net.loose)
-          out.push({
-            id: net.pieces.find(p => !p.up).d.id,
-            lvl: 'warn',
-            msg: `${net.sys}: ${net.loose} участков не связаны с сетью — проверьте стыки.`,
-            p: net.pieces.find(p => !p.up).pts[0]
-          });
-      }
-    }
-  } catch (err) {
-    console.error(err);
-  }
-  avIssVer = documentState.docVer;
-  avIssCache = out;
-  return out;
-}
-
-/**
- * Resolves duct-to-duct clashes by height: of two crossing ducts the smaller one moves up or down until the gap
- * is 50 mm, staying between the false ceiling and the slab. One undo step. Returns { moved, left }.
- */
-function avSeparate(noUndo) {
-  const rep = { moved: 0, left: 0 };
-  const L = hvacClashes().filter(c => (c.kind === 'hard' || c.kind === 'soft') && c.b != null);
-  if (!L.length) return rep;
-  if (!noUndo) pushUndo();
-  const done = new Set();
-  const hOf = e => (e.shape === 'rect' ? e.hh : e.d) + 2 * (e.ins || 0);
-  for (const c of L) {
-    const A = byId(c.a),
-      B = byId(c.b);
-    if (!A || !B || A.type !== 'duct' || B.type !== 'duct' || done.has(A.id) || done.has(B.id)) {
-      rep.left++;
-      continue;
-    }
-    const [m, f] = hOf(A) * ductArea(A) <= hOf(B) * ductArea(B) ? [A, B] : [B, A];
-    const need = (hOf(m) + hOf(f)) / 2 + 50;
-    const top = avSlabU() - 20,
-      bot = Math.max(...m.pts.map(avFc)) + 20;
-    const up = f.z + need,
-      dn = f.z - need;
-    const fits = z => z + hOf(m) / 2 <= top && z - hOf(m) / 2 >= bot;
-    const z = [m.z > f.z ? up : dn, m.z > f.z ? dn : up].find(fits);
-    if (z == null) {
-      rep.left++;
-      continue;
-    }
-    m.z = Math.round(z);
-    done.add(m.id);
-    rep.moved++;
-  }
-  changed();
-  return rep;
-}
-
 // ===== mep/hvac/air-room.js =====
 /**
  * mep/hvac/air-room.js
@@ -128839,7 +130103,8 @@ function hcBoxes(vis) {
 
 /** Segment pair of two ducts that meet at an end (a connection, not a collision). */
 function hcConnected(sa, sb, A, B) {
-  const tol = HC_JOIN + Math.abs(A.hh - B.hh) / 2;
+  // a branch on the side of the main (a saddle, a flexible tap) ends on its wall: up to the radius of the main
+  const tol = HC_JOIN + Math.max(A.hh, B.hh, A.hw, B.hw);
   return (
     [sa.a, sa.b].some(p => hcClosest(p, p, sb.a, sb.b).d <= tol) ||
     [sb.a, sb.b].some(p => hcClosest(p, p, sa.a, sa.b).d <= tol)
@@ -128905,10 +130170,22 @@ function hcFind() {
   const slabZ = avSlabU(),
     cand = [];
   const mid3 = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+  // ducts joined through an inline part (silencer, reducer, tee) meet at the part, not at each other
+  const viaPart = new Set();
+  if (hvHooksAv.spigots)
+    for (const u of vis) {
+      if (u.type !== 'hvu' || !['sil', 'red', 'tee'].includes(u.kind)) continue;
+      const sp = hvHooksAv.spigots(u);
+      const at = ducts
+        .filter(D => [D.e.pts[0], D.e.pts[D.e.pts.length - 1]].some(p => sp.some(q => dist(p, P(q.p[0], q.p[1])) < 80)))
+        .map(D => D.e.id);
+      for (const a of at) for (const b of at) if (a !== b) viaPart.add(a + ':' + b);
+    }
   // duct against ducts, pipes, AC lines: each element pair once per place, the worst gap first
   for (const A of ducts)
     for (const B of [...ducts, ...other]) {
       if (B.kind === 'duct' && B.e.id <= A.e.id) continue;
+      if (B.kind === 'duct' && viaPart.has(A.e.id + ':' + B.e.id)) continue;
       for (const sa of A.segs)
         for (const sb of B.segs) {
           if (B.kind === 'duct' && hcConnected(sa, sb, A, B)) continue;
@@ -128981,6 +130258,7 @@ function hcFind() {
     }
     // false ceiling: lowest ceiling over the sample point (avFc: drawn ceiling or default drop below the slab), skipping the terminal ends
     let worst = null;
+    const anyCeil = S.ents.some(c => c.type === 'ceil' && visible(c));
     const endPts = [
       [e.pts[0], e.from],
       [e.pts[e.pts.length - 1], e.to]
@@ -128991,7 +130269,9 @@ function hcFind() {
       for (let i = 0; i <= n; i++) {
         const p = P(s.a[0] + ((s.b[0] - s.a[0]) * i) / n, s.a[1] + ((s.b[1] - s.a[1]) * i) / n);
         if (endPts.some(([q]) => dist(p, q) < 150)) continue;
-        const ch = avFc(p);
+        // where the project has drawn ceilings, a point between them lies over a wall: no ceiling to clash with
+        const ch = anyCeil ? avFcDrawn(p) : avFc(p);
+        if (ch == null) continue;
         const depth = ch - bot;
         if (depth > HC_TOL && (!worst || depth > worst.depth)) worst = { depth, p, ch };
       }
