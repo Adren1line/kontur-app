@@ -7179,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.16';
+const APP_VER = '59.17';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -39165,8 +39165,65 @@ const MFC = {
   adapter: { n: 'Переходник / евроконус', cat: 'Фитинги', L: 40, col: '#c9a640' },
   tee: { n: 'Тройник', cat: 'Фитинги', L: 50, col: '#c9a640' },
   cap: { n: 'Заглушка', cat: 'Фитинги', L: 20, col: '#c9a640' },
-  endgrp: { n: 'Концевая группа (воздухоотводчик + дренаж)', cat: 'Фитинги', L: 70, col: '#c9a640' }
+  endgrp: { n: 'Концевая группа (воздухоотводчик + дренаж)', cat: 'Фитинги', L: 70, col: '#c9a640' },
+  // the chain turns on these: a 90° elbow, a tee taking the flow into its branch (a gauge or a plug on the run),
+  // a straight piece of pipe to change the level or to move the next part away
+  elbow: { n: 'Угол 90° (поворот трассы)', cat: 'Повороты и уровни', L: 0, col: '#c7ccd2', turn: true },
+  teeturn: {
+    n: 'Тройник с поворотом (на проходе — манометр / заглушка)',
+    cat: 'Повороты и уровни',
+    L: 0,
+    col: '#c9a640',
+    turn: true
+  },
+  pipe: { n: 'Отрезок трубы (перепад уровня, вынос)', cat: 'Повороты и уровни', L: 150, col: '#c7ccd2' }
 };
+/** Directions a turn can take, in the node frame (seen from the front: +X to the left, +Y towards the room). */
+const MF_TURN = {
+  up: ['вверх', [0, 0, 1]],
+  down: ['вниз', [0, 0, -1]],
+  left: ['влево', [1, 0, 0]],
+  right: ['вправо', [-1, 0, 0]],
+  front: ['вперёд, от стены', [0, 1, 0]],
+  back: ['назад, к стене', [0, -1, 0]]
+};
+/** Bend radius of a turn fitting on a pipe of radius r (press elbow, centre line). */
+const mfElbR = r => Math.max(22, Math.round(r * 1.8));
+/** Direction after a turn: the one asked; one along the pipe (no turn possible) falls back to up, or forward on a riser. */
+function mfTurnDir(k, d) {
+  const t = (MF_TURN[k.dir] || MF_TURN.up)[1];
+  const dt = t[0] * d[0] + t[1] * d[1] + t[2] * d[2];
+  if (Math.abs(dt) < 0.5) return t;
+  return Math.abs(d[2]) > 0.9 ? [0, 1, 0] : [0, 0, 1];
+}
+/**
+ * The pipe from the end of a chain that turned (E, going along dE) to the start of the bar S, entering it along its
+ * axis ax: straight pieces along the node axes, the bends of radius bend drawn by the pipe itself.
+ */
+function mfTailRoute(E, dE, S, ax, bend) {
+  const T = mfA(S, ax, -Math.max(bend * 2, 40));
+  const pts = [E.slice()];
+  const cur = E.slice();
+  const k0 = [0, 1, 2].reduce((m, k) => (Math.abs(dE[k]) > Math.abs(dE[m]) ? k : m), 0);
+  const fwd = Math.sign(T[k0] - cur[k0]) === Math.sign(dE[k0]);
+  const order = [...(fwd ? [k0] : []), ...[2, 0, 1].filter(k => k !== k0), ...(fwd ? [] : [k0])];
+  for (const k of order)
+    if (Math.abs(T[k] - cur[k]) > 0.5) {
+      cur[k] = T[k];
+      pts.push(cur.slice());
+    }
+  pts.push(S.slice());
+  // drop points on one line
+  return pts.filter((p, i) => {
+    if (i === 0 || i === pts.length - 1) return true;
+    const a = pts[i - 1],
+      b = pts[i + 1];
+    const u = v3sub(p, a),
+      w = v3sub(b, p);
+    const c = cross3(u, w);
+    return Math.hypot(...c) > 1e-3 * (Math.hypot(...u) * Math.hypot(...w) || 1);
+  });
+}
 const MFT = {
   water: 'Водоснабжение (ХВС / ГВС)',
   heat: 'Отопление (подача / обратка)',
@@ -39547,7 +39604,12 @@ MFC.tvalve.top = true;
 MFC.balance.top = true;
 const MF_DNR = { '1/2″': 10.6, '3/4″': 13.4, '1″': 16.9, '1 1/4″': 21.2 };
 const mfNum = (v, d) => (v === '' || v == null || !isFinite(+v) ? d : +v);
-const mfLen = (k, r) => Math.round((MFC[k.k] || { L: 40 }).L * (0.55 + (0.45 * r) / 16.9));
+const mfLen = (k, r) =>
+  k.k === 'pipe'
+    ? Math.max(20, +k.len || 150)
+    : (MFC[k.k] || {}).turn
+      ? mfElbR(r)
+      : Math.round((MFC[k.k] || { L: 40 }).L * (0.55 + (0.45 * r) / 16.9));
 const mfA = (A, d, s) => [A[0] + d[0] * s, A[1] + d[1] * s, A[2] + d[2] * s];
 const mfChainLen = (ch, r) => ch.reduce((a, k) => a + Math.max(0, +k.gap || 0) + mfLen(k, r), 0);
 const mfHang = k => (k.k === 'flush' ? 300 : k.k === 'cart' ? 360 : k.k === 'filter' ? 70 : 0);
@@ -39656,7 +39718,79 @@ function mfDial(mb, P0, stem, len, R, face, needle) {
   mb.obox(mfA(C, face, 8.2), mfA(mfA(mfA(C, face, 8.2), sx, (R - 6) * 0.7), stem, (R - 6) * 0.5), 2.4, 0.8, MFK.RED);
 }
 /* ---- one detailed part on a straight run (A, d, len, r) ---- */
+/** A turn fitting: a press elbow, or a tee taking the flow into its branch with a gauge or a plug on the run. */
+function mfTurnPart(mb, it) {
+  const { BR, BRD, NI } = MFK;
+  const k = it.k,
+    r = it.r,
+    R0 = it.len;
+  mb.smooth(true);
+  if (k.k === 'elbow') {
+    sanPipe(mb, [it.A, it.corner, it.B], r + 2, NI, R0 * 0.9, 18);
+    // press collars at both ends
+    for (const [P, dd] of [
+      [it.A, it.d],
+      [it.B, v3mul(it.d2, -1)]
+    ])
+      mfRev(
+        mb,
+        P,
+        dd,
+        [
+          [0, r + 4],
+          [Math.min(14, R0 * 0.5), r + 4]
+        ],
+        NI,
+        20
+      );
+  } else {
+    // the run goes on past the corner and ends with a gauge or a plug; the branch carries the flow on
+    const runEnd = mfA(it.corner, it.d, R0 * 0.8);
+    mfRev(
+      mb,
+      it.A,
+      it.d,
+      [
+        [0, r + 4],
+        [R0 * 1.8, r + 4]
+      ],
+      BR,
+      20
+    );
+    mfRev(
+      mb,
+      it.corner,
+      it.d2,
+      [
+        [r, r + 4],
+        [R0, r + 4]
+      ],
+      BR,
+      20
+    );
+    if (k.run === 'cap')
+      mfRev(
+        mb,
+        runEnd,
+        it.d,
+        [
+          [0, (r + 5) / 0.866],
+          [8, (r + 5) / 0.866],
+          [9, 0.1]
+        ],
+        BRD,
+        6
+      );
+    else {
+      const up = Math.abs(it.d[2]) > 0.9 ? [0, 1, 0] : [0, 0, 1];
+      const face = Math.abs(it.d[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0];
+      mfDial(mb, runEnd, it.d, 12, 24, Math.abs(v3dot(it.d, face)) > 0.9 ? up : face);
+    }
+  }
+  mb.smooth(false);
+}
 function mfPart(mb, it, hot, name) {
+  if (it.turn) return mfTurnPart(mb, it);
   const k = it.k,
     M = MFC[k.k] || { n: k.k, col: MFK.BR },
     d = it.d,
@@ -40675,16 +40809,46 @@ function mfLay(e) {
     const ext = !water && ori === 'h' && o.od === 'down' ? Math.max(0, z - zLow) : 0;
     const place = (ch, A, d, grp, r) => {
       let s = 0;
+      // the current point and direction: a turn fitting changes them, the next parts follow
+      let Pc = A;
       ch.forEach((k, i) => {
         const g = Math.max(0, +k.gap || 0);
         s += g;
+        Pc = mfA(Pc, d, g);
         const len = mfLen(k, r);
+        if ((MFC[k.k] || {}).turn) {
+          const d2 = mfTurnDir(k, d);
+          const corner = mfA(Pc, d, len),
+            B = mfA(corner, d2, len);
+          items.push({
+            addr: `${grp}|${i}`,
+            grp,
+            kind: 'comp',
+            k,
+            A: Pc,
+            d,
+            d2,
+            corner,
+            B,
+            len,
+            r,
+            li,
+            sys: L.sys,
+            gap: g,
+            s,
+            turn: true
+          });
+          Pc = B;
+          d = d2;
+          s += 2 * len;
+          return;
+        }
         const it = {
           addr: `${grp}|${i}`,
           grp,
           kind: 'comp',
           k,
-          A: mfA(A, d, s),
+          A: Pc,
           d,
           len,
           r,
@@ -40709,9 +40873,13 @@ function mfLay(e) {
           });
         }
         s += len;
+        Pc = mfA(Pc, d, len);
       });
+      place.E = Pc;
+      place.d = d;
       return s;
     };
+    const turns = ch => ch.some(k => (MFC[k.k] || {}).turn);
     // inlet
     const bend = rb * 3,
       tail = 24 + Math.max(0, +L.tail || 0),
@@ -40725,7 +40893,7 @@ function mfLay(e) {
       const Q0 = mfA(port, ax, drop);
       riser = [port, Q0];
       place(L.inlet, Q0, ax, `${li}|in`, rb);
-      tailP = [mfA(Q0, ax, Tin), S];
+      tailP = turns(L.inlet) ? mfTailRoute(place.E, place.d, S, ax, bend) : [mfA(Q0, ax, Tin), S];
       dd = v3mul(ax, -1);
     } else if (o.inMode === 'axis') {
       const Cn = mfA(S, ax, -(Tin + bend + tail));
@@ -40734,7 +40902,7 @@ function mfLay(e) {
       const P0 = mfA(Cn, ax, bend);
       riser = [port, Cn, P0];
       place(L.inlet, P0, ax, `${li}|in`, rb);
-      tailP = [mfA(P0, ax, Tin), S];
+      tailP = turns(L.inlet) ? mfTailRoute(place.E, place.d, S, ax, bend) : [mfA(P0, ax, Tin), S];
       dd = [0, 0, rv];
     } else {
       const Cn = mfA(S, ax, -(bend + tail));
@@ -40743,7 +40911,7 @@ function mfLay(e) {
       const Q0 = mfA(port, up, drop);
       riser = [port, Q0];
       place(L.inlet, Q0, up, `${li}|in`, rb);
-      tailP = [mfA(Q0, up, Tin), Cn, S];
+      tailP = turns(L.inlet) ? mfTailRoute(place.E, place.d, S, ax, bend) : [mfA(Q0, up, Tin), Cn, S];
       dd = [0, 0, rv];
     }
     items.push({
@@ -41872,7 +42040,13 @@ function mfSchemeTab(el) {
             .map(([k, m]) => `<option value="${k}" ${k === item.k ? 'selected' : ''}>${esc(m.n)}</option>`)
             .join(
               ''
-            )}</select></label><label>Подпись / бирка<input data-mfe="label" value="${esc(item.label || '')}"></label><label>Поворот вокруг трубы<select data-mfe="rot">${[0, 45, 90, 135, 180, 225, 270, 315].map(v => `<option value="${v}" ${(((+item.rot || 0) % 360) + 360) % 360 === v ? 'selected' : ''}>${v}°</option>`).join('')}</select></label>${item.k === 'tank' ? `<label>Объём бака, л<select data-mfe="vol">${[8, 12, 18, 24].map(v => `<option ${+(item.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` : ''}${item.k === 'tvalve' || item.k === 'tvbal' ? `<label class="chk"><input type="checkbox" data-mfe="servo" ${item.servo ? 'checked' : ''}> привод (умный дом / термостат)</label>${item.servo ? `<label>Напряжение<select data-mfe="volt"><option ${(item.volt || '230') === '230' ? 'selected' : ''}>230</option><option ${item.volt === '24' ? 'selected' : ''}>24</option></select></label><label>Исполнение<select data-mfe="nc"><option ${(item.nc || 'NC') === 'NC' ? 'selected' : ''}>NC</option><option ${item.nc === 'NO' ? 'selected' : ''}>NO</option></select></label>` : ''}` : ''}${item.k === 'reducer' ? `<label>Настройка, бар<input data-mfe="bar" value="${esc(item.bar || '3')}"></label>` : ''}${item.k === 'safety' ? `<label>Срабатывание, бар<input data-mfe="bar" value="${esc(item.bar || '3')}"></label>` : ''}</div>
+            )}</select></label><label>Подпись / бирка<input data-mfe="label" value="${esc(item.label || '')}"></label><label>Поворот вокруг трубы<select data-mfe="rot">${[0, 45, 90, 135, 180, 225, 270, 315].map(v => `<option value="${v}" ${(((+item.rot || 0) % 360) + 360) % 360 === v ? 'selected' : ''}>${v}°</option>`).join('')}</select></label>${item.k === 'tank' ? `<label>Объём бака, л<select data-mfe="vol">${[8, 12, 18, 24].map(v => `<option ${+(item.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` : ''}${item.k === 'tvalve' || item.k === 'tvbal' ? `<label class="chk"><input type="checkbox" data-mfe="servo" ${item.servo ? 'checked' : ''}> привод (умный дом / термостат)</label>${item.servo ? `<label>Напряжение<select data-mfe="volt"><option ${(item.volt || '230') === '230' ? 'selected' : ''}>230</option><option ${item.volt === '24' ? 'selected' : ''}>24</option></select></label><label>Исполнение<select data-mfe="nc"><option ${(item.nc || 'NC') === 'NC' ? 'selected' : ''}>NC</option><option ${item.nc === 'NO' ? 'selected' : ''}>NO</option></select></label>` : ''}` : ''}${
+            (MFC[item.k] || {}).turn
+              ? `<label>Поворот — куда дальше<select data-mfe="dir">${Object.entries(MF_TURN)
+                  .map(([v, [n]]) => `<option value="${v}" ${(item.dir || 'up') === v ? 'selected' : ''}>${n}</option>`)
+                  .join('')}</select></label>`
+              : ''
+          }${item.k === 'teeturn' ? `<label>На проходе<select data-mfe="run"><option value="gauge" ${item.run !== 'cap' ? 'selected' : ''}>манометр</option><option value="cap" ${item.run === 'cap' ? 'selected' : ''}>заглушка</option></select></label>` : ''}${item.k === 'pipe' ? `<label>Длина отрезка, мм<input data-mfe="len" type="number" min="20" step="10" value="${esc(String(item.len || 150))}"></label>` : ''}${item.k === 'reducer' ? `<label>Настройка, бар<input data-mfe="bar" value="${esc(item.bar || '3')}"></label>` : ''}${item.k === 'safety' ? `<label>Срабатывание, бар<input data-mfe="bar" value="${esc(item.bar || '3')}"></label>` : ''}</div>
       <div class="btnrow"><button class="btn" id="mfUp">◀ раньше</button><button class="btn" id="mfDn">позже ▶</button><button class="btn" id="mfDup">Копия</button><button class="btn" id="mfDel">Удалить</button></div>`
         : outSel
           ? `<div class="sech">Выход</div><div class="form" style="grid-template-columns:1fr"><label>Потребитель<input data-mfo="to" value="${esc(outSel.to || '')}"></label><label>Ø трубы<select data-mfo="d">${[16, 20, 25].map(v => `<option ${outSel.d === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div><div class="btnrow"><button class="btn" id="mfOutDel">Удалить выход</button></div>`
