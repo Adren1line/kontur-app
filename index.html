@@ -7179,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.13';
+const APP_VER = '59.14';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -113388,6 +113388,7 @@ function ceilBoardsMesh(e, mb, col, th) {
 
 
 
+
 /* ---------- hardware and milling data ---------- */
 /** Concealed thresholds: none, an automatic drop seal milled into the leaf bottom, a profile threshold on the floor. */
 const THR_T = {
@@ -113888,157 +113889,509 @@ function pos(x, y, tx, ty, n) {
   return svgL(x, y, tx, ty, 0.18) + circ(tx, ty, 3.2, 0.25, '#fff') + svgT(tx, ty + 1.2, n, 3.2, 'middle');
 }
 
-/* ---------- sheet 1: general view ---------- */
-function ddGeneral(D) {
+/* ---------- sheet 1: production sketch («эскиз»), the layout a door is ordered by ---------- */
+/** Draughting font of the door sheets: the narrow italic of drawings (GOST type B where installed). */
+const DD_FONT = 'font-family="ISOCPEUR, GOST type B, GOST 2.304, Arial Narrow, Arial, sans-serif" font-style="italic"';
+const SK_RED = '#d42020',
+  SK_BLUE = '#1f5fd6';
+/** Italic text of the sketch. */
+function skT(x, y, t, sz = 3.5, anc = 'start', extra = '') {
+  return `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${sz}" text-anchor="${anc}" ${DD_FONT} ${extra}>${ddEsc(String(t))}</text>`;
+}
+/** A size as written on drawings: decimal comma, no trailing zeros. */
+function ddNum(v) {
+  const r = Math.round(v * 10) / 10;
+  return String(r).replace('.', ',');
+}
+/** Open arrowhead (two strokes) at p pointing along ang. */
+function skArrow(x, y, ang, s = 2.4) {
+  const a1 = ang + Math.PI - 0.26,
+    a2 = ang + Math.PI + 0.26;
+  return (
+    svgL(x, y, x + s * Math.cos(a1), y + s * Math.sin(a1), 0.2) +
+    svgL(x, y, x + s * Math.cos(a2), y + s * Math.sin(a2), 0.2)
+  );
+}
+/**
+ * Dimension of the sketch between p1 and p2 (sheet mm), offset by off along the left normal of p1→p2. A short span
+ * gets its arrows outside and its text beside it (o.at = 'start' | 'end'); the text reads left to right or bottom up.
+ */
+function skDim(x1, y1, x2, y2, off, txt, o = {}) {
+  const dx = x2 - x1,
+    dy = y2 - y1,
+    L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L,
+    uy = dy / L,
+    nx = -uy,
+    ny = ux;
+  const sg = Math.sign(off || 1);
+  const a = [x1 + nx * off, y1 + ny * off],
+    b = [x2 + nx * off, y2 + ny * off];
+  let s =
+    svgL(x1, y1, a[0] + nx * 1.6 * sg, a[1] + ny * 1.6 * sg, 0.18) +
+    svgL(x2, y2, b[0] + nx * 1.6 * sg, b[1] + ny * 1.6 * sg, 0.18);
+  const ang = Math.atan2(dy, dx);
+  const sz = o.sz || 3.2;
+  const tw = String(txt).length * sz * 0.5;
+  const short = L < Math.max(7, tw + 4);
+  if (!short) {
+    s += svgL(a[0], a[1], b[0], b[1], 0.18) + skArrow(a[0], a[1], ang + Math.PI) + skArrow(b[0], b[1], ang);
+  } else {
+    // arrows from outside, the line runs on past both ends
+    s +=
+      svgL(a[0] - ux * 5, a[1] - uy * 5, b[0] + ux * 5, b[1] + uy * 5, 0.18) +
+      skArrow(a[0], a[1], ang) +
+      skArrow(b[0], b[1], ang + Math.PI);
+  }
+  let deg = (ang * 180) / Math.PI;
+  let flip = false;
+  if (deg > 90 || deg <= -90) {
+    deg += 180;
+    flip = true;
+  }
+  if (deg > 180) deg -= 360;
+  let mx = (a[0] + b[0]) / 2,
+    my = (a[1] + b[1]) / 2;
+  if (short) {
+    // the text beside the span: towards the end of the reading direction or towards its start
+    const rx = flip ? -ux : ux,
+      ry = flip ? -uy : uy;
+    const k = (L / 2 + 5 + tw / 2) * ((o.at || 'end') === 'end' ? 1 : -1);
+    mx += rx * k;
+    my += ry * k;
+  }
+  s += `<text x="${mx.toFixed(2)}" y="${my.toFixed(2)}" font-size="${sz}" text-anchor="middle" ${DD_FONT} transform="rotate(${deg.toFixed(1)} ${mx.toFixed(2)} ${my.toFixed(2)}) translate(0 -1)">${ddEsc(String(txt))}</text>`;
+  return s;
+}
+/** Leader with a shelf: from the point on the drawing to a text written over the shelf. */
+function skLeader(x, y, tx, ty, txt, sz = 3.2, right = true) {
+  const w = String(txt).length * sz * 0.5 + 2;
+  const x2 = right ? tx + w : tx - w;
+  return (
+    `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="0.5"/>` +
+    svgL(x, y, tx, ty, 0.18) +
+    svgL(tx, ty, x2, ty, 0.18) +
+    skT(right ? tx + 1 : tx - 1, ty - 1, txt, sz, right ? 'start' : 'end', 'font-style="normal"')
+  );
+}
+/** Where a horizontal line d = const crosses a polygon given in (s, d): the s values. */
+function skCross(pts, d) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i],
+      q = pts[(i + 1) % pts.length];
+    if ((p[1] - d) * (q[1] - d) < 0 || (p[1] === d && q[1] !== d))
+      out.push(p[0] + ((d - p[1]) / (q[1] - p[1] || 1)) * (q[0] - p[0]));
+  }
+  return out;
+}
+/** Hatch patterns of the sketch: masonry, the leaf (cross), the floor. */
+const SK_DEFS = `<defs><pattern id="skW" width="2.4" height="2.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="2.4" stroke="#000" stroke-width="0.16"/></pattern><pattern id="skX" width="2.6" height="2.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="2.6" stroke="#000" stroke-width="0.14"/><line x1="0" y1="0" x2="2.6" y2="0" stroke="#000" stroke-width="0.14"/></pattern></defs>`;
+
+/** Number of identical doors in the project (the same configuration and size) — the «Кол-во» of the sketch. */
+function doorTwins(e) {
+  const key = d => JSON.stringify([d.w, d.h, d.cfg]);
+  const k = key(e);
+  let n = 0;
+  for (const d of S.ents) if (d.type === 'door' && key(d) === k) n++;
+  for (const id of Object.keys((S.x && S.x.lv && S.x.lv.ents) || {}))
+    for (const d of S.x.lv.ents[id] || []) if (d && d.type === 'door' && key(d) === k) n++;
+  return Math.max(1, n);
+}
+/** Code of the door on the drawings and in the order. */
+function doorCode(e) {
+  return e.name || 'Д-' + e.id;
+}
+/** Explanation lines of the sketch, in the order the factory reads them. */
+function sketchNotes(D) {
+  const { c, M } = D;
+  const L = [];
+  // «Коробка: Коробка МДФ…» → «Коробка: МДФ…»
+  const bare = n => n.replace(/^(коробка|добор|наличник)\s+/i, '');
+  const col = (DCOL.find(x => x[0] === c.leaf.color) || [0, ''])[1] || (c.leaf.paint ? 'под покраску' : 'по образцу');
+  L.push(`Коробка: ${bare(M.fr.name)}${c.frame.gap ? `, монтажный зазор ${c.frame.gap} мм` : ''}`);
+  const B = D.build;
+  L.push(`Полотно: ${B.layers.map(x => x[0].toLowerCase()).join(' / ')}, толщина ${c.leaf.th} мм`);
+  if (c.mode !== 'entry')
+    L.push(
+      `Исполнение: ${GLASS_T[c.leaf.glass] || 'глухое'}${c.leaf.glass === 'none' ? ', ' + (LEAF_ST[c.leaf.style || 'flat'] || '').toLowerCase() : ''}`
+    );
+  L.push(`Цвет полотна: ${col}`);
+  if (B.glass) L.push(`Стекло: ${B.glass}`);
+  if (M.ext) L.push(`Доборы: ${bare(M.ext.prof.name)}, ширина ${r0(M.ext.width)} мм`);
+  if (c.casing.a || c.casing.b)
+    L.push(
+      `Наличники: ${bare(getProf(c.casing.prof, 'casing').name)}, ${c.casing.a && c.casing.b ? 'с двух сторон' : 'с одной стороны'}, стык ${c.casing.join === '90' ? '90°' : '45°'}`
+    );
+  L.push(`Петли: ${HINGE_T[c.hinges.type].toLowerCase()}, ${c.hinges.count * M.leaves.length} шт`);
+  const hs =
+    c.handle.type === 'none'
+      ? 'без ручки'
+      : `ручка ${HANDLE_T[c.handle.type].toLowerCase()}${!['flush', 'pull'].includes(c.handle.type) ? ' «' + (HANDLE_SER[c.handle.series || 'round'] || '') + '»' : ''}`;
+  L.push(`${hs[0].toUpperCase() + hs.slice(1)}, замок: ${LOCK_T[c.lock.type].toLowerCase()}`);
+  if (D.thr !== 'none') L.push(`Порог: ${THR_T[D.thr].toLowerCase()}`);
+  if (c.closer && c.closer.type !== 'none') L.push(`Доводчик: ${CLOSER_T[c.closer.type].toLowerCase()}`);
+  if (c.stop.type !== 'none') L.push(`Стопор: ${STOP_T[c.stop.type].toLowerCase()}`);
+  if (D.seal.len) L.push(`Уплотнитель: ${SEAL_T[D.seal.type].toLowerCase()}, ${ddNum(D.seal.buy)} м`);
+  if (c.mode === 'entry') {
+    const en = c.entry || defEntry();
+    L.push(`Утеплитель: ${en.insul}; отделка изнутри: ${en.inFin}`);
+    if (en.peep) L.push('Глазок 200°');
+  }
+  return L;
+}
+/** Breaks a note into lines of at most n characters on spaces. */
+function ddWrap(t, n) {
+  const out = [];
+  let cur = '';
+  for (const w of String(t).split(' ')) {
+    if (cur && (cur + ' ' + w).length > n) {
+      out.push(cur);
+      cur = w;
+    } else cur = cur ? cur + ' ' + w : w;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+/** Opening hand seen from the swing side: «левое» when the hinges are on the left. */
+function doorHand(M) {
+  const l = M.leaves.find(x => x.act) || M.leaves[0];
+  return l.dir > 0 ? 'левое' : 'правое';
+}
+
+function ddSketch(D) {
   const { M, c } = D;
   const W = M.W,
     H = M.H,
-    cw = D.cw;
-  let s = HATCH;
-  // elevation from the swing side
-  const k = niceK(Math.min(180 / (W + 2 * cw + 500), 205 / (H + cw + 250)));
-  const ox = 32 + (cw + 250) * k,
-    oy = 220;
-  const X = x => ox + x * k,
+    T = M.T,
+    g = c.frame.gap || 0;
+  const frSD = M.frPts.map(p => [p[0], M.Dm(p[1])]);
+  const dm = (M.leaves[0].dlo + M.leaves[0].dhi) / 2;
+  // the rabbet face of the frame at the leaf: the gap between the leaf and the frame
+  const xs = Math.max(g, ...skCross(frSD, dm).filter(v => v < M.leaves[0].sa + 1));
+  const gapS = M.leaves.reduce((a, l) => Math.min(a, l.sa), 1e9) - xs;
+  const gapT = H - xs - M.zt;
+  const gapB = M.zb;
+  // the visible outline round the leaf: the casing of the swing side, or the frame itself
+  const cw = M.casA ? D.cw : 0;
+  const sL = M.casA ? M.Cx - cw : g,
+    sR = W - sL;
+  const top = M.casA ? H - M.Cx + cw : H - g;
+  const ctA = M.casA ? D.ct : 0,
+    ctB = M.casB ? D.ct : 0;
+  // scale: the elevation, the section beside it and the plan under it fit the left part of the sheet
+  const k = niceK(Math.min(150 / (sR - sL + T + ctA + ctB + 400), 176 / (top + 120)));
+  const plH = (T + ctA + ctB + 260) * k + 34;
+  const oy = Math.min(214, 287 - plH - 6);
+  const ox = 66 - sL * k;
+  const X = s => ox + s * k,
     Y = z => oy - z * k;
-  s += svgT(32, 14, `Вид со стороны открывания  М ${fdScale(k)}`, 3.4, 'start', 'font-weight="600"');
-  // wall around the opening
-  const wx = 250;
-  s += ddR(X(-wx - cw), Y(H + cw + 150), (W + 2 * wx + 2 * cw) * k, (H + cw + 150) * k, 0.25, 'url(#ddW)', '#777');
-  if (c.casing.a && cw) {
+  let s = SK_DEFS;
+  const lA = M.leaves.find(l => l.act) || M.leaves[0];
+  const hingeLeft = lA.dir > 0;
+  /* --- elevation from the swing side --- */
+  // the floor
+  s += svgL(X(sL) - 12, Y(0), X(sR) + 12, Y(0), 0.35);
+  // casing (or frame) outline in red, mitred corners
+  if (M.casA) {
     const m45 = c.casing.join !== '90';
-    s += ddR(X(M.Cx - cw), Y(H - M.Cx + cw), (W - 2 * M.Cx + 2 * cw) * k, (H - M.Cx + cw) * k, 0.45, '#fff');
-    if (m45) {
-      s += svgL(X(M.Cx - cw), Y(H - M.Cx + cw), X(M.Cx), Y(H - M.Cx), 0.25);
-      s += svgL(X(W - M.Cx + cw), Y(H - M.Cx + cw), X(W - M.Cx), Y(H - M.Cx), 0.25);
-    } else {
-      s += svgL(X(M.Cx - cw), Y(H - M.Cx), X(M.Cx), Y(H - M.Cx), 0.25);
-      s += svgL(X(W - M.Cx + cw), Y(H - M.Cx), X(W - M.Cx), Y(H - M.Cx), 0.25);
-    }
-  } else s += ddR(X(0), Y(H), W * k, H * k, 0.45, '#fff');
-  // the opening (hidden behind the casing) and the frame
-  s += ddR(X(0), Y(H), W * k, H * k, 0.2, 'none', '#000', 'stroke-dasharray="1.5 1"');
-  s += ddR(X(M.Cx), Y(H - M.Cx), (W - 2 * M.Cx) * k, (H - M.Cx) * k, 0.3);
+    s += poly(
+      [
+        [X(sL), Y(0)],
+        [X(sL), Y(top)],
+        [X(sR), Y(top)],
+        [X(sR), Y(0)]
+      ],
+      0.5,
+      'none',
+      SK_RED
+    );
+    const iL = M.Cx,
+      iR = W - M.Cx,
+      iT = H - M.Cx;
+    if (m45) s += svgL(X(sL), Y(top), X(iL), Y(iT), 0.3, SK_RED) + svgL(X(sR), Y(top), X(iR), Y(iT), 0.3, SK_RED);
+    else s += svgL(X(sL), Y(iT), X(iL), Y(iT), 0.3, SK_RED) + svgL(X(iR), Y(iT), X(sR), Y(iT), 0.3, SK_RED);
+    s +=
+      svgL(X(iL), Y(0), X(iL), Y(iT), 0.25, SK_RED) +
+      svgL(X(iR), Y(0), X(iR), Y(iT), 0.25, SK_RED) +
+      svgL(X(iL), Y(iT), X(iR), Y(iT), 0.25, SK_RED);
+  }
+  // the rabbet face of the frame (the line the leaf closes into)
+  s += poly(
+    [
+      [X(xs), Y(0)],
+      [X(xs), Y(H - xs)],
+      [X(W - xs), Y(H - xs)],
+      [X(W - xs), Y(0)]
+    ],
+    0.5,
+    'none',
+    SK_RED
+  );
   // leaves
   for (const l of M.leaves) {
-    s += ddR(X(l.sa), Y(M.zt), l.w * k, (M.zt - M.zb) * k, 0.5, '#f6f3ec');
-    // opening triangle: the apex on the hinge side
-    const fx = l.dir > 0 ? l.sb : l.sa;
-    s += svgL(X(fx), Y(M.zt), X(l.hs), Y((M.zt + M.zb) / 2), 0.18, '#000', '3 1.5');
-    s += svgL(X(fx), Y(M.zb), X(l.hs), Y((M.zt + M.zb) / 2), 0.18, '#000', '3 1.5');
-    for (const z of D.hz) s += ddR(X(l.hs) - (l.dir > 0 ? 0 : 1.6), Y(z + 50), 1.6, 100 * k, 0.25, '#888');
+    s += ddR(X(l.sa), Y(M.zt), l.w * k, (M.zt - M.zb) * k, 0.45, '#fff');
+    if (c.leaf.glass && c.leaf.glass !== 'none' && c.mode !== 'entry') {
+      const full = c.leaf.glass === 'full';
+      const st = full ? 75 : 130,
+        rt = full ? 75 : 130,
+        rb = full ? 140 : 220;
+      const g0 = [X(l.sa + st), Y(M.zt - rt)],
+        g1 = [X(l.sb - st), Y(M.zb + rb)];
+      s += ddR(g0[0], g0[1], g1[0] - g0[0], g1[1] - g0[1], 0.3);
+      // the glass mark: three short diagonals
+      const gw = g1[0] - g0[0],
+        gh = g1[1] - g0[1];
+      for (const f of [0.3, 0.45, 0.6])
+        s += svgL(
+          g0[0] + gw * (f - 0.1),
+          g0[1] + gh * (f + 0.15),
+          g0[0] + gw * (f + 0.15),
+          g0[1] + gh * (f - 0.1),
+          0.18
+        );
+    } else if (c.leaf.style === 'panel') {
+      const n = Math.max(1, Math.min(5, c.leaf.panels | 0 || 2)),
+        S_ = Math.min(110, l.w * 0.16),
+        TR = 110,
+        BR = 170,
+        MR = 100;
+      const ph = (M.zt - M.zb - TR - BR - (n - 1) * MR) / n;
+      let zt = M.zt - TR;
+      for (let i = 0; i < n; i++) {
+        s += ddR(X(l.sa + S_), Y(zt), (l.w - 2 * S_) * k, ph * k, 0.25);
+        zt -= ph + MR;
+      }
+    }
+    // hinges on the hinge edge
+    for (const z of D.hz) {
+      const hid = c.hinges.type === 'hidden';
+      s += ddR(
+        X(l.hs) - (l.dir > 0 ? 1.4 : 0),
+        Y(z + 50),
+        1.4,
+        100 * k,
+        0.3,
+        hid ? 'none' : '#000',
+        '#000',
+        hid ? 'stroke-dasharray="0.8 0.6"' : ''
+      );
+    }
+    // handle and lock on the active leaf
     if (l.act && c.handle.type !== 'none') {
-      const hx = (l.dir > 0 ? l.sb : l.sa) - l.dir * D.bs;
-      s += circ(X(hx), Y(c.handle.h), 1.5, 0.3, '#fff');
-      s += svgL(X(hx), Y(c.handle.h), X(hx - l.dir * 120), Y(c.handle.h), 0.6);
+      const free = l.dir > 0 ? l.sb : l.sa;
+      const hx = free - l.dir * D.bs,
+        hz = c.handle.h;
+      if (c.handle.type === 'pull') s += ddR(X(hx) - 1, Y(hz + 150), 2, 300 * k, 0.3, '#fff');
+      else if (c.handle.type === 'flush') s += ddR(X(hx) - 17 * k, Y(hz + 85), 34 * k, 170 * k, 0.3);
+      else {
+        if (c.handle.type !== 'norose') s += circ(X(hx), Y(hz), 26 * k, 0.3, '#fff');
+        s += circ(X(hx), Y(hz), 9 * k + 0.2, 0.3, '#fff');
+        s += ddR(Math.min(X(hx), X(hx - l.dir * 130)), Y(hz) - 0.7, 130 * k, 1.4, 0.3, '#fff');
+      }
+      const LM = LOCK_MILL[c.lock.type];
+      if (LM && (LM.cyl || LM.turn)) {
+        const cz = hz - (LM.cyl || LM.turn);
+        s +=
+          circ(X(hx), Y(cz), 16 * k, 0.3, '#fff') +
+          circ(X(hx), Y(cz) - 0.3, 0.35, 0.2, '#000') +
+          svgL(X(hx), Y(cz) - 0.2, X(hx), Y(cz) + 0.6, 0.3);
+      }
     }
   }
-  // dimensions
-  const l0 = M.leaves[0];
-  s += dimS(X(0), Y(0), X(W), Y(0), 9, W);
-  s += dimS(X(M.leaves[0].sa), Y(M.zb), X(M.leaves[M.leaves.length - 1].sb), Y(M.zb), 16, M.span);
-  if (c.casing.a && cw)
-    s += dimS(X(M.Cx - cw), Y(H - M.Cx + cw), X(W - M.Cx + cw), Y(H - M.Cx + cw), -6, W - 2 * M.Cx + 2 * cw);
-  s += dimS(X(W + cw + 40), Y(0), X(W + cw + 40), Y(H), 7, H);
-  s += dimS(X(-cw - 40), Y(M.zb), X(-cw - 40), Y(M.zt), -7, M.zt - M.zb);
-  if (c.handle.type !== 'none') s += dimS(X(W + cw + 40), Y(0), X(W + cw + 40), Y(c.handle.h), 15, c.handle.h);
-  const hs = l0.hs;
-  s += dimS(X(hs), Y(M.zt), X(hs), Y(D.hz[0]), l0.dir > 0 ? 6 : -6, M.zt - D.hz[0], 2.6);
-  s += dimS(X(hs), Y(D.hz[D.hz.length - 1]), X(hs), Y(M.zb), l0.dir > 0 ? 6 : -6, D.hz[D.hz.length - 1] - M.zb, 2.6);
-  // plan section
-  const T = M.T;
-  const R0 = Math.max(...M.leaves.map(l => l.w));
-  const k2 = niceK(Math.min(150 / (W + 2 * cw + 400), 100 / (T + R0 + 60)));
-  const px = 240 + (cw + 180) * k2,
-    py = 24 + (R0 + 30) * k2;
-  const PX = x => px + x * k2,
-    PY = d => py - d * k2;
-  s += svgT(240, 14, `Разрез горизонтальный  М ${fdScale(k2)}`, 3.4, 'start', 'font-weight="600"');
-  s += poly(
-    [
-      [PX(-180 - cw), PY(0)],
-      [PX(0), PY(0)],
-      [PX(0), PY(-T)],
-      [PX(-180 - cw), PY(-T)]
-    ],
-    0.45,
-    'url(#ddH)'
-  );
-  s += poly(
-    [
-      [PX(W), PY(0)],
-      [PX(W + 180 + cw), PY(0)],
-      [PX(W + 180 + cw), PY(-T)],
-      [PX(W), PY(-T)]
-    ],
-    0.45,
-    'url(#ddH)'
-  );
-  const side = (pts, fill) => {
-    const dm = p => M.Dm(p[1]);
-    return (
-      poly(
-        pts.map(p => [PX(p[0]), PY(dm(p))]),
-        0.3,
-        fill
-      ) +
-      poly(
-        pts.map(p => [PX(W - p[0]), PY(dm(p))]),
-        0.3,
-        fill
-      )
+  // the overhead closer and the concealed parts
+  const lab = [];
+  if (c.closer && c.closer.type === 'arm') {
+    const bx0 = X(lA.hs + lA.dir * 60),
+      bx1 = X(lA.hs + lA.dir * 330);
+    s += ddR(Math.min(bx0, bx1), Y(M.zt - 10), Math.abs(bx1 - bx0), 50 * k, 0.3, '#fff');
+    s += skT((bx0 + bx1) / 2, Y(M.zt - 10) + 50 * k * 0.72, 'Доводчик', 2.4, 'middle', 'font-style="normal"');
+  }
+  if (c.closer && c.closer.type === 'hidden') {
+    const a = X(lA.hs + lA.dir * 80),
+      b = X(lA.hs + lA.dir * 390);
+    s += ddR(Math.min(a, b), Y(M.zt), Math.abs(b - a), 70 * k, 0.25, 'none', '#000', 'stroke-dasharray="0.8 0.6"');
+    lab.push([Math.min(a, b) + 2, Y(M.zt) + 1.5, 'Скрытый доводчик']);
+  }
+  if (c.stop.type === 'hidden') {
+    const a = X(lA.hs - lA.dir * 80 + lA.dir * 160),
+      b = X(lA.hs + lA.dir * 420);
+    s += ddR(Math.min(a, b), Y(M.zt), Math.abs(b - a), 22 * k, 0.25, 'none', '#000', 'stroke-dasharray="0.8 0.6"');
+    lab.push([(a + b) / 2, Y(M.zt) + 0.8, 'Скрытый стопор']);
+  }
+  if (c.leaf.glass && c.leaf.glass !== 'none' && c.mode !== 'entry') {
+    const full = c.leaf.glass === 'full',
+      st = full ? 75 : 130;
+    lab.push([X(lA.sa + st + (lA.w - 2 * st) * 0.65), Y(M.zt - (full ? 75 : 130) - 260), 'Стекло']);
+  }
+  // labels over the elevation on the hinge-free side, shelves stacked
+  // labels on shelves over the leaf, like the notes written on a sketch by hand
+  lab.forEach(([x, y, t], i) => (s += skLeader(x, y, X(lA.sa) + 4, Y(M.zt) + 14 + i * 7, t, 3, true)));
+  /* --- dimensions of the elevation --- */
+  const fr = Math.round;
+  // the chain over the top: gap · leaf (or stile · glass · stile) · gap
+  const sa0 = Math.min(...M.leaves.map(l => l.sa)),
+    sb0 = Math.max(...M.leaves.map(l => l.sb));
+  // a steel entry leaf laps over its frame: no gap to show
+  const lap = c.mode === 'entry';
+  if (!lap) {
+    s += skDim(X(xs), Y(top), X(sa0), Y(top), -7, ddNum(gapS), { at: 'start' });
+    s += skDim(X(sb0), Y(top), X(W - xs), Y(top), -7, ddNum(gapS), { at: 'end' });
+  }
+  for (const l of M.leaves) s += skDim(X(l.sa), Y(top), X(l.sb), Y(top), -7, fr(l.w) + '*');
+  // the top gap and the gap at the floor, inside the opening near the lock edge
+  const xg = X(hingeLeft ? sb0 - 120 : sa0 + 120);
+  if (!lap) s += skDim(xg, Y(H - xs), xg, Y(M.zt), hingeLeft ? 0.01 : -0.01, ddNum(gapT), { at: 'start' });
+  s += skDim(xg, Y(M.zb), xg, Y(0), hingeLeft ? 0.01 : -0.01, ddNum(gapB), { at: 'start' });
+  // hinge chain on the hinge side: from the leaf top through the hinges to the floor
+  const hx = hingeLeft ? X(sL) : X(sR);
+  const hOff = hingeLeft ? 7 : -7;
+  let zPrev = M.zt;
+  for (const z of D.hz) {
+    s += skDim(hx, Y(zPrev), hx, Y(z), hOff, fr(zPrev - z), { at: 'end' });
+    zPrev = z;
+  }
+  s += skDim(hx, Y(zPrev), hx, Y(0), hOff, fr(zPrev), { at: 'end' });
+  // heights from the floor on the lock side, stacked: handle, glass bottom and top
+  const fx = hingeLeft ? X(sR) : X(sL);
+  const ups = [];
+  if (c.handle.type !== 'none') ups.push(c.handle.h);
+  if (c.leaf.glass && c.leaf.glass !== 'none' && c.mode !== 'entry') {
+    const full = c.leaf.glass === 'full';
+    ups.push(M.zb + (full ? 140 : 220), M.zt - (full ? 75 : 130));
+  }
+  ups.sort((a, b) => a - b);
+  ups.forEach((z, i) => {
+    const off = 7 + i * 7;
+    s += skDim(fx, Y(0), fx, Y(z), hingeLeft ? off : -off, fr(z));
+  });
+  // backset of the handle
+  if (c.handle.type !== 'none') {
+    const free = lA.dir > 0 ? lA.sb : lA.sa;
+    const hxa = free - lA.dir * D.bs;
+    s += skDim(
+      X(Math.min(free, hxa)),
+      Y(c.handle.h + 120),
+      X(Math.max(free, hxa)),
+      Y(c.handle.h + 120),
+      0.01,
+      fr(D.bs),
+      { at: lA.dir > 0 ? 'start' : 'end' }
     );
-  };
-  s += side(M.frPts, '#e8e1d2');
-  if (M.ext) s += side(M.ext.pts, '#f2ede2');
+    s += svgL(X(hxa), Y(c.handle.h + 120), X(hxa), Y(c.handle.h) - 1.5, 0.15);
+  }
+  /* --- vertical section beside the elevation (cut through the leaf) --- */
+  const sx0 = (hingeLeft ? X(sR) + 7 + ups.length * 7 + 14 : X(sR) + 26) + ctA * k;
+  const SX = d => sx0 - d * k;
+  const wallT = H + Math.max(160, cw + 60);
+  // the wall over the opening and the floor
+  s += ddR(SX(0), Y(wallT), T * k, (wallT - H) * k, 0.35, 'url(#skW)');
+  s += svgL(SX(ctA + 30), Y(0), SX(-T - ctB - 30), Y(0), 0.35);
+  s += `<rect x="${SX(ctA + 30).toFixed(2)}" y="${Y(0).toFixed(2)}" width="${((T + ctA + ctB + 60) * k).toFixed(2)}" height="1.6" fill="url(#skW)" stroke="none"/>`;
+  // the frame head (the profile turned: across the opening → down from the opening top)
+  s += poly(
+    frSD.map(p => [SX(p[1]), Y(H - p[0])]),
+    0.3,
+    '#222'
+  );
+  if (M.ext)
+    s += poly(
+      M.ext.pts.map(p => [SX(M.Dm(p[1])), Y(H - p[0])]),
+      0.25,
+      '#fff'
+    );
+  if (M.casA)
+    s += poly(
+      M.casA.pts.map(p => [SX(M.Dm(p[1])), Y(H - p[0])]),
+      0.25,
+      '#fff'
+    );
+  if (M.casB)
+    s += poly(
+      M.casB.pts.map(p => [SX(M.Dm(p[1])), Y(H - p[0])]),
+      0.25,
+      '#fff'
+    );
+  // the leaf, cut
+  const l0 = M.leaves[0];
+  s += ddR(SX(l0.dhi), Y(M.zt), (l0.dhi - l0.dlo) * k, (M.zt - M.zb) * k, 0.4, 'url(#skX)');
+  if (D.seal.len) s += ddR(SX(l0.dlo) - 0.1, Y(M.zt - 3), 0.9, 8 * k + 0.4, 0.15, SK_BLUE, SK_BLUE);
+  if (D.thr === 'drop') {
+    s += ddR(SX(dm + 7), Y(M.zb + 30), 14 * k, 30 * k, 0.25, '#fff');
+    s += skLeader(SX(dm), Y(M.zb + 15), SX(-T - ctB) + 6, Y(M.zb + 180), 'Автоматический порог', 3, true);
+  }
+  if (D.thr === 'profile') s += ddR(SX(l0.dhi + 20), Y(10), (l0.dhi - l0.dlo + 40) * k, 10 * k, 0.25, '#ccc');
+  // heights beside the section: leaf, opening, frame
+  const dx0 = SX(-T - ctB);
+  s += skDim(dx0, Y(M.zb), dx0, Y(M.zt), 8, `${fr(M.zt - M.zb)}*(Полотно)`);
+  s += skDim(dx0, Y(0), dx0, Y(H), 16, `${fr(H)}(Проём)`);
+  s += skDim(dx0, Y(0), dx0, Y(H - g), 24, `${fr(H - g)}*(Коробка)`);
+  /* --- plan section under the elevation (same scale, same axis) --- */
+  const handOut = 80;
+  const py = oy + 10 + (handOut + ctA) * k;
+  const PYd = d => py - d * k;
+  const wl = 260;
+  s += ddR(X(-wl), PYd(0), wl * k, T * k, 0.35, 'url(#skW)');
+  s += ddR(X(W), PYd(0), wl * k, T * k, 0.35, 'url(#skW)');
+  const side = (pts, fill, sw = 0.25) =>
+    poly(
+      pts.map(p => [X(p[0]), PYd(M.Dm(p[1]))]),
+      sw,
+      fill
+    ) +
+    poly(
+      pts.map(p => [X(W - p[0]), PYd(M.Dm(p[1]))]),
+      sw,
+      fill
+    );
+  s += side(M.frPts, '#222', 0.3);
+  if (M.ext) s += side(M.ext.pts, '#fff');
   if (M.casA) s += side(M.casA.pts, '#fff');
   if (M.casB) s += side(M.casB.pts, '#fff');
   for (const l of M.leaves) {
-    s += ddR(PX(l.sa), PY(l.dhi), l.w * k2, (l.dhi - l.dlo) * k2, 0.4, '#f6f3ec');
-    // open at 90°: the leaf and its arc
-    const R = l.w;
-    const ex = l.hs,
-      ey = l.dhi;
-    s += ddR(
-      PX(ex) - (l.dir > 0 ? 0 : (l.dhi - l.dlo) * k2),
-      PY(ey + R),
-      (l.dhi - l.dlo) * k2,
-      R * k2,
-      0.25,
-      'none',
-      '#000',
-      'stroke-dasharray="2 1"'
-    );
-    const fx = l.dir > 0 ? l.sb : l.sa;
-    s += `<path d="M${PX(fx).toFixed(2)},${PY(ey).toFixed(2)} A${(R * k2).toFixed(2)},${(R * k2).toFixed(2)} 0 0 ${l.dir > 0 ? 0 : 1} ${PX(ex).toFixed(2)},${PY(ey + R).toFixed(2)}" fill="none" stroke="#000" stroke-width="0.2" stroke-dasharray="2 1"/>`;
+    s += ddR(X(l.sa), PYd(l.dhi), l.w * k, (l.dhi - l.dlo) * k, 0.4, 'url(#skX)');
+    if (D.seal.len)
+      for (const e0 of [l.sa, l.sb]) {
+        const inw = e0 === l.sa ? 1 : -1;
+        s += ddR(Math.min(X(e0 + inw * 3), X(e0 + inw * 11)), PYd(l.dlo) - 0.1, 8 * k, 0.9, 0.12, SK_BLUE, SK_BLUE);
+      }
   }
-  s += dimS(PX(0), PY(-T), PX(W), PY(-T), -8, W);
-  s += dimS(PX(-60), PY(0), PX(-60), PY(-T), 8, T, 2.6);
-  if (M.ext) s += svgT(PX(W + 40), PY(-T) + 9, `добор ${fmt0(M.ext.width)} мм`, 2.6);
-  // characteristics
-  const L = [];
-  L.push(
-    `Тип: ${c.mode === 'hidden' ? 'скрытая, короб заподлицо со стеной' : c.mode === 'entry' ? 'входная металлическая' : 'распашная'}`
-  );
-  L.push(`Проём в стене ${fmt0(W)} × ${fmt0(H)}, стена ${fmt0(T)} мм`);
-  L.push(
-    `Полотно ${fmt0(D.ls.w)} × ${fmt0(D.ls.h)} × ${c.leaf.th} мм, ${M.leaves.length > 1 ? '2 створки' : '1 створка'}`
-  );
-  L.push(
-    `Исполнение: ${GLASS_T[c.leaf.glass] || ''}${c.leaf.glass === 'none' ? ', ' + (LEAF_ST[c.leaf.style || 'flat'] || '').toLowerCase() : ''}`
-  );
-  L.push(`Коробка: ${M.fr.name}, монтажный зазор ${c.frame.gap || 0} мм`);
-  L.push(
-    `Наличники: ${c.casing.a || c.casing.b ? [c.casing.a ? 'А' : '', c.casing.b ? 'Б' : ''].filter(Boolean).join(' + ') + ', стык ' + (c.casing.join === '90' ? '90°' : '45°') : 'нет'}`
-  );
-  L.push(`Петли: ${HINGE_T[c.hinges.type]} × ${c.hinges.count * M.leaves.length}`);
-  L.push(`Ручка: ${HANDLE_T[c.handle.type]}, ось на ${c.handle.h} мм от пола, ${D.bs} мм от кромки`);
-  L.push(`Замок: ${LOCK_T[c.lock.type]}`);
-  L.push(`Стопор: ${STOP_T[c.stop.type] || '—'} · порог: ${THR_T[D.thr] || '—'}`);
-  L.push(
-    `Уплотнитель: ${D.seal.len ? D.seal.buy.toFixed(1).replace('.', ',') + ' м' : 'нет'} · зазор под полотном ${c.leaf.gapFloor} мм`
-  );
-  s += svgT(240, 140, 'Характеристики', 3.2, 'start', 'font-weight="600"') + note(240, 146, L, 2.7, 4.3);
+  if (c.handle.type !== 'none' && !['flush'].includes(c.handle.type)) {
+    const free = lA.dir > 0 ? lA.sb : lA.sa;
+    const hxa = free - lA.dir * D.bs;
+    for (const [d0, sg] of [
+      [lA.dhi, 1],
+      [lA.dlo, -1]
+    ]) {
+      const y0 = PYd(d0),
+        y1 = PYd(d0 + sg * 60);
+      s += svgL(X(hxa), y0, X(hxa), y1, 0.5) + svgL(X(hxa), y1, X(hxa - lA.dir * 120), y1, 0.5);
+    }
+  }
+  // widths under the plan: leaf, opening, frame
+  const yb = PYd(-T - ctB) + 2;
+  s += skDim(X(sa0), yb, X(sb0), yb, 8, `${fr(sb0 - sa0)}*(Полотно)`);
+  s += skDim(X(0), yb, X(W), yb, 15, `${fr(W)}(Проём)`);
+  s += skDim(X(g), yb, X(W - g), yb, 22, `${fr(W - 2 * g)}*(Коробка)`);
+  /* --- explanations --- */
+  const nx = 248;
+  let ny = 24;
+  s += skT(nx, ny, `Эскиз двери ${doorCode(D.e)}`, 4.6, 'start', 'font-weight="600"');
+  ny += 11;
+  for (const t of sketchNotes(D))
+    ddWrap(t, 84).forEach((ln, i) => {
+      if (ny > 205) return;
+      s += skT(nx + (i ? 4 : 0), ny, ln, 3.5);
+      ny += 6;
+    });
+  ny += 5;
+  s += skT(nx, ny, `Открывание: ${doorHand(M)} (петли ${hingeLeft ? 'слева' : 'справа'} со стороны открывания)`, 3.5);
+  ny += 9;
+  s += skT(nx + 40, ny, `Кол-во дверей: ${doorTwins(D.e)} шт`, 4);
+  ny += 7;
+  s += skT(nx + 40, ny, `Код двери: ${doorCode(D.e)}`, 4);
+  ny += 9;
+  s += skT(nx, ny, '* Размеры для справок, уточняются по коробке и полотну производителя.', 2.8);
   return { body: s, scale: fdScale(k) };
 }
 
@@ -114860,7 +115213,7 @@ function ddAssembly(D) {
 
 /** Sheets of the door drawing set (the same dialog as the furniture drawings). */
 function doorSheets(D) {
-  const out = [{ n: 'Общий вид и разрез', f: () => ddGeneral(D) }];
+  const out = [{ n: 'Эскиз', f: () => ddSketch(D) }];
   D.M.leaves.forEach((l, i) =>
     out.push({ n: D.M.leaves.length > 1 ? `Полотно ${i + 1}` : 'Полотно и наполнение', f: () => ddLeaf(D, i) })
   );
@@ -114874,7 +115227,11 @@ function doorSheets(D) {
     n: sh.n,
     svg: () => {
       const r = sh.f();
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm" viewBox="0 0 420 297"><rect width="420" height="297" fill="#fff"/>${r.body}${fdFrame({ ...D, e: { name: D.e.name || 'Дверь Д-' + D.e.id } }, D.title, sh.n, i + 1, arr.length, r.scale)}</svg>`;
+      // the door sheets are lettered in the draughting italic, like the sketches the factories take
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm" viewBox="0 0 420 297"><rect width="420" height="297" fill="#fff"/>${r.body}${fdFrame({ ...D, e: { name: doorCode(D.e) } }, D.title, sh.n, i + 1, arr.length, r.scale)}</svg>`.replace(
+        /font-family="IBM Plex Sans, Arial, sans-serif"/g,
+        DD_FONT
+      );
     }
   }));
 }
