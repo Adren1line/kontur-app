@@ -7179,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.15';
+const APP_VER = '59.16';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -45928,6 +45928,8 @@ function wireColor(e) {
 
 
 
+
+
 /* ---------- routing grid (orthogonal A*) ---------- */
 const RG = { v: -1, g: {} };
 const WPEN = w => {
@@ -45962,6 +45964,7 @@ function routeGrid(method) {
     ceilV = new Float32Array(N).fill(-1),
     beamZ = new Float32Array(N).fill(Infinity),
     soft = new Float32Array(N);
+  let air = null;
   const fill = (poly, fn) => {
     const bx = poly.map(p => p.x),
       by = poly.map(p => p.y);
@@ -46027,6 +46030,7 @@ function routeGrid(method) {
     }
     for (const c of S.ents.filter(e => e.type === 'ceil' && e.kind !== 'slab'))
       fill(c.pts, k => (ceilV[k] = Math.max(ceilV[k], S.ceil - (c.z || S.ceil))));
+    air = ceilAir(N, fill);
   }
   const near = new Uint8Array(N);
   if (method !== 'wall')
@@ -46066,6 +46070,7 @@ function routeGrid(method) {
     beamZ,
     soft,
     out,
+    air,
     cell: p => {
       const i = clamp(Math.floor((p.x - x0) / cs), 0, nx - 1),
         j = clamp(Math.floor((p.y - y0) / cs), 0, ny - 1);
@@ -46103,6 +46108,8 @@ function gridCost(G, a, b, use, oth) {
   }
   // outside the building: nothing to lie in
   if (G.out && G.out[b]) k += 60;
+  // under the ceiling with no slab above (a second light, a stair well): the cable would hang in the air
+  if (G.air && G.air[b]) k += 80;
   return k;
 }
 function astarGrid(G, start, goal, use, oth) {
@@ -46282,6 +46289,29 @@ function chaseFor(si, gofD, cab) {
   return r;
 }
 
+/**
+ * Cells under a void of the level above (the slab of the next level is missing there or opened by a large hole —
+ * a second light, a stair well): a ceiling route has nothing to be fixed to. Only when there is a level above; the top
+ * level has its roof. fill(poly, fn) marks the cells of a polygon.
+ */
+function ceilAir(N, fill) {
+  const L = LV();
+  if (!L.list || L.list.length < 2) return null;
+  const cur = lvCur();
+  const up = L.list.filter(l => l.z > cur.z).sort((a, b) => a.z - b.z)[0];
+  if (!up) return null;
+  const E = up.id === L.cur ? S.ents : L.ents[up.id] || [];
+  const slabs = E.filter(e => e.type === 'slab' && e.pts && e.pts.length > 2);
+  if (!slabs.length) return null;
+  const air = new Uint8Array(N).fill(1);
+  for (const sl of slabs) fill(sl.pts, k => (air[k] = 0));
+  // large openings only (> 0.5 m²): a pipe penetration is no void
+  for (const h of E.filter(e => e.type === 'shole')) {
+    const q = sholePoly(h);
+    if (Math.abs(polyArea(q)) > 5e5) fill(q, k => (air[k] = 1));
+  }
+  return air;
+}
 /* ---------- engineering route of a wire ---------- */
 const RTE = { v: -1, m: new Map() };
 function routeZ(method, gof) {
@@ -47445,6 +47475,7 @@ function routeAll() {
   if (RTE.done && RTE.hopV !== RTE.v) {
     RTE.hopV = RTE.v;
     try {
+      wireStackPass();
       wireHopPass();
     } catch (err) {
       console.error(err);
@@ -60626,7 +60657,15 @@ function coverLayout0(z) {
   }
   O = P(O.x + c.ox * ca - c.oy * sa, O.y + c.ox * sa + c.oy * ca);
   const T = (R.trans = coverTrans(z, c));
-  const regions = [poly, ...T.filter(t => t.depth > 0).map(t => t.rect)].map(q => q.map(p => toF(p, O)));
+  // a door extension the zone already covers (the zone was drawn into the opening) would lay its tiles twice
+  const ext = T.filter(t => t.depth > 0 && t.rect.filter(p => inPoly(p, poly)).length < 3);
+  const regions = [poly, ...ext.map(t => t.rect)].map(q => q.map(p => toF(p, O)));
+  // the expansion gap at the walls: the covering stops short of them (in the openings it runs on)
+  if (+c.gap > 0) {
+    const q = ccwP(regions[0]);
+    const g = cstInset(q, +c.gap);
+    if (areaA(g) > 0 && areaA(g) > areaA(q) * 0.5) regions[0] = g;
+  }
   let x0 = 1e18,
     y0 = 1e18,
     x1 = -1e18,
@@ -60994,6 +61033,8 @@ function coverStats(z) {
     wasteP,
     full: R.full,
     cut: R.cut,
+    // cut details as numbered on the scheme: a tile cut by a drain, a column or the slope lines gives several
+    cutPieces: R.pieces.filter(p => !p.full).length,
     packs: M.pack ? Math.ceil(buy / M.pack) : 0,
     w,
     l,
@@ -61333,7 +61374,7 @@ function coverPanel(z) {
         ]
       : [])
   ];
-  const info = `<dt></dt><dd class="hint" style="text-align:left">${R.tooMany ? 'Слишком мелкий формат для такой площади — раскладка не строится' : `Целых ${st.full}, подрезанных ${st.cut}; укладка ${st.net.toFixed(2)} м², плиток по раскрою ${st.tiles} шт, в выброс ${st.wasteA.toFixed(2)} м² (${(st.wastePct * 100).toFixed(1)}%)${st.slopeLen ? `, подрезка под уклон ${(st.slopeLen / 1000).toFixed(2)} м` : ''}; закупка ≈ ${st.buy.toFixed(2)} м² (запас ${st.wasteP}%)${st.packs ? `, ≈ ${st.packs} уп.` : ''}${st.grout ? `; затирка ≈ ${st.grout} кг` : ''}${st.glue ? `; клей ≈ ${st.glue} кг` : ''}${st.pglue ? `; клей для паркета ≈ ${st.pglue} кг` : ''}${st.plySheets ? `; фанера ${st.plySheets} л. 1525×1525 (${st.plyQuarters} квадратов), дюбели ≈ ${st.plyDowels}` : ''}`}</dd>`;
+  const info = `<dt></dt><dd class="hint" style="text-align:left">${R.tooMany ? 'Слишком мелкий формат для такой площади — раскладка не строится' : `Целых ${st.full}, подрезанных ${st.cut}${st.cutPieces !== st.cut ? ` (деталей на схеме ${st.cutPieces})` : ''}; укладка ${st.net.toFixed(2)} м², плиток по раскрою ${st.tiles} шт, в выброс ${st.wasteA.toFixed(2)} м² (${(st.wastePct * 100).toFixed(1)}%)${st.slopeLen ? `, подрезка под уклон ${(st.slopeLen / 1000).toFixed(2)} м` : ''}; закупка ≈ ${st.buy.toFixed(2)} м² (запас ${st.wasteP}%)${st.packs ? `, ≈ ${st.packs} уп.` : ''}${st.grout ? `; затирка ≈ ${st.grout} кг` : ''}${st.glue ? `; клей ≈ ${st.glue} кг` : ''}${st.pglue ? `; клей для паркета ≈ ${st.pglue} кг` : ''}${st.plySheets ? `; фанера ${st.plySheets} л. 1525×1525 (${st.plyQuarters} квадратов), дюбели ≈ ${st.plyDowels}` : ''}`}</dd>`;
   const T = R.trans;
   const tr = T.length
     ? T.map(
@@ -83204,6 +83245,196 @@ function crossoverFittings(e) {
 
 
 
+/** Distance in plan from point p to segment a–b. */
+function stPtD(p, a, b) {
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1],
+    L2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2));
+  return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
+}
+/** Distance in plan between segments a–b and c–d (0 when they cross). */
+function stSegD(a, b, c, d) {
+  const cr = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = cr(c, d, a),
+    d2 = cr(c, d, b),
+    d3 = cr(a, b, c),
+    d4 = cr(a, b, d);
+  if (d1 * d2 < 0 && d3 * d4 < 0) return 0;
+  return Math.min(stPtD(a, c, d), stPtD(b, c, d), stPtD(c, a, b), stPtD(d, a, b));
+}
+/* ---------- cables lying on each other: the later one is laid beside the earlier (stacked by one corrugation) ---------- */
+/**
+ * Routes that share a run only partly, or pass a wall in the same cell, came out on one line: in 3D one cable went
+ * through another. Each run that overlaps a run laid before it moves by one pitch (corrugation + 4 mm): under the
+ * ceiling down, in the floor up, in a wall chase lower; drops standing in one point move along their run. Vertical
+ * pieces stretch to the moved run, a horizontal neighbour gets a short jog.
+ */
+function wireStackPass() {
+  const ws = S.ents.filter(e => e.type === 'wire' && visible(e)).sort((a, b) => a.id - b.id);
+  const placedH = [],
+    placedV = [];
+  let moved = 0;
+  for (const e of ws) {
+    const R = RTE.m.get(e.id);
+    if (!R || !R.pts3 || R.pts3.length < 2) continue;
+    const pitch = (R.gof || 20) + 4;
+    const P3 = R.pts3;
+    const segs = [];
+    for (let i = 0; i + 1 < P3.length; i++) {
+      const a = P3[i],
+        b = P3[i + 1];
+      const lxy = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const kind = Math.abs(a[2] - b[2]) < 0.5 && lxy > 1 ? 'h' : lxy < 0.5 && Math.abs(a[2] - b[2]) > 1 ? 'v' : 'o';
+      segs.push({ a: a.slice(), b: b.slice(), kind, dz: 0, dx: 0, dy: 0 });
+    }
+    const dir = R.method === 'floor' ? 1 : -1;
+    // horizontal runs: up/down by a pitch until free
+    for (const sg of segs) {
+      if (sg.kind !== 'h') continue;
+      const ux = sg.b[0] - sg.a[0],
+        uy = sg.b[1] - sg.a[1],
+        L = Math.hypot(ux, uy);
+      for (let it = 0; it < 6; it++) {
+        const z = sg.a[2] + sg.dz;
+        const hit = placedH.some(p => {
+          if (p.e === e.id || p.ends.some(id => id === e.from || id === e.to)) return false;
+          if (Math.abs(p.z - z) >= (p.gof + (R.gof || 20)) / 2) return false;
+          // parallel and on one line
+          const cr = (ux * p.uy - uy * p.ux) / (L * p.L);
+          if (Math.abs(cr) > 0.02) return false;
+          const perp = Math.abs((sg.a[0] - p.a[0]) * p.uy - (sg.a[1] - p.a[1]) * p.ux) / p.L;
+          if (perp >= (p.gof + (R.gof || 20)) / 2) return false;
+          const t0 = ((sg.a[0] - p.a[0]) * p.ux + (sg.a[1] - p.a[1]) * p.uy) / p.L,
+            t1 = ((sg.b[0] - p.a[0]) * p.ux + (sg.b[1] - p.a[1]) * p.uy) / p.L;
+          return Math.min(Math.max(t0, t1), p.L) - Math.max(Math.min(t0, t1), 0) > 20;
+        });
+        // crossing another run at an angle (bends, wall chases) at the same height: the later run also moves a pitch
+        const cross =
+          !hit &&
+          placedH.some(
+            p =>
+              p.e !== e.id &&
+              !p.ends.some(id => id === e.from || id === e.to) &&
+              Math.abs(p.z - z) < (p.gof + (R.gof || 20)) / 2 &&
+              stSegD(sg.a, sg.b, p.a, [p.a[0] + p.ux, p.a[1] + p.uy]) < (p.gof + (R.gof || 20)) / 2
+          );
+        if (hit || cross) {
+          sg.dz += dir * pitch;
+          continue;
+        }
+        // a drop of another cable passes through the run: the run goes round it in plan, across its direction
+        const thru = placedV.some(
+          p =>
+            p.e !== e.id &&
+            !p.ends.some(id => id === e.from || id === e.to) &&
+            z > p.z0 - 1 &&
+            z < p.z1 + 1 &&
+            stPtD([p.x, p.y], [sg.a[0] + sg.dx, sg.a[1] + sg.dy], [sg.b[0] + sg.dx, sg.b[1] + sg.dy]) <
+              (p.gof + (R.gof || 20)) / 2
+        );
+        if (!thru) break;
+        sg.dx += (-uy / L) * pitch;
+        sg.dy += (ux / L) * pitch;
+      }
+      if (sg.dz) moved++;
+      placedH.push({
+        e: e.id,
+        ends: [e.from, e.to],
+        a: [sg.a[0] + sg.dx, sg.a[1] + sg.dy],
+        ux,
+        uy,
+        L,
+        z: sg.a[2] + sg.dz,
+        gof: R.gof || 20
+      });
+    }
+    // vertical drops in one point: along the run they come from
+    for (let i = 0; i < segs.length; i++) {
+      const sg = segs[i];
+      if (sg.kind !== 'v') continue;
+      const nb =
+        segs[i - 1] && segs[i - 1].kind === 'h'
+          ? segs[i - 1]
+          : segs[i + 1] && segs[i + 1].kind === 'h'
+            ? segs[i + 1]
+            : null;
+      let tx = 1,
+        ty = 0;
+      if (nb) {
+        const l = Math.hypot(nb.b[0] - nb.a[0], nb.b[1] - nb.a[1]) || 1;
+        tx = (nb.b[0] - nb.a[0]) / l;
+        ty = (nb.b[1] - nb.a[1]) / l;
+      }
+      const z0 = Math.min(sg.a[2], sg.b[2]),
+        z1 = Math.max(sg.a[2], sg.b[2]);
+      for (let it = 0; it < 6; it++) {
+        const x = sg.a[0] + sg.dx,
+          y = sg.a[1] + sg.dy;
+        const hit = placedV.some(
+          p =>
+            p.e !== e.id &&
+            !p.ends.some(id => id === e.from || id === e.to) &&
+            Math.hypot(p.x - x, p.y - y) < (p.gof + (R.gof || 20)) / 2 &&
+            Math.min(p.z1, z1) - Math.max(p.z0, z0) > 20
+        );
+        // the drop passes through a run laid before it
+        const thru =
+          !hit &&
+          placedH.some(
+            p =>
+              p.e !== e.id &&
+              !p.ends.some(id => id === e.from || id === e.to) &&
+              p.z > z0 + 1 &&
+              p.z < z1 - 1 &&
+              stPtD([x, y], p.a, [p.a[0] + p.ux, p.a[1] + p.uy]) < (p.gof + (R.gof || 20)) / 2
+          );
+        if (!hit && !thru) break;
+        // move away from the device end: back along the run
+        sg.dx -= tx * pitch;
+        sg.dy -= ty * pitch;
+      }
+      if (sg.dx || sg.dy) moved++;
+      placedV.push({ e: e.id, ends: [e.from, e.to], x: sg.a[0] + sg.dx, y: sg.a[1] + sg.dy, z0, z1, gof: R.gof || 20 });
+    }
+    if (!segs.some(sg => sg.dz || sg.dx || sg.dy)) continue;
+    // rebuild the route: moved pieces, vertical pieces stretched, jogs between horizontal neighbours
+    const mv = sg => [
+      [sg.a[0] + sg.dx, sg.a[1] + sg.dy, sg.a[2] + sg.dz],
+      [sg.b[0] + sg.dx, sg.b[1] + sg.dy, sg.b[2] + sg.dz]
+    ];
+    const S2 = segs.map(mv);
+    for (let i = 0; i + 1 < S2.length; i++) {
+      const A = S2[i][1],
+        B = S2[i + 1][0];
+      if (segs[i + 1].kind === 'v' && !(segs[i + 1].dx || segs[i + 1].dy)) S2[i + 1][0] = [B[0], B[1], A[2]];
+      else if (segs[i].kind === 'v' && !(segs[i].dx || segs[i].dy)) S2[i][1] = [A[0], A[1], B[2]];
+    }
+    const out = [P3[0].slice()];
+    const push = p => {
+      const l = out[out.length - 1];
+      if (Math.hypot(p[0] - l[0], p[1] - l[1], p[2] - l[2]) > 0.1) out.push(p);
+    };
+    for (const [a, b] of S2) {
+      const l = out[out.length - 1];
+      // a jog: first in z (keeps the run horizontal), then across
+      if (Math.abs(l[2] - a[2]) > 0.1) push([l[0], l[1], a[2]]);
+      push(a);
+      push(b);
+    }
+    const end = P3[P3.length - 1];
+    const l = out[out.length - 1];
+    if (Math.abs(l[0] - end[0]) > 0.1 || Math.abs(l[1] - end[1]) > 0.1)
+      push([l[0], l[1], end[2]].map((v, k) => (k < 2 ? v : l[2])));
+    if (Math.hypot(l[0] - end[0], l[1] - end[1]) > 0.1) push([end[0], end[1], out[out.length - 1][2]]);
+    push(end.slice());
+    R.pts3 = out;
+    R.stacked = true;
+    measureRoute(R);
+  }
+  return moved;
+}
+
 /* ---------- cable × cable / cable × pipe: кабель огибает (подныривает под стяжкой нельзя — только над; по потолку — вниз) ---------- */
 function wireHopPass() {
   const ws = S.ents.filter(e => e.type === 'wire' && visible(e));
@@ -103599,7 +103830,10 @@ function layoutData() {
       jcol: M.wood ? '#6b4f33' : '#bcbab4',
       stats: [
         ['Площадь укладки', lvN2(st.net) + ' м²'],
-        ['Деталей', `целых ${st.full}, подрезанных ${st.cut}`],
+        [
+          'Деталей',
+          `целых ${st.full}, подрезанных плиток ${st.cut}${st.cutPieces !== st.cut ? `, деталей из них ${st.cutPieces}` : ''}`
+        ],
         ['Плиток по раскрою', `${st.tiles} шт · ${lvN2(st.usedA)} м²`],
         ['Закупка с запасом ' + st.wasteP + '%', `<b>${lvN2(st.buy)} м²</b>${st.packs ? ` · ${st.packs} уп.` : ''}`],
         ['В выброс', `${lvN2(st.wasteA)} м² · ${lvPct(st.wastePct)}`],
