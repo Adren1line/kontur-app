@@ -7179,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.17';
+const APP_VER = '59.18';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -39203,9 +39203,11 @@ function mfTurnDir(k, d) {
 function mfTailRoute(E, dE, S, ax, bend) {
   const T = mfA(S, ax, -Math.max(bend * 2, 40));
   const pts = [E.slice()];
-  const cur = E.slice();
   const k0 = [0, 1, 2].reduce((m, k) => (Math.abs(dE[k]) > Math.abs(dE[m]) ? k : m), 0);
-  const fwd = Math.sign(T[k0] - cur[k0]) === Math.sign(dE[k0]);
+  // leave the last fitting straight before the first bend: clear of its body and of a gauge on a tee
+  const cur = mfA(E, dE, Math.max(bend * 1.5, 60));
+  const fwd = Math.sign(T[k0] - cur[k0]) === Math.sign(dE[k0]) && Math.abs(T[k0] - cur[k0]) > 0.5;
+  if (!fwd) pts.push(cur.slice());
   const order = [...(fwd ? [k0] : []), ...[2, 0, 1].filter(k => k !== k0), ...(fwd ? [] : [k0])];
   for (const k of order)
     if (Math.abs(T[k] - cur[k]) > 0.5) {
@@ -41187,8 +41189,8 @@ function mfPlate(mb, B, u, a, b, t, col) {
 const mfAng = L => (((Math.round((+L.ang || 0) / 45) * 45) % 360) + 360) % 360;
 const mfTilt = L => Math.max(0, Math.min(90, Math.round((+L.tilt || 0) / 45) * 45));
 // point / vector fields of the layout items that turn with the collector
-const MF_PTS = ['A', 'C', 'S', 'F', 'P', 'E', 'top', 'port', 'N', 'p'],
-  MF_VEC = ['d', 'ax', 'od', 'dd'],
+const MF_PTS = ['A', 'C', 'S', 'F', 'P', 'E', 'top', 'port', 'N', 'p', 'corner', 'B'],
+  MF_VEC = ['d', 'ax', 'od', 'dd', 'd2'],
   MF_ARR = ['pos', 'pts', 'route'];
 function mfTurnLine(L, o, ln, its, cs, C0, ax) {
   const ang = mfAng(L) * D2R,
@@ -43795,7 +43797,13 @@ function mf3Side(e) {
             k.servo ? `${k.volt || 230}:${k.nc || 'NC'}` : ''
           )}</label>`
         : ''
-    }${k.k === 'tank' ? `<label>Объём бака, л<select data-m3k="vol">${[8, 12, 18, 24].map(v => `<option ${+(k.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Крепление<select data-m3k="mount"><option value="wall" ${k.mount !== 'pipe' ? 'selected' : ''}>на стене, на кронштейне (тройник + подводка)</option><option value="pipe" ${k.mount === 'pipe' ? 'selected' : ''}>на трубе</option></select></label>` : ''}</div>
+    }${
+      (MFC[k.k] || {}).turn
+        ? `<label>Поворот — куда дальше<select data-m3k="dir">${Object.entries(MF_TURN)
+            .map(([v, [n]]) => `<option value="${v}" ${(k.dir || 'up') === v ? 'selected' : ''}>${n}</option>`)
+            .join('')}</select></label>`
+        : ''
+    }${k.k === 'teeturn' ? `<label>На проходе<select data-m3k="run"><option value="gauge" ${k.run !== 'cap' ? 'selected' : ''}>манометр</option><option value="cap" ${k.run === 'cap' ? 'selected' : ''}>заглушка</option></select></label>` : ''}${k.k === 'pipe' ? `<label>Длина отрезка, мм<input type="number" min="20" step="${st}" data-m3k="len" value="${Math.round(+k.len || 150)}"></label>` : ''}${k.k === 'tank' ? `<label>Объём бака, л<select data-m3k="vol">${[8, 12, 18, 24].map(v => `<option ${+(k.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Крепление<select data-m3k="mount"><option value="wall" ${k.mount !== 'pipe' ? 'selected' : ''}>на стене, на кронштейне (тройник + подводка)</option><option value="pipe" ${k.mount === 'pipe' ? 'selected' : ''}>на трубе</option></select></label>` : ''}</div>
       <p class="hint">Длина по оси ${it.len} мм. Двигайте кнопками ◀ ▶ над видом или стрелками — на шаг привязки, зазор можно ввести числом. Мышью: тяните вдоль трубы (соседи стоят, дальше середины соседа — перестановка; Shift — вместе с соседями). Delete — удалить.</p>
       <div class="btnrow"><span class="hint" style="align-self:center">Поворот вокруг трубы: ${(((+k.rot || 0) % 360) + 360) % 360}°</span><button class="btn" data-m3b="rotl" title="Повернуть на −90°">⟲ 90°</button><button class="btn" data-m3b="rotr" title="Повернуть на +90° (клавиша R)">⟳ 90°</button><button class="btn" data-m3b="rot45">+45°</button></div><div class="btnrow"><button class="btn" data-m3b="prev">◀ раньше</button><button class="btn" data-m3b="next">позже ▶</button><button class="btn" data-m3b="tight">Вплотную</button><button class="btn" data-m3b="del">Удалить</button></div>`;
   } else if (it && it.kind === 'ctrl') {
@@ -43932,7 +43940,7 @@ function mf3Side(e) {
           ? f === 'gap'
             ? Math.max(0, +inp.value || 0)
             : +inp.value
-          : f === 'vol'
+          : f === 'vol' || f === 'len'
             ? +inp.value
             : inp.value;
         if (f === 'mount' && it.kind === 'wall') MF3.sel = it.tee.addr;
@@ -44563,48 +44571,77 @@ function renderColl3D(el, e) {
   cv.addEventListener('keydown', ev => mf3Key(ev, e));
 }
 
+/** Ray against one mesh: reports a nearer hit through set(hit); get() gives the best so far. */
+function mf3PickMesh(m, o, d, set, get) {
+  let best = get();
+  // slab test against the mesh box
+  let t0 = -1e9,
+    t1 = 1e9;
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(d[k]) < 1e-9) {
+      if (o[k] < m.mn[k] - 1 || o[k] > m.mx[k] + 1) {
+        t0 = 1;
+        t1 = 0;
+        break;
+      }
+      continue;
+    }
+    let a = (m.mn[k] - 1 - o[k]) / d[k],
+      b = (m.mx[k] + 1 - o[k]) / d[k];
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+  }
+  if (t0 > t1 || t1 < 0 || (best && t0 > best.t)) return;
+  const p = m.pos;
+  for (let i = 0; i < p.length; i += 9) {
+    const e1 = [p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]],
+      e2 = [p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]];
+    const h = cross3(d, e2),
+      a = v3dot(e1, h);
+    if (Math.abs(a) < 1e-9) continue;
+    const f = 1 / a,
+      s = [o[0] - p[i], o[1] - p[i + 1], o[2] - p[i + 2]],
+      u = f * v3dot(s, h);
+    if (u < 0 || u > 1) continue;
+    const q = cross3(s, e1),
+      v = f * v3dot(d, q);
+    if (v < 0 || u + v > 1) continue;
+    const t = f * v3dot(e2, q);
+    if (t > 1 && (!best || t < best.t)) best = { t, addr: m.addr, p: v3add(o, v3mul(d, t)) };
+  }
+  if (best !== get()) set(best);
+}
 function mf3Pick(ev) {
   const { o, d } = mf3Ray(ev);
-  let best = null;
+  let best = null,
+    pipeHit = null;
   for (const m of MF3.meshes) {
     if (!m.addr) continue;
-    // slab test against the mesh box
-    let t0 = -1e9,
-      t1 = 1e9;
-    for (let k = 0; k < 3; k++) {
-      if (Math.abs(d[k]) < 1e-9) {
-        if (o[k] < m.mn[k] - 1 || o[k] > m.mx[k] + 1) {
-          t0 = 1;
-          t1 = 0;
-          break;
-        }
-        continue;
-      }
-      let a = (m.mn[k] - 1 - o[k]) / d[k],
-        b = (m.mx[k] + 1 - o[k]) / d[k];
-      if (a > b) [a, b] = [b, a];
-      t0 = Math.max(t0, a);
-      t1 = Math.min(t1, b);
+    // the connecting pipe of a chain is picked apart: a fitting right behind it wins (a turn fitting sits in its bends)
+    if (m.addr.endsWith('|tail')) {
+      const sv = best;
+      best = pipeHit;
+      mf3PickMesh(
+        m,
+        o,
+        d,
+        h => (best = h),
+        () => best
+      );
+      pipeHit = best;
+      best = sv;
+      continue;
     }
-    if (t0 > t1 || t1 < 0 || (best && t0 > best.t)) continue;
-    const p = m.pos;
-    for (let i = 0; i < p.length; i += 9) {
-      const e1 = [p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]],
-        e2 = [p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]];
-      const h = cross3(d, e2),
-        a = v3dot(e1, h);
-      if (Math.abs(a) < 1e-9) continue;
-      const f = 1 / a,
-        s = [o[0] - p[i], o[1] - p[i + 1], o[2] - p[i + 2]],
-        u = f * v3dot(s, h);
-      if (u < 0 || u > 1) continue;
-      const q = cross3(s, e1),
-        v = f * v3dot(d, q);
-      if (v < 0 || u + v > 1) continue;
-      const t = f * v3dot(e2, q);
-      if (t > 1 && (!best || t < best.t)) best = { t, addr: m.addr, p: v3add(o, v3mul(d, t)) };
-    }
+    mf3PickMesh(
+      m,
+      o,
+      d,
+      h => (best = h),
+      () => best
+    );
   }
+  if (pipeHit && (!best || pipeHit.t < best.t - 80)) best = pipeHit;
   if (best && best.addr.endsWith('|tail')) best.addr = best.addr.replace('|tail', '|bar');
   return best;
 }
