@@ -7179,7 +7179,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.14';
+const APP_VER = '59.15';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -59798,7 +59798,21 @@ const COVER_MAT = {
     n: 'Плитка керамическая',
     sizes: ['100x100', '150x150', '200x200', '75x300', '100x300', '200x400', '300x300', '300x600'],
     def: '300x300',
-    pats: ['grid', 'checker', 'half', 'third', 'diag', 'herring', 'french45', 'basket', 'hex', 'rhomb', 'octa', 'hops'],
+    pats: [
+      'grid',
+      'checker',
+      'half',
+      'third',
+      'diag',
+      'herring',
+      'french45',
+      'basket',
+      'hex',
+      'rhomb',
+      'octa',
+      'hops',
+      'cst'
+    ],
     pat: 'grid',
     gap: 3,
     joint: 2,
@@ -59811,7 +59825,7 @@ const COVER_MAT = {
     n: 'Керамогранит',
     sizes: ['600x600', '600x1200', '800x800', '800x1600', '1200x1200', '1200x2400', '300x600', '200x1200'],
     def: '600x1200',
-    pats: ['grid', 'checker', 'half', 'third', 'diag', 'herring', 'french45', 'hex', 'rhomb', 'octa', 'hops'],
+    pats: ['grid', 'checker', 'half', 'third', 'diag', 'herring', 'french45', 'hex', 'rhomb', 'octa', 'hops', 'cst'],
     pat: 'half',
     gap: 5,
     joint: 1.5,
@@ -59849,7 +59863,8 @@ const COVER_PAT = {
   hex: 'Шестигранник (соты)',
   rhomb: 'Ромбы 60° («кубики», 3 тона)',
   octa: 'Восьмигранник со вставкой',
-  hops: 'Классика: большая + малая плитка'
+  hops: 'Классика: большая + малая плитка',
+  cst: 'Конструктор: бордюр + поле'
 };
 /** Waste allowance by pattern, % (с учётом подрезки). */
 const COVER_WASTE = {
@@ -59867,7 +59882,8 @@ const COVER_WASTE = {
   hex: 12,
   rhomb: 15,
   octa: 12,
-  hops: 8
+  hops: 8,
+  cst: 12
 };
 const TRANS_K = {
   none: 'Без порога (материалы на одной высоте, шов герметиком)',
@@ -59922,8 +59938,197 @@ function coverCfg(z) {
     // cutting: factory edges only, or offcuts with finished edges (planks — the offcut starts the next row)
     reuse: c.reuse || (M.wood ? 'reuse' : 'factory'),
     kerf: c.kerf ?? (M.wood ? 0 : mat === 'stone' ? 3 : 2),
-    slopeCut: c.slopeCut !== false
+    slopeCut: c.slopeCut !== false,
+    cst: cstCfg(c.cst)
   };
+}
+/* ---------- layout constructor: border bands round the room and a field inside ---------- */
+/** Field patterns of the constructor. */
+const CST_FIELD = {
+  grid: 'Прямая сетка',
+  checker: 'Шахматка',
+  diag: 'Ромбы (сетка под 45°)',
+  octa: 'Восьмигранник / ромб со вставкой',
+  hops: 'Большая + малая плитка',
+  hex: 'Шестигранник',
+  rhomb: 'Ромбы 60° («кубики»)',
+  herring: 'Ёлка',
+  half: 'Вразбежку 1/2'
+};
+/**
+ * Constructor settings (flat, so the properties form binds them directly): n bands from the wall inward, each
+ * b{i}w — width, b{i}l — tile length along the wall, b{i}c — colour; corner — 'square' (a corner tile) or 'miter'
+ * (45° cut), cc — colour of the corner tiles; the field: fpat, fsize, frot (turned 45°), ins — insert size.
+ */
+function cstCfg(o) {
+  const d = {
+    n: 1,
+    b0w: 100,
+    b0l: 600,
+    b0c: '#4a4c50',
+    b1w: 50,
+    b1l: 300,
+    b1c: '#b9b4aa',
+    b2w: 100,
+    b2l: 600,
+    b2c: '#4a4c50',
+    corner: 'square',
+    cc: '#2f3133',
+    fpat: 'octa',
+    fsize: '600x600',
+    frot: true,
+    ins: 100
+  };
+  const r = { ...d, ...(o || {}) };
+  r.n = Math.max(0, Math.min(3, Math.round(+r.n || 0)));
+  for (let i = 0; i < 3; i++) {
+    r['b' + i + 'w'] = Math.max(10, +r['b' + i + 'w'] || d['b' + i + 'w']);
+    r['b' + i + 'l'] = Math.max(10, +r['b' + i + 'l'] || d['b' + i + 'l']);
+  }
+  if (!CST_FIELD[r.fpat]) r.fpat = d.fpat;
+  r.frot = r.frot === true || r.frot === 'true' || r.frot === 1;
+  r.ins = Math.max(0, +r.ins || 0);
+  return r;
+}
+/** The polygon (CCW, [x, y]) moved inward by d: each edge shifted along its inner normal, neighbours intersected. */
+function cstInset(q, d) {
+  const n = q.length,
+    L = [];
+  for (let i = 0; i < n; i++) {
+    const a = q[i],
+      b = q[(i + 1) % n];
+    const dx = b[0] - a[0],
+      dy = b[1] - a[1],
+      l = Math.hypot(dx, dy) || 1;
+    const nx = -dy / l,
+      ny = dx / l;
+    L.push({ p: [a[0] + nx * d, a[1] + ny * d], u: [dx / l, dy / l] });
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const A = L[(i - 1 + n) % n],
+      B = L[i];
+    const den = A.u[0] * B.u[1] - A.u[1] * B.u[0];
+    if (Math.abs(den) < 1e-9) out.push(B.p.slice());
+    else {
+      const t = ((B.p[0] - A.p[0]) * B.u[1] - (B.p[1] - A.p[1]) * B.u[0]) / den;
+      out.push([A.p[0] + A.u[0] * t, A.p[1] + A.u[1] * t]);
+    }
+  }
+  return out;
+}
+/**
+ * Pieces of the constructor in the layout frame: border tiles along every wall (clipped to their band, mitred or
+ * with corner tiles), then the field pattern clipped to what the bands leave inside (and the door extensions).
+ * zone — the room outline in the frame (CCW), doors — the door extensions in the frame.
+ */
+function cstPieces(c, zone, doors) {
+  const K = c.cst,
+    j = +c.joint || 0;
+  const out = [];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+  const ad = (a, u, t) => [a[0] + u[0] * t, a[1] + u[1] * t];
+  let off = 0;
+  const n = zone.length;
+  for (let bi = 0; bi < K.n; bi++) {
+    const w = K['b' + bi + 'w'],
+      Lt = K['b' + bi + 'l'],
+      col = K['b' + bi + 'c'];
+    const O = cstInset(zone, off),
+      I = cstInset(zone, off + w);
+    if (areaA(I) <= 0) break;
+    const U = O.map((p, k) => {
+      const q = O[(k + 1) % n],
+        l = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+      return [(q[0] - p[0]) / l, (q[1] - p[1]) / l];
+    });
+    // a left turn of a CCW outline is an outer corner of the band
+    const convex = k => {
+      const a = U[(k - 1 + n) % n],
+        b = U[k];
+      return a[0] * b[1] - a[1] * b[0] > 1e-6;
+    };
+    const sq = K.corner === 'square';
+    for (let k = 0; k < n; k++) {
+      const k1 = (k + 1) % n,
+        u = U[k],
+        nn = [-u[1], u[0]];
+      const sA = sq && convex(k) ? ad(O[k], u, dot(sub(I[k], O[k]), u)) : O[k];
+      const eB = sq && convex(k1) ? ad(O[k], u, dot(sub(I[k1], O[k]), u)) : O[k1];
+      const quad = ccwP([sA, eB, I[k1], I[k]]);
+      const ts = quad.map(p => dot(sub(p, O[k]), u));
+      const t0 = Math.min(...ts),
+        t1 = Math.max(...ts);
+      if (t1 - t0 < 1) continue;
+      const tc = (t0 + t1) / 2;
+      const m0 = Math.floor((t0 - tc + Lt / 2) / (Lt + j)) - 1,
+        m1 = Math.ceil((t1 - tc + Lt / 2) / (Lt + j)) + 1;
+      for (let m = m0; m <= m1; m++) {
+        const s0 = tc - Lt / 2 + m * (Lt + j);
+        if (s0 > t1 || s0 + Lt < t0) continue;
+        const a = ad(O[k], u, s0),
+          b = ad(O[k], u, s0 + Lt);
+        out.push({
+          p: ccwP([a, b, ad(b, nn, w), ad(a, nn, w)]),
+          sh: 0,
+          clip: [quad],
+          k: 'b' + bi,
+          col,
+          lab: `бордюр ${bi + 1}`
+        });
+      }
+      if (sq && convex(k1)) {
+        const u2 = U[k1];
+        const P2 = ad(O[k1], u2, dot(sub(I[k1], O[k1]), u2));
+        out.push({
+          p: ccwP([eB, O[k1], P2, I[k1]]),
+          sh: 0,
+          k: 'c' + bi,
+          col: K.cc,
+          lab: `угловой элемент бордюра ${bi + 1}`
+        });
+      }
+    }
+    off += w + j;
+  }
+  // the field
+  const inner = K.n ? cstInset(zone, off) : zone;
+  if (areaA(inner) <= 0) return out;
+  const clip = [...convexParts(inner).map(q => ccwP(q)), ...doors.map(q => ccwP(q))];
+  const fc = { ...c, pat: K.fpat === 'diag' ? 'grid' : K.fpat, size: K.fsize, insz: K.ins };
+  const rot = K.frot || K.fpat === 'diag' ? Math.PI / 4 : 0;
+  const cr = Math.cos(rot),
+    sr = Math.sin(rot);
+  let x0 = 1e18,
+    y0 = 1e18,
+    x1 = -1e18,
+    y1 = -1e18;
+  for (const q of [inner, ...doors])
+    for (const [x, y] of q) {
+      // the box in the pattern frame (turned back by rot)
+      const px = x * cr + y * sr,
+        py = -x * sr + y * cr;
+      x0 = Math.min(x0, px);
+      x1 = Math.max(x1, px);
+      y0 = Math.min(y0, py);
+      y1 = Math.max(y1, py);
+    }
+  const shade = fcShade(c.col, 0.55);
+  for (const pc of coverPieces(fc, { x0, x1, y0, y1 })) {
+    const p = pc.p.map(([x, y]) => [x * cr - y * sr, x * sr + y * cr]);
+    const col = pc.ins || pc.sh === 1 ? c.col2 : pc.sh === 2 ? shade : c.col;
+    out.push({
+      p: ccwP(p),
+      sh: pc.sh,
+      ins: pc.ins,
+      clip,
+      k: 'f' + (pc.sh || 0) + (pc.ins ? 'i' : ''),
+      col,
+      lab: pc.ins ? 'вставка' : 'поле'
+    });
+  }
+  return out;
 }
 function fcShade(hex, k) {
   const v = parseInt(String(hex).slice(1), 16);
@@ -60106,7 +60311,7 @@ function coverPieces(c, B) {
   if (pat === 'octa') {
     const W_ = w,
       p = W_ + j,
-      cc = W_ / (2 + Math.SQRT2);
+      cc = c.insz ? Math.min(W_ / 2.5, c.insz / Math.SQRT2 + j * 0.7) : W_ / (2 + Math.SQRT2);
     for (let r = Math.floor(B.y0 / p) - 1; r <= Math.ceil(B.y1 / p) + 1; r++)
       for (let q = Math.floor(B.x0 / p) - 1; q <= Math.ceil(B.x1 / p) + 1; q++) {
         const x0 = q * p,
@@ -60438,7 +60643,14 @@ function coverLayout0(z) {
     R.tooMany = true;
     return R;
   }
-  const PC = coverPieces(c, { x0, x1, y0, y1 });
+  const PC =
+    c.pat === 'cst'
+      ? cstPieces(
+          c,
+          ccwP(regions[0]),
+          regions.slice(1).map(q => ccwP(q))
+        )
+      : coverPieces(c, { x0, x1, y0, y1 });
   // convex parts of the zone and of the door extensions, each with its box
   const parts = regions.flatMap(rg =>
     convexParts(rg).map(q => {
@@ -60503,7 +60715,8 @@ function coverLayout0(z) {
         ? 'r:' + Math.round(sb[0]) + 'x' + Math.round(sb[1])
         : 'p:' + src.map(v => Math.round(v[0]) + ',' + Math.round(v[1])).join(';')) +
       (pc.ins ? 'i' : '') +
-      (c.pat === 'checker' || c.pat === 'rhomb' ? 's' + (pc.sh || 0) : '');
+      (c.pat === 'checker' || c.pat === 'rhomb' ? 's' + (pc.sh || 0) : '') +
+      (pc.k ? 'k' + pc.k : '');
     let bx0 = 1e18,
       bx1 = -1e18,
       by0 = 1e18,
@@ -60533,6 +60746,16 @@ function coverLayout0(z) {
       }
       if (frags.length > 1) frags = mergeFrags(frags);
     }
+    // a constructor piece keeps to its own region too: a border tile to its band, a field tile inside the border
+    if (pc.clip && !(whole && pc.clip.some(q => pc.p.every(v => insideP(q, v))))) {
+      const f2 = [];
+      for (const f of frags)
+        for (const q of pc.clip) {
+          const g = clipConvex(f, q);
+          if (g.length >= 3 && Math.abs(areaA(g)) >= 1) f2.push(areaA(g) < 0 ? g.reverse() : g);
+        }
+      frags = f2.length > 1 ? mergeFrags(f2) : f2;
+    }
     let used = false;
     for (const q of frags) {
       const A = Math.abs(areaA(q));
@@ -60544,6 +60767,8 @@ function coverLayout0(z) {
         full,
         sh: pc.sh,
         ins: pc.ins,
+        col: pc.col,
+        lab: pc.lab,
         A,
         A0,
         tf,
@@ -60657,7 +60882,7 @@ function coverCutting(R, c) {
       siblings: true,
       tileA: Math.abs(areaA(f.src))
     });
-    out.push({ k, src: f.src, W: f.sw, H: f.shh, ins: !!f.ins, ...Rc });
+    out.push({ k, src: f.src, W: f.sw, H: f.shh, ins: !!f.ins, lab: f.lab, col: f.col, ...Rc });
   }
   return out;
 }
@@ -60837,7 +61062,8 @@ function drawCover(z, ghost) {
         i++;
         add2(all, pc.pts);
         let fs = null;
-        if (pc.sh || c.pat === 'checker') fs = 'sh' + (pc.sh === 2 ? 2 : 1);
+        if (pc.col) fs = 'c' + pc.col;
+        else if (pc.sh || c.pat === 'checker') fs = 'sh' + (pc.sh === 2 ? 2 : 1);
         else if (M.wood) fs = 'w' + (i % 8);
         if (fs) {
           if (!fills.has(fs)) fills.set(fs, new Path2D());
@@ -60852,11 +61078,13 @@ function drawCover(z, ghost) {
     for (const [k, path] of R.p2d.fills) {
       if (k[0] === 'w' && px <= 6) continue;
       ctx.fillStyle =
-        k === 'sh2'
-          ? hexA(fcShade(c.col, 0.55), 0.28)
-          : k === 'sh1'
-            ? hexA(c.col2, 0.28)
-            : hexA(colVar(c.col, +k.slice(1) + 1, 0.12), 0.12);
+        k[0] === 'c'
+          ? hexA(k.slice(1), 0.42)
+          : k === 'sh2'
+            ? hexA(fcShade(c.col, 0.55), 0.28)
+            : k === 'sh1'
+              ? hexA(c.col2, 0.28)
+              : hexA(colVar(c.col, +k.slice(1) + 1, 0.12), 0.12);
       ctx.fill(path);
     }
     ctx.lineWidth = 0.6 / view.k;
@@ -60875,7 +61103,10 @@ function drawCover(z, ghost) {
         k ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y);
       });
       ctx.closePath();
-      if (pc.sh || c.pat === 'checker') {
+      if (pc.col) {
+        ctx.fillStyle = hexA(pc.col, 0.42);
+        ctx.fill();
+      } else if (pc.sh || c.pat === 'checker') {
         ctx.fillStyle = hexA(pc.sh === 2 ? fcShade(c.col, 0.55) : c.col2, 0.28);
         ctx.fill();
       } else if (M.wood && px > 6) {
@@ -60941,8 +61172,9 @@ function coverMesh(z, mb, f) {
       const k = Math.min(jt, d * 0.3) / d;
       return [p.x + dx * k, p.y + dy * k];
     });
-    const col =
-      pc.sh === 2
+    const col = pc.col
+      ? colVar(pc.col, i % 6, 0.025)
+      : pc.sh === 2
         ? fcShade(c.col, 0.55)
         : pc.sh === 1 && (c.pat === 'checker' || c.pat === 'rhomb' || pc.ins)
           ? c.col2
@@ -60971,6 +61203,44 @@ function coverMesh(z, mb, f) {
 }
 
 /* ---------- panel, spec, checks ---------- */
+/** Rows of the constructor in the covering panel: the bands one by one, the corners, the field. */
+function cstRows(K) {
+  const r = [
+    [
+      'Бордюр: поясов',
+      'cover.cst.n',
+      's',
+      [
+        [0, 'без бордюра'],
+        [1, '1'],
+        [2, '2'],
+        [3, '3']
+      ]
+    ]
+  ];
+  for (let i = 0; i < K.n; i++)
+    r.push(
+      [`Пояс ${i + 1}: ширина, мм`, `cover.cst.b${i}w`, 'n'],
+      [`Пояс ${i + 1}: длина плитки, мм`, `cover.cst.b${i}l`, 'n'],
+      [`Пояс ${i + 1}: цвет`, `cover.cst.b${i}c`, 'c']
+    );
+  if (K.n)
+    r.push([
+      'Углы бордюра',
+      'cover.cst.corner',
+      's',
+      [
+        ['square', 'угловой квадрат'],
+        ['miter', 'запил 45°']
+      ]
+    ]);
+  if (K.n && K.corner === 'square') r.push(['Цвет углов', 'cover.cst.cc', 'c']);
+  r.push(['Поле: рисунок', 'cover.cst.fpat', 's', Object.entries(CST_FIELD)]);
+  r.push(['Поле: формат, мм (ш×д)', 'cover.cst.fsize', 't']);
+  if (K.fpat !== 'diag') r.push(['Поле под 45°', 'cover.cst.frot', 'b']);
+  if (K.fpat === 'octa') r.push(['Вставка, мм', 'cover.cst.ins', 'n']);
+  return r;
+}
 function coverPanel(z) {
   const c = coverCfg(z);
   z.cover = { ...c, ...(z.cover || {}) };
@@ -60984,6 +61254,7 @@ function coverPanel(z) {
     ['Формат, мм (ш×д)', 'cover.size', 's', [...new Set([...M.sizes, c.size])].map(s => [s, s.replace('x', '×')])],
     ['Свой формат', 'cover.size', 't'],
     ['Раскладка', 'cover.pat', 's', M.pats.filter((p, i, a) => a.indexOf(p) === i).map(p => [p, COVER_PAT[p]])],
+    ...(c.pat === 'cst' ? cstRows(c.cst) : []),
     ['Направление, ° (auto — вдоль длинной стены)', 'cover.ang', 't'],
     [
       'Начало раскладки',
@@ -61031,7 +61302,9 @@ function coverPanel(z) {
         ]
       : []),
     ['Цвет', 'cover.col', 'c'],
-    ...(['checker', 'rhomb', 'octa', 'hops'].includes(c.pat) ? [['Второй цвет / вставка', 'cover.col2', 'c']] : []),
+    ...(['checker', 'rhomb', 'octa', 'hops', 'cst'].includes(c.pat)
+      ? [['Второй цвет / вставка', 'cover.col2', 'c']]
+      : []),
     ...(c.mat === 'parquet' || c.mat === 'eng'
       ? [
           [
@@ -61105,14 +61378,35 @@ function coverSpec(z, put) {
       'м²'
     );
   if (st.slopeLen > 0) P_('cvsl', 'Подрезка плитки под уклон к трапу (конверт), м', st.slopeLen / 1000, 'м');
-  P_(
-    'cv' + c.mat + c.size + c.pat,
-    st.roll
-      ? `${M.n}, рулон ${Math.round(st.roll.W)} мм: ${st.roll.n} полос${st.roll.n === 1 ? 'а' : st.roll.n < 5 ? 'ы' : ''} по ${Math.round(st.roll.L)} мм`
-      : `${M.n} ${c.size.replace('x', '×')} мм, ${COVER_PAT[c.pat].toLowerCase()} (с запасом ${st.realP}%)`,
-    st.buy,
-    'м²'
-  );
+  // the constructor: every kind of tile is its own row — border tiles, corner tiles, field, inserts — in pieces
+  if (c.pat === 'cst') {
+    const R = coverLayout(z);
+    for (const g of R.cutting || []) {
+      const W = Math.round(g.W),
+        H = Math.round(g.H);
+      put(
+        S_,
+        'cst' + c.mat + W + 'x' + H + (g.col || ''),
+        {
+          name: `${M.n} ${Math.max(W, H)}×${Math.min(W, H)} мм — ${g.lab || 'плитка'}, цвет ${g.col || c.col}`,
+          u: 'шт'
+        },
+        r => {
+          r.q += g.total;
+          r.ids.push(z.id);
+        }
+      );
+    }
+    P_('cvcst' + c.mat, `${M.n}: конструктор, всего с раскроем (бордюр + поле)`, st.usedA, 'м²');
+  } else
+    P_(
+      'cv' + c.mat + c.size + c.pat,
+      st.roll
+        ? `${M.n}, рулон ${Math.round(st.roll.W)} мм: ${st.roll.n} полос${st.roll.n === 1 ? 'а' : st.roll.n < 5 ? 'ы' : ''} по ${Math.round(st.roll.L)} мм`
+        : `${M.n} ${c.size.replace('x', '×')} мм, ${COVER_PAT[c.pat].toLowerCase()} (с запасом ${st.realP}%)`,
+      st.buy,
+      'м²'
+    );
   // packs are counted over the whole purchase of the material, not rounded up room by room
   if (st.packs && M.pack)
     put(
@@ -103244,7 +103538,8 @@ function layoutData() {
       src: g.src,
       sheets: g.sheets,
       full: g.full,
-      label: a.length > 1 ? (g.ins ? 'вставка ' : 'плитка ') + lvMm(g.W) + '×' + lvMm(g.H) : '',
+      col: g.col,
+      label: a.length > 1 ? (g.lab ? g.lab + ' ' : g.ins ? 'вставка ' : 'плитка ') + lvMm(g.W) + '×' + lvMm(g.H) : '',
       pre: a.length > 1 ? String.fromCharCode(1040 + gi) : ''
     }));
     const gi = new Map((R.cutting || []).map((g, i) => [g.k, i]));
@@ -103262,7 +103557,8 @@ function layoutData() {
         w: xs.length ? Math.max(...xs) - Math.min(...xs) : 0,
         h: ys.length ? Math.max(...ys) - Math.min(...ys) : 0,
         slope: !!p.slope,
-        rot: p.rot
+        rot: p.rot,
+        col: p.col
       };
     });
     const snaps = [];
@@ -103279,7 +103575,10 @@ function layoutData() {
       if (e.type === 'fix' && e.kind === 'fdrain' && e.p && inPoly(e.p, pts)) snaps.push([e.p.x, e.p.y]);
     const sz = coverSize(c);
     return {
-      title: `${M.n} ${lvMm(sz.w)}×${lvMm(sz.l)} — ${z.name || 'пол №' + z.id}, ${COVER_PAT[c.pat].toLowerCase()}`,
+      title:
+        c.pat === 'cst'
+          ? `${M.n} — ${z.name || 'пол №' + z.id}, конструктор: бордюр ${c.cst.n ? c.cst.n + ' пояс(а)' : 'нет'}, поле ${c.cst.fsize.replace('x', '×')}`
+          : `${M.n} ${lvMm(sz.w)}×${lvMm(sz.l)} — ${z.name || 'пол №' + z.id}, ${COVER_PAT[c.pat].toLowerCase()}`,
       outline: [pts.map(p => [p.x, p.y])],
       holes: (R.trans || []).filter(t => t.depth > 0).map(t => t.rect.map(p => [p.x, p.y])),
       transIsArea: true,
@@ -103378,7 +103677,7 @@ function schemeSvg(D) {
   for (const q of D.outline) s += `<polygon points="${lvPts(q, T)}" fill="${esc(D.jcol)}" stroke="none"/>`;
   for (const p of D.pieces) {
     const cls = p.full ? 'lvp full' : 'lvp cut' + (p.slope ? ' slope' : '');
-    s += `<polygon class="${cls}" ${p.full ? '' : `data-no="${p.grp}:${p.no}" data-sh="${p.grp}:${p.sheet}"`} points="${lvPts(p.poly, T)}" fill="${esc(D.col)}"/>`;
+    s += `<polygon class="${cls}" ${p.full ? '' : `data-no="${p.grp}:${p.no}" data-sh="${p.grp}:${p.sheet}"`} points="${lvPts(p.poly, T)}" fill="${esc(p.col || D.col)}"/>`;
   }
   for (const q of D.outline) s += `<polygon points="${lvPts(q, T)}" fill="none" stroke="#111" stroke-width="1.6"/>`;
   for (const q of D.holes)
@@ -103434,7 +103733,7 @@ function sheetSvg(D, g, gi, sh) {
   for (const it of sh.items) {
     const p = it.piece;
     const pc = D.pieces.find(q => q.grp === gi && q.no === p.no && !q.full);
-    s += `<polygon class="lvp cut" data-no="${gi}:${p.no}" data-sh="${gi}:${sh.n}" points="${lvPts(it.poly, T)}" fill="${esc(D.col)}" stroke="#333" stroke-width=".8"/>`;
+    s += `<polygon class="lvp cut" data-no="${gi}:${p.no}" data-sh="${gi}:${sh.n}" points="${lvPts(it.poly, T)}" fill="${esc(g.col || D.col)}" stroke="#333" stroke-width=".8"/>`;
     const c = it.poly.reduce((a, v) => [a[0] + v[0] / it.poly.length, a[1] + v[1] / it.poly.length], [0, 0]);
     const [X, Y] = T(c);
     s += `<text class="lvno" data-no="${gi}:${p.no}" x="${X.toFixed(1)}" y="${(Y + 4).toFixed(1)}" font-size="11" text-anchor="middle">${esc(pc ? pc.lbl : String(p.no))}</text>`;
