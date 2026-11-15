@@ -10592,12 +10592,13 @@ function MB(xf) {
     tube(A, B, r, col, seg = 10, op) {
       sweepFn([A, B], r, col, seg, op);
     },
-    obox(A, B, w, h, col, op) {
+    obox(A, B, w, h, col, op, sv) {
       const d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
       const L = Math.hypot(d[0], d[1], d[2]);
       if (L < 1e-6) return;
       for (let i = 0; i < 3; i++) d[i] /= L;
-      let s = Math.abs(d[2]) > 0.9 ? [1, 0, 0] : [-d[1], d[0], 0];
+      // sv: the direction of the width (a vertical leg keeps the width of the level run it turns from)
+      let s = sv ? sv.slice() : Math.abs(d[2]) > 0.9 ? [1, 0, 0] : [-d[1], d[0], 0];
       const sl = Math.hypot(s[0], s[1], s[2]);
       s = s.map(x => x / sl);
       const up = [d[1] * s[2] - d[2] * s[1], d[2] * s[0] - d[0] * s[2], d[0] * s[1] - d[1] * s[0]];
@@ -19546,7 +19547,27 @@ function build3(e) {
         const dx = b[0] - a[0],
           dy = b[1] - a[1],
           L = Math.hypot(dx, dy);
-        if (L < 1e-6) continue;
+        if (L < 1e-6) {
+          // a vertical leg (a dip under a beam, a step): the section turns over the narrow side, the width stays
+          // across the run; it overlaps the level legs by half the height to close the corners
+          if (e.shape === 'rect' && Math.abs(b[2] - a[2]) > 1) {
+            let u = null;
+            for (const k of [i - 2, i]) {
+              const p0 = pts[k],
+                p1 = pts[k + 1];
+              if (!p0 || !p1) continue;
+              const l = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+              if (l > 1) {
+                u = [(p1[0] - p0[0]) / l, (p1[1] - p0[1]) / l];
+                break;
+              }
+            }
+            const sg = Math.sign(b[2] - a[2]);
+            const sv = u ? [-u[1], u[0], 0] : null;
+            mb.obox([a[0], a[1], a[2] - (sg * Hh) / 2], [b[0], b[1], b[2] + (sg * Hh) / 2], W, Hh, col, undefined, sv);
+          }
+          continue;
+        }
         const ux = dx / L,
           uy = dy / L,
           ea = i > 1 ? W / 2 : 0,
