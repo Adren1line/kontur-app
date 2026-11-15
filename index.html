@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.43';
+const APP_VER = '59.44';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -16041,6 +16041,7 @@ function selChanged() {
 
 
 
+
 /* 2D rendering */
 let needs = true;
 const dirty = () => {
@@ -16860,6 +16861,49 @@ function segSegX(a, b, c, d) {
   if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return null;
   return add(a, mul(r, t));
 }
+/** Holes in the walls a duct passes (drilled / cut in a block wall, a framed opening in a framed one): the outline
+ * of the hole in the wall with a cross, its size beside it when there is room. */
+function drawDuctHoles(e, col) {
+  let cs;
+  try {
+    cs = ductWallCrossings(e);
+  } catch (err) {
+    return;
+  }
+  for (const c of cs) {
+    const wi = wallInfo(c.w),
+      u = wi.u,
+      n = wi.n;
+    const cos = Math.max(0.2, Math.abs(c.u[0] * n.x + c.u[1] * n.y));
+    const hw = (c.round ? c.hole.D : c.hole.W) / 2 / cos,
+      ht = c.depth / 2;
+    const q = [
+      add(add(c.p, mul(u, -hw)), mul(n, -ht)),
+      add(add(c.p, mul(u, hw)), mul(n, -ht)),
+      add(add(c.p, mul(u, hw)), mul(n, ht)),
+      add(add(c.p, mul(u, -hw)), mul(n, ht))
+    ];
+    ctx.save();
+    ctx.strokeStyle = c.kind === 'frame' ? '#9aa3ad' : '#e0a040';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    pathPoly(q);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    seg(q[0], q[2]);
+    seg(q[1], q[3]);
+    if (hw * 2 * view.k > 14) {
+      const s = w2s(add(c.p, mul(n, ht + 10 / view.k)));
+      ctx.font = '10px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(c.round ? `отв. Ø${c.hole.D}` : `отв. ${c.hole.W}×${c.hole.H}`, s.x, s.y);
+    }
+    ctx.restore();
+  }
+  void col;
+}
 function drawDuct(e, color, o = {}) {
   const ghost = color === 'ghost',
     sy = sysOf(e.sys),
@@ -16928,6 +16972,7 @@ function drawDuct(e, color, o = {}) {
   pathPoly(e.pts, false);
   ctx.stroke();
   ctx.setLineDash([]);
+  if (!ghost) drawDuctHoles(e, col);
   let bi = 0,
     bl = 0;
   for (let i = 0; i < e.pts.length - 1; i++) {
@@ -19538,6 +19583,11 @@ function build3(e) {
         rr = W / 2;
       if (e.flex) {
         flexBuild(e, mb, col);
+        try {
+          penetrationMesh(mb, e);
+        } catch (err) {
+          console.error(err);
+        }
         return meshGroup(mb.meshes(), {});
       }
       const pts = ductPath3(e);
@@ -135701,7 +135751,8 @@ function ductDetails3(mb, e, W, H, col, dark) {
  * rectangular one, 20 mm larger than the duct with its insulation. Framed walls and constructions (Knauf partitions,
  * wall linings on a frame): the frame goes round the duct — a framed opening of PN / PS profiles, 20 mm larger.
  * The gap between the duct and the hole / the frame is filled with mounting foam (volume counted). The 3D shows the
- * foam ring and, in a framed wall, the profile frame.
+ * foam ring and, in a framed wall, the profile frame. Flexible connections (sloped legs to grilles and diffusers)
+ * get their holes the same way.
  */
 
 
@@ -135728,8 +135779,18 @@ function wallMatName(w) {
     : [];
   return ms[0] || 'кладка';
 }
-/** Crossings of duct e with the walls: [{ w, p, z, kind, round, D | W×H (hole), depth, foamL }]. */
+const PEN_MEMO = new WeakMap();
+/** Crossings of duct e with the walls: [{ w, p, z, kind, round, D | W×H (hole), depth, foamL }]. Memoised per
+ * document version and the duct's own geometry (the plan draws the holes every frame). */
 function ductWallCrossings(e) {
+  const k = documentState.docVer + JSON.stringify([e.pts, e.z, e.d, e.w, e.hh, e.ins, e.shape, e.flex, e.from, e.to]);
+  const m = PEN_MEMO.get(e);
+  if (m && m.k === k) return m.r;
+  const r = ductWallCrossings0(e);
+  PEN_MEMO.set(e, { k, r });
+  return r;
+}
+function ductWallCrossings0(e) {
   const q = ductPath3(e);
   const ins = +e.ins || 0;
   const round = e.shape !== 'rect';
@@ -135743,10 +135804,16 @@ function ductWallCrossings(e) {
     for (let i = 1; i < q.length; i++) {
       const a = q[i - 1],
         b = q[i];
-      if (Math.abs(b[2] - a[2]) > 1) continue;
-      if (a[2] + H / 2 <= w0 || a[2] - H / 2 >= w1) continue;
+      // level and sloped segments (a flexible connection goes down to a grille at a slope); a riser steeper than
+      // 60° does not pass a wall sideways
+      const lh = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (lh < 1 || Math.abs(b[2] - a[2]) > lh * 1.75) continue;
       const p = segSeg(P(a[0], a[1]), P(b[0], b[1]), w.a, w.b);
-      if (!p || out.some(x => x.w === w && dist(x.p, p) < 150)) continue;
+      if (!p) continue;
+      const tz = Math.hypot(p.x - a[0], p.y - a[1]) / lh;
+      const zc = a[2] + (b[2] - a[2]) * tz;
+      if (zc + H / 2 <= w0 || zc - H / 2 >= w1) continue;
+      if (out.some(x => x.w === w && dist(x.p, p) < 150)) continue;
       // through a door / window opening: nothing to make
       if (
         S.ents.some(
@@ -135768,7 +135835,8 @@ function ductWallCrossings(e) {
       out.push({
         w,
         p,
-        z: a[2],
+        z: Math.round(zc),
+        flex: !!e.flex,
         u: [
           (b[0] - a[0]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1),
           (b[1] - a[1]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1)
