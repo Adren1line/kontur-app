@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.33';
+const APP_VER = '59.34';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -76730,6 +76730,8 @@ defineTools({
 
 
 
+
+
 /* корпусная мебель: корпус из ЛДСП (боковины, крыша/дно, перегородки, полки, задняя стенка, цоколь), фасады, ящики;
    деталировка с размерами и кромкой — основа для будущего раскроя; фурнитура Blum (CLIP top, TIP-ON, LEGRABOX/TANDEMBOX) и Häfele
    local: x вдоль ширины (0…w), y от стены (0) к фасаду (d), z вверх */
@@ -76739,7 +76741,8 @@ var CBK = {
   commode: 'Комод с ящиками',
   tvst: 'Тумба ТВ',
   bedside: 'Тумба прикроватная',
-  custom: 'Свой корпус'
+  custom: 'Свой корпус',
+  sheet: 'Своё изделие из листов (детали, фурнитура)'
 };
 var CBFILL = { shelves: 'полки', drawers: 'ящики', rod: 'штанга + полка', open: 'открытые полки' };
 var CBH = { push: 'без ручек (Blum TIP-ON)', bar: 'ручка-скоба', gola: 'профиль Gola', knob: 'кнопка' };
@@ -76766,7 +76769,19 @@ function cbDefaults(k) {
         legs: true
       },
       bedside: { w: 450, h: 450, d: 400, sec: 1, fills: ['drawers'], nf: [2], doors: false, plinth: 0, legs: true },
-      custom: { w: 800, h: 1600, d: 450, sec: 1, fills: ['shelves'], nf: [3], doors: true, plinth: 80 }
+      custom: { w: 800, h: 1600, d: 450, sec: 1, fills: ['shelves'], nf: [3], doors: true, plinth: 80 },
+      sheet: {
+        w: 1600,
+        h: 450,
+        d: 400,
+        sec: 1,
+        fills: ['open'],
+        nf: [0],
+        doors: false,
+        plinth: 0,
+        own: true,
+        hinge: 'clip110'
+      }
     }[k] || {};
   return { kind: k, t: 16, col: '#efece6', fcol: '#d8c3a5', back: 'hdf', handle: 'push', drawer: 'legrabox', ...D };
 }
@@ -76785,6 +76800,10 @@ function hingesFor(h, w, kgm2 = 13) {
 }
 // parts: every part also carries its box in local coordinates for 3D (so the model is exactly the деталировка)
 function cabParts(c) {
+  if (c.own) {
+    if (!Array.isArray(c.parts)) c.parts = sheetPreset('tv', c);
+    return sheetParts(c);
+  }
   const t = +c.t || 16,
     w = +c.w,
     h = +c.h,
@@ -76917,6 +76936,7 @@ function cabParts(c) {
   return { parts: P_, fronts: fr, t, sw, sec, z0, inH };
 }
 function cabHardware(c, R) {
+  if (c.own) return sheetHardware(c, R);
   const out = [];
   const add_ = (n, q, u = 'шт') => {
     if (q) out.push([n, q, u]);
@@ -76950,6 +76970,22 @@ function cabHardware(c, R) {
 function cabBuild(c, mb, R) {
   const col = c.col,
     fcol = c.fcol;
+  if (c.own) {
+    partsMesh(mb, c.parts, c, (x0, y0, z0, x1, y1, z1, cc, op) => mb.box(x0, y0, z0, x1, y1, z1, cc, op));
+    if (c.legs) {
+      mb.tag('Опоры');
+      mb.smooth(true);
+      for (const [x, y] of [
+        [40, 40],
+        [c.w - 40, 40],
+        [40, c.d - 40],
+        [c.w - 40, c.d - 40]
+      ])
+        mb.cyl(x, y, -100, 0, 14, '#3d4248', 12);
+      mb.smooth(false);
+    }
+    return;
+  }
   for (const p of R.parts) {
     if (p.grp === 'Фасады') continue;
     mb.tag(p.name);
@@ -77079,6 +77115,38 @@ function cabPanelForm(e) {
     ]
   ]);
 }
+function cabOwnForm(e) {
+  const c = e.cfg;
+  const R = cabParts(c);
+  const hw = cabHardware(c, R);
+  return xGroups(e, [
+    [
+      'Изделие из листов',
+      `${c.w}×${c.h}×${c.d}`,
+      [
+        ['Тип', 'cfg.kind', 's', Object.entries(CBK)],
+        ['Ширина (габарит заготовки)', 'cfg.w', 'n'],
+        ['Высота', 'cfg.h', 'n'],
+        ['Глубина корпуса', 'cfg.d', 'n'],
+        ['Толщина корпуса, мм', 'cfg.t', 'n'],
+        ['Цвет корпуса', 'cfg.col', 'c'],
+        ['Цвет фасадов', 'cfg.fcol', 'c'],
+        ['Открывание', 'cfg.handle', 's', Object.entries(CBH)],
+        ['На опорах', 'cfg.legs', 'b'],
+        ['Низ от пола (навесное), мм', 'z', 'n'],
+        ['Поворот, °', 'rotd', 'n']
+      ]
+    ],
+    [
+      'Детали и фурнитура',
+      `${R.parts.length} дет. · ${hw.length} поз.`,
+      R.parts
+        .slice(0, 40)
+        .map(p => cR(esc(p.name), `${p.L}×${p.W}×${p.t} ${p.nocut ? '' : '· ' + esc(p.edge || '')}`))
+        .join('') + hw.map(([n, q, u]) => cR(esc(n), q + ' ' + u)).join('')
+    ]
+  ]);
+}
 XT.cab = {
   layer: 'Мебель',
   prims: e => closedSegs(cabPoly(e)),
@@ -77164,6 +77232,11 @@ XT.cab = {
   },
   group: e => `${CBK[e.cfg.kind] || 'Корпус'} ${e.cfg.w}×${e.cfg.h}×${e.cfg.d}`,
   panel(e) {
+    if (e.cfg.own)
+      return (
+        cabOwnForm(e) +
+        `<div class="btnrow" style="grid-column:1/-1"><button class="btn pri" data-xa="sheeted">Детали и фурнитура…</button><button class="btn" data-xa="cabdraw">Чертёж, деталировка и раскрой (A3)</button></div>`
+      );
     return (
       cabPanelForm(e) +
       `<div class="btnrow" style="grid-column:1/-1"><button class="btn pri" data-xa="cabdraw">Чертёж, деталировка и раскрой (A3)</button></div>`
@@ -77171,12 +77244,15 @@ XT.cab = {
   },
   action(e, a) {
     if (a === 'cabdraw') openFurnDraw('cab', e.id);
+    if (a === 'sheeted') openSheetEditor(e, () => changed());
   },
   onSet(e, p, v) {
     if (p === 'rotd') e.rot = v * D2R;
     if (p === 'cfg.kind') {
       const d = cbDefaults(v);
       Object.assign(e.cfg, d);
+      if (!d.own) e.cfg.own = false;
+      else e.cfg.parts = sheetPreset('tv', e.cfg);
     }
     if (p === 'cfg.sec') {
       const n = Math.max(1, Math.min(6, v | 0));
@@ -105352,6 +105428,7 @@ function initLayoutView() {
 
 
 
+
 const OPSHAPE = {
   rect: 'Прямоугольный',
   arch: 'Арка полуциркульная',
@@ -105843,7 +105920,19 @@ XT.opening = {
         'r'
       ]
     );
-    return xGroups(e, [['Проём', opShapeName(e), rows]]);
+    return (
+      xGroups(e, [['Проём', opShapeName(e), rows]]) +
+      `<div class="btnrow" style="grid-column:1/-1"><button class="btn" data-xa="hdoorA" title="Мебельные откосы под петли + полотно вровень с отделкой стороны А">Скрытая мебельная дверь (сторона А)</button><button class="btn" data-xa="hdoorB">… (сторона Б)</button></div>`
+    );
+  },
+  action(e, a) {
+    if (a !== 'hdoorA' && a !== 'hdoorB') return;
+    const r = hiddenDoorFor(e, a === 'hdoorA' ? 1 : -1);
+    if (r.err) return log(r.err, true);
+    addEnt({ ...r.e, layer: ensureLayer('Мебель') });
+    log(
+      `Скрытая дверь ${fmt(e.w)}×${fmt(e.h)}: мебельные откосы 22 мм, полотно ${r.zone ? 'вровень с панелью стены' : '22 мм вровень с отделкой'}, петли для толстых дверей. Детали и фурнитура — в свойствах изделия.`
+    );
   },
   onSet(e, p) {
     if (p === 'shape' && e.shape === 'arch') e.h = Math.max(e.h, e.w / 2 + 200);
@@ -114081,6 +114170,8 @@ defineTools({
 
 
 
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -114228,6 +114319,10 @@ function xBoot() {
       pushUndo,
       sync3DBusy,
       s3Stat,
+      hiddenDoorFor,
+      sheetPreset,
+      cbDefaults,
+      openSheetEditor,
       entLines,
       assetLines,
       topLines
@@ -124884,6 +124979,10 @@ const PART_K = {
   rail: { n: 'Царга / планка', mat: 'ldsp' },
   back: { n: 'Задняя стенка', mat: 'hdf' },
   front: { n: 'Фасад', mat: 'front' },
+  door: { n: 'Дверь распашная', mat: 'front' },
+  dfront: { n: 'Фасад ящика', mat: 'front' },
+  drawer: { n: 'Ящик (короб)', mat: 'ldsp' },
+  mirror: { n: 'Зеркало', mat: 'mirror' },
   plinth: { n: 'Цоколь', mat: 'ldsp' },
   end: { n: 'Боковина декоративная', mat: 'front' },
   panel: { n: 'Своя деталь', mat: 'ldsp' },
@@ -124894,15 +124993,32 @@ const PART_MAT = {
   ldsp: 'ЛДСП',
   front: 'Фасадная (МДФ / ЛДСП 18)',
   hdf: 'ХДФ 3 мм',
+  mdf: 'МДФ',
+  ply: 'Фанера',
   glass: 'Стекло',
+  mirror: 'Зеркало 4 мм',
   metal: 'Металл',
   tech: 'Техника — не в раскрой'
 };
-const CUT_MAT = { ldsp: 1, front: 1, hdf: 1 };
+const CUT_MAT = { ldsp: 1, front: 1, hdf: 1, mdf: 1, ply: 1 };
 let PID = 1;
 const nid = parts => Math.max(PID++, ...parts.map(p => +p.id || 0)) + 1;
 const r1 = v => Math.round(v * 10) / 10;
 
+/** Opening of a door part: hinges left / right, a flap up / down, or fixed (a blind panel). */
+const PART_OPEN = {
+  L: 'петли слева',
+  R: 'петли справа',
+  T: 'откидная вверх',
+  B: 'откидная вниз',
+  fix: 'глухая'
+};
+function partOpenSel(p, i) {
+  if (p.k !== 'door') return '';
+  return `<select data-pe="${i}:hinge">${Object.entries(PART_OPEN)
+    .map(([k, v]) => `<option value="${k}" ${k === (p.hinge || 'L') ? 'selected' : ''}>${esc(v)}</option>`)
+    .join('')}</select>`;
+}
 /** Box [x0,y0,z0,x1,y1,z1] of a part. */
 const partBox = p => [p.x, p.y, p.z, p.x + p.w, p.y + p.d, p.z + p.h];
 /** Thickness: the smallest size. */
@@ -124951,6 +125067,20 @@ function partPreset(k, U, parts = []) {
       return P_(2, -3, z0 + 2, W - 4, 3, z1 - z0 - 4);
     case 'front':
       return P_(1.5, D, z0 + 1.5, W - 3, 18, z1 - z0 - 3, { n: 'Фасад распашной' });
+    case 'door':
+      return P_(1.5, D, z0 + 1.5, W - 3, 18, z1 - z0 - 3, { hinge: 'L' });
+    case 'dfront': {
+      const n = parts.filter(p => p.k === 'dfront').length;
+      const h = Math.min(250, (z1 - z0) / 3);
+      return P_(1.5, D, z0 + 1.5 + n * (h + 3), W - 3, 18, h - 3);
+    }
+    case 'drawer': {
+      const n = parts.filter(p => p.k === 'drawer').length;
+      const h = Math.min(250, (z1 - z0) / 3);
+      return P_(t + 13, 10, z0 + t + 20 + n * (h + 3), W - 2 * t - 26, Math.max(250, D - 30), Math.max(60, h - 60));
+    }
+    case 'mirror':
+      return P_(6, D + 18, z0 + 6, W - 12, 4, z1 - z0 - 12);
     case 'plinth':
       return P_(0, D - 60, 0, W, 16, Math.max(40, U.legs || 100));
     case 'end':
@@ -124983,10 +125113,41 @@ function partCarcass(U, base) {
   return out;
 }
 
+/**
+ * A drawer box as its panels: two sides and front / back wall of LDSP 16, a bottom of HDF in a groove 10 mm up
+ * (the box of the part is the outside of the drawer).
+ */
+function drawerPanels(p, t = 16) {
+  const b = { x: p.x, y: p.y, z: p.z, w: p.w, d: p.d, h: p.h };
+  const q = (n, x, y, z, w, d, h, mat = 'ldsp') => ({
+    k: 'panel',
+    n,
+    mat,
+    x,
+    y,
+    z,
+    w,
+    d,
+    h,
+    edge: mat === 'hdf' ? '' : 'Д1 0,4 мм'
+  });
+  return [
+    q('Ящик: боковина', b.x, b.y, b.z, t, b.d, b.h),
+    q('Ящик: боковина', b.x + b.w - t, b.y, b.z, t, b.d, b.h),
+    q('Ящик: стенка задняя', b.x + t, b.y, b.z + 12, b.w - 2 * t, t, b.h - 12),
+    q('Ящик: стенка передняя', b.x + t, b.y + b.d - t, b.z + 12, b.w - 2 * t, t, b.h - 12),
+    q('Ящик: дно ХДФ', b.x + t - 6, b.y + t - 6, b.z + 8, b.w - 2 * t + 12, b.d - 2 * t + 12, 3, 'hdf')
+  ];
+}
 /** The parts of a module as parts of the drawings (sizes, material, edge, box relative to zBase). */
 function partsToCut(parts, zBase = 0, grpOf, all = false) {
   const out = [];
-  for (const p of parts || []) {
+  for (const p0 of parts || []) {
+    if (p0.k === 'drawer') {
+      out.push(...partsToCut(drawerPanels(p0), zBase, grpOf ? q => grpOf({ ...q, k: 'drawer' }) : () => 'Ящики', all));
+      continue;
+    }
+    const p = p0;
     if (!CUT_MAT[p.mat] && !all) continue;
     const s = [p.w, p.d, p.h].sort((a, b) => b - a);
     const t = p.mat === 'hdf' ? 3 : Math.round(s[2]);
@@ -125059,18 +125220,26 @@ function partCol(p, c) {
     front: c.fcol || '#e7e2d8',
     hdf: '#d8d0c2',
     glass: '#bcd6e0',
+    mirror: '#cfdce3',
+    mdf: c.fcol || '#e7e2d8',
+    ply: '#d8bb8a',
     metal: '#9aa1a9',
     tech: '#2b2f35'
   }[p.mat];
 }
 /** Draws the parts with B(x0,y0,z0,x1,y1,z1,col,op) of the module. */
 function partsMesh(mb, parts, c, B) {
-  for (const p of parts || []) {
+  for (const p0 of parts || []) {
+    if (p0.k === 'drawer') {
+      partsMesh(mb, drawerPanels(p0), c, B);
+      continue;
+    }
+    const p = p0;
     mb.tag(
       `${p.n || PART_K[p.k]?.n || 'Деталь'} (${PART_MAT[p.mat] || ''}${CUT_MAT[p.mat] ? ' ' + Math.round(partT(p)) + ' мм' : ''})`
     );
     const b = partBox(p);
-    B(b[0], b[1], b[2], b[3], b[4], b[5], partCol(p, c), p.mat === 'glass' ? 0.45 : undefined);
+    B(b[0], b[1], b[2], b[3], b[4], b[5], partCol(p, c), p.mat === 'glass' ? 0.45 : undefined, p);
   }
 }
 
@@ -125089,7 +125258,7 @@ function partsEditor(el, get, U, done, title = 'Детали модуля') {
      .join(
        ''
      )}<button class="btn" data-pa="@carcass" title="Две боковины, дно, крыша (или царги), задняя стенка, цоколь">Собрать корпус</button><button class="btn" data-pa="@clear">Очистить</button></div>
-   <div class="tblwrap"><table class="mtbl petbl"><thead><tr><th>№</th><th>Название</th><th>Тип</th><th>Материал</th><th>X</th><th>Y</th><th>Z</th><th>Ш</th><th>Г</th><th>В</th><th>Толщ.</th><th></th></tr></thead><tbody>${parts
+   <div class="tblwrap"><table class="mtbl petbl"><thead><tr><th>№</th><th>Название</th><th>Тип</th><th>Материал</th><th>X</th><th>Y</th><th>Z</th><th>Ш</th><th>Г</th><th>В</th><th>Толщ.</th><th>Открывание</th><th></th></tr></thead><tbody>${parts
      .map(
        (p, i) =>
          `<tr data-pi="${i}"><td class="n">${i + 1}</td><td><input data-pe="${i}:n" value="${esc(p.n || '')}" aria-label="Название детали"></td><td><select data-pe="${i}:k">${Object.entries(
@@ -125100,7 +125269,7 @@ function partsEditor(el, get, U, done, title = 'Детали модуля') {
            .map(([k, v]) => `<option value="${k}" ${k === p.mat ? 'selected' : ''}>${esc(v)}</option>`)
            .join(
              ''
-           )}</select></td><td>${num(i, 'x', p.x)}</td><td>${num(i, 'y', p.y)}</td><td>${num(i, 'z', p.z)}</td><td>${num(i, 'w', p.w)}</td><td>${num(i, 'd', p.d)}</td><td>${num(i, 'h', p.h)}</td><td>${num(i, 't', partT(p))}</td><td style="white-space:nowrap"><button class="btn" data-pd="${i}" title="Копия детали">⧉</button><button class="btn" data-px="${i}" aria-label="Удалить деталь">×</button></td></tr>`
+           )}</select></td><td>${num(i, 'x', p.x)}</td><td>${num(i, 'y', p.y)}</td><td>${num(i, 'z', p.z)}</td><td>${num(i, 'w', p.w)}</td><td>${num(i, 'd', p.d)}</td><td>${num(i, 'h', p.h)}</td><td>${num(i, 't', partT(p))}</td><td>${partOpenSel(p, i)}</td><td style="white-space:nowrap"><button class="btn" data-pd="${i}" title="Копия детали">⧉</button><button class="btn" data-px="${i}" aria-label="Удалить деталь">×</button></td></tr>`
      )
      .join('')}</tbody></table></div>
    ${parts.length ? '' : '<p class="hint">Деталей нет — добавьте их кнопками выше или соберите корпус.</p>'}</div>`;
@@ -125127,6 +125296,7 @@ function partsEditor(el, get, U, done, title = 'Детали модуля') {
         const p = get()[+ix];
         if (!p) return;
         if (key === 'n') p.n = i.value;
+        else if (key === 'hinge') p.hinge = i.value;
         else if (key === 'k') {
           p.k = i.value;
           if (!p.n || Object.values(PART_K).some(v => v.n === p.n)) p.n = PART_K[p.k].n;
@@ -125170,6 +125340,383 @@ function partsEditor(el, get, U, done, title = 'Детали модуля') {
         ch();
       })
   );
+}
+
+// ===== interior/sheet-furniture.js =====
+/**
+ * interior/sheet-furniture.js
+ *
+ * Own furniture from sheets: a corpus item (cab) whose parts are edited one by one — panels of LDSP, MDF, plywood,
+ * HDF, doors with their hinges, drawer fronts, drawer boxes, mirrors, glass. Hardware follows from the parts (hinges
+ * by the door size and the hinge type, runners per drawer, shelf supports, confirmats per panel joint, hangers for a
+ * wall-hung item, mirror holders) and can be added by hand. Presets start a TV stand, a box with drawers, a wall frame
+ * with a mirror door and an open back (an access hatch in the wall stays reachable behind it), a shelf.
+ * Local frame as in the parts editor: x from the left edge, y from the wall into the room, z up from the item's base.
+ */
+
+
+
+
+
+
+
+
+
+const SHEET_PRE = {
+  tv: 'ТВ-тумба: корпус, ниша, два ящика',
+  drawers: 'Короб с выдвижными ящиками',
+  mirror: 'Навесной каркас без задней стенки, дверь с зеркалом',
+  wall: 'Навесной шкаф с дверью',
+  shelf: 'Полка навесная',
+  empty: 'Пусто — собрать с нуля'
+};
+const SHEET_HINGE = {
+  clip110: 'Blum CLIP top 110° накладная',
+  clip155: 'Blum CLIP top 155° (дверь вровень с соседними)',
+  ins: 'Blum CLIP top 110° вкладная',
+  thick: 'Blum CLIP top 95° для толстых дверей (до 32 мм, скрытая дверь, зеркало)'
+};
+
+const sfR = v => Math.round(v * 10) / 10;
+const sfP = (k, n, mat, x, y, z, w, d, h, extra) => ({
+  k,
+  n,
+  mat,
+  x: sfR(x),
+  y: sfR(y),
+  z: sfR(z),
+  w: sfR(w),
+  d: sfR(d),
+  h: sfR(h),
+  ...(extra || {})
+});
+
+/** Parts of a preset for an item w × h × d (carcass depth d; fronts in front of it). */
+function sheetPreset(kind, c) {
+  const w = +c.w,
+    h = +c.h,
+    d = +c.d,
+    t = +c.t || 16;
+  const U = { w, d, z0: 0, z1: h, t, legs: 0 };
+  const out = [];
+  if (kind === 'empty') return out;
+  if (kind === 'shelf') return [sfP('panel', 'Полка', 'ldsp', 0, 0, 0, w, d, t)];
+  const car = partCarcass(U, false);
+  if (kind === 'mirror') {
+    // a frame on the wall: no back — whatever is in the wall behind it (a hatch, a meter) stays reachable
+    out.push(...car.filter(p => p.k !== 'back'));
+    out.push(sfP('shelf', 'Полка', 'ldsp', t, 0, h / 2 - t / 2, w - 2 * t, d - 20, t));
+    out.push(sfP('door', 'Дверь (основа под зеркало)', 'front', 1.5, d, 1.5, w - 3, 16, h - 3, { hinge: 'L' }));
+    out.push(sfP('mirror', 'Зеркало 4 мм на двери', 'mirror', 8, d + 16, 8, w - 16, 4, h - 16));
+    return out;
+  }
+  out.push(...car);
+  if (kind === 'wall') {
+    out.push(sfP('shelf', 'Полка', 'ldsp', t, 0, h / 2 - t / 2, w - 2 * t, d - 20, t));
+    out.push(sfP('door', 'Дверь', 'front', 1.5, d, 1.5, w - 3, 18, h - 3, { hinge: 'L' }));
+    return out;
+  }
+  if (kind === 'drawers') {
+    const n = Math.max(2, Math.min(5, Math.round(h / 220)));
+    const fh = (h - 3) / n;
+    for (let i = 0; i < n; i++) {
+      out.push(sfP('dfront', 'Фасад ящика', 'front', 1.5, d, 1.5 + i * fh, w - 3, 18, fh - 3));
+      out.push(
+        sfP(
+          'drawer',
+          'Ящик',
+          'ldsp',
+          t + 13,
+          10,
+          t + 15 + i * fh,
+          w - 2 * t - 26,
+          Math.max(250, d - 30),
+          Math.max(60, fh - 70)
+        )
+      );
+    }
+    return out;
+  }
+  if (kind === 'tv') {
+    // a partition in the middle; the left half open (a niche for the media), the right half two drawers
+    const xm = w / 2;
+    out.push(sfP('part', 'Перегородка', 'ldsp', xm - t / 2, 0, t, t, d - 20, h - 2 * t));
+    out.push(sfP('shelf', 'Полка ниши', 'ldsp', t, 0, h / 2 - t / 2, xm - 1.5 * t, d - 20, t));
+    const fh = (h - 3) / 2;
+    for (let i = 0; i < 2; i++) {
+      out.push(sfP('dfront', 'Фасад ящика', 'front', xm + 1.5, d, 1.5 + i * fh, w - xm - 3, 18, fh - 3));
+      out.push(
+        sfP(
+          'drawer',
+          'Ящик',
+          'ldsp',
+          xm + t / 2 + 13,
+          10,
+          t + 15 + i * fh,
+          w - xm - 1.5 * t - 26,
+          Math.max(250, d - 30),
+          Math.max(60, fh - 70)
+        )
+      );
+    }
+    return out;
+  }
+  return out;
+}
+
+/** cabParts of an own item: parts for the drawings / spec / 3D, fronts for the hardware and the plan. */
+function sheetParts(c) {
+  const t = +c.t || 16;
+  const parts = partsToCut(
+    c.parts || [],
+    0,
+    p => (p.k === 'drawer' ? 'Ящики' : p.mat === 'front' || p.mat === 'mirror' ? 'Фасады' : 'Корпус'),
+    true
+  );
+  const fronts = [];
+  for (const p of c.parts || []) {
+    const box = { x0: p.x, x1: p.x + p.w, z0: p.z, z1: p.z + p.h, d: p.y };
+    if (p.k === 'door')
+      fronts.push({
+        ...box,
+        kind: p.hinge === 'fix' ? 'fixed' : p.hinge === 'T' || p.hinge === 'B' ? 'flap' : 'door',
+        hinge: p.hinge || 'L',
+        mat: p.mat,
+        t: Math.min(p.w, p.d, p.h)
+      });
+    else if (p.k === 'dfront') fronts.push({ ...box, kind: 'drawer', NL: 0 });
+    else if (p.k === 'mirror') fronts.push({ ...box, kind: 'mirror' });
+  }
+  const sec = Math.max(1, (c.parts || []).filter(p => p.k === 'part').length + 1);
+  return { parts, fronts, t, sw: 0, sec, z0: 0, inH: +c.h - 2 * t, own: true };
+}
+
+/** Hardware of an own item: [name, qty, unit]. */
+function sheetHardware(c, R) {
+  const out = [];
+  const add_ = (n, q, u = 'шт') => {
+    if (!q) return;
+    const o = out.find(x => x[0] === n);
+    if (o) o[1] += q;
+    else out.push([n, q, u]);
+  };
+  const ps = c.parts || [];
+  const doors = R.fronts.filter(f => f.kind === 'door'),
+    flaps = R.fronts.filter(f => f.kind === 'flap'),
+    drw = R.fronts.filter(f => f.kind === 'drawer'),
+    fixed = R.fronts.filter(f => f.kind === 'fixed'),
+    mirrors = R.fronts.filter(f => f.kind === 'mirror');
+  const hn = SHEET_HINGE[c.hinge] || SHEET_HINGE.clip110;
+  // a door carrying a mirror is heavier: the hinges by mass
+  const hc = doors.reduce((a, f) => {
+    const mir = mirrors.some(m => m.x0 >= f.x0 - 20 && m.x1 <= f.x1 + 20 && m.z0 >= f.z0 - 20 && m.z1 <= f.z1 + 20);
+    return a + hingesFor(f.z1 - f.z0, f.x1 - f.x0, mir ? 24 : 13);
+  }, 0);
+  add_(`Петля ${hn}${c.handle === 'push' ? ' без пружины (под TIP-ON)' : ' BLUMOTION'} + ответная планка`, hc);
+  if (flaps.length) add_('Подъёмный механизм Blum AVENTOS HK-S / петли для откидной двери (комплект)', flaps.length);
+  if (c.handle === 'push') add_('Толкатель Blum TIP-ON', doors.length + flaps.length);
+  for (const f of drw) {
+    const box = ps.find(
+      p => p.k === 'drawer' && p.z >= f.z0 - 40 && p.z <= f.z1 && p.x >= f.x0 - 40 && p.x + p.w <= f.x1 + 40
+    );
+    const L = box ? Math.max(250, Math.floor(box.d / 50) * 50) : 450;
+    add_(
+      `Направляющие скрытого монтажа Blum TANDEM, L ${L} мм${c.handle === 'push' ? ', TIP-ON BLUMOTION' : ', BLUMOTION'} — пара`,
+      1
+    );
+    add_('Стяжка фасада ящика (эксцентрик / регулятор фасада)', 2);
+  }
+  if (c.handle === 'bar' || c.handle === 'knob')
+    add_(c.handle === 'bar' ? 'Ручка-скоба (м/о 128/160)' : 'Ручка-кнопка', doors.length + flaps.length + drw.length);
+  if (fixed.length) add_('Уголок мебельный 20×20 для глухой панели', fixed.length * 4);
+  if (mirrors.length) add_('Клей-герметик для зеркал + держатели (на двери / панели)', mirrors.length);
+  const shelves = ps.filter(p => p.k === 'shelf').length;
+  add_('Полкодержатель (4 на полку)', shelves * 4);
+  // panel joints: a side / partition holds the horizontals by two confirmats at each end
+  const vert = ps.filter(p => p.k === 'side' || p.k === 'part').length;
+  const hor = ps.filter(p => p.k === 'top' || p.k === 'bottom' || p.k === 'rail').length;
+  add_('Конфирмат 7×50', hor * 4 + Math.max(0, vert - 2) * 2);
+  for (const p of ps.filter(p => p.k === 'drawer')) (void p, add_('Конфирмат 6,3×50 (сборка ящика)', 8));
+  if (ps.some(p => p.k === 'back')) add_('Гвозди / саморезы для ХДФ', Math.ceil(((+c.w + +c.h) * 2) / 150));
+  if (c.legs) add_('Опора регулируемая 100–150 мм', +c.w > 1400 ? 6 : 4);
+  if ((c.hangZ || 0) > 0 || c.hang) add_('Навес мебельный регулируемый (пара) + монтажная шина', 1);
+  for (const x of c.hwx || []) if (x && x.n) add_(x.n, +x.q || 1, x.u || 'шт');
+  return out;
+}
+
+/* ---------- the editor dialog ---------- */
+let SHF = null;
+/** Opens the parts editor of an own item: parts, presets, hinges, own hardware. done() after every change. */
+function openSheetEditor(e, done) {
+  const c = e.cfg;
+  let dlg = $('#shdlg');
+  if (!dlg) {
+    dlg = document.createElement('div');
+    dlg.id = 'shdlg';
+    dlg.className = 'modal';
+    dlg.innerHTML = `<div class="dlg" role="dialog" aria-label="Изделие из листов" style="width:min(1180px,96vw)"><div class="dlgh"><h3 id="shTitle">Изделие из листов</h3><button class="x" id="shClose" aria-label="Закрыть">×</button></div><div id="shBody" style="padding:10px;overflow:auto;max-height:80vh"></div></div>`;
+    document.body.appendChild(dlg);
+    dlg.querySelector('#shClose').onclick = () => (dlg.hidden = true);
+  }
+  SHF = { e, done };
+  dlg.hidden = false;
+  renderSheet();
+}
+function renderSheet() {
+  if (!SHF) return;
+  const { e, done } = SHF,
+    c = e.cfg;
+  const body = $('#shBody');
+  $('#shTitle').textContent = `Изделие из листов ${c.w}×${c.h}×${c.d}`;
+  const hw = sheetHardware(c, sheetParts(c));
+  body.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:8px"><label class="fl">Заготовка<select id="shPre">${Object.entries(
+    SHEET_PRE
+  )
+    .map(([k, v]) => `<option value="${k}">${esc(v)}</option>`)
+    .join(
+      ''
+    )}</select></label><button class="btn" id="shApply" title="Заменить детали заготовкой по габаритам изделия">Заменить детали заготовкой</button><label class="fl">Петли дверей<select id="shHinge">${Object.entries(
+    SHEET_HINGE
+  )
+    .map(([k, v]) => `<option value="${k}" ${k === (c.hinge || 'clip110') ? 'selected' : ''}>${esc(v)}</option>`)
+    .join(
+      ''
+    )}</select></label><span class="hint">Открывание двери — в столбце «Открывание»: ${esc(Object.values(PART_OPEN).join(', '))}.</span></div><div id="shParts"></div>
+  <div class="sech" style="margin-top:10px">Фурнитура (по деталям + своя)</div>
+  <table class="mtbl" style="width:100%"><tbody>${hw.map(([n, q, u]) => `<tr><td>${esc(n)}</td><td style="width:90px">${q} ${esc(u)}</td></tr>`).join('')}</tbody></table>
+  <div class="sech" style="margin-top:8px">Своя фурнитура</div>${(c.hwx || [])
+    .map(
+      (x, i) =>
+        `<div style="display:flex;gap:6px;margin:3px 0"><input data-hx="${i}:n" value="${esc(x.n || '')}" style="flex:1" aria-label="Название"><input type="number" data-hx="${i}:q" value="${+x.q || 1}" style="width:70px" aria-label="Количество"><button class="btn" data-hxd="${i}" aria-label="Удалить">×</button></div>`
+    )
+    .join('')}<button class="btn" id="shHwAdd">+ своя позиция (ручка, замок, подсветка, магнит…)</button>`;
+  partsEditor(
+    body.querySelector('#shParts'),
+    () => (c.parts = c.parts || []),
+    { w: +c.w, d: +c.d, z0: 0, z1: +c.h, t: +c.t || 16, legs: 0 },
+    () => {
+      done();
+      renderSheet();
+    },
+    'Детали изделия'
+  );
+  body.querySelector('#shApply').onclick = () => {
+    pushUndo();
+    c.parts = sheetPreset(body.querySelector('#shPre').value, c);
+    if (body.querySelector('#shPre').value === 'mirror') c.hinge = 'thick';
+    done();
+    renderSheet();
+  };
+  body.querySelector('#shHinge').onchange = ev => {
+    pushUndo();
+    c.hinge = ev.target.value;
+    done();
+    renderSheet();
+  };
+  body.querySelector('#shHwAdd').onclick = () => {
+    pushUndo();
+    (c.hwx = c.hwx || []).push({ n: '', q: 1 });
+    done();
+    renderSheet();
+  };
+  body.querySelectorAll('[data-hx]').forEach(
+    i =>
+      (i.onchange = () => {
+        pushUndo();
+        const [ix, k] = i.dataset.hx.split(':');
+        const x = c.hwx[+ix];
+        x[k] = k === 'q' ? Math.max(1, parseFloat(i.value) || 1) : i.value;
+        done();
+        renderSheet();
+      })
+  );
+  body.querySelectorAll('[data-hxd]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        c.hwx.splice(+b.dataset.hxd, 1);
+        done();
+        renderSheet();
+      })
+  );
+}
+
+/* ---------- a hidden furniture door in a wall opening ---------- */
+/**
+ * A hidden door made of furniture: the opening is lined with furniture jambs (MDF / LDSP boards — the hinges go
+ * into them), the leaf is a furniture panel on concealed hinges for thick doors, flush with the finished face of
+ * the wall on the chosen side (with the wall's panel finish, if there is one, it continues the panel). No casing,
+ * a push latch. Returns the new item (a cab with own parts) or null with a reason.
+ */
+function hiddenDoorFor(o, side = 1) {
+  const I = opInfo(o);
+  if (!I) return { err: 'Проём не в стене' };
+  if ((o.shape || 'rect') !== 'rect' || (+o.r || 0) > 0)
+    return { err: 'Скрытая мебельная дверь — только в прямоугольном проёме без скруглений' };
+  const w = I.w,
+    W = +o.w,
+    H = +o.h,
+    sill = +o.sill || 0;
+  if (W > 1000)
+    return { err: `Проём ${W} мм: полотно шире 1000 мм на мебельных петлях не держится — разделите на две створки` };
+  // finished faces: the leaf is flush with the face on this side; the jambs run to the faces of both sides
+  const fA = faceFinishAt(w, side, I.t, sill + H / 2),
+    fB = faceFinishAt(w, -side, I.t, sill + H / 2);
+  const zone = fA.zone;
+  const tl = zone && (FINM[zone.k] || {}).panel ? Math.max(16, Math.round(zoneCalc(w, zone).P)) : 22;
+  const tj = 22,
+    gap = 3,
+    D = w.th + fA.th + fB.th;
+  const N = side > 0 ? I.wi.n : mul(I.wi.n, -1);
+  // the item's frame: y from the face of the other side through the wall to the face of this side
+  const p0 = sub(add(I.c, mul(N, -w.th / 2)), mul(N, fB.th));
+  const rot = Math.atan2(N.x, -N.y);
+  const ps = [
+    sfP('side', 'Откос мебельный левый (под петли)', 'mdf', 0, 0, 0, tj, D, H),
+    sfP('side', 'Откос мебельный правый', 'mdf', W - tj, 0, 0, tj, D, H),
+    sfP('top', 'Откос мебельный верхний', 'mdf', tj, 0, H - tj, W - 2 * tj, D, tj),
+    sfP(
+      'door',
+      'Полотно скрытой двери (вровень с отделкой)',
+      'front',
+      tj + gap,
+      D - tl,
+      gap,
+      W - 2 * tj - 2 * gap,
+      tl,
+      H - tj - 2 * gap,
+      {
+        hinge: 'L'
+      }
+    )
+  ];
+  const e = {
+    type: 'cab',
+    p: p0,
+    rot,
+    z: sill,
+    host: w.id,
+    layer: 'Мебель',
+    cfg: {
+      ...cbDefaults('sheet'),
+      w: W,
+      h: H,
+      d: D,
+      t: tj,
+      own: true,
+      hinge: 'thick',
+      handle: 'push',
+      hidden: { op: o.id, side },
+      col: zone && zone.col ? zone.col : '#e9e6df',
+      fcol: zone && zone.col ? zone.col : '#e9e6df',
+      parts: ps,
+      hwx: [
+        { n: 'Защёлка нажимная (push-to-open) магнитная для скрытой двери', q: 1 },
+        { n: 'Уплотнитель / демпфер в четверть откоса', q: 1 }
+      ]
+    }
+  };
+  return { e, zone };
 }
 
 // ===== io/cad-doc.js =====
