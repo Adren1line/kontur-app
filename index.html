@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.26';
+const APP_VER = '59.28';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7570,7 +7570,8 @@ const OSN = {
   par: 'Параллельно',
   near: 'Ближайшая',
   ins: 'Точка вставки',
-  port: 'Подключение (вывод, якорь)'
+  port: 'Подключение (вывод, якорь)',
+  m3: '3D: углы и рёбра моделей'
 };
 const osTypes = {
   end: true,
@@ -7585,7 +7586,8 @@ const osTypes = {
   par: true,
   near: false,
   ins: true,
-  port: true
+  port: true,
+  m3: true
 };
 const OVR = {
   end: ['кон', 'end', 'конточка'],
@@ -15243,6 +15245,7 @@ function initCommandLine() {
 
 
 
+
 /* snapping & tracking */
 let acqTimer = null;
 /* snap strength per type: capture radius (px) and priority; small hysteresis so the cursor tears off with little effort */
@@ -15293,15 +15296,16 @@ function findSnap(w, base, only) {
   const near = S.ents.filter(e => visible(e) && in2d(e) && entDist(e, w) < tolW * 1.5);
   let best = null,
     bs = Infinity;
-  const consider = (p, k, d) => {
+  const consider = (p, k, d, m3) => {
     if (!allow(k)) return;
     const dpx = d * kpx;
     const sticky = SNAPLAST && SNAPLAST.k === k && dist(SNAPLAST.p, p) < 1e-6;
     if (dpx > cap(k) + (sticky ? snappingState.SNAPREL : 0)) return;
-    const sc = (dpx / snapW(k)) * (sticky ? 0.85 : 1);
+    // a point of the element's own plan graphics wins over the same kind of point of its 3D at the same spot
+    const sc = (dpx / snapW(k)) * (sticky ? 0.85 : 1) * (m3 ? 1.05 : 1);
     if (sc < bs) {
       bs = sc;
-      best = { p, k };
+      best = m3 ? { p, k, m3: true } : { p, k };
     }
   };
   for (const e of near)
@@ -15318,6 +15322,54 @@ function findSnap(w, base, only) {
           if (ps[i].e === ps[j].e && ps[i].e.type !== 'pline') continue;
           for (const x of interPrims(ps[i].q, ps[j].q)) consider(x, 'int', dist(x, w));
         }
+  }
+  // 3D snaps: corners, middles and edges of the elements' 3D seen from above (models, air conditioners, radiators…)
+  let m3near = null;
+  if (only ? only === 'end' || only === 'mid' || only === 'near' || only === 'perp' : osTypes.m3) {
+    const R = tolW * 1.2,
+      R2 = R * R;
+    let md = Infinity;
+    // the 3D of equipment reaches past its plan symbol (spigots, flanges, brackets): candidates within 1.5 m
+    const near3 = S.ents.filter(
+      e => M3_T.has(e.type) && visible(e) && in2d(e) && entDist(e, w) < Math.max(tolW * 1.5, 1500)
+    );
+    for (const e of near3) {
+      const L = entLines(e);
+      if (!L) continue;
+      for (let i = 0; i < L.length; i += 4) {
+        const ax = L[i],
+          ay = L[i + 1],
+          bx = L[i + 2],
+          by = L[i + 3];
+        // quick reject: the segment's box against the capture circle
+        if (Math.min(ax, bx) > w.x + R || Math.max(ax, bx) < w.x - R) continue;
+        if (Math.min(ay, by) > w.y + R || Math.max(ay, by) < w.y - R) continue;
+        const a = P(ax, ay),
+          b = P(bx, by);
+        if ((ax - w.x) ** 2 + (ay - w.y) ** 2 < R2) consider(a, 'end', dist(a, w), true);
+        if ((bx - w.x) ** 2 + (by - w.y) ** 2 < R2) consider(b, 'end', dist(b, w), true);
+        const m = P((ax + bx) / 2, (ay + by) / 2);
+        consider(m, 'mid', dist(m, w), true);
+        if (base) {
+          const d = sub(b, a),
+            L2 = dot(d, d);
+          if (L2) {
+            const t = dot(sub(base, a), d) / L2;
+            if (t >= 0 && t <= 1) {
+              const q = add(a, mul(d, t));
+              consider(q, 'perp', dist(q, w), true);
+            }
+          }
+        }
+        const n = segPt(a, b, w),
+          dn = dist(n, w);
+        if (dn < md) {
+          md = dn;
+          m3near = n;
+        }
+      }
+    }
+    if (m3near && !(md * kpx < cap('near'))) m3near = null;
   }
   // connection points: water / drain / heating outlets of fixtures and the anchors of catalogue elements
   if (allow('port') && snapHooks.ports)
@@ -15359,6 +15411,7 @@ function findSnap(w, base, only) {
         }
       }
     }
+  if (!best && m3near && allow('near')) best = { p: m3near, k: 'near', m3: true };
   if (!best && allow('near') && near.length) {
     let m = Infinity,
       pt = null;
@@ -15805,6 +15858,7 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
+
 
 
 
@@ -16860,13 +16914,19 @@ function drawEnt(e, color, o = {}) {
           break;
         case 'inst': {
           const h = instHull(e);
+          const a = ASSETS.get(e.asset);
+          // a drawing of the model from above (its visible edges); the outline while the lines are being made
+          const ml = a && !flatCat(e.layer) ? assetLines(a) : null;
           pathPoly(h);
-          if (!ghost && !o.sel) ctx.fillStyle = hexA(color, flatCat(e.layer) ? 0.05 : 0.13);
+          if (!ghost && !o.sel) ctx.fillStyle = hexA(color, flatCat(e.layer) ? 0.05 : ml ? 0.06 : 0.13);
           else ctx.fillStyle = 'rgba(225,232,242,0.1)';
           ctx.fill();
-          ctx.lineWidth = o.hover ? 2.2 : 1.1;
-          ctx.stroke();
-          const a = ASSETS.get(e.asset);
+          if (ml && ml.seg.length) {
+            drawModelLines(e, ml, o.hover ? 1.6 : 0.9);
+          } else {
+            ctx.lineWidth = o.hover ? 2.2 : 1.1;
+            ctx.stroke();
+          }
           if (a && a.source !== 'ifc' && !ghost) {
             const g = polyCentroid(h);
             const bb = a.bbox;
@@ -16992,6 +17052,38 @@ function drawUCS() {
   ctx.strokeStyle = '#aab2bc';
   ctx.strokeRect(x - 3, y - 3, 6, 6);
   ctx.restore();
+}
+/** Lines of a catalogue model (its frame) on the plan: one Path2D on screen, segment by segment for exports. */
+function drawModelLines(e, ml, lw) {
+  const fast =
+    typeof Path2D === 'function' &&
+    typeof CanvasRenderingContext2D !== 'undefined' &&
+    ctx instanceof CanvasRenderingContext2D;
+  const r = e.rot || 0;
+  if (fast) {
+    const s = w2s(e.p);
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.scale(view.k, -view.k);
+    ctx.rotate(r);
+    ctx.lineWidth = lw / view.k;
+    ctx.lineJoin = ctx.lineCap = 'round';
+    ctx.stroke(assetPath(ml));
+    ctx.restore();
+    return;
+  }
+  const co = Math.cos(r),
+    si = Math.sin(r),
+    q = ml.seg;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  for (let i = 0; i < q.length; i += 4) {
+    const a = w2s(P(e.p.x + q[i] * co - q[i + 1] * si, e.p.y + q[i] * si + q[i + 1] * co)),
+      b = w2s(P(e.p.x + q[i + 2] * co - q[i + 3] * si, e.p.y + q[i + 2] * si + q[i + 3] * co));
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+  }
+  ctx.stroke();
 }
 function glyph(k, x, y, r) {
   ctx.beginPath();
@@ -17654,7 +17746,7 @@ function render() {
         ctx.lineWidth = 2;
         glyph(r.snap.k, p.x, p.y, 7);
         ctx.restore();
-        lines.unshift(OSN[r.snap.k]);
+        lines.unshift(OSN[r.snap.k] + (r.snap.m3 ? ' · 3D' : ''));
       }
       if (base && !dynOn() && !(r.track && r.track.lines[0].l.kind === 'polar')) {
         const d = dist(base, r.p);
@@ -22396,7 +22488,8 @@ const GLY = {
   par: '<path d="M3 12l5-9M8 13l5-9"/>',
   near: '<path d="M3 3h10L3 13h10z"/>',
   ins: '<rect x="3" y="3" width="10" height="10"/><path d="M3 8h10"/>',
-  port: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>'
+  port: '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
+  m3: '<path d="M2.5 5.5L8 2.5l5.5 3v6L8 14.5l-5.5-3z"/><path d="M2.5 5.5L8 8.5l5.5-3M8 8.5v6"/>'
 };
 const pop = $('#ospop');
 function renderOsPop() {
@@ -30375,24 +30468,30 @@ function ceilBase(e) {
 const ceilOutline = e => ceilPts(e);
 /** The ceiling outline without columns and shafts at its edges, and the ones inside as holes (cached). */
 const CEILC = new Map();
+/* The cut outline (columns and shafts at the edges taken off, the ones inside as holes) costs a raster trace — 30–40 ms
+   for the ceilings of the test house. It depends only on the ceiling's own outline and on the cutters that touch it,
+   so it is kept until one of them changes; any other edit of the project costs one cheap check per ceiling. */
 function ceilCut(e) {
-  const k =
-    documentState.docVer +
-    '|' +
-    e.id +
-    '|' +
-    JSON.stringify(e.pts) +
-    [e.rOut, e.rIn, e.cOut, e.cIn, e.shadowGap].join(',');
+  const k0 = documentState.docVer + '|' + JSON.stringify(e.pts) + [e.rOut, e.rIn, e.cOut, e.cIn, e.shadowGap].join(',');
   const hit = CEILC.get(e.id);
-  if (hit && hit.k === k) return hit.v;
-  let v;
+  if (hit && hit.k0 === k0) return hit.v;
+  let v, k;
   try {
-    v = !e.pts || e.pts.length < 3 ? { pts: e.pts, holes: [] } : zoneMinusCutters(ceilBase(e), 'ceil');
+    if (!e.pts || e.pts.length < 3) {
+      k = 'none' + JSON.stringify(e.pts);
+      v = hit && hit.k === k ? hit.v : { pts: e.pts, holes: [] };
+    } else {
+      const base = ceilBase(e);
+      const cuts = cuttersIn(base, 'ceil');
+      k = JSON.stringify(base) + '|' + JSON.stringify(cuts.map(c => c.poly));
+      v = hit && hit.k === k ? hit.v : cuts.length ? zoneMinusCutters(base, 'ceil') : { pts: base, holes: [] };
+    }
   } catch (err) {
+    k = null;
     v = { pts: ceilBase(e), holes: [] };
   }
   if (CEILC.size > 200) CEILC.clear();
-  CEILC.set(e.id, { k, v });
+  CEILC.set(e.id, { k0, k, v });
   return v;
 }
 /** Curved part of the ceiling perimeter, m (bent profiles / flexible baguette): arcs of rounded and notched corners. */
@@ -90493,7 +90592,7 @@ function entTris(e, dz = 0) {
       out[i + 1] = v[1];
       out[i + 2] = v[2] + (z || 0);
     }
-    return { pos: out, color: colRGB(m.color) };
+    return { pos: out, color: colRGB(m.color), op: m.op == null ? 1 : m.op };
   });
 }
 const colRGB = c => (Array.isArray(c) ? c : typeof c === 'string' ? hex2rgb(c) : [0.85, 0.85, 0.85]);
@@ -113701,6 +113800,7 @@ defineTools({
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -113847,7 +113947,10 @@ function xBoot() {
       issuesNow,
       pushUndo,
       sync3DBusy,
-      s3Stat
+      s3Stat,
+      entLines,
+      assetLines,
+      topLines
     },
     kit: { kitDefaults, kitAutofill, kitChecks },
     vent: {
@@ -136030,6 +136133,331 @@ defineTools({
     icon: '<path d="M4 6h5v12"/><path d="M4 10h9v8"/><path d="M4 14h13v4" class="t"/>'
   }
 });
+
+// ===== view2d/model-lines.js =====
+/**
+ * view2d/model-lines.js
+ *
+ * Models drawn on the plan as a drawing, not as an outline: the visible edges of the 3D geometry seen from above
+ * (creases, open edges and the silhouette), with hidden lines removed by a depth raster. The same lines are the
+ * "3D snaps" of the plan: corners, middles and edges of what you see in 3D — an air conditioner, a radiator, a
+ * catalogue model — so they can be measured and drawn to.
+ *
+ * Lines of a catalogue model are made once per model in its own frame and reused by every copy; lines of other
+ * elements are made from their 3D (the same triangles as the 3D export) when a snap asks near them, and kept until
+ * their 3D changes.
+ */
+
+
+
+
+
+
+const ML_CREASE = Math.cos((30 * Math.PI) / 180);
+/** Above this the model is drawn by its outline (the lines would take too long and draw too dense). */
+const ML_MAXTRI = 400000;
+
+/**
+ * Visible lines of a triangle soup seen from above: Float32Array [x1, y1, x2, y2, …] in the soup's own x/y.
+ * cells — resolution of the depth raster along the longer side.
+ */
+function topLines(pos, cells = 640) {
+  const nT = (pos.length / 9) | 0;
+  if (!nT) return new Float32Array(0);
+  const fn = faceNormals(pos);
+  const { gid } = vertGroups(pos);
+  // candidate edges in 3D: creases, open edges, silhouette from above (faces turned up / down)
+  const cand = [];
+  const first = new Map();
+  const push = (va, vb) =>
+    cand.push(pos[va * 3], pos[va * 3 + 1], pos[va * 3 + 2], pos[vb * 3], pos[vb * 3 + 1], pos[vb * 3 + 2]);
+  for (let t = 0; t < nT; t++)
+    for (let k = 0; k < 3; k++) {
+      const va = t * 3 + k,
+        vb = t * 3 + ((k + 1) % 3);
+      let a = gid[va],
+        b = gid[vb];
+      if (a === b) continue;
+      if (a > b) [a, b] = [b, a];
+      const key = a * 67108864 + b;
+      const f = first.get(key);
+      if (f === undefined) first.set(key, t * 4 + k);
+      else if (f >= 0) {
+        const u = f >> 2;
+        const d = fn[u * 3] * fn[t * 3] + fn[u * 3 + 1] * fn[t * 3 + 1] + fn[u * 3 + 2] * fn[t * 3 + 2];
+        // outline from above: a face turned up or down meets a side face (either winding — models come both ways)
+        const sil = Math.abs(fn[u * 3 + 2]) > 0.25 !== Math.abs(fn[t * 3 + 2]) > 0.25;
+        if (d <= ML_CREASE || sil) push(va, vb);
+        first.set(key, -1);
+      }
+    }
+  for (const f of first.values())
+    if (f >= 0) {
+      const t = f >> 2,
+        k = f & 3;
+      push(t * 3 + k, t * 3 + ((k + 1) % 3));
+    }
+  // depth raster from above: the highest surface in every cell
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i],
+      y = pos[i + 1];
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  }
+  const cs = Math.max(0.5, Math.max(x1 - x0, y1 - y0) / cells);
+  const nx = Math.max(1, Math.ceil((x1 - x0) / cs) + 1),
+    ny = Math.max(1, Math.ceil((y1 - y0) / cs) + 1);
+  const Z = new Float32Array(nx * ny).fill(-Infinity);
+  const put = (i, j, z) => {
+    if (i < 0 || j < 0 || i >= nx || j >= ny) return;
+    const o = j * nx + i;
+    if (z > Z[o]) Z[o] = z;
+  };
+  for (let t = 0; t < nT; t++) {
+    const o = t * 9;
+    const ax = (pos[o] - x0) / cs,
+      ay = (pos[o + 1] - y0) / cs,
+      az = pos[o + 2],
+      bx = (pos[o + 3] - x0) / cs,
+      by = (pos[o + 4] - y0) / cs,
+      bz = pos[o + 5],
+      cx = (pos[o + 6] - x0) / cs,
+      cy = (pos[o + 7] - y0) / cs,
+      cz = pos[o + 8];
+    const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    // the vertices always mark their cells (thin or vertical triangles have no cell centre inside)
+    put(Math.round(ax), Math.round(ay), az);
+    put(Math.round(bx), Math.round(by), bz);
+    put(Math.round(cx), Math.round(cy), cz);
+    if (Math.abs(den) < 1e-9) continue;
+    const i0 = Math.max(0, Math.ceil(Math.min(ax, bx, cx))),
+      i1 = Math.min(nx - 1, Math.floor(Math.max(ax, bx, cx))),
+      j0 = Math.max(0, Math.ceil(Math.min(ay, by, cy))),
+      j1 = Math.min(ny - 1, Math.floor(Math.max(ay, by, cy)));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const l1 = ((by - cy) * (i - cx) + (cx - bx) * (j - cy)) / den,
+          l2 = ((cy - ay) * (i - cx) + (ax - cx) * (j - cy)) / den,
+          l3 = 1 - l1 - l2;
+        if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+        put(i, j, l1 * az + l2 * bz + l3 * cz);
+      }
+  }
+  // what of every edge is not under a higher surface
+  const zAt = (x, y) => {
+    const i = Math.round((x - x0) / cs),
+      j = Math.round((y - y0) / cs);
+    let m = -Infinity;
+    // the lowest of the cell and its neighbours: an edge on the border of a higher face stays visible
+    for (let dj = -1; dj <= 1; dj++)
+      for (let di = -1; di <= 1; di++) {
+        const ii = i + di,
+          jj = j + dj;
+        if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) return -Infinity;
+        const z = Z[jj * nx + ii];
+        if (di === 0 && dj === 0) m = z;
+        else if (z < m) m = z;
+      }
+    return m;
+  };
+  const tol = 2 * cs + 1;
+  const out = [];
+  for (let k = 0; k < cand.length; k += 6) {
+    const ax = cand[k],
+      ay = cand[k + 1],
+      az = cand[k + 2],
+      bx = cand[k + 3],
+      by = cand[k + 4],
+      bz = cand[k + 5];
+    const L = Math.hypot(bx - ax, by - ay);
+    if (L < 0.5) continue; // vertical edge: a point from above
+    const n = Math.max(2, Math.ceil(L / (cs * 0.7)) + 1);
+    let run = -1;
+    for (let s = 0; s <= n; s++) {
+      const f = s / n;
+      const vis = s < n && az + (bz - az) * f >= zAt(ax + (bx - ax) * f, ay + (by - ay) * f) - tol;
+      if (vis && run < 0) run = s;
+      else if (!vis && run >= 0) {
+        const f0 = run / n,
+          f1 = Math.min(1, s / n);
+        if ((f1 - f0) * L > 0.5)
+          out.push(ax + (bx - ax) * f0, ay + (by - ay) * f0, ax + (bx - ax) * f1, ay + (by - ay) * f1);
+        run = -1;
+      }
+    }
+  }
+  // the same line seen twice (the top and the bottom edge of a vertical face, touching parts): kept once
+  const seen = new Set(),
+    res = [];
+  const q = v => Math.round(v * 2);
+  for (let i = 0; i < out.length; i += 4) {
+    let a = q(out[i]) + ',' + q(out[i + 1]),
+      b = q(out[i + 2]) + ',' + q(out[i + 3]);
+    const k = a < b ? a + ' ' + b : b + ' ' + a;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    res.push(out[i], out[i + 1], out[i + 2], out[i + 3]);
+  }
+  return new Float32Array(res);
+}
+
+/* ---------- catalogue models: lines in the model's own frame, once per model ---------- */
+const ML_ASSET = new Map(); // asset id → { n: triangles, seg, path }
+let mlQueue = null;
+function soupOf(a) {
+  let n = 0;
+  for (const m of a.meshes) n += m.pos.length;
+  const pos = new Float32Array(n);
+  let o = 0;
+  for (const m of a.meshes) {
+    pos.set(m.pos, o);
+    o += m.pos.length;
+  }
+  return pos;
+}
+/** Lines of a catalogue model (its frame), or null while they are being made / for a too heavy model. */
+function assetLines(a) {
+  if (!a || !a.meshes || !a.meshes.length || a.tris > ML_MAXTRI) return null;
+  const c = ML_ASSET.get(a.id);
+  if (c && c.n === a.tris) return c;
+  // a light model at once; a heavy one after the frame, one per task (the plan keeps its outline meanwhile)
+  if (a.tris <= 30000 || mlQueue === 'sync') return mlMake(a);
+  if (!mlQueue) mlQueue = new Set();
+  if (!mlQueue.has(a.id)) {
+    mlQueue.add(a.id);
+    setTimeout(() => {
+      if (mlQueue instanceof Set) {
+        mlQueue.delete(a.id);
+        if (!mlQueue.size) mlQueue = null;
+      }
+      const b = ASSETS.get(a.id);
+      if (b) {
+        mlMake(b);
+        dirty();
+      }
+    }, 0);
+  }
+  return null;
+}
+function mlMake(a) {
+  let seg;
+  try {
+    seg = topLines(soupOf(a));
+  } catch (err) {
+    console.error(err);
+    seg = new Float32Array(0);
+  }
+  const c = { n: a.tris, seg, path: null };
+  ML_ASSET.set(a.id, c);
+  return c;
+}
+/** Makes every line now (tests, exports). */
+function modelLinesSync(on) {
+  mlQueue = on ? 'sync' : null;
+}
+/** Path2D of the lines in the model's frame (drawing: translate / rotate / scale the context to the element). */
+function assetPath(c) {
+  if (!c.path && typeof Path2D === 'function') {
+    const p = new Path2D();
+    const s = c.seg;
+    for (let i = 0; i < s.length; i += 4) {
+      p.moveTo(s[i], s[i + 1]);
+      p.lineTo(s[i + 2], s[i + 3]);
+    }
+    c.path = p;
+  }
+  return c.path;
+}
+
+/* ---------- snaps: world lines of an element ---------- */
+/** Kinds whose 3D is offered for snapping (walls, slabs, wires, pipes, ducts and drafting have their own points). */
+const M3_T = new Set([
+  'inst',
+  'fix',
+  'ac',
+  'acl',
+  'hvu',
+  'rad',
+  'dev',
+  'cab',
+  'kitchen',
+  'kisland',
+  'casework',
+  'tv',
+  'mirror',
+  'track',
+  'tmod',
+  'curtain',
+  'glass',
+  'col',
+  'beam',
+  'stair',
+  'rail',
+  'molding',
+  'gbody'
+]);
+const ML_ENT = new WeakMap(); // element → { k, seg }
+/** World lines of an element seen from above (Float64Array [x1, y1, x2, y2 …]) or null. */
+function entLines(e) {
+  if (!M3_T.has(e.type)) return null;
+  if (e.type === 'inst') {
+    const c = assetLines(ASSETS.get(e.asset));
+    if (!c) return null;
+    const m = ML_ENT.get(e);
+    const k = c.n + '|' + e.p.x + '|' + e.p.y + '|' + (e.rot || 0) + '|' + e.asset;
+    if (m && m.k === k) return m.seg;
+    const r = e.rot || 0,
+      co = Math.cos(r),
+      si = Math.sin(r),
+      s = c.seg,
+      w = new Float64Array(s.length);
+    for (let i = 0; i < s.length; i += 2) {
+      w[i] = e.p.x + s[i] * co - s[i + 1] * si;
+      w[i + 1] = e.p.y + s[i] * si + s[i + 1] * co;
+    }
+    ML_ENT.set(e, { k, seg: w });
+    return w;
+  }
+  let k;
+  try {
+    k = key3(e);
+  } catch (err) {
+    k = null;
+  }
+  if (k == null) return null;
+  // the same key the 3D window rebuilds by: the lines change exactly when the element's 3D does
+  const m = ML_ENT.get(e);
+  if (m && m.k === k) return m.seg;
+  let seg = null;
+  if (!sceneState.raw)
+    try {
+      let parts = entTris(e);
+      // see-through parts (service zones, glass) neither hide nor draw — unless the element is only glass
+      const solid = parts.filter(p => p.op >= 0.5);
+      if (solid.length) parts = solid;
+      let n = 0;
+      for (const p of parts) n += p.pos.length;
+      if (n && n / 9 <= ML_MAXTRI) {
+        const pos = new Float32Array(n);
+        let o = 0;
+        for (const p of parts) {
+          pos.set(p.pos, o);
+          o += p.pos.length;
+        }
+        seg = Float64Array.from(topLines(pos, 400));
+      }
+    } catch (err) {
+      seg = null;
+    }
+  ML_ENT.set(e, { k, seg });
+  return seg;
+}
 
 })();
 </script>
