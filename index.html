@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.36';
+const APP_VER = '59.37';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -31142,6 +31142,8 @@ function stretchLights(e) {
 
 
 
+
+
 /* ---------- transition elements: plinths, shadow gaps, cornices ---------- */
 const TRIMK = {
   plinth: { n: 'Плинтус напольный', zone: 'floor', prof: 'tr_plinth', bar: 2400 },
@@ -31434,6 +31436,78 @@ function trimFree(n, e) {
 function trimLen(e) {
   return plen(trimPath(e));
 }
+/**
+ * The walls of one face run from wall w (side sd): along the joins end to end, both ways — at each end the single
+ * joined wall continues the face on the same hand (a wall met at its start keeps the side, at its end flips it).
+ * Stops at a free end, a T or cross join, or back at the start.
+ */
+function trimChain(w, sd) {
+  const J = joinsAll();
+  const out = [[w, sd]],
+    seen = new Set([w.id]);
+  for (const dir of [1, 0]) {
+    let cw = w,
+      cs = sd,
+      end = dir;
+    for (let k = 0; k < 60; k++) {
+      const E_ = J.get(cw.id) && J.get(cw.id).ends[end];
+      if (!E_ || E_.parts.length !== 1) break;
+      const o = E_.parts[0].o,
+        oe = E_.parts[0].end;
+      if (seen.has(o.id)) break;
+      // travelling forward off cw's end 1 / backward off its end 0: o is entered at oe
+      const os = (end === 1) === (oe === 0) ? cs : -cs;
+      seen.add(o.id);
+      if (dir === 1) out.push([o, os]);
+      else out.unshift([o, os]);
+      cw = o;
+      cs = os;
+      end = oe === 0 ? 1 : 0;
+    }
+  }
+  return out;
+}
+/**
+ * Adds trims of a kind along the face of wall w (side sd) — the whole face, a floor trim broken at the doors; a
+ * piece already there (same kind, wall, side and span) is not doubled. tpl — the fields of the new trims.
+ */
+function trimWallAdd(kind, w, sd, tpl) {
+  const wi = wallInfo(w);
+  const F = facePath(w, sd, { ends: true });
+  let segs = [[F.s0, F.s1]];
+  if (TRIMK[kind].zone === 'floor')
+    for (const o of wi.ops.filter(o => o.o.type === 'door'))
+      segs = segs.flatMap(([a, b]) =>
+        o.s1 <= a || o.s0 >= b
+          ? [[a, b]]
+          : [
+              [a, o.s0],
+              [o.s1, b]
+            ].filter(([x, y]) => y - x > 30)
+      );
+  const made = [];
+  for (const [a, b] of segs) {
+    const W = { id: w.id, side: sd, s0: Math.round(a), s1: Math.round(b), w0: a <= F.s0 + 0.5, w1: b >= F.s1 - 0.5 };
+    if (
+      S.ents.some(
+        x =>
+          x.type === 'trim' &&
+          x.kind === kind &&
+          x.wall &&
+          x.wall.id === w.id &&
+          x.wall.side === sd &&
+          Math.abs(x.wall.s0 - W.s0) < 5 &&
+          Math.abs(x.wall.s1 - W.s1) < 5
+      )
+    )
+      continue;
+    const e = { ...tpl, wall: W, layer: ensureLayer('Переходные элементы') };
+    e.pts = (trimWallPath(e) || []).map(q => ({ ...q }));
+    if (F.bentAt(a, b)) e.flex = true;
+    made.push(addEnt(e));
+  }
+  return made;
+}
 /** True when the wall end of a wall trim is a rounding (the trim bends, no corner piece). */
 function trimRound(e, end) {
   const w = byId(e.wall.id);
@@ -31559,7 +31633,28 @@ XT.trim = {
         ]
       ]
     ]) +
-    `<div class="btnrow" style="grid-column:1/-1"><button class="btn" data-xa="profiles">Сечения (DXF)…</button></div>`,
+    `<div class="btnrow" style="grid-column:1/-1">${e.wall ? '<button class="btn pri" data-xa="trimchain" title="Поставить такой же элемент на соседние стены, соединённые с этой концами (дуги, скругления, углы)">Продолжить по соседним стенам</button>' : ''}<button class="btn" data-xa="profiles">Сечения (DXF)…</button></div>`,
+  action(e, a) {
+    if (a !== 'trimchain' || !e.wall) return;
+    const w = byId(e.wall.id);
+    if (!w) return;
+    pushUndo();
+    let n = 0;
+    const tpl = {
+      type: 'trim',
+      kind: e.kind,
+      prof: e.prof,
+      zone: e.zone,
+      z: e.z,
+      side: 'L',
+      closed: false,
+      pts: [],
+      color: e.color
+    };
+    for (const [ww, sd] of trimChain(w, e.wall.side)) n += trimWallAdd(e.kind, ww, sd, tpl).length;
+    changed();
+    log(n ? `Добавлено по соседним стенам: ${n}` : 'Соседние стены уже с этим элементом');
+  },
   onSet(e, p, v) {
     if (p === 'kind') {
       const k = TRIMK[v];
@@ -96678,7 +96773,6 @@ function odAxis(e) {
 
 
 
-
 /* ---------- commands for the new elements ---------- */
 function polyCmd(name, label, mk, opts = {}) {
   const pts = [];
@@ -97838,33 +97932,18 @@ function mkTrim() {
     };
   };
   // along a wall: the trim keeps its wall and follows its face — straight, curved, around the roundings, on the
-  // finish; a floor trim is broken at the doors
+  // finish; it goes on along the walls joined end to end on the same side (an arc wall at a corner, the next wall
+  // round a rounded corner), so one click runs the whole face of the room; a floor trim is broken at the doors
   const fromWall = p => {
-    const w = wallAt(p);
-    if (!w) return 0;
-    const wi = wallInfo(w);
-    const sd = wi.arc ? (arcLocal(wi.arc, p)[1] >= 0 ? 1 : -1) : dot(sub(p, w.a), wi.n) >= 0 ? 1 : -1;
-    const F = facePath(w, sd, { ends: true });
-    let segs = [[F.s0, F.s1]];
-    if (TRIMK[kind].zone === 'floor')
-      for (const o of wi.ops.filter(o => o.o.type === 'door'))
-        segs = segs.flatMap(([a, b]) =>
-          o.s1 <= a || o.s0 >= b
-            ? [[a, b]]
-            : [
-                [a, o.s0],
-                [o.s1, b]
-              ].filter(([x, y]) => y - x > 30)
-        );
-    for (const [a, b] of segs) {
-      const W = { id: w.id, side: sd, s0: Math.round(a), s1: Math.round(b), w0: a <= F.s0 + 0.5, w1: b >= F.s1 - 0.5 };
-      const e = { ...E([], 'L'), wall: W, layer: ensureLayer('Переходные элементы') };
-      e.pts = (trimWallPath(e) || []).map(q => ({ ...q }));
-      if (F.bentAt(a, b)) e.flex = true;
-      addEnt(e);
-    }
-    return segs.length;
+    const w0 = wallAt(p);
+    if (!w0) return 0;
+    const wi0 = wallInfo(w0);
+    const sd0 = wi0.arc ? (arcLocal(wi0.arc, p)[1] >= 0 ? 1 : -1) : dot(sub(p, w0.a), wi0.n) >= 0 ? 1 : -1;
+    let n = 0;
+    for (const [w, sd] of trimChain(w0, sd0)) n += trimOnWall(w, sd);
+    return n;
   };
+  const trimOnWall = (w, sd) => trimWallAdd(kind, w, sd, E([], 'L')).length;
   let wallMode = false;
   return {
     name: 'trim',
