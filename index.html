@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.39';
+const APP_VER = '59.42';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -13504,6 +13504,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -14427,6 +14428,28 @@ function mkDuct(opt = {}) {
     flow = mkDuct.flow || 100,
     ask = null;
   const full = () => ({ shape: sec.shape, d: sec.d || 160, w: sec.w || 200, hh: sec.hh || 100 });
+  // the next leg turns only by what the elbows of the material make (one elbow or two in a row)
+  const ductSnap = p => {
+    if (flex || pts.length < 2) return p;
+    let u = null;
+    for (let i = pts.length - 1; i > 0; i--) {
+      const v = sub(pts[i], pts[i - 1]);
+      if (Math.hypot(v.x, v.y) > 1) {
+        u = nrm(v);
+        break;
+      }
+    }
+    if (!u) return p;
+    const last = pts[pts.length - 1],
+      v = sub(p, last);
+    if (Math.hypot(v.x, v.y) < 1) return p;
+    const lib = ductLib({ mat: mkDuct.pvc ? PVC_MAT : DUCT_MATS[0], flex });
+    const sA = Math.atan2(u.x * v.y - u.y * v.x, u.x * v.x + u.y * v.y) / D2R;
+    const t = ductSnapTurn(lib, Math.abs(sA));
+    const a = (sA < 0 ? -1 : 1) * t * D2R;
+    const dir = P(u.x * Math.cos(a) - u.y * Math.sin(a), u.x * Math.sin(a) + u.y * Math.cos(a));
+    return add(last, mul(dir, Math.max(1, dot(v, dir))));
+  };
   // every point keeps the height it was put at: a change of height is a vertical step at that point
   const put = (p, zz) => {
     const q = P(p.x, p.y);
@@ -14586,7 +14609,7 @@ function mkDuct(opt = {}) {
         put(q, zs);
         return fin();
       }
-      if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) put(p, z);
+      if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) put(ductSnap(p), z);
     },
     onEnter() {
       if (ask) {
@@ -14600,7 +14623,7 @@ function mkDuct(opt = {}) {
         drawDuct(
           {
             type: 'duct',
-            pts: ductRisers(pts.concat([Object.assign(P(cur.x, cur.y), { z })])),
+            pts: ductRisers(pts.concat([Object.assign(ductSnap(P(cur.x, cur.y)), { z })])),
             ...full(),
             z,
             sys,
@@ -19100,6 +19123,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19315,6 +19339,7 @@ function key3Base(e) {
         e.flex || 0,
         e.tap || 0,
         e.mat || 0,
+        e.type === 'duct' ? JSON.stringify(ductWallCrossings(e).map(c => [c.p, c.kind, c.depth])) : 0,
         e.type === 'wire' ? [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable] : 0,
         e.group != null ? groupOf(e.group).col : 0,
         e.sys ? sysOf(e.sys).col : 0,
@@ -19559,6 +19584,11 @@ function build3(e) {
         }
       });
       ductJoints(e, mb, col, W, Hh);
+      try {
+        penetrationMesh(mb, e);
+      } catch (err) {
+        console.error(err);
+      }
       if (isPvc(e)) {
         // the connectors of the 2 m channels: a sleeve a little larger than the channel
         mb.tag('Соединитель каналов ПВХ');
@@ -24910,6 +24940,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -25296,11 +25327,14 @@ function renderSpecLevel() {
           r.q++;
           r.ids.push(e.id);
         });
-      for (const a of e.pts.some(p => p.z != null) ? ductBends3(e) : ductBends(e))
-        put(bends, st + a, { name: `Отвод ${a}° ${st}`, u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(e.id);
-        });
+      // every turn made of the real elbows of the material
+      const lib = ductLib(e);
+      for (const t of ductTurns(e))
+        for (const a of (ductElbows(lib, t.deg, t.vertical) || {}).c || [])
+          put(bends, st + a, { name: `Отвод ${a}° ${st}`, u: 'шт' }, r => {
+            r.q++;
+            r.ids.push(e.id);
+          });
     } else if (e.type === 'inst') {
       const a = ASSETS.get(e.asset);
       if (!a) continue;
@@ -53572,6 +53606,7 @@ XT.node = {
 
 
 
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -53980,6 +54015,31 @@ function validate() {
     for (const e of S.ents) {
       if (e.type === 'hvu' && visible(e)) for (const [l, m] of hvChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
       if (e.type === 'duct' && e.flex && visible(e)) for (const [l, m] of flexChecks(e)) add_(e, l, m, e.pts[0]);
+      // a duct dipping under a beam: noted (the plan keeps the drawn route)
+      if (e.type === 'duct' && visible(e)) {
+        const raw = ductPath3raw(e),
+          q = ductPath3(e);
+        if (q.length > raw.length) {
+          const zMin = Math.min(...q.map(x => x[2]));
+          add_(
+            e,
+            'info',
+            `Воздуховод обходит ригель снизу: опуск оси до +${Math.round(zMin)} (4 вертикальных колена 90°)`,
+            P(q[1][0], q[1][1])
+          );
+        }
+      }
+      // a rigid duct turns only by its elbows
+      if (e.type === 'duct' && !e.flex && visible(e))
+        for (const t of ductBadTurns(e)) {
+          const lib = ductLib(e);
+          add_(
+            e,
+            'warn',
+            `Поворот ${Math.round(t.deg)}° не собирается из колен ${lib.n} (${(t.vertical && lib.vang ? lib.vang : lib.ang).join('°, ')}°) — поправьте трассу`,
+            t.p
+          );
+        }
     }
     for (const e of S.ents)
       if (e.type === 'stair') for (const [l, m] of stairChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
@@ -66664,7 +66724,123 @@ function hvBuild(e, mb) {
 
 /* ---------- flexible ducts ---------- */
 /** 3D path of a duct: per-point z (flexible connections) or the duct's axis height. */
-const ductPath3 = e => e.pts.map(p => [p.x, p.y, p.z != null ? +p.z : +e.z || 0]);
+const ductPath3 = e => ductDetour(e, ductPath3raw(e));
+/** The path as drawn (no detours). */
+const ductPath3raw = e => e.pts.map(p => [p.x, p.y, p.z != null ? +p.z : +e.z || 0]);
+/*
+ * Detours under beams: a level leg whose top would cut into a beam (its bottom lower than the top of the duct plus
+ * a gap) dips under it — down by 90° elbows before the beam, along under it, up after it, at a distance that leaves
+ * room for the elbows. The plan keeps the drawn route; the 3D, the length, the elbows and the clashes use the path
+ * with the detours. Kept per document version.
+ */
+const DETOUR = new WeakMap();
+const DT_GAP = 30;
+function ductDetour(e, q) {
+  if (!S.ents.some(b => b.type === 'beam')) return q;
+  const k =
+    documentState.docVer +
+    '|' +
+    JSON.stringify(e.pts) +
+    '|' +
+    e.z +
+    '|' +
+    e.w +
+    '|' +
+    e.hh +
+    '|' +
+    e.d +
+    '|' +
+    (e.ins || 0);
+  const m = DETOUR.get(e);
+  if (m && m.k === k) return m.q;
+  const H = (e.shape === 'rect' ? +e.hh : +e.d) + 2 * (+e.ins || 0),
+    W = (e.shape === 'rect' ? +e.w : +e.d) + 2 * (+e.ins || 0);
+  const beams = S.ents
+    .filter(b => b.type === 'beam' && visible(b))
+    .map(b => {
+      let poly = null;
+      try {
+        poly = XT.beam.poly(b);
+      } catch (err) {
+        poly = null;
+      }
+      return poly && poly.length > 2 ? { poly, zb: (+b.zt || S.ceil) - (+b.h || 0) } : null;
+    })
+    .filter(Boolean);
+  const out = [q[0]];
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1],
+      b = q[i];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const level = Math.abs(b[2] - a[2]) < 1 && L > 1;
+    const iv = [];
+    if (level)
+      for (const B of beams) {
+        if (a[2] + H / 2 + DT_GAP <= B.zb) continue; // passes under it anyway
+        // the part of the leg over the beam (its footprint widened by half the duct width)
+        const t = segPolyInterval(a, b, B.poly, W / 2);
+        if (!t) continue;
+        const room = (H / 2 + 60) / L;
+        if (t[0] - room <= 0 || t[1] + room >= 1) continue; // the end of the leg is at the beam: left to the checks
+        iv.push([t[0] - room, t[1] + room, B.zb - H / 2 - DT_GAP]);
+      }
+    iv.sort((x, y) => x[0] - y[0]);
+    // overlapping detours merge: one dip under both beams at the lower height
+    const mg = [];
+    for (const x of iv) {
+      const l = mg[mg.length - 1];
+      if (l && x[0] <= l[1]) {
+        l[1] = Math.max(l[1], x[1]);
+        l[2] = Math.min(l[2], x[2]);
+      } else mg.push(x.slice());
+    }
+    const P3 = (t, z) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z];
+    for (const [t0, t1, z] of mg) out.push(P3(t0, a[2]), P3(t0, z), P3(t1, z), P3(t1, a[2]));
+    out.push(b);
+  }
+  DETOUR.set(e, { k, q: out });
+  return out;
+}
+/** The parameter interval [t0, t1] of segment a–b inside a convex polygon grown by r (null if it misses). */
+function segPolyInterval(a, b, poly, r) {
+  const c = poly.reduce((s, p) => ({ x: s.x + p.x / poly.length, y: s.y + p.y / poly.length }), { x: 0, y: 0 });
+  // grow the polygon by r about its centre (beams are rectangles: enough)
+  const G = poly.map(p => {
+    const dx = p.x - c.x,
+      dy = p.y - c.y,
+      l = Math.hypot(dx, dy) || 1;
+    return { x: p.x + (dx / l) * r * Math.SQRT2, y: p.y + (dy / l) * r * Math.SQRT2 };
+  });
+  let t0 = 0,
+    t1 = 1;
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1];
+  // Cyrus–Beck clipping against the edges (either winding)
+  let area = 0;
+  for (let i = 0; i < G.length; i++) {
+    const p = G[i],
+      q = G[(i + 1) % G.length];
+    area += p.x * q.y - q.x * p.y;
+  }
+  const sg = area > 0 ? 1 : -1;
+  for (let i = 0; i < G.length; i++) {
+    const p = G[i],
+      q = G[(i + 1) % G.length];
+    const nx = sg * (q.y - p.y),
+      ny = -sg * (q.x - p.x); // outward normal
+    const num = nx * (a[0] - p.x) + ny * (a[1] - p.y),
+      den = nx * dx + ny * dy;
+    if (Math.abs(den) < 1e-12) {
+      if (num > 0) return null;
+      continue;
+    }
+    const t = -num / den;
+    if (den < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return null;
+  }
+  return t1 - t0 > 1e-6 ? [t0, t1] : null;
+}
 function ductLen3(e) {
   const q = ductPath3(e);
   let L = 0;
@@ -135229,6 +135405,218 @@ function buildLoads(out) {
   }
 }
 
+// ===== mep/hvac/duct-fittings.js =====
+/**
+ * mep/hvac/duct-fittings.js
+ *
+ * Real duct fittings: every material has its catalogue of elbows, and a turn of a duct is made only of them (like
+ * the sewer pipes): the duct command snaps the next leg to a turn that the elbows can make (one elbow or two in a
+ * row), the specification counts the elbows of each turn, and a turn that no set of elbows makes (71°, say — a
+ * route edited by hand) is reported by the checks. Flexible ducts bend freely.
+ * Flat PVC channels: 45° and 90° elbows lying flat (horizontal), 90° over the narrow side (vertical).
+ */
+
+
+
+
+const DLIB = {
+  galv: { t: 'rigid', n: 'оцинкованная сталь', ang: [15, 30, 45, 60, 90] },
+  pvcRound: { t: 'rigid', n: 'ПВХ круглый', ang: [15, 30, 45, 90] },
+  pvcFlat: { t: 'rigid', n: 'ПВХ плоский канал', ang: [45, 90], vang: [90] },
+  flex: { t: 'flex', n: 'гибкий', ang: [90] }
+};
+/** The catalogue of a duct (by its material). */
+function ductLib(e) {
+  if (e.flex || /Гибкий|Полужёсткий/.test(e.mat || '')) return DLIB.flex;
+  if (e.mat === PVC_MAT) return DLIB.pvcFlat;
+  if (/ПВХ/.test(e.mat || '')) return DLIB.pvcRound;
+  return DLIB.galv;
+}
+/** The nearest turn the catalogue makes (one or two elbows), degrees. */
+function ductSnapTurn(lib, deg) {
+  return lib.t === 'flex' ? deg : snapTurn({ t: 'sock', ang: lib.ang }, deg);
+}
+/** Elbows of a turn of `deg` degrees: { c: [angles], err } (vertical — for the turns over the narrow side). */
+function ductElbows(lib, deg, vertical) {
+  if (lib.t === 'flex') return { c: [], err: 0 };
+  const A = vertical && lib.vang ? lib.vang : lib.ang;
+  return decompose({ t: 'sock', ang: A }, deg);
+}
+
+/** The turns of a duct path: [{ deg (exact), vertical (over the narrow side / up–down), p (plan point) }]. */
+function ductTurns(e) {
+  const q = ductPath3(e),
+    out = [];
+  const seg = [];
+  for (let i = 1; i < q.length; i++) {
+    const v = [q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1], q[i][2] - q[i - 1][2]];
+    const L = Math.hypot(...v);
+    if (L > 1) seg.push({ v: v.map(x => x / L), at: q[i - 1], end: q[i] });
+  }
+  for (let i = 1; i < seg.length; i++) {
+    const u = seg[i - 1].v,
+      v = seg[i].v;
+    const cs = Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2]));
+    const deg = (Math.acos(cs) * 180) / Math.PI;
+    if (deg < 3) continue;
+    out.push({
+      deg,
+      vertical: !(Math.abs(u[2]) < 0.2 && Math.abs(v[2]) < 0.2),
+      p: { x: seg[i].at[0], y: seg[i].at[1] }
+    });
+  }
+  return out;
+}
+/** Turns no set of the catalogue's elbows makes (more than 3° off): for the checks. */
+function ductBadTurns(e) {
+  const lib = ductLib(e);
+  if (lib.t === 'flex') return [];
+  return ductTurns(e)
+    .map(t => ({ ...t, E: ductElbows(lib, t.deg, t.vertical) }))
+    .filter(t => !t.E || t.E.err > 3);
+}
+
+// ===== mep/hvac/duct-penetrations.js =====
+/**
+ * mep/hvac/duct-penetrations.js
+ *
+ * Where a duct passes a wall. Block and monolithic walls (concrete, aerated / gas blocks, brick, gypsum blocks,
+ * stone): a hole — diamond core drilling for a round duct, a diamond-cut (or chased) rectangular opening for a
+ * rectangular one, 20 mm larger than the duct with its insulation. Framed walls and constructions (Knauf partitions,
+ * wall linings on a frame): the frame goes round the duct — a framed opening of PN / PS profiles, 20 mm larger.
+ * The gap between the duct and the hole / the frame is filled with mounting foam (volume counted). The 3D shows the
+ * foam ring and, in a framed wall, the profile frame.
+ */
+
+
+
+
+
+
+const PEN_GAP = 20;
+/** How a wall is passed: 'frame' (a framed wall or construction), 'core' (block / monolithic), 'other'. */
+function wallPassKind(w) {
+  const t = typeOf(w);
+  if (!t) return 'core';
+  const C = computeType(t);
+  if (t.kind === 'knauf' || (C.info && C.info.sys)) return 'frame';
+  const cls = (C.layers || []).map(l => l.cls);
+  if (cls.some(c => ['conc', 'aer', 'block', 'brick', 'pgp'].includes(c))) return 'core';
+  if (cls.some(c => c === 'gkl') && cls.some(c => c === 'ins' || c === 'air')) return 'frame';
+  return 'core';
+}
+function wallMatName(w) {
+  const t = typeOf(w);
+  const ms = t
+    ? (computeType(t).layers || []).filter(l => ['conc', 'aer', 'block', 'brick', 'pgp'].includes(l.cls)).map(l => l.m)
+    : [];
+  return ms[0] || 'кладка';
+}
+/** Crossings of duct e with the walls: [{ w, p, z, kind, round, D | W×H (hole), depth, foamL }]. */
+function ductWallCrossings(e) {
+  const q = ductPath3(e);
+  const ins = +e.ins || 0;
+  const round = e.shape !== 'rect';
+  const W = (round ? +e.d : +e.w) + 2 * ins,
+    H = (round ? +e.d : +e.hh) + 2 * ins;
+  const out = [];
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !visible(w) || !w.a || !w.b) continue;
+    const w0 = +w.z || 0,
+      w1 = w0 + (+w.h || S.ceil || 2700);
+    for (let i = 1; i < q.length; i++) {
+      const a = q[i - 1],
+        b = q[i];
+      if (Math.abs(b[2] - a[2]) > 1) continue;
+      if (a[2] + H / 2 <= w0 || a[2] - H / 2 >= w1) continue;
+      const p = segSeg(P(a[0], a[1]), P(b[0], b[1]), w.a, w.b);
+      if (!p || out.some(x => x.w === w && dist(x.p, p) < 150)) continue;
+      // through a door / window opening: nothing to make
+      if (
+        S.ents.some(
+          o =>
+            (o.type === 'door' || o.type === 'window' || o.type === 'opening') &&
+            o.host === w.id &&
+            (() => {
+              const I = opInfo(o);
+              return I && inPoly(p, I.rect);
+            })()
+        )
+      )
+        continue;
+      const kind = wallPassKind(w);
+      const depth = +w.th || 100;
+      const hole = round ? { D: Math.round(W + PEN_GAP) } : { W: Math.round(W + PEN_GAP), H: Math.round(H + PEN_GAP) };
+      const holeA = round ? (Math.PI * (W + PEN_GAP) ** 2) / 4 : (W + PEN_GAP) * (H + PEN_GAP);
+      const ductA = round ? (Math.PI * W * W) / 4 : W * H;
+      out.push({
+        w,
+        p,
+        z: a[2],
+        u: [
+          (b[0] - a[0]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1),
+          (b[1] - a[1]) / (Math.hypot(b[0] - a[0], b[1] - a[1]) || 1)
+        ],
+        kind,
+        round,
+        hole,
+        depth,
+        mat: kind === 'core' ? wallMatName(w) : '',
+        foamL: Math.round((((holeA - ductA) * depth) / 1e6) * 10) / 10
+      });
+    }
+  }
+  return out;
+}
+/** Specification rows of the passes of duct e: [{ k, name, u, q }]. */
+function penetrationRows(e) {
+  const rows = [];
+  const add = (k, name, q, u = 'шт') => {
+    const r = rows.find(x => x.k === k);
+    if (r) r.q = Math.round((r.q + q) * 10) / 10;
+    else rows.push({ k, name, q, u });
+  };
+  for (const c of ductWallCrossings(e)) {
+    const hs = c.round ? `Ø${c.hole.D}` : `${c.hole.W}×${c.hole.H}`;
+    if (c.kind === 'frame')
+      add(`pf${hs}`, `Обход в каркасе стены: обрамление проёма ${hs} мм профилем ПН/ПС (вокруг воздуховода)`, 1);
+    else if (c.round)
+      add(`pd${hs}${c.depth}`, `Алмазное бурение отверстия ${hs} мм, глубина ${c.depth} мм (${c.mat})`, 1);
+    else
+      add(
+        `pc${hs}${c.depth}`,
+        `Вырезка проёма ${hs} мм алмазной резкой (или штроба), глубина ${c.depth} мм (${c.mat})`,
+        1
+      );
+    add(
+      'foam',
+      'Пена монтажная для заполнения зазоров проходок (по объёму, с запасом 50%)',
+      Math.max(0.1, c.foamL * 1.5),
+      'л'
+    );
+  }
+  return rows;
+}
+/** 3D of the passes: the foam ring in the wall and, in a framed wall, the profile frame. mb in world coords. */
+function penetrationMesh(mb, e) {
+  for (const c of ductWallCrossings(e)) {
+    const half = c.depth / 2 + 2;
+    const A = [c.p.x - c.u[0] * half, c.p.y - c.u[1] * half, c.z],
+      B = [c.p.x + c.u[0] * half, c.p.y + c.u[1] * half, c.z];
+    const Wd = c.round ? c.hole.D : c.hole.W,
+      Hd = c.round ? c.hole.D : c.hole.H;
+    mb.tag(
+      `Проходка: пена монтажная (${c.kind === 'frame' ? 'обход в каркасе' : c.round ? 'алмазное бурение' : 'вырезка'})`
+    );
+    if (c.round) mb.tube(A, B, Wd / 2, '#e8d48a', 24);
+    else mb.obox(A, B, Wd, Hd, '#e8d48a');
+    if (c.kind === 'frame') {
+      mb.tag('Проходка: обрамление профилем');
+      mb.obox(A, B, Wd + 2 * 27, Hd + 2 * 27, '#b9bec4');
+    }
+  }
+}
+
 // ===== mep/hvac/hvac-clash.js =====
 /**
  * mep/hvac/hvac-clash.js
@@ -135238,6 +135626,7 @@ function buildLoads(out) {
  * from the same geometry (fittings, insulation, hangers, wall penetrations, flexible connectors).
  * Duct z is the AXIS height (build3 draws the section centred on z); units are mm.
  */
+
 
 
 
@@ -135593,7 +135982,7 @@ function hcFind() {
           p,
           z: Math.round(z),
           hole,
-          msg: `Воздуховод ${A.label} проходит через ${warn ? (f.load ? 'несущую' : 'наружную') + ' стену' : 'стену'} №${w.id}: гильза/проём ${hole}${warn ? ', отверстие согласовать с конструктором' : ''}`
+          msg: `Воздуховод ${A.label} проходит через ${warn ? (f.load ? 'несущую' : 'наружную') + ' стену' : 'стену'} №${w.id}: ${wallPassKind(w) === 'frame' ? 'обход в каркасе' : e.shape === 'rect' ? 'вырезка проёма' : 'алмазное бурение'} ${hole}${warn ? ', отверстие согласовать с конструктором' : ''}`
         });
       }
     }
@@ -135696,8 +136085,8 @@ function hvacQty() {
         put('Фасонные части', `Заглушка ${st} · ${sy}`, 'шт', 1, [e.id]);
     }
   }
-  for (const r of hvacClashes().filter(r => r.kind === 'wall'))
-    put('Проходки', `Проход через стену: гильза/проём ${r.hole}`, 'шт', 1, [r.a]);
+  // passes through walls: a hole drilled / cut in a block or monolithic wall, a framed opening in a framed one, foam
+  for (const e of ds) for (const r of penetrationRows(e)) put('Проходки', r.name, r.u, r.q, [e.id]);
   for (const e of vis) {
     if (e.type === 'dev' && (e.kind === 'vunit' || e.kind === 'vfan'))
       put('Гибкие вставки', `Гибкая вставка ${hcSizeTxt(e.size || DEVK[e.kind].size)} (виброизолирующая)`, 'шт', 2, [
@@ -135730,6 +136119,7 @@ function hcUnitNear(vis, p) {
  * Horizontal elbow — the bend lies in the plane of the wide side (the channel turns lying flat); vertical — the
  * channel turns over its narrow side (goes up or down).
  */
+
 
 
 
@@ -135832,12 +136222,16 @@ function pvcSpec(e) {
   const B = pvcBars(e);
   add('bar' + st, `Канал ПВХ плоский ${st}, L = 2 м`, B.bars);
   add('jn' + st, `Соединитель каналов ПВХ ${st}`, B.joints);
-  for (const b of pvcBends(e))
-    add(
-      `el${b.kind}${b.ang}${st}`,
-      `Колено ${b.kind === 'h' ? 'горизонтальное' : 'вертикальное'} ${b.ang}° ПВХ ${st}`,
-      1
-    );
+  // each turn made of the real elbows (45° / 90° lying flat, 90° over the narrow side)
+  for (const t of ductTurns(e)) {
+    const E = ductElbows(DLIB.pvcFlat, t.deg, t.vertical);
+    for (const a of (E && E.c) || [])
+      add(
+        `el${t.vertical ? 'v' : 'h'}${a}${st}`,
+        `Колено ${t.vertical ? 'вертикальное' : 'горизонтальное'} ${a}° ПВХ ${st}`,
+        1
+      );
+  }
   const z = +e.z || 0;
   for (const id of [e.from, e.to]) {
     const D = roundAt(id);
