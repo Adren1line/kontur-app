@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.34';
+const APP_VER = '59.35';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -31098,6 +31098,8 @@ function stretchLights(e) {
 
 
 
+
+
 /* ---------- transition elements: plinths, shadow gaps, cornices ---------- */
 const TRIMK = {
   plinth: { n: 'Плинтус напольный', zone: 'floor', prof: 'tr_plinth', bar: 2400 },
@@ -31349,13 +31351,53 @@ PK.trim = {
   n: 'Переходный элемент',
   an: [['W', 'Прилегание', 'угол прилегания к стене и полу (у потолочных — к стене и потолку)']]
 };
+/* A trim made along a wall keeps its wall: e.wall = { id, side, s0, s1, w0, w1 } — the piece s0…s1 of the face
+   (developed: straight face, arc, roundings) of that side; w0 / w1 — the end goes on around the rounding at the
+   wall end (or to the true end of the face at a corner). The path is rebuilt from the wall, so it follows the wall
+   when it is edited, bends with a curved wall and a rounded corner, and sits on the finish (panels, tiles) of the
+   wall at the trim's height. A grip edit or a move turns it into a free polyline. */
+const TRIMW = new WeakMap();
+function trimWallPath(e) {
+  const W = e.wall,
+    w = W && byId(W.id);
+  if (!w || w.type !== 'wall') return null;
+  const key = documentState.docVer + '|' + JSON.stringify(W) + '|' + e.z + '|' + e.zone;
+  const m = TRIMW.get(e);
+  if (m && m.key === key) return m.pts;
+  const F = facePath(w, W.side, { ends: true });
+  const a = W.w0 ? F.s0 : Math.max(F.s0, +W.s0),
+    b = W.w1 ? F.s1 : Math.min(F.s1, +W.s1);
+  const zc = e.zone === 'ceil' ? (+e.z || S.ceil) - 40 : e.zone === 'wall' ? +e.z || 900 : 40;
+  const ss = faceSamples(F, a, b);
+  // the corners of the face (the ends of the straight part) stay exact
+  const pts = ss.map(s => F.at(s, finAt(w, W.side, s, zc)));
+  const out = W.side > 0 ? pts : pts.reverse();
+  TRIMW.set(e, { key, pts: out, bent: F.bentAt(a, b) });
+  return out;
+}
+function trimPts(e) {
+  return (e.wall && trimWallPath(e)) || e.pts;
+}
 function trimPath(e) {
-  const p = e.pts.slice();
+  const p = trimPts(e).slice();
   if (e.closed && p.length > 2) p.push(p[0]);
   return p;
 }
+/** Detaches a wall trim (its current path becomes a free polyline). */
+function trimFree(n, e) {
+  if (!e.wall) return;
+  n.pts = trimPts(e).map(p => ({ ...p }));
+  delete n.wall;
+}
 function trimLen(e) {
   return plen(trimPath(e));
+}
+/** True when the wall end of a wall trim is a rounding (the trim bends, no corner piece). */
+function trimRound(e, end) {
+  const w = byId(e.wall.id);
+  if (!w) return false;
+  const F = facePath(w, e.wall.side, { ends: true });
+  return end ? F.s1 > F.xb + 1 : F.s0 < F.xa - 1;
 }
 XT.trim = {
   layer: 'Переходные элементы',
@@ -31365,12 +31407,23 @@ XT.trim = {
     for (let i = 0; i < p.length - 1; i++) r.push({ t: 's', a: p[i], b: p[i + 1] });
     return r;
   },
-  keys: e => e.pts.map(p => ({ p, k: 'end' })),
-  sample: e => e.pts,
-  map: (n, e, f) => {
-    n.pts = e.pts.map(f);
+  keys: e => {
+    const p = trimPts(e);
+    return e.wall ? [p[0], p[p.length - 1]].map(q => ({ p: q, k: 'end' })) : p.map(q => ({ p: q, k: 'end' }));
   },
-  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  sample: e => trimPts(e),
+  map: (n, e, f) => {
+    trimFree(n, e);
+    n.pts = trimPts(n.wall ? e : n).map(f);
+  },
+  grips: (e, set) =>
+    trimPts(e).map((v, i) => ({
+      p: v,
+      apply: set((n, p) => {
+        trimFree(n, e);
+        n.pts[i] = p;
+      })
+    })),
   draw(e, color, o, ghost, col) {
     const pr = getProf(e.prof, 'trim');
     const mx = Math.max(4, ...pr.pts.map(p => p[0]));
@@ -31411,7 +31464,7 @@ XT.trim = {
       ctx.restore();
     }
   },
-  k3: e => [getProf(e.prof, 'trim'), e.zone === 'ceil' ? S.ceil : 0],
+  k3: e => [getProf(e.prof, 'trim'), e.zone === 'ceil' ? S.ceil : 0, e.wall ? JSON.stringify(trimWallPath(e)) : 0],
   build3(e) {
     let pr = getProf(e.prof, 'trim');
     if (pr.id !== e.prof) pr = trimProfiles().find(p => p.id === e.prof) || pr;
@@ -31480,14 +31533,15 @@ XT.trim = {
     const pr = getProf(e.prof, 'trim');
     const L = trimLen(e);
     // along a curved wall: the flexible version of the profile, no corners on the faceting points
-    const fx = e.flex ? ' — гибкий (радиусный)' : '';
-    put('Переходные элементы', 't' + e.prof + (e.flex ? 'f' : ''), { name: `${k.n}: ${pr.name}${fx}`, u: 'м' }, r => {
+    const bent = e.wall ? (trimWallPath(e), (TRIMW.get(e) || {}).bent) : e.flex;
+    const fx = bent ? ' — гибкий (радиусный)' : '';
+    put('Переходные элементы', 't' + e.prof + (bent ? 'f' : ''), { name: `${k.n}: ${pr.name}${fx}`, u: 'м' }, r => {
       r.q += L / 1000;
       r.ids.push(e.id);
     });
     put(
       'Переходные элементы',
-      'tb' + e.prof + (e.flex ? 'f' : ''),
+      'tb' + e.prof + (bent ? 'f' : ''),
       { name: `${pr.name}${fx} — хлыстов по ${fmt(k.bar)} мм (запас 8%)`, u: 'шт' },
       r => {
         r.L = (r.L || 0) + L;
@@ -31495,15 +31549,24 @@ XT.trim = {
         r.ids.push(e.id);
       }
     );
-    const corners = e.flex ? 0 : Math.max(0, e.pts.length - (e.closed ? 0 : 2));
+    // a wall trim: a corner piece at each end that meets the next wall without a rounding (half — the neighbour
+    // counts the other half), an end cap where it stops at a door
+    const W = e.wall;
+    const corners = W
+      ? (W.w0 && !trimRound(e, 0) ? 0.5 : 0) + (W.w1 && !trimRound(e, 1) ? 0.5 : 0)
+      : e.flex
+        ? 0
+        : Math.max(0, e.pts.length - (e.closed ? 0 : 2));
+    const caps = W ? (W.w0 ? 0 : 1) + (W.w1 ? 0 : 1) : e.closed ? 0 : 2;
     if ((e.kind === 'plinth' || e.kind === 'hplinth') && corners)
       put('Переходные элементы', 'tc' + e.prof, { name: `Углы для «${pr.name}»`, u: 'шт' }, r => {
-        r.q += corners;
+        r.qq = (r.qq || 0) + corners;
+        r.q = Math.ceil(r.qq - 1e-9);
         r.ids.push(e.id);
       });
-    if ((e.kind === 'plinth' || e.kind === 'hplinth') && !e.closed)
+    if ((e.kind === 'plinth' || e.kind === 'hplinth') && caps)
       put('Переходные элементы', 'te' + e.prof, { name: `Заглушки торцевые для «${pr.name}»`, u: 'шт' }, r => {
-        r.q += 2;
+        r.q += caps;
         r.ids.push(e.id);
       });
   }
@@ -96573,6 +96636,7 @@ function odAxis(e) {
 
 
 
+
 /* ---------- commands for the new elements ---------- */
 function polyCmd(name, label, mk, opts = {}) {
   const pts = [];
@@ -97731,25 +97795,15 @@ function mkTrim() {
       color: getProf(K.prof, 'trim').color
     };
   };
+  // along a wall: the trim keeps its wall and follows its face — straight, curved, around the roundings, on the
+  // finish; a floor trim is broken at the doors
   const fromWall = p => {
     const w = wallAt(p);
     if (!w) return 0;
     const wi = wallInfo(w);
-    // a curved wall: the trim follows its face as a polyline (flexible skirting / moulding)
-    if (wi.arc) {
-      const A = wi.arc;
-      const [, y] = arcLocal(A, p);
-      const sd = y >= 0 ? 1 : -1;
-      const st = arcStep(A);
-      const n = Math.max(2, Math.ceil(A.L / st));
-      const pp = [];
-      for (let k = 0; k <= n; k++) pp.push(arcPt(A, (A.L * k) / n, (sd * w.th) / 2));
-      addEnt({ ...E(sd > 0 ? pp : pp.slice().reverse(), 'L'), flex: true, layer: ensureLayer('Переходные элементы') });
-      return 1;
-    }
-    const sd = dot(sub(p, w.a), wi.n) >= 0 ? 1 : -1;
-    const off = mul(wi.n, (sd * w.th) / 2);
-    let segs = [[0, wi.L]];
+    const sd = wi.arc ? (arcLocal(wi.arc, p)[1] >= 0 ? 1 : -1) : dot(sub(p, w.a), wi.n) >= 0 ? 1 : -1;
+    const F = facePath(w, sd, { ends: true });
+    let segs = [[F.s0, F.s1]];
     if (TRIMK[kind].zone === 'floor')
       for (const o of wi.ops.filter(o => o.o.type === 'door'))
         segs = segs.flatMap(([a, b]) =>
@@ -97761,9 +97815,11 @@ function mkTrim() {
               ].filter(([x, y]) => y - x > 30)
         );
     for (const [a, b] of segs) {
-      const A = add(add(w.a, mul(wi.u, a)), off),
-        B = add(add(w.a, mul(wi.u, b)), off);
-      addEnt({ ...E(sd > 0 ? [A, B] : [B, A], 'L'), layer: ensureLayer('Переходные элементы') });
+      const W = { id: w.id, side: sd, s0: Math.round(a), s1: Math.round(b), w0: a <= F.s0 + 0.5, w1: b >= F.s1 - 0.5 };
+      const e = { ...E([], 'L'), wall: W, layer: ensureLayer('Переходные элементы') };
+      e.pts = (trimWallPath(e) || []).map(q => ({ ...q }));
+      if (F.bentAt(a, b)) e.flex = true;
+      addEnt(e);
     }
     return segs.length;
   };
@@ -99914,7 +99970,44 @@ function mlWall(e) {
   const wi = wallInfo(w);
   const n = mul(wi.n, e.side || 1);
   const o = add(w.a, mul(wi.n, ((e.side || 1) * w.th) / 2));
-  return { w, wi, n, o };
+  return { w, wi, n, o, side: e.side || 1 };
+}
+/** The face of the wall side the moldings are on (curved walls, roundings at the ends), kept per document version. */
+const MLF = new WeakMap();
+function mlFace(M) {
+  const k = documentState.docVer + '|' + M.side;
+  const m = MLF.get(M.w);
+  if (m && m.k === k) return m.F;
+  const F = facePath(M.w, M.side, { ends: true });
+  MLF.set(M.w, { k, F });
+  return F;
+}
+/** World point of (s along the face, d off the finished face, z): moldings sit on the finish (panels, tiles). */
+function mlAt(M, s, d, z) {
+  const F = mlFace(M);
+  return F.at(s, d + finAt(M.w, M.side, s, z));
+}
+/** A path (s, z) split so that it follows the bends of the face (curved wall, roundings). */
+function mlDens(M, path) {
+  const F = mlFace(M);
+  const out = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    const [s0, z0] = path[i - 1],
+      [s1, z1] = path[i];
+    const lo = Math.min(s0, s1),
+      hi = Math.max(s0, s1);
+    if (hi - lo < 1 || !F.bentAt(lo, hi)) {
+      out.push(path[i]);
+      continue;
+    }
+    let ss = faceSamples(F, lo, hi);
+    if (s1 < s0) ss = ss.reverse();
+    for (let k = 1; k < ss.length; k++) {
+      const t = (ss[k] - s0) / (s1 - s0);
+      out.push([ss[k], z0 + (z1 - z0) * t]);
+    }
+  }
+  return out;
 }
 /** An arc of points (s, z) around (cs, cz) from a0 to a1 (radians). */
 function mlArc(cs, cz, r, a0, a1, k = 10) {
@@ -100079,6 +100172,17 @@ function mlLayout(e) {
     rail(zr);
     frames(zr + pw / 2 + vg, z1);
   } else frames(z0, z1);
+  // a rail (belt) reaching a wall end goes on around the rounding / to the true end of the face at the corner
+  if (e.wrap !== false) {
+    const F = mlFace(M);
+    for (const it of out) {
+      if (!it.rail || it.curve || it.path.length !== 2) continue;
+      const [p0, p1] = it.path;
+      if (Math.min(p0[0], p1[0]) <= 1 && s0 <= 1) (p0[0] <= p1[0] ? p0 : p1)[0] = F.s0;
+      if (Math.max(p0[0], p1[0]) >= M.wi.L - 1 && s1 >= M.wi.L - 1) (p0[0] >= p1[0] ? p0 : p1)[0] = F.s1;
+      it.len = Math.abs(p1[0] - p0[0]);
+    }
+  }
   return out;
 }
 
@@ -100202,16 +100306,15 @@ XT.molding = {
     const pr = mlProf(e.prof);
     const dep = Math.max(...pr.pts.map(p => p[0]));
     const A = M.wi.arc;
-    const at = (s, d) =>
-      A ? arcPt(A, s, (e.side || 1) * (M.w.th / 2 + d)) : add(add(M.o, mul(M.wi.u, s)), mul(M.n, d));
+    void A;
+    const at = (s, d) => mlAt(M, s, d, 1000);
     const s0 = +e.s0 || 0,
       s1 = +e.s1 || M.wi.L;
     ctx.save();
     ctx.strokeStyle = ghost ? '#8aa' : col;
     ctx.lineWidth = o.hover ? 2.2 : 1.2;
-    const nn = A ? Math.max(2, Math.ceil((s1 - s0) / arcStep(A))) : 1;
     pathPoly(
-      Array.from({ length: nn + 1 }, (_, k) => at(s0 + ((s1 - s0) * k) / nn, Math.max(6, dep))),
+      faceSamples(mlFace(M), s0, s1).map(s => at(s, Math.max(6, dep))),
       false
     );
     ctx.stroke();
@@ -100245,7 +100348,12 @@ XT.molding = {
   k3: e => {
     const M = mlWall(e);
     return M
-      ? [JSON.stringify([M.w.a, M.w.b, M.w.arc || 0, M.w.th, M.wi.ops.map(o => [o.s0, o.s1, o.o.h, o.o.sill])]), S.ceil]
+      ? [
+          JSON.stringify([M.w.a, M.w.b, M.w.arc || 0, M.w.th, M.wi.ops.map(o => [o.s0, o.s1, o.o.h, o.o.sill])]),
+          S.ceil,
+          // the finish it sits on and the ends of the face (roundings, corners)
+          JSON.stringify([M.w.zones || [], M.w.rnd || null, M.w.fa || null, M.w.fb || null, mlFace(M).s0, mlFace(M).s1])
+        ]
       : 0;
   },
   build3(e) {
@@ -100257,25 +100365,15 @@ XT.molding = {
     const pts = pr.pts.map(([x, y]) => [y - pw / 2, x + 0.5]);
     const A = M.wi.arc,
       sd = e.side || 1;
+    void sd;
     const mb = MB((s, d, z) => {
-      // a curved wall: the frame is bent onto its face (flexible moulding)
-      const p = A ? arcPt(A, s, sd * (M.w.th / 2 + d)) : add(add(M.o, mul(M.wi.u, s)), mul(M.n, d));
+      // the face of the wall (bent onto a curved wall and around the roundings), on its finish
+      const p = mlAt(M, s, d, z);
       return [p.x, p.y, z + (M.w.z || 0)];
     });
     mb.tag(A ? pr.name + ' — гибкий' : pr.name);
     // along an arc the path is split into short pieces so that it follows the curve
-    const dens = path => {
-      if (!A) return path;
-      const st = arcStep(A),
-        out = [path[0]];
-      for (let i = 1; i < path.length; i++) {
-        const [s0, z0] = path[i - 1],
-          [s1, z1] = path[i];
-        const n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / st));
-        for (let k = 1; k <= n; k++) out.push([s0 + ((s1 - s0) * k) / n, z0 + ((z1 - z0) * k) / n]);
-      }
-      return out;
-    };
+    const dens = path => mlDens(M, path);
     const LL = mlLayout(e);
     for (const it of LL) {
       if (it.decor || it.hidden || it.path.length < 2) continue;
@@ -100290,7 +100388,7 @@ XT.molding = {
     // stucco decor: relief on the face (local x — along the wall, y — up, z — off the wall)
     const dk = Math.max(...pr.pts.map(p => p[0]));
     const mr = MB((s, z, d) => {
-      const p = A ? arcPt(A, s, sd * (M.w.th / 2 + d)) : add(add(M.o, mul(M.wi.u, s)), mul(M.n, d));
+      const p = mlAt(M, s, d, z);
       return [p.x, p.y, z + (M.w.z || 0)];
     });
     for (const it of LL) if (it.decor) mlDecorMesh(mr, it, e.col || pr.color, Math.max(10, dk));
@@ -114172,6 +114270,8 @@ defineTools({
 
 
 
+
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -114320,6 +114420,8 @@ function xBoot() {
       sync3DBusy,
       s3Stat,
       hiddenDoorFor,
+      facePath,
+      trimWallPath,
       sheetPreset,
       cbDefaults,
       openSheetEditor,
@@ -118594,6 +118696,7 @@ function closerSet(mb, lm, l, M, c, open) {
 
 
 
+
 /** Defaults of a panel layout per material key (width along the face, height 0 = whole zone, joint). */
 const PANEL_DEF = {
   veneer: { pw: 1200, ph: 0, pg: 0, bend: 'smooth' },
@@ -118602,7 +118705,7 @@ const PANEL_DEF = {
 };
 
 /** Face path of a wall side: { s0, s1, L, at(s, d) → point, out(s) → outward unit vector, xs(s) → wall x or null }. */
-function facePath(w, side) {
+function facePath(w, side, opt = {}) {
   const wi = wallInfo(w);
   const A = arcOf(w);
   const L = wi.L,
@@ -118626,7 +118729,17 @@ function facePath(w, side) {
     const xOf = p => dot(sub(p, w.a), wi.u);
     if (arcs[0]) xa = Math.max(0, Math.min(L, xOf(arcs[0].P0)));
     if (arcs[1]) xb = Math.max(0, Math.min(L, xOf(arcs[1].P0)));
+    // ends: where the face of this side really ends (an inner corner is shorter than the axis, an outer one longer)
+    if (opt.ends && wi.lp) {
+      const xs = wi.lp.filter(q => Math.abs(q[1] - side * h) < 1).map(q => q[0]);
+      if (xs.length >= 2) {
+        if (!arcs[0]) xa = Math.min(...xs);
+        if (!arcs[1]) xb = Math.max(...xs);
+      }
+    }
   }
+  const lo = Math.min(0, xa),
+    hi = Math.max(L, xb);
   const wrapLen = a => {
     if (!a) return 0;
     const c = dot(nrm(sub(a.P0, a.C)), nrm(sub(a.Pm, a.C)));
@@ -118651,7 +118764,7 @@ function facePath(w, side) {
   const at = (s, d = 0) => {
     if (s < xa && arcs[0]) return onArc(arcs[0], xa - s, d);
     if (s > xb && arcs[1]) return onArc(arcs[1], s - xb, d);
-    return at0(Math.max(0, Math.min(L, s)), d);
+    return at0(Math.max(A ? 0 : lo, Math.min(A ? L : hi, s)), d);
   };
   const out = s => {
     const a = at(s, 0),
@@ -118673,6 +118786,15 @@ function facePath(w, side) {
   };
 }
 
+/** Thickness of the finish on a wall side at s (clamped to the wall) and height z: the face the trims sit on. */
+function finAt(w, side, s, z) {
+  const L = wallInfo(w).L;
+  try {
+    return faceFinishAt(w, side, Math.max(0, Math.min(L, s)), z).th || 0;
+  } catch (err) {
+    return 0;
+  }
+}
 /** The developed s range of a zone: a zone reaching a wall end continues around its rounding (unless wrap is off). */
 function zoneSpan(F, z) {
   const wrap = z.wrap !== false;
