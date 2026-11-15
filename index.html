@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.44';
+const APP_VER = '59.45';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -16892,7 +16892,7 @@ function drawDuctHoles(e, col) {
     ctx.setLineDash([]);
     seg(q[0], q[2]);
     seg(q[1], q[3]);
-    if (hw * 2 * view.k > 14) {
+    if (hw * 2 * view.k > 40) {
       const s = w2s(add(c.p, mul(n, ht + 10 / view.k)));
       ctx.font = '10px "IBM Plex Mono", monospace';
       ctx.textAlign = 'center';
@@ -17008,7 +17008,7 @@ function drawDuct(e, color, o = {}) {
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = bad ? '#ef5f5f' : col;
     ctx.fillText(
-      e.flex ? `${secTxt(e)} гибк.` : `${e.sys} · ${secTxt(e)} · ${fmt(e.flow)} м³/ч · ${v.toFixed(1)} м/с`,
+      e.flex ? `${secTxt(e)} гибк.` : `${e.sys} · ${secTxt(e)} · ${fmt(+e.flow || 0)} м³/ч · ${v.toFixed(1)} м/с`,
       0,
       0
     );
@@ -27128,7 +27128,7 @@ const WSDEF = [
       ['Вентиляция', ['duct', 'vterm', 'vshaft']],
       ['Расчёт', ['avcalc', 'acalc']],
       ['Оборудование', ['ahu', 'silencer', 'plenum']],
-      ['Детали', ['reducer', 'ductee', 'flexconn']],
+      ['Детали', ['reducer', 'ductee', 'distbox', 'flexconn']],
       ['Кондиционеры', ['ac', 'acfreon', 'acdrain']],
       ['Схемы', ['ventlabel', 'ventsheet']]
     ]
@@ -27253,6 +27253,7 @@ const TLBL = {
   acdrain: 'Дренаж',
   ahu: 'Установка',
   silencer: 'Глушитель',
+  distbox: 'Распр. короб',
   plenum: 'Адаптер',
   flexconn: 'Подводка',
   reducer: 'Переход',
@@ -66282,6 +66283,297 @@ function avSeparate(noUndo) {
   return rep;
 }
 
+// ===== mep/hvac/dist-box.js =====
+/**
+ * mep/hvac/dist-box.js
+ *
+ * Distribution box (распределительный короб): a rectangular sheet-metal box with one inlet and any number of
+ * outlets, each round (Ø) or rectangular (W×H), on any face — left / right / front / back / top / bottom. It is a kind
+ * of the ventilation unit (XT.hvu, kind 'dbox'): placement, turning, the duct command starting from its spigots, the
+ * ducts following the spigots, leaders and the clash / quantity checks come from air-units.js; this module keeps the
+ * geometry of the faces, the sections, the air flow and the 3D of the box.
+ *
+ * Air flow: the inlet flow L is split between the outlets — by the area of the outlets (the box is a static pressure
+ * chamber: the same pressure in front of every outlet gives the same velocity) or by flows set per outlet (the rest
+ * shared by area; the outlets then need dampers to balance). Velocities in the inlet, in every outlet and in the box
+ * section, and an approximate pressure loss (sudden expansion into the box + the outlet entrance, ρ = 1.2 kg/m³).
+ */
+
+
+
+/** Faces: centre (from L, W, H), the direction out of the box, the axis along the face, the size of the face. */
+const DB_SIDES = {
+  L: {
+    n: 'слева',
+    c: (L, W, H) => [-L / 2, 0, H / 2],
+    dir: [-1, 0, 0],
+    u: [0, 1, 0],
+    a: (L, W) => W,
+    b: (L, W, H) => H
+  },
+  R: {
+    n: 'справа',
+    c: (L, W, H) => [L / 2, 0, H / 2],
+    dir: [1, 0, 0],
+    u: [0, 1, 0],
+    a: (L, W) => W,
+    b: (L, W, H) => H
+  },
+  F: { n: 'спереди', c: (L, W, H) => [0, -W / 2, H / 2], dir: [0, -1, 0], u: [1, 0, 0], a: L => L, b: (L, W, H) => H },
+  B: { n: 'сзади', c: (L, W, H) => [0, W / 2, H / 2], dir: [0, 1, 0], u: [1, 0, 0], a: L => L, b: (L, W, H) => H },
+  T: { n: 'сверху', c: (L, W, H) => [0, 0, H], dir: [0, 0, 1], u: [1, 0, 0], a: L => L, b: (L, W) => W },
+  D: { n: 'снизу', c: () => [0, 0, 0], dir: [0, 0, -1], u: [1, 0, 0], a: L => L, b: (L, W) => W }
+};
+const DB_EXT = 60;
+/** Default box: 600×300×250, inlet Ø160 on the left, five outlets 100×50 in front. */
+function dbDefaults() {
+  return {
+    L: 600,
+    W: 300,
+    H: 250,
+    flow: 300,
+    split: 'area',
+    inlet: { side: 'L', sec: 'Ø160' },
+    outs: [0, 1, 2, 3, 4].map(() => ({ side: 'F', sec: '100×50' }))
+  };
+}
+const dbDim = e => [+e.L || 600, +e.W || 300, +e.H || 250];
+/**
+ * A section from its text: «Ø125», «125» — round; «100×50», «100x50», «100*50» — rectangular (width × height).
+ * Returns { shape, d } or { shape:'rect', w, h } and the normalised text.
+ */
+function dbSec(s) {
+  const t = String(s == null ? '' : s)
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(',', '.');
+  const m = t.match(/^(\d+(?:\.\d+)?)[x×х*](\d+(?:\.\d+)?)$/i);
+  if (m && +m[1] > 0 && +m[2] > 0) {
+    const w = Math.round(+m[1]),
+      h = Math.round(+m[2]);
+    return { shape: 'rect', w, h, txt: `${w}×${h}`, A: (w * h) / 1e6, s: w };
+  }
+  const r = t.match(/^[øØ⌀d]?(\d+(?:\.\d+)?)$/i);
+  const d = r && +r[1] > 0 ? Math.round(+r[1]) : 160;
+  return { shape: 'round', d, txt: `Ø${d}`, A: (Math.PI * d * d) / 4 / 1e6, s: d };
+}
+/** The openings of the box: [{ o (inlet / outlet record), role, i, side, sec, off }] with the offsets resolved. */
+function dbOpenings(e) {
+  const [L, W, H] = dbDim(e);
+  const all = [
+    { o: e.inlet || { side: 'L', sec: 'Ø160' }, role: 'in', i: -1 },
+    ...(e.outs || []).map((o, i) => ({ o, role: 'out', i }))
+  ];
+  for (const x of all) {
+    x.side = DB_SIDES[x.o.side] ? x.o.side : x.role === 'in' ? 'L' : 'F';
+    x.sec = dbSec(x.o.sec);
+  }
+  // openings without an offset share their face evenly (in the order: the inlet, then the outlets)
+  for (const k of Object.keys(DB_SIDES)) {
+    const free = all.filter(x => x.side === k && !isFinite(parseFloat(x.o.off)));
+    const A = DB_SIDES[k].a(L, W, H);
+    free.forEach((x, j) => (x.off = Math.round(-A / 2 + (A * (j + 0.5)) / free.length)));
+    for (const x of all) if (x.side === k && isFinite(parseFloat(x.o.off))) x.off = parseFloat(x.o.off);
+  }
+  return all;
+}
+/** Spigots in the local frame (z from the bottom of the box): { x, y, z, dir, d, shape, w, hh, role, sys, n, i }. */
+function dbSpigotsL(e) {
+  const [L, W, H] = dbDim(e);
+  return dbOpenings(e).map(x => {
+    const F = DB_SIDES[x.side],
+      c = F.c(L, W, H);
+    const p = [0, 1, 2].map(k => c[k] + F.u[k] * x.off + F.dir[k] * DB_EXT);
+    const rect = x.sec.shape === 'rect';
+    return {
+      x: p[0],
+      y: p[1],
+      z: p[2],
+      dir: F.dir.slice(),
+      d: rect ? x.sec.w : x.sec.d,
+      ...(rect ? { shape: 'rect', w: x.sec.w, hh: x.sec.h } : {}),
+      role: x.role,
+      sys: e.sys || null,
+      n: x.role === 'in' ? 'Вход' : `Выход ${x.i + 1}`,
+      i: x.i,
+      side: x.side,
+      off: x.off,
+      sec: x.sec
+    };
+  });
+}
+/** Box section across the inlet stream, m². */
+function dbBoxA(e) {
+  const [L, W, H] = dbDim(e);
+  const s = (e.inlet && e.inlet.side) || 'L';
+  return (s === 'L' || s === 'R' ? W * H : s === 'F' || s === 'B' ? L * H : L * W) / 1e6;
+}
+/**
+ * Air flow through the box: { Q, Ain, vin, vbox, outs:[{ i, A, q, v, set }], sumA, dp, imb }.
+ * Q — the inlet flow (m³/h): its own, else the sum of the flows set on the outlets.
+ */
+function dbFlow(e) {
+  const inl = dbSec(e.inlet && e.inlet.sec);
+  const outs = (e.outs || []).map((o, i) => ({ i, sec: dbSec(o.sec), qs: parseFloat(o.q) }));
+  const setMode = e.split === 'set';
+  const sumSet = outs.reduce((a, o) => a + (setMode && o.qs > 0 ? o.qs : 0), 0);
+  let Q = +e.flow || 0;
+  if (!Q && setMode) Q = sumSet;
+  const rest = Math.max(0, Q - sumSet);
+  const freeA = outs.reduce((a, o) => a + (setMode && o.qs > 0 ? 0 : o.sec.A), 0);
+  const res = outs.map(o => {
+    const set = setMode && o.qs > 0;
+    const q = set ? o.qs : freeA > 0 ? (rest * o.sec.A) / freeA : 0;
+    return { i: o.i, A: o.sec.A, q, v: o.sec.A > 0 ? q / 3600 / o.sec.A : 0, set, txt: o.sec.txt };
+  });
+  const sumA = outs.reduce((a, o) => a + o.sec.A, 0);
+  const vin = inl.A > 0 ? Q / 3600 / inl.A : 0;
+  const Ab = dbBoxA(e);
+  const vbox = Ab > 0 ? Q / 3600 / Ab : 0;
+  // pressure loss: the inlet expands into the box (Borda–Carnot), the air enters the outlet (ζ 0.5) and speeds up
+  const pd = v => 0.6 * v * v;
+  const zIn = Ab > 0 ? (1 - Math.min(1, inl.A / Ab)) ** 2 : 1;
+  const vmax = res.reduce((a, o) => Math.max(a, o.v), 0),
+    vmin = res.reduce((a, o) => Math.min(a, o.v), Infinity);
+  const dp = zIn * pd(vin) + 1.5 * pd(vmax);
+  return {
+    Q,
+    Ain: inl.A,
+    vin,
+    vbox,
+    outs: res,
+    sumA,
+    sumSet,
+    dp,
+    imb: res.length > 1 && vmin > 0 ? vmax / vmin : 1,
+    inTxt: inl.txt
+  };
+}
+const dbN1 = v => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+/** Checks of the box: [[level, text]]. */
+function dbChecks(e) {
+  const out = [];
+  const F = dbFlow(e);
+  const vmax = +(S.vent && S.vent.vmax) || 4;
+  const [L, W, H] = dbDim(e);
+  if (!F.Q) out.push(['warn', 'Распределительный короб: не задан расход на входе.']);
+  if (F.vin > vmax) out.push(['warn', `Скорость во входе ${F.inTxt} ${dbN1(F.vin)} м/с — больше ${dbN1(vmax)} м/с.`]);
+  for (const o of F.outs)
+    if (o.v > vmax)
+      out.push(['warn', `Выход ${o.i + 1} ${o.txt}: скорость ${dbN1(o.v)} м/с — больше ${dbN1(vmax)} м/с.`]);
+  if (F.outs.length && F.sumA < F.Ain * 0.8)
+    out.push(['warn', 'Сумма сечений выходов меньше 80% входа — короб дросселирует поток, растут потери и шум.']);
+  if (F.vbox > Math.max(1.5, F.vin * 0.5))
+    out.push([
+      'warn',
+      `Скорость в коробе ${dbN1(F.vbox)} м/с — короб мал для камеры статического давления, расход по выходам выровняется хуже. Увеличьте сечение короба.`
+    ]);
+  if (e.split === 'set' && F.sumSet > F.Q + 0.5)
+    out.push([
+      'bad',
+      `Заданные расходы выходов (${fmt(Math.round(F.sumSet))} м³/ч) больше расхода на входе (${fmt(F.Q)}).`
+    ]);
+  if (e.split === 'set' && F.imb > 1.3)
+    out.push([
+      'info',
+      `Скорости в выходах различаются в ${dbN1(F.imb)} раза — для заданных расходов нужны дроссель-клапаны на выходах.`
+    ]);
+  // every opening fits its face and does not overlap another one
+  const sp = dbSpigotsL(e);
+  for (const q of sp) {
+    const Fc = DB_SIDES[q.side];
+    const A = Fc.a(L, W, H),
+      B = Fc.b(L, W, H);
+    const sa = q.sec.s,
+      sb = q.sec.shape === 'rect' ? q.sec.h : q.sec.d;
+    if (Math.abs(q.off) + sa / 2 > A / 2 - 10 || sb > B - 20)
+      out.push(['bad', `${q.n} ${q.sec.txt} не помещается на грани ${Fc.n} (${fmt(A)}×${fmt(B)} мм).`]);
+  }
+  for (let a = 0; a < sp.length; a++)
+    for (let b = a + 1; b < sp.length; b++) {
+      const p = sp[a],
+        q = sp[b];
+      if (p.side === q.side && Math.abs(p.off - q.off) < (p.sec.s + q.sec.s) / 2 + 20)
+        out.push([
+          'bad',
+          `${p.n} и ${q.n} на грани ${DB_SIDES[p.side].n} перекрываются — раздвиньте (смещение) или уменьшите.`
+        ]);
+    }
+  return out;
+}
+/** Leader text: mark, size, inlet → outlets, flow. */
+function dbLabel(e, short) {
+  const [L, W, H] = dbDim(e);
+  const F = dbFlow(e);
+  const groups = {};
+  for (const o of e.outs || []) {
+    const t = dbSec(o.sec).txt;
+    groups[t] = (groups[t] || 0) + 1;
+  }
+  const outs = Object.entries(groups)
+    .map(([t, n]) => `${n}×${t}`)
+    .join(' + ');
+  const head = `${e.name ? e.name + ' · ' : e.sys ? e.sys + ' · ' : ''}Короб ${fmt(L)}×${fmt(W)}×${fmt(H)}`;
+  const tail = `L=${fmt(Math.round(F.Q))} м³/ч`;
+  if (short) return `${head}\n${F.inTxt} → ${outs}\n${tail}`;
+  return `${head}\nвход ${F.inTxt}, выходы ${outs || '—'}\n${tail}, Vвх=${dbN1(F.vin)} м/с`;
+}
+/** Specification line of the box. */
+function dbSpecName(e) {
+  const [L, W, H] = dbDim(e);
+  const F = dbFlow(e);
+  const groups = {};
+  for (const o of e.outs || []) {
+    const t = dbSec(o.sec).txt;
+    groups[t] = (groups[t] || 0) + 1;
+  }
+  const outs = Object.entries(groups)
+    .map(([t, n]) => `${n}×${t}`)
+    .join(' + ');
+  return `Короб распределительный ${fmt(L)}×${fmt(W)}×${fmt(H)} мм, оцинкованная сталь: вход ${F.inTxt}, выходы ${outs || '—'}`;
+}
+/** 3D of the box in its local frame (z from the bottom): the body, the spigots with their collars, flow arrows. */
+function dbBuild(mb, e, col, dark) {
+  const [L, W, H] = dbDim(e);
+  mb.tag(dbSpecName(e));
+  mb.box(-L / 2, -W / 2, 0, L / 2, W / 2, H, col);
+  // the seams of the sheet: folds along the edges
+  mb.tag('Фальцы короба');
+  const t = 6;
+  for (const [x0, y0, x1, y1] of [
+    [-L / 2 - t / 2, -W / 2 - t / 2, L / 2 + t / 2, -W / 2 + t / 2],
+    [-L / 2 - t / 2, W / 2 - t / 2, L / 2 + t / 2, W / 2 + t / 2],
+    [-L / 2 - t / 2, -W / 2, -L / 2 + t / 2, W / 2],
+    [L / 2 - t / 2, -W / 2, L / 2 + t / 2, W / 2]
+  ]) {
+    mb.box(x0, y0, H - t, x1, y1, H + 1, dark);
+    mb.box(x0, y0, -1, x1, y1, t, dark);
+  }
+  for (const q of dbSpigotsL(e)) {
+    mb.tag(`${q.n}: ${q.sec.txt}`);
+    const base = [q.x - q.dir[0] * DB_EXT, q.y - q.dir[1] * DB_EXT, q.z - q.dir[2] * DB_EXT];
+    const tip = [q.x, q.y, q.z];
+    const ring0 = [q.x - q.dir[0] * 30, q.y - q.dir[1] * 30, q.z - q.dir[2] * 30],
+      ring1 = [q.x - q.dir[0] * 20, q.y - q.dir[1] * 20, q.z - q.dir[2] * 20];
+    if (q.shape === 'rect') {
+      mb.obox(base, tip, q.w, q.hh, col);
+      mb.obox(ring0, ring1, q.w + 12, q.hh + 12, dark);
+    } else {
+      mb.smooth(true);
+      mb.tube(base, tip, q.d / 2, col, 24);
+      mb.tube(ring0, ring1, q.d / 2 + 3, dark, 24);
+      mb.smooth(false);
+    }
+  }
+}
+/** Flows per spigot for the plan labels: { 'in' | i → m³/h }. */
+function dbSpigotFlows(e) {
+  const F = dbFlow(e);
+  const m = { in: F.Q };
+  for (const o of F.outs) m[o.i] = o.q;
+  return m;
+}
+
 // ===== mep/hvac/air-units.js =====
 /**
  * mep/hvac/air-units.js
@@ -66297,6 +66589,7 @@ function avSeparate(noUndo) {
  * The same module labels the systems (leaders with text taken from the model) and makes the album sheet with the
  * axonometric scheme and the 3D view with the walls.
  */
+
 
 
 
@@ -66377,7 +66670,8 @@ const HV_KIND = {
   sil: 'Шумоглушитель',
   red: 'Переход диаметров',
   tee: 'Тройник',
-  plen: 'Адаптер решётки'
+  plen: 'Адаптер решётки',
+  dbox: 'Распределительный короб'
 };
 
 /* ---------- geometry ---------- */
@@ -66395,6 +66689,8 @@ function hvZ(e) {
   if (e.kind === 'ahu')
     return ahuVert(e) ? (ahuOf(e).mount === 'floor' ? 0 : 400) : Math.round(Math.min(ceil + 40, slab - H - 20));
   if (e.kind === 'plen') return e.mount === 'wall' ? ceil - 350 : Math.round(Math.min(ceil, slab - H - 90));
+  // a distribution box: the bottom, above the suspended ceiling, under the slab
+  if (e.kind === 'dbox') return Math.round(Math.min(ceil + 60, slab - H - 30));
   return Math.round(Math.min(ceil + 150, slab - H / 2 - 30));
 }
 /** Body size in the local frame: [length along x, depth along y, height]. */
@@ -66402,6 +66698,7 @@ function hvZ(e) {
 const redLen = e => Math.max(100, Math.round(Math.abs((+e.d || 200) - (+e.d2 || 160)) * 1.2 + 80));
 const teeLen = e => Math.round((+e.d2 || 160) * (+e.ang === 45 ? 1.5 : 1) + 120);
 function hvDim(e) {
+  if (e.kind === 'dbox') return dbDim(e);
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
     // standing: the long side is vertical, the spigots are on top
@@ -66426,6 +66723,7 @@ function hvDim(e) {
  * air handling unit, in / out for a silencer, conn for a plenum.
  */
 function hvSpigotsL(e) {
+  if (e.kind === 'dbox') return dbSpigotsL(e);
   const [L, W, H] = hvDim(e);
   const out = [];
   if (e.kind === 'ahu') {
@@ -66561,6 +66859,7 @@ function hvMark(e) {
  * model of the catalogue stays in the properties and in the specification.
  */
 function hvLabel(e, short) {
+  if (e.kind === 'dbox') return dbLabel(e, short);
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
     const q = `L=${fmt(+e.flow || a.q)} м³/ч`;
@@ -66622,6 +66921,11 @@ function spigotTube(mb, q, col, dark) {
   mb.smooth(false);
 }
 function hvBuild(e, mb) {
+  if (e.kind === 'dbox') {
+    const c = sysOf(e.sys || '').col;
+    dbBuild(mb, e, hvShade(c, 0.5), hvShade(c, -0.25));
+    return;
+  }
   const [L, W, H] = hvDim(e);
   const SP = hvSpigotsL(e);
   if (e.kind === 'ahu') {
@@ -67005,6 +67309,7 @@ function hvDraw(e, color, o, ghost) {
   ctx.stroke();
   const [L, W] = hvDim(e);
   // spigots and flow arrows
+  const dbq = e.kind === 'dbox' ? dbSpigotFlows(e) : null;
   for (const q of hvSpigotsL(e)) {
     const r = q.d / 2;
     const col =
@@ -67031,11 +67336,36 @@ function hvDraw(e, color, o, ghost) {
         LP(e, b[0] - nx * r, b[1] - ny * r)
       ]);
       ctx.stroke();
+    } else if (q.shape === 'rect') {
+      pathPoly([
+        LP(e, q.x - q.w / 2, q.y - q.hh / 2),
+        LP(e, q.x + q.w / 2, q.y - q.hh / 2),
+        LP(e, q.x + q.w / 2, q.y + q.hh / 2),
+        LP(e, q.x - q.w / 2, q.y + q.hh / 2)
+      ]);
+      ctx.stroke();
     } else {
       const s = w2s(LP(e, q.x, q.y));
       ctx.beginPath();
       ctx.arc(s.x, s.y, Math.max(2, r * view.k), 0, TAU);
       ctx.stroke();
+    }
+    // a distribution box: the flow at every spigot, an arrow into the inlet and out of the outlets
+    if (dbq && !ghost && view.k > 0.05) {
+      const qv = q.role === 'in' ? dbq.in : dbq[q.i];
+      const hl = Math.hypot(q.dir[0], q.dir[1]);
+      const ux = hl > 0.3 ? q.dir[0] / hl : 0,
+        uy = hl > 0.3 ? q.dir[1] / hl : -1;
+      // inside the box, in front of the spigot: the ducts leaving it keep their own captions clear
+      const tp = LP(e, q.x - ux * 125, q.y - uy * 125);
+      const s = w2s(tp);
+      ctx.save();
+      ctx.fillStyle = col;
+      ctx.font = '9px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${q.role === 'in' ? '→' : ''}${fmt(Math.round(qv || 0))}`, s.x, s.y);
+      ctx.restore();
     }
     if (e.kind === 'ahu' && !ghost && !q.dir[2]) {
       const inward = q.role === 'oda' || q.role === 'eta';
@@ -67109,7 +67439,9 @@ function hvDraw(e, color, o, ghost) {
             ? `ø${+e.d || 200}/ø${+e.d2 || 160}`
             : e.kind === 'tee'
               ? `${e.cross ? '✚' : 'T'} ø${+e.d || 200}/ø${+e.d2 || 160}`
-              : `${fmt(L)}×${fmt(W)}`;
+              : e.kind === 'dbox'
+                ? `${e.sys ? e.sys + ' · ' : ''}${fmt(L)}×${fmt(W)}×${fmt(hvDim(e)[2])}`
+                : `${fmt(L)}×${fmt(W)}`;
     ctx.fillText(t, s.x, s.y);
   }
   ctx.restore();
@@ -67202,6 +67534,7 @@ function hvChecks(e) {
     if (s.v > 3)
       out.push(['warn', `Скорость в щелях ${n1(s.v)} м/с — выше 3 м/с: шумно. Добавьте щель или удлините решётку.`]);
   }
+  if (e.kind === 'dbox') out.push(...dbChecks(e));
   const free = hvSpigots(e).filter(q => q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q));
   if (free.length && e.kind !== 'ahu') out.push(['info', `Свободных патрубков: ${free.length}.`]);
   return out;
@@ -67285,11 +67618,14 @@ XT.hvu = {
         ? `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`
         : e.kind === 'red' || e.kind === 'tee'
           ? hvLabel(e)
-          : 'Адаптер решётки',
+          : e.kind === 'dbox'
+            ? `Распределительный короб ${dbDim(e).map(fmt).join('×')}`
+            : 'Адаптер решётки',
   label: hvLabel,
   checks: hvChecks,
   panel(e) {
     const sysOpts = [['', '—'], ...S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`])];
+    if (e.kind === 'dbox') return dbPanel(e, sysOpts);
     const rows =
       e.kind === 'ahu'
         ? [
@@ -67399,6 +67735,7 @@ XT.hvu = {
     ]);
   },
   onSet(e, p, v) {
+    if (e.kind === 'dbox') dbOnSet(e, p, v);
     if (p === 'model') {
       const a = AHU_CAT[v];
       if (a) e.flow = a.q;
@@ -67414,6 +67751,7 @@ XT.hvu = {
     }
   },
   action(e, a) {
+    if (e.kind === 'dbox' && dbAction(e, a)) return;
     if (a === 'unitpwr') addPower(e);
     if (a === 'hvflex' || a === 'hvrigid') {
       const n = flexConnect(e, null, { rigid: a === 'hvrigid' });
@@ -67436,7 +67774,16 @@ XT.hvu = {
     } else if (e.kind === 'red' || e.kind === 'tee')
       one(`hvfit${e.kind}${e.d}-${e.d2}-${e.ang || 90}-${e.cross ? 1 : 0}`, hvLabel(e) + ', оцинкованная сталь');
     else if (e.kind === 'sil') one(`hvsil${e.d}-${e.L}`, `Шумоглушитель круглый CSR ${+e.d || 160}/${+e.L || 900}`);
-    else {
+    else if (e.kind === 'dbox') {
+      const nm = dbSpecName(e);
+      one('hvdb' + nm, nm);
+      one('hvdbhang', 'Подвес короба: шпилька М8 + уголок, комплект', 'компл');
+      if (e.damp)
+        for (const o of e.outs || []) {
+          const t = dbSec(o.sec).txt;
+          one('hvdbdamp' + t, `Клапан дроссельный ${t} (балансировка выхода короба)`);
+        }
+    } else {
       const s = plenSlot(e);
       const [L, W, H] = hvDim(e);
       one(
@@ -67450,6 +67797,147 @@ XT.hvu = {
     }
   }
 };
+
+/* ---------- distribution box: properties ---------- */
+const DB_SIDE_OPTS = Object.entries(DB_SIDES).map(([k, v]) => [k, v.n]);
+const dbSel = (path, v, opts) =>
+  `<select data-x="${path}">${opts.map(([a, b]) => `<option value="${esc(a)}" ${String(a) === String(v) ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>`;
+const dbTxt = (path, v, ph, w = 64) =>
+  `<input type="text" data-x="${path}" value="${esc(v ?? '')}" placeholder="${esc(ph)}" style="width:${w}px">`;
+/** Properties of a distribution box: the box, the inlet, the list of outlets (face, section, offset, flow), the air. */
+function dbPanel(e, sysOpts) {
+  const F = dbFlow(e);
+  const sp = hvSpigots(e);
+  const chk = hvChecks(e);
+  const vmax = +(S.vent && S.vent.vmax) || 4;
+  const vtxt = v => `<span class="${v > vmax ? 'warn' : ''}">${n1(v)} м/с</span>`;
+  const linked = i => {
+    const q = sp.find(x => (i < 0 ? x.role === 'in' : x.i === i));
+    return q && spigotLinked(q);
+  };
+  const outRows = (e.outs || [])
+    .map((o, i) => {
+      const r = F.outs[i] || { q: 0, v: 0 };
+      return cR(
+        `Выход ${i + 1}${linked(i) ? ' ●' : ''}`,
+        `${dbSel(`outs.${i}.side`, o.side || 'F', DB_SIDE_OPTS)} ${dbTxt(`outs.${i}.sec`, o.sec, '100×50 / Ø125')} ` +
+          `${dbTxt(`outs.${i}.off`, o.off, 'смещ. авто', 70)}` +
+          (e.split === 'set' ? ` ${dbTxt(`outs.${i}.q`, o.q, 'м³/ч', 56)}` : '') +
+          ` <button class="btn" data-xa="dbdel${i}" title="Удалить выход">✕</button>` +
+          `<div style="opacity:.75;font-size:11px">${fmt(Math.round(r.q))} м³/ч · ${vtxt(r.v)}${r.set ? ' · задан' : ''}</div>`
+      );
+    })
+    .join('');
+  return xGroups(e, [
+    [
+      HV_KIND.dbox,
+      `${dbDim(e).map(fmt).join('×')}`,
+      [
+        ['Длина, мм', 'L', 'n'],
+        ['Ширина, мм', 'W', 'n'],
+        ['Высота, мм', 'H', 'n'],
+        ['Система', 'sys', 's', sysOpts],
+        ['Отметка низа, мм', 'z', 'n'],
+        ['Поворот, °', 'rotd', 'n'],
+        ['Обозначение', 'name', 't']
+      ]
+    ],
+    [
+      'Вход',
+      esc(F.inTxt),
+      cR('Грань', dbSel('inlet.side', (e.inlet && e.inlet.side) || 'L', DB_SIDE_OPTS)) +
+        cR('Сечение', dbTxt('inlet.sec', e.inlet && e.inlet.sec, 'Ø160 / 200×100', 110)) +
+        cR('Смещение, мм', dbTxt('inlet.off', e.inlet && e.inlet.off, 'по центру / авто', 110)) +
+        cR('Расход на входе, м³/ч', `<input type="number" data-x="flow" data-xt="n" value="${fmt(+e.flow || 0)}">`)
+    ],
+    [
+      'Выходы',
+      `${(e.outs || []).length}`,
+      outRows +
+        `<div class="btnrow"><button class="btn" data-xa="dbadd">+ Выход</button>` +
+        `<button class="btn" data-xa="dbflow" title="Записать расчётные расходы во входной и выходные воздуховоды, подключённые к коробу">Расходы → воздуховоды</button></div>`
+    ],
+    [
+      'Расчёт потока',
+      `${fmt(Math.round(F.Q))} м³/ч`,
+      xRows(e, [
+        [
+          'Распределение',
+          'split',
+          's',
+          [
+            ['area', 'по площади выходов (равные скорости)'],
+            ['set', 'заданные расходы, остаток — по площади']
+          ]
+        ],
+        ['Дроссель-клапаны на выходах', 'damp', 'b']
+      ]) +
+        cR('Скорость во входе', vtxt(F.vin)) +
+        cR('Скорость в коробе', `${n1(F.vbox)} м/с`) +
+        cR('Сечения: вход / сумма выходов', `${fmt(Math.round(F.Ain * 1e4))} / ${fmt(Math.round(F.sumA * 1e4))} см²`) +
+        cR('Потери давления (ориентир.)', `≈ ${fmt(Math.round(F.dp))} Па`)
+    ],
+    ['Выноска', '', `<dt></dt><dd style="text-align:left;white-space:pre-line">${esc(hvLabel(e))}</dd>`],
+    [
+      'Проверки',
+      '',
+      chk.map(([l, m]) => `<dt></dt><dd class="${l}" style="text-align:left">${esc(m)}</dd>`).join('') ||
+        cR('Нормы', '✓')
+    ]
+  ]);
+}
+/** Normalisation after a field of the box changed: sections to their text, an empty offset / flow — automatic. */
+function dbOnSet(e, p, v) {
+  const m = p.match(/^(inlet|outs\.(\d+))\.(sec|off|q)$/);
+  if (!m) return;
+  const o = m[2] != null ? e.outs[+m[2]] : e.inlet;
+  if (!o) return;
+  if (m[3] === 'sec') o.sec = dbSec(v).txt;
+  else {
+    const n = parseFloat(String(v).replace(',', '.'));
+    if (isFinite(n)) o[m[3]] = n;
+    else delete o[m[3]];
+  }
+}
+/** Buttons of the box: add / delete an outlet, write the flows into the connected ducts. */
+function dbAction(e, a) {
+  if (a === 'dbadd' || /^dbdel\d+$/.test(a)) {
+    pushUndo();
+    const tok = hvPorts(e);
+    if (!e.outs) e.outs = [];
+    if (a === 'dbadd') {
+      const last = e.outs[e.outs.length - 1];
+      e.outs.push({ side: last ? last.side : 'F', sec: last ? last.sec : '100×50' });
+    } else e.outs.splice(+a.slice(5), 1);
+    hvFollow(e, tok);
+    changed();
+    return true;
+  }
+  if (a === 'dbflow') {
+    const F = dbFlow(e);
+    const fl = { in: F.Q };
+    for (const o of F.outs) fl[o.i] = Math.round(o.q);
+    const sp = hvSpigots(e);
+    let n = 0;
+    pushUndo();
+    for (const d of S.ents) {
+      if (d.type !== 'duct' || !d.pts || d.pts.length < 2) continue;
+      for (const i of [0, d.pts.length - 1]) {
+        const p = d.pts[i],
+          z = p.z != null ? +p.z : +d.z || 0;
+        const q = sp.find(q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 30 && Math.abs(z - q.p[2]) < 150);
+        if (!q) continue;
+        d.flow = Math.round(q.role === 'in' ? fl.in : fl[q.i] || 0);
+        if (q.sys && !d.sys) d.sys = q.sys;
+        n++;
+      }
+    }
+    changed();
+    log(n ? `Расходы записаны в воздуховоды: ${n}` : 'К патрубкам короба не подключены воздуховоды', !n);
+    return true;
+  }
+  return false;
+}
 
 /* ---------- connections ---------- */
 /** The duct ends standing at the spigots of a unit: [{ d: duct, i: point index, k: spigot index }]. */
@@ -67878,27 +68366,29 @@ function mkHvu(kind0) {
             sysS: S.vent.systems.find(s => /прит/i.test(s.kind))?.id || '',
             sysE: S.vent.systems.find(s => /выт/i.test(s.kind))?.id || ''
           }
-        : kind === 'red' || kind === 'tee'
-          ? {
-              d: o.d || 200,
-              d2: o.d2 || 160,
-              ...(kind === 'tee' ? { ang: 90 } : {}),
-              sys: S.vent.cur || S.vent.systems[0].id
-            }
-          : kind === 'sil'
-            ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
-            : {
-                L: o.L || 1000,
-                W: 150,
-                H: 250,
-                n: 2,
-                d: 125,
-                conn: 'top',
-                slots: 2,
-                sw: 30,
-                flow: 200,
+        : kind === 'dbox'
+          ? { ...dbDefaults(), ...(o.L ? { L: o.L } : {}), sys: S.vent.cur || S.vent.systems[0].id }
+          : kind === 'red' || kind === 'tee'
+            ? {
+                d: o.d || 200,
+                d2: o.d2 || 160,
+                ...(kind === 'tee' ? { ang: 90 } : {}),
                 sys: S.vent.cur || S.vent.systems[0].id
-              })
+              }
+            : kind === 'sil'
+              ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
+              : {
+                  L: o.L || 1000,
+                  W: 150,
+                  H: 250,
+                  n: 2,
+                  d: 125,
+                  conn: 'top',
+                  slots: 2,
+                  sw: 30,
+                  flow: 200,
+                  sys: S.vent.cur || S.vent.systems[0].id
+                })
     };
     return e;
   };
@@ -67932,7 +68422,9 @@ function mkHvu(kind0) {
         ? `${kind === 'red' ? 'Переход' : 'Тройник'} ø${o.d || 200}/ø${o.d2 || 160}: щелчок по воздуховоду — встанет в разрыв (Ø магистрали — от воздуховода), или свободное место [Ø/Второй Ø/Повернуть/Зеркально]:`
         : kind === 'sil'
           ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
-          : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
+          : kind === 'dbox'
+            ? 'Распределительный короб: место (вход слева, выходы спереди — грани, сечения и расходы в свойствах) [Повернуть/Длина/Высота]:'
+            : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
     hasValue: () => dk != null,
     onValue(v) {
       if (dk === 'L' && v > 100) o.L = v;
@@ -68257,6 +68749,16 @@ defineTools({
     title: 'Шумоглушитель · ШУМОГЛУШИТЕЛЬ',
     icon: '<path d="M2 10h3M15 10h3"/><rect x="5" y="6" width="10" height="8" rx="4"/>',
     help: 'Шумоглушитель: щелчок по круглому воздуховоду — разрежет его и встанет в разрыв, взяв Ø, отметку и систему. [Длина] 600/900/1200.'
+  },
+  distbox: {
+    command: {
+      t: 'РАСПРКОРОБ',
+      m: () => mkHvu('dbox'),
+      a: ['распределительный', 'короб', 'коллектор', 'распределитель', 'гребёнка', 'distribution']
+    },
+    title: 'Распределительный короб (вход и несколько выходов) · РАСПРКОРОБ',
+    icon: '<rect x="4" y="6" width="12" height="8"/><path d="M1 10h3M6 14v3M10 14v3M14 14v3"/>',
+    help: 'Короб с одним входом и несколькими выходами: щелчок — место. В свойствах — размеры короба, грань и сечение входа (Ø или Ш×В), список выходов (грань, сечение, смещение, расход), распределение расхода по площади или заданное, скорости, потери, проверки. Воздуховоды подключаются к патрубкам привязкой; «Расходы → воздуховоды» записывает расчётные расходы.'
   },
   plenum: {
     command: { t: 'АДАПТЕР', m: () => mkHvu('plen'), a: ['адаптер', 'пленум', 'камера', 'щелевая', 'plenum'] },
@@ -135928,6 +136430,7 @@ function penetrationMesh(mb, e) {
 
 
 
+
 const HC_TOL = 2, // mm: overlap up to this is touching
   HC_SOFT = 50, // mm: assembly clearance
   HC_JOIN = 30, // mm: ends closer than this are a connection
@@ -136388,6 +136891,8 @@ function hvacQty() {
 function hcUnitNear(vis, p) {
   return vis.some(e => {
     if (e.type === 'dev') return DEVK[e.kind] && DEVK[e.kind].f === 'vterm' && dist(e.p, p) <= HC_CONN;
+    // a duct end at a spigot of a unit / fitting / distribution box: connected, no cap
+    if (e.type === 'hvu') return hvSpigots(e).some(q => Math.hypot(q.p[0] - p.x, q.p[1] - p.y) <= HC_CONN);
     if (e.type !== 'ac' || e.kind !== 'duct') return false;
     const D = acDim(e),
       poly = [LP(e, -D[0] / 2, 0), LP(e, D[0] / 2, 0), LP(e, D[0] / 2, D[1]), LP(e, -D[0] / 2, D[1])];
