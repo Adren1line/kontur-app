@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.31';
+const APP_VER = '59.33';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -16295,6 +16295,7 @@ function drawWallDetail(w) {
         ctx.stroke();
       }
     ctx.restore();
+    drawZonesSafe(w);
     return;
   }
   let off = w.th / 2;
@@ -16345,12 +16346,19 @@ function drawWallDetail(w) {
       const o = sg * (w.th / 2 - 1.3 / view.k);
       seg(add(A, mul(n, o)), add(B, mul(n, o)));
     }
+  if ((px > 34 || (nodeState.pieForce && px > 12)) && ct.info && ct.info.sys) drawStudsPlan(w);
+  ctx.restore();
+  // finishes outside the wall's clip: surface panels stand proud of the wall, and a finish follows the rounded
+  // corners, which belong to the neighbour's outline
+  drawZonesSafe(w);
+}
+function drawZonesSafe(w) {
+  ctx.save();
   try {
     drawZonesPlan(w);
   } catch (err) {
     console.error(err);
   }
-  if ((px > 34 || (nodeState.pieForce && px > 12)) && ct.info && ct.info.sys) drawStudsPlan(w);
   ctx.restore();
 }
 function devTag(e, L, r, col) {
@@ -38420,6 +38428,7 @@ function initMixers() {
 
 
 
+
 /* wall finishing tool: whole side or zones; panels surface / flush with the build-up;
    substrate made up from sheet materials; joint profiles on zone borders */
 const FINM = {
@@ -38591,6 +38600,7 @@ function zonesGroup(w) {
     o = w.a,
     z0w = w.z || 0;
   const mb = MB((x, y, z) => [o.x + u.x * x + n.x * y, o.y + u.y * x + n.y * y, z + z0w]);
+  const mb2 = MB();
   const AL = '#b9bec4';
   for (const z of w.zones) {
     const s = z.side,
@@ -38599,22 +38609,31 @@ function zonesGroup(w) {
       col = hexOk(z.col) ? z.col : C.M.col || '#e0ddd6';
     const Y = (a, b) => [face + s * a, face + s * b].sort((p, q) => p - q);
     const rs = zoneRects(w, z);
-    const slab = (a, b, c, tag) => {
+    // the face path: curved walls, rounded corners and panel layouts are built along it, in world coordinates
+    const FP = zoneFollows(w, z);
+    const slab = (a, b, c, tag, panels) => {
+      if (FP) {
+        mb2.tag(tag);
+        const seg = zoneBend(z) === 'seg';
+        for (const r of zonePieces(w, z, FP, panels))
+          panelMesh(mb2, FP.F, r.x0, r.x1, r.z0, r.z1, a, b, c, seg && panels, z0w);
+        return;
+      }
       mb.tag(tag);
       const [y0, y1] = Y(a, b);
       for (const r of rs) mb.box(r.x0, y0, r.z0, r.x1, y1, r.z1, c);
     };
     if (isTileK(z.k)) tileMeshes(mb, w, z, face, s, col);
     else if (!C.M.panel) slab(z.k === 'paint' ? 0.4 : 0, z.k === 'paint' ? 1.2 : C.P, col, `Отделка: ${C.M.n}`);
-    else if (!C.flush) slab(0, C.P, col, `${C.M.n} (накладная)`);
+    else if (!C.flush) slab(0, C.P, col, `${C.M.n} (накладная)`, true);
     else {
       let cur = -C.R;
       for (const it of C.subs) {
         slab(cur, cur + it[1], SUBCOL[z.sub || 'Фанера'] || '#d2b17c', `Подложка: ${it[0]}`);
         cur += it[1];
       }
-      if (C.short) slab(-C.R, -C.R + C.P, col, `${C.M.n} (вровень, выступает ${fmt(C.short)} мм)`);
-      else slab(C.fb - C.P, C.fb, col, `${C.M.n} (вровень)`);
+      if (C.short) slab(-C.R, -C.R + C.P, col, `${C.M.n} (вровень, выступает ${fmt(C.short)} мм)`, true);
+      else slab(C.fb - C.P, C.fb, col, `${C.M.n} (вровень)`, true);
     }
     if (z.joint && z.joint !== 'none') {
       const out = C.outer;
@@ -38633,7 +38652,47 @@ function zonesGroup(w) {
       }
     }
   }
-  return meshGroup(mb.meshes(), { edges: true });
+  return meshGroup([...mb.meshes(), ...mb2.meshes()], { edges: true });
+}
+/* ---- zones along the face path ---- */
+/** The face path of a zone, or null when the plain straight build is exact (straight wall, no rounding, no layout). */
+function zoneFollows(w, z) {
+  if (isTileK(z.k)) return null;
+  const F = facePath(w, z.side);
+  const [sa, sb] = zoneSpan(F, z);
+  const M = FINM[z.k] || FINM.paint;
+  if (!F.curved && !M.panel && Math.abs(sa - z.x0) < 1 && Math.abs(sb - z.x1) < 1 && F.xa < 1 && F.xb > F.L - 1)
+    return null;
+  return { F, sa, sb };
+}
+/** Pieces of a zone in face coordinates (x = s): the panels of its layout (panels) or the whole span, minus openings. */
+function zonePieces(w, z, FP, panels) {
+  const ops = zoneOpsRects(w);
+  const out = [];
+  if (panels && (FINM[z.k] || {}).panel) {
+    const G = panelGrid(z, FP.sa, FP.sb);
+    const seg = zoneBend(z) === 'seg';
+    for (const [a0, b0] of G.cols)
+      for (const [a, b] of seg ? segSplit(FP.F, a0, b0, zoneSegW(z)) : [[a0, b0]])
+        for (const [c, d] of G.rows) out.push(...rectSub({ x0: a, x1: b, z0: c, z1: d }, ops));
+  } else out.push(...rectSub({ x0: FP.sa, x1: FP.sb, z0: z.z0, z1: z.z1 }, ops));
+  return out.filter(r => r.x1 - r.x0 > 1 && r.z1 - r.z0 > 1);
+}
+/** Panels of a zone for the specification: full panels and cut ones (by area), with the layout. */
+function zonePanels(w, z) {
+  const FP = zoneFollows(w, z) || { F: facePath(w, z.side), sa: z.x0, sb: z.x1 };
+  const G = panelGrid(z, FP.sa, FP.sb);
+  let full = 0,
+    cut = 0;
+  for (const [a, b] of G.cols)
+    for (const [c, d] of G.rows) {
+      const whole = b - a >= G.pw - 1 && (G.ph ? d - c >= G.ph - 1 : true);
+      const rs = rectSub({ x0: a, x1: b, z0: c, z1: d }, zoneOpsRects(w));
+      if (!rs.length) continue;
+      if (whole && rs.length === 1 && rs[0].x1 - rs[0].x0 >= b - a - 1 && rs[0].z1 - rs[0].z0 >= d - c - 1) full++;
+      else cut++;
+    }
+  return { full, cut, G, len: FP.sb - FP.sa };
 }
 function drawZonesPlan(w) {
   if (!w.zones || !w.zones.length) return;
@@ -38647,6 +38706,26 @@ function drawZonesPlan(w) {
       C = zoneCalc(w, z),
       col = hexOk(z.col) ? z.col : C.M.col || '#e0ddd6';
     const band = C.flush ? [face - s * C.R, face + s * C.fb] : [face, face + s * Math.max(C.P, 1.5 / view.k)];
+    const FP = zoneFollows(w, z);
+    if (FP) {
+      // along the face: every panel of the layout (joints show), bent or flat
+      const da = s * (band[0] - face),
+        db = s * (band[1] - face);
+      const seg = zoneBend(z) === 'seg';
+      const panels = !!C.M.panel;
+      const G = panels
+        ? panelGrid(z, FP.sa, FP.sb).cols.flatMap(c => (seg ? segSplit(FP.F, c[0], c[1], zoneSegW(z)) : [c]))
+        : [[FP.sa, FP.sb]];
+      ctx.fillStyle = hexA(col, 0.85);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      for (const [a, b] of G) {
+        pathPoly(panelPlan(FP.F, a, b, Math.min(da, db), Math.max(da, db), seg && panels));
+        ctx.fill();
+        if (panels) ctx.stroke();
+      }
+      continue;
+    }
     ctx.fillStyle = hexA(col, 0.85);
     pathPoly([W(z.x0, band[0]), W(z.x1, band[0]), W(z.x1, band[1]), W(z.x0, band[1])]);
     ctx.fill();
@@ -38669,7 +38748,11 @@ function drawZonesPlan(w) {
 function zonesSpec(w, put, fins) {
   for (const z of w.zones || []) {
     const C = zoneCalc(w, z),
-      A = zoneArea(w, z);
+      FP = zoneFollows(w, z),
+      // along the face: with the rounded corners it wraps
+      A = FP
+        ? zonePieces(w, z, FP, false).reduce((a, r) => a + (r.x1 - r.x0) * (r.z1 - r.z0), 0) / 1e6
+        : zoneArea(w, z);
     if (A <= 0) continue;
     const ral = z.ral ? z.ral + ' ' + ((RAL.find(r => r[0] === z.ral) || [])[1] || '') : z.col || '';
     if (isTileK(z.k)) {
@@ -38737,6 +38820,22 @@ function zonesSpec(w, put, fins) {
         r.ids.push(w.id);
       }
     );
+    if (C.M.panel) {
+      const PN = zonePanels(w, z);
+      const bend = zoneBend(z) === 'seg' ? 'сегментами на скруглениях' : 'гнутые на скруглениях';
+      put(
+        fins,
+        `zp|${z.k}|${PN.G.pw}x${PN.G.ph}|${z.ral || z.col}`,
+        {
+          name: `${C.M.n} — панели ${fmt(PN.G.pw)}×${PN.G.ph ? fmt(PN.G.ph) : 'на высоту'}, шов ${fmt(PN.G.pg)} мм (${bend}); в т. ч. подрезанных`,
+          u: 'шт'
+        },
+        r => {
+          r.q += PN.full + PN.cut;
+          r.ids.push(w.id);
+        }
+      );
+    }
     for (const it of C.subs)
       put(fins, 'sub|' + it[0], { name: `Подложка под панели: ${it[0]}`, u: 'м²' }, r => {
         r.q += A;
@@ -39123,10 +39222,43 @@ function zonesPanel(w) {
                   )
                 : '')
             : ''
-      }${sel('joint', Object.entries(JOINT), z.joint || 'none')}</div>
+      }${sel('joint', Object.entries(JOINT), z.joint || 'none')}${sel(
+        'wrap',
+        [
+          ['1', 'на скругления'],
+          ['0', 'только стена']
+        ],
+        z.wrap === false ? '0' : '1'
+      )}</div>${C.M.panel && !isTileK(z.k) ? panelLayoutHTML(w, z, i) : ''}
       ${isTileK(z.k) ? tilePanel(w, z, i) : `<div class="zc">${calc}</div>`}</div>`;
     })
     .join('');
+}
+/** Panel layout of a zone: size, joint, alignment, bending on curves. */
+function panelLayoutHTML(w, z, i) {
+  const D = PANEL_DEF[z.k] || {};
+  const sel = (k, opts, v) =>
+    `<select data-zn="${i}:${k}">${opts.map(([a, b]) => `<option value="${esc(a)}" ${String(a) === String(v) ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>`;
+  const num = (k, l, v, t) =>
+    `<label title="${esc(t || '')}">${l}<input type="number" data-zn="${i}:${k}" value="${fmt(v)}"></label>`;
+  const P = zonePanels(w, z);
+  const bend = zoneBend(z);
+  return `<div class="zh" style="margin-top:4px"><b>Раскладка панелей</b></div><div class="zg">${num('pw', 'ширина', +z.pw > 50 ? +z.pw : D.pw, 'Ширина панели вдоль стены, мм')}${num('ph', 'высота', +z.ph > 50 ? +z.ph : D.ph || 0, 'Высота панели, мм; 0 — на всю высоту зоны')}${num('pg', 'шов', z.pg != null ? +z.pg : D.pg || 0, 'Шов между панелями, мм')}${sel(
+    'palign',
+    [
+      ['center', 'от центра'],
+      ['start', 'от начала'],
+      ['end', 'от конца']
+    ],
+    z.palign || 'center'
+  )}${sel(
+    'bend',
+    [
+      ['smooth', 'гнутая (гладко)'],
+      ['seg', 'сегментами']
+    ],
+    bend
+  )}${bend === 'seg' ? num('segw', 'сегмент', zoneSegW(z), 'Ширина сегмента на скруглении и дуге, мм') : ''}</div><div class="zc">${P.full} целых + ${P.cut} подрезанных · по развёртке ${fmt(P.len)} мм${bend === 'seg' ? ' · на скруглениях — плоскими сегментами' : ''}</div>`;
 }
 function bindZones(el, w) {
   el.querySelectorAll('[data-zn]').forEach(inp => {
@@ -39159,9 +39291,13 @@ function bindZones(el, w) {
         changed();
         return;
       }
-      if (['x0', 'x1', 'z0', 'z1', 'th', 'side'].includes(k)) v = parseFloat(v);
-      if (k !== 'ral' && k !== 'col' && k !== 'k' && k !== 'mount' && k !== 'sub' && k !== 'joint' && !isFinite(v))
+      if (k === 'wrap') {
+        z.wrap = v === '1';
+        changed();
         return;
+      }
+      if (['x0', 'x1', 'z0', 'z1', 'th', 'side', 'pw', 'ph', 'pg', 'segw'].includes(k)) v = parseFloat(v);
+      if (!['ral', 'col', 'k', 'mount', 'sub', 'joint', 'palign', 'bend'].includes(k) && !isFinite(v)) return;
       z[k] = v;
       if (k === 'ral') {
         const r = RAL.find(q => q[0] === v);
@@ -80191,7 +80327,11 @@ var CW_PR = {
   niche: 'Встроенный шкаф-купе в нишу',
   hall: 'Прихожая',
   walkin: 'Гардеробная система (без дверей)',
-  library: 'Стеллаж / библиотека'
+  library: 'Стеллаж / библиотека',
+  rack: 'Стеллаж открытый (без задней стенки, на опорах или к стене)',
+  tumba: 'Тумба / комод (выдвижные ящики)',
+  wallcab: 'Навесной шкаф',
+  box: 'Глухой короб (зашить трубы, стояк, закрыть нишу)'
 };
 /** Front types: thickness, sheet material for the cutting list (or an order item), mass kg/m². */
 var CW_FT = {
@@ -80351,7 +80491,8 @@ var CW_SP = {
       { k: 'lift', h: 0 }
     ]
   },
-  open: { n: 'Открытая ниша', z: [{ k: 'open', h: 0 }] }
+  open: { n: 'Открытая ниша', z: [{ k: 'open', h: 0 }] },
+  chest: { n: 'Ящики на всю высоту (комод)', z: [{ k: 'open', h: 0 }] }
 };
 const CW_KG = { ldsp: 11.5, hdf: 2.6 };
 
@@ -80592,13 +80733,16 @@ function cwZones(G, S_) {
   const c = G.c,
     s = S_.sec,
     t = G.t;
-  const xdr = G.slide || G.noFront || cwFT(c, s).none ? 0 : Math.max(0, s.xdr | 0);
-  const drH = +s.xdrH || +c.drH || 200;
+  const all = !!s.xdrAll && !G.slide && !G.noFront && !cwFT(c, s).none;
+  const xdr = G.slide || G.noFront || cwFT(c, s).none ? 0 : all ? Math.max(1, s.xdr | 0 || 3) : Math.max(0, s.xdr | 0);
+  // a chest of drawers: the drawers share the whole height, there is no door and no interior above them
+  const drH = all ? (G.zA - G.zIn0 - (xdr - 1) * t) / xdr : +s.xdrH || +c.drH || 200;
   S_.xdr = xdr;
-  S_.zDr = xdr ? G.zIn0 + xdr * drH : null; // fixed shelf above the external drawers
+  S_.xdrAll = all;
+  S_.zDr = xdr ? (all ? G.zA - t : G.zIn0 + xdr * drH) : null; // fixed shelf above the external drawers
   const z0 = xdr ? S_.zDr + t : G.zIn0,
     z1 = G.zA;
-  const Z = (s.zones && s.zones.length ? s.zones : [{ k: 'shelves', n: 3, h: 0 }]).slice();
+  const Z = all ? [] : (s.zones && s.zones.length ? s.zones : [{ k: 'shelves', n: 3, h: 0 }]).slice();
   const fixedH = Z.reduce((a, z) => a + (+z.h > 0 ? +z.h : 0), 0);
   const nA = Z.filter(z => !(+z.h > 0)).length;
   const room = z1 - z0 - (Z.length - 1) * t;
@@ -80634,7 +80778,7 @@ function cwHingedFronts(G, S_) {
   let mainBot = zBot;
   const base = { sec: S_, R, ft: FT, s };
   if (S_.xdr) {
-    const top = S_.zDr + t / 2 - fg / 2;
+    const top = S_.xdrAll ? mainTop : S_.zDr + t / 2 - fg / 2;
     const h = (top - zBot - (S_.xdr - 1) * fg) / S_.xdr;
     for (let i = 0; i < S_.xdr; i++) {
       const z0 = zBot + i * (h + fg);
@@ -80651,6 +80795,12 @@ function cwHingedFronts(G, S_) {
       });
     }
     mainBot = top + fg;
+    if (S_.xdrAll) return;
+  }
+  // a blind panel (a box over pipes, a closed niche): fixed to the carcass, no hinges, no handle
+  if (c.open === 'fixed' || s.fixed) {
+    G.fronts.push({ ...base, kind: 'fixed', x0, x1, z0: mainBot, z1: zTop });
+    return;
   }
   const n = cwLeaves(S_);
   const hingeAuto = S_.first ? 'L' : S_.last ? 'R' : S_.gi % 2 ? 'L' : 'R';
@@ -80882,11 +81032,13 @@ function cwUnits(e, G = cwGeom(e)) {
       const nm =
         f.kind === 'drawer'
           ? 'Фасад ящика'
-          : f.kind === 'flap'
-            ? 'Фасад антресоли подъёмный'
-            : f.ant
-              ? 'Фасад антресоли распашной'
-              : 'Фасад распашной';
+          : f.kind === 'fixed'
+            ? 'Панель глухая (не открывается)'
+            : f.kind === 'flap'
+              ? 'Фасад антресоли подъёмный'
+              : f.ant
+                ? 'Фасад антресоли распашной'
+                : 'Фасад распашной';
       const mat = FT.mat;
       add_(
         `${nm} — ${FT.n}`,
@@ -81093,6 +81245,13 @@ function cwHardware(e, G = cwGeom(e), U = cwUnits(e, G)) {
       0
     )
   );
+  const fixedN = G.fronts.filter(f => f.kind === 'fixed').length;
+  if (fixedN) {
+    add_('Крепление глухой панели к корпусу: уголок мебельный 20×20 с саморезами', fixedN * 4);
+  }
+  if (c.base === 'hang') add_('Навес мебельный регулируемый (пара) с монтажной шиной', Math.max(1, G.secs.length));
+  if (c.back === 'none' && c.base !== 'hang')
+    add_('Крепление к стене от опрокидывания (уголок + дюбель)', Math.max(2, Math.ceil(G.secs.length / 2) * 2));
   const nh = doors.length + G.fronts.filter(f => f.kind === 'drawer' || f.kind === 'flap').length;
   const HD = CW_HD[c.handle] || CW_HD.bar;
   const hc = (CW_HCOL[c.hCol] || CW_HCOL.black)[0];
@@ -81354,7 +81513,11 @@ function cwApply(e, product) {
     niche: { open: 'slide', build: 'built', D: 620, ft: 'ldsp', base: 'plinth', gL: 3, gR: 3 },
     hall: { open: 'hinge', build: 'modules', D: 450, ft: 'shaker', handle: 'knob', base: 'plinth' },
     walkin: { open: 'none', build: 'modules', D: 560, base: 'plinth' },
-    library: { open: 'none', build: 'modules', D: 360, base: 'plinth' }
+    library: { open: 'none', build: 'modules', D: 360, base: 'plinth' },
+    rack: { open: 'none', build: 'single', D: 350, base: 'legs', plH: 60, back: 'none', H: 2000 },
+    tumba: { open: 'hinge', build: 'single', D: 500, base: 'legs', plH: 100, H: 800, ft: 'mdf', handle: 'push' },
+    wallcab: { open: 'hinge', build: 'single', D: 320, base: 'hang', hangZ: 1450, H: 2170, ft: 'mdf', handle: 'push' },
+    box: { open: 'fixed', build: 'built', D: 250, base: 'floor', ft: 'mdf', H: 0, gL: 3, gR: 3 }
   }[product];
   Object.assign(c, { topFill: 'none' }, T || {}); // a template adds nothing over the product
   c.gTop = cwLiftGap(c);
@@ -81364,7 +81527,11 @@ function cwApply(e, product) {
     niche: ['long', 'drawers', 'short2'],
     hall: ['shoes', 'long', 'shelves'],
     walkin: ['long', 'shelves', 'short2', 'drawers', 'shoes'],
-    library: ['shelves']
+    library: ['shelves'],
+    rack: ['shelves'],
+    tumba: ['chest'],
+    wallcab: ['shelves'],
+    box: ['open']
   }[product] || ['shelves'];
   e.secs = [];
   let id = 1,
@@ -81380,6 +81547,8 @@ function cwApply(e, product) {
       const p = CW_SP[pat[pi++ % pat.length]];
       const sec = { id: id++, run: R.i, w: 0, zones: p.z.map(z => ({ ...z })) };
       if (product === 'hall' && p === CW_SP.shoes) sec.leaves = 1;
+      if (p === CW_SP.chest) Object.assign(sec, { xdrAll: true, xdr: 3 });
+      if (product === 'wallcab') sec.zones = [{ k: 'shelves', n: 1, h: 0 }];
       e.secs.push(sec);
     }
   }
@@ -81838,7 +82007,7 @@ function cwMeshes(e) {
     }
     const mb = MB(xf);
     cwFrontMesh(mb, c, f.ft, f.x0, f.x1, f.z0, f.z1, y0, {});
-    cwHandleMesh(mb, c, f, y0, f.kind === 'door' ? 'door' : 'drawer');
+    if (f.kind !== 'fixed') cwHandleMesh(mb, c, f, y0, f.kind === 'door' ? 'door' : 'drawer');
     if (f.kind === 'drawer' && c.showOpen) {
       mb.tag('Ящики');
       mb.box(f.ix0 + 4, y0 - (f.NL || 450), f.z0 + 16, f.ix0 + 18, y0, f.z0 + 120, '#c3c7cc');
@@ -88625,7 +88794,7 @@ function renderCasework() {
           ['floor', 'на пол без цоколя'],
           ['hang', 'подвесной (над полом)']
         ]
-      )}${c.base === 'hang' ? cwNum('Низ подвесного от пола', 'hangZ', c.hangZ) : c.base !== 'floor' ? cwNum('Высота цоколя / опор', 'plH', c.plH) + cwNum('Утопление цоколя от фасада', 'plR', c.plR) : ''}${c.base !== 'hang' && c.open === 'hinge' ? cwChk('Фасады до пола (закрывают цоколь)', 'frontFloor', c.frontFloor) : ''}${c.frontFloor ? cwNum('Зазор фасадов до пола', 'fgFloor', c.fgFloor) : ''}${c.open === 'hinge' ? cwNum('Зазор между фасадами', 'fg', c.fg, 'step="0.5"') + cwNum('Зазор по краю корпуса', 'fgE', c.fgE, 'step="0.5"') : ''}`
+      )}${c.base === 'hang' ? cwNum('Низ подвесного от пола', 'hangZ', c.hangZ) : c.base !== 'floor' ? cwNum('Высота цоколя / опор', 'plH', c.plH) + cwNum('Утопление цоколя от фасада', 'plR', c.plR) : ''}${c.base !== 'hang' && c.open === 'hinge' ? cwChk('Фасады до пола (закрывают цоколь)', 'frontFloor', c.frontFloor) : ''}${c.frontFloor ? cwNum('Зазор фасадов до пола', 'fgFloor', c.fgFloor) : ''}${c.open === 'hinge' || c.open === 'fixed' ? cwNum('Зазор между фасадами', 'fg', c.fg, 'step="0.5"') + cwNum('Зазор по краю корпуса', 'fgE', c.fgE, 'step="0.5"') : ''}`
     )}
     ${cwGrp(
       'Корпус',
@@ -88657,7 +88826,8 @@ function renderCasework() {
       `${cwSel('Открывание', 'open', c.open, [
         ['hinge', 'распашные двери'],
         ['slide', 'двери-купе'],
-        ['none', 'без дверей']
+        ['none', 'без дверей'],
+        ['fixed', 'глухие панели (короб)']
       ])}${c.open === 'hinge' ? cwSel('Петли', 'hingeAng', c.hingeAng, Object.entries(CW_HINGE), true) : ''}${
         c.open === 'slide'
           ? cwSel(
@@ -88747,7 +88917,7 @@ function renderCasework() {
     const s = S_.sec;
     const zk = Object.entries(CW_ZK).map(([k, v]) => [k, v.n]);
     rh = `<div class="sech">Секция С${S_.gi} · стена ${S_.R.i + 1}</div><div style="display:grid;gap:6px">${cwNum(`Ширина по осям (0 — авто, сейчас ${Math.round(S_.w)})`, 'w', s.w || 0)}${
-      c.open === 'hinge'
+      c.open === 'hinge' || c.open === 'fixed'
         ? cwSel(
             'Створок',
             'leaves',
@@ -88771,7 +88941,9 @@ function renderCasework() {
             ...Object.entries(CW_FT).map(([k, v]) => [k, v.n])
           ]) +
           cwNum('Наружных ящиков внизу', 'xdr', s.xdr || 0) +
-          (s.xdr ? cwNum('Высота наружного ящика (0 — общая)', 'xdrH', s.xdrH || 0) : '')
+          (s.xdr && !s.xdrAll ? cwNum('Высота наружного ящика (0 — общая)', 'xdrH', s.xdrH || 0) : '') +
+          cwChk('Ящики на всю высоту (тумба, комод)', 'xdrAll', !!s.xdrAll) +
+          cwChk('Глухая панель (не открывается)', 'fixed', !!s.fixed)
         : ''
     }</div>
     <div class="sech" style="margin-top:8px">Наполнение (снизу вверх)</div>
@@ -118310,6 +118482,250 @@ function closerSet(mb, lm, l, M, c, open) {
   mb.cyl(B[0], B[1], zA + 10, zt + 4, 7, '#8f9396', 16);
 }
 
+// ===== elements/finish-path.js =====
+/**
+ * elements/finish-path.js
+ *
+ * The face a wall finish lies on, as a developed strip: s runs along the face (mm), d is the depth outward from the
+ * structural face. The face follows the wall: straight, curved (a wall with `arc`) and, at the ends, around the
+ * rounded corners (half of each rounding — the other half belongs to the neighbour wall's finish).
+ *
+ * Panels on it: a layout (panel width along the face, height, joint, alignment) cuts the zone into panels; each panel
+ * is either bent along the face ("smooth" — veneer, paint) or flat ("segments" — thick HPL: a facet from edge to
+ * edge, moved out so it never cuts into a convex face).
+ */
+
+
+
+
+
+/** Defaults of a panel layout per material key (width along the face, height 0 = whole zone, joint). */
+const PANEL_DEF = {
+  veneer: { pw: 1200, ph: 0, pg: 0, bend: 'smooth' },
+  mdfp: { pw: 1200, ph: 0, pg: 0, bend: 'smooth' },
+  hpl: { pw: 1300, ph: 0, pg: 4, bend: 'seg' }
+};
+
+/** Face path of a wall side: { s0, s1, L, at(s, d) → point, out(s) → outward unit vector, xs(s) → wall x or null }. */
+function facePath(w, side) {
+  const wi = wallInfo(w);
+  const A = arcOf(w);
+  const L = wi.L,
+    h = w.th / 2;
+  const at0 = A
+    ? (x, d) => arcPt(A, x, side * (h + d))
+    : (x, d) => add(add(w.a, mul(wi.u, x)), mul(wi.n, side * (h + d)));
+  // straight part on this side: from the tangent points of the roundings (if any)
+  let xa = 0,
+    xb = L,
+    arcs = [null, null];
+  if (!A) {
+    let J = null;
+    try {
+      J = joinsAll().get(w.id);
+    } catch (err) {
+      J = null;
+    }
+    const CA = wallFaceRounds(w, { u: wi.u, n: wi.n, L }, J);
+    arcs = [CA[0][side], CA[1][side]];
+    const xOf = p => dot(sub(p, w.a), wi.u);
+    if (arcs[0]) xa = Math.max(0, Math.min(L, xOf(arcs[0].P0)));
+    if (arcs[1]) xb = Math.max(0, Math.min(L, xOf(arcs[1].P0)));
+  }
+  const wrapLen = a => {
+    if (!a) return 0;
+    const c = dot(nrm(sub(a.P0, a.C)), nrm(sub(a.Pm, a.C)));
+    return a.R * Math.acos(Math.max(-1, Math.min(1, c)));
+  };
+  const L0 = wrapLen(arcs[0]),
+    L1 = wrapLen(arcs[1]);
+  // a point on a rounding: angle from the tangent point toward the middle, radius grows outward on a convex face
+  const onArc = (a, t, d) => {
+    const v0 = sub(a.P0, a.C),
+      vm = sub(a.Pm, a.C);
+    const sg = v0.x * vm.y - v0.y * vm.x > 0 ? 1 : -1;
+    const ang = (sg * t) / a.R,
+      c = Math.cos(ang),
+      s_ = Math.sin(ang);
+    const v = nrm(P(v0.x * c - v0.y * s_, v0.x * s_ + v0.y * c));
+    return add(a.C, mul(v, a.R + (a.convex ? d : -d)));
+  };
+  // s: 0…xa−… the start rounding comes first (s < xa), then the face xa…xb, then the end rounding
+  const s0 = xa - L0,
+    s1 = xb + L1;
+  const at = (s, d = 0) => {
+    if (s < xa && arcs[0]) return onArc(arcs[0], xa - s, d);
+    if (s > xb && arcs[1]) return onArc(arcs[1], s - xb, d);
+    return at0(Math.max(0, Math.min(L, s)), d);
+  };
+  const out = s => {
+    const a = at(s, 0),
+      b = at(s, 10);
+    return nrm(sub(b, a));
+  };
+  return {
+    s0,
+    s1,
+    xa,
+    xb,
+    L,
+    curved: !!A,
+    at,
+    out,
+    /** where the face bends: s values at which a smooth panel must be sampled densely */
+    bentAt: (sa, sb) => !!A || (arcs[0] && sa < xa) || (arcs[1] && sb > xb),
+    arcR: s => (A ? A.R : s < xa && arcs[0] ? arcs[0].R : s > xb && arcs[1] ? arcs[1].R : 0)
+  };
+}
+
+/** The developed s range of a zone: a zone reaching a wall end continues around its rounding (unless wrap is off). */
+function zoneSpan(F, z) {
+  const wrap = z.wrap !== false;
+  const a = wrap && z.x0 <= 5 ? F.s0 : Math.max(F.s0, z.x0);
+  const b = wrap && z.x1 >= F.L - 5 ? F.s1 : Math.min(F.s1, z.x1);
+  return [a, b];
+}
+
+/** Panel layout of a zone: columns [sa, sb] along the face and rows [za, zb]; joints of pg mm between panels. */
+function panelGrid(z, sa, sb) {
+  const D = PANEL_DEF[z.k] || { pw: 1200, ph: 0, pg: 0 };
+  const pw = +z.pw > 50 ? +z.pw : D.pw,
+    ph = +z.ph > 50 ? +z.ph : D.ph,
+    pg = z.pg != null && isFinite(+z.pg) ? Math.max(0, +z.pg) : D.pg;
+  const al = z.palign || 'center';
+  const cols = [];
+  const span = sb - sa;
+  const n = Math.max(1, Math.ceil((span + pg) / (pw + pg) - 1e-9));
+  // the start of the first full panel: left edge, right edge or symmetric about the middle
+  let st = sa;
+  if (al === 'end') st = sb - n * (pw + pg) + pg;
+  else if (al === 'center') st = (sa + sb) / 2 - (n * (pw + pg) - pg) / 2;
+  for (let k = -1; k <= n; k++) {
+    const a = Math.max(sa, st + k * (pw + pg)),
+      b = Math.min(sb, st + k * (pw + pg) + pw);
+    if (b - a > 1) cols.push([a, b]);
+  }
+  const rows = [];
+  if (ph > 0) {
+    for (let zc = z.z0; zc < z.z1 - 1; zc += ph + pg) rows.push([zc, Math.min(z.z1, zc + ph)]);
+  } else rows.push([z.z0, z.z1]);
+  return { cols, rows, pw, ph, pg };
+}
+
+/**
+ * Flat panels cannot cross a bend: a panel is cut at the joins of the straight face and a rounding, and on a curved
+ * part into facets no wider than segw (the width of a segment on a curve, set per zone; 150 mm by default).
+ */
+function segSplit(F, a, b, segw) {
+  const cuts = [a];
+  for (const j of [F.xa, F.xb]) if (j > a + 1 && j < b - 1) cuts.push(j);
+  cuts.push(b);
+  const out = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const c = cuts[i],
+      d = cuts[i + 1];
+    if (!F.bentAt(c + 0.5, d - 0.5) || (!F.curved && c >= F.xa - 0.5 && d <= F.xb + 0.5)) {
+      out.push([c, d]);
+      continue;
+    }
+    const n = Math.max(1, Math.ceil((d - c) / Math.max(20, segw) - 1e-9));
+    for (let k = 0; k < n; k++) out.push([c + ((d - c) * k) / n, c + ((d - c) * (k + 1)) / n]);
+  }
+  return out;
+}
+/** Width of a segment on a curve for a zone, mm. */
+const zoneSegW = z => (+z.segw > 20 ? +z.segw : 150);
+
+/** Bending mode of a zone: 'smooth' (bent with the face) or 'seg' (flat facets). */
+function zoneBend(z) {
+  return z.bend || (PANEL_DEF[z.k] || {}).bend || 'smooth';
+}
+
+/** s samples of a piece of the face: dense on curved parts (≤ 4°, ≤ 60 mm), the ends only on straight ones. */
+function faceSamples(F, sa, sb) {
+  if (!F.bentAt(sa, sb)) return [sa, sb];
+  const xs = [sa];
+  let s = sa;
+  while (s < sb - 1e-6) {
+    const R = F.arcR(s) || F.arcR(Math.min(sb, s + 1)) || 0;
+    const st = R ? Math.min(60, Math.max(8, R * 0.07)) : sb - s;
+    // do not step over the joins between the straight face and a rounding
+    let nx = Math.min(sb, s + st);
+    for (const j of [F.xa, F.xb]) if (s < j - 1e-6 && nx > j + 1e-6) nx = j;
+    xs.push(nx);
+    s = nx;
+  }
+  return xs;
+}
+
+/**
+ * Adds a panel (s range sa…sb, height za…zb, depth da…db outward) to a mesh builder in world coordinates (z of the
+ * wall base added by the caller's zw). Smooth: a bent strip; seg: one flat box from edge to edge, moved out by the
+ * sagitta on a convex face.
+ */
+function panelMesh(mb, F, sa, sb, za, zb, da, db, col, seg, zw = 0) {
+  const tri = (a, b, c) => mb.tri3(col, a, b, c);
+  const quad = (a, b, c, d) => (tri(a, b, c), tri(a, c, d));
+  const V = (p, z) => [p.x, p.y, z + zw];
+  if (seg && F.bentAt(sa, sb)) {
+    // a flat panel: the chord between the edges at depth da, pushed out if the face bulges past it
+    const A = F.at(sa, da),
+      B = F.at(sb, da);
+    const u = nrm(sub(B, A));
+    let n = P(-u.y, u.x);
+    const om = F.out((sa + sb) / 2);
+    if (dot(n, om) < 0) n = mul(n, -1);
+    let push = 0;
+    for (const s of faceSamples(F, sa, sb)) push = Math.max(push, dot(sub(F.at(s, da), A), n));
+    const A0 = add(A, mul(n, push)),
+      B0 = add(B, mul(n, push)),
+      A1 = add(A0, mul(n, db - da)),
+      B1 = add(B0, mul(n, db - da));
+    quad(V(A1, za), V(B1, za), V(B1, zb), V(A1, zb));
+    quad(V(B0, za), V(A0, za), V(A0, zb), V(B0, zb));
+    quad(V(A0, zb), V(A1, zb), V(B1, zb), V(B0, zb));
+    quad(V(A0, za), V(B0, za), V(B1, za), V(A1, za));
+    quad(V(A0, za), V(A1, za), V(A1, zb), V(A0, zb));
+    quad(V(B1, za), V(B0, za), V(B0, zb), V(B1, zb));
+    return;
+  }
+  const ss = faceSamples(F, sa, sb);
+  for (let i = 0; i < ss.length - 1; i++) {
+    const a0 = F.at(ss[i], da),
+      b0 = F.at(ss[i + 1], da),
+      a1 = F.at(ss[i], db),
+      b1 = F.at(ss[i + 1], db);
+    quad(V(a1, za), V(b1, za), V(b1, zb), V(a1, zb));
+    quad(V(b0, za), V(a0, za), V(a0, zb), V(b0, zb));
+    quad(V(a0, zb), V(a1, zb), V(b1, zb), V(b0, zb));
+    quad(V(a0, za), V(b0, za), V(b1, za), V(a1, za));
+  }
+  const a0 = F.at(sa, da),
+    a1 = F.at(sa, db),
+    b0 = F.at(sb, da),
+    b1 = F.at(sb, db);
+  quad(V(a0, za), V(a1, za), V(a1, zb), V(a0, zb));
+  quad(V(b1, za), V(b0, za), V(b0, zb), V(b1, zb));
+}
+
+/** Plan outline of a panel band (depth da…db): a closed polygon in world x/y. */
+function panelPlan(F, sa, sb, da, db, seg) {
+  if (seg && F.bentAt(sa, sb)) {
+    const A = F.at(sa, da),
+      B = F.at(sb, da);
+    const u = nrm(sub(B, A));
+    let n = P(-u.y, u.x);
+    if (dot(n, F.out((sa + sb) / 2)) < 0) n = mul(n, -1);
+    let push = 0;
+    for (const s of faceSamples(F, sa, sb)) push = Math.max(push, dot(sub(F.at(s, da), A), n));
+    const A0 = add(A, mul(n, push)),
+      B0 = add(B, mul(n, push));
+    return [A0, B0, add(B0, mul(n, db - da)), add(A0, mul(n, db - da))];
+  }
+  const ss = faceSamples(F, sa, sb);
+  return [...ss.map(s => F.at(s, da)), ...ss.reverse().map(s => F.at(s, db))];
+}
+
 // ===== elements/glass.js =====
 /**
  * elements/glass.js
@@ -122532,6 +122948,76 @@ function cornerFinishQty(w, J, knauf, outerFinTh, sheetLayers) {
     }
   }
   return r;
+}
+
+/**
+ * The rounded faces at the ends of wall w, per side, for finishes that follow them: for each end (0 — at w.a, 1 —
+ * at w.b) and side (1 — A, the left of a→b; −1 — B) the arc of that face from the tangent point on w to the middle
+ * of the rounding (the other half belongs to the neighbour wall). { C, R, P0 (tangent on w), Pm (middle),
+ * convex (outer face: the outward direction points away from C) }.
+ */
+function wallFaceRounds(w, B, J) {
+  const out = [
+    { 1: null, '-1': null },
+    { 1: null, '-1': null }
+  ];
+  if (!J) return out;
+  for (const end of [0, 1]) {
+    const E = J.ends[end];
+    if (!E || E.mode === 'none' || E.parts.length !== 1) continue;
+    const o = E.parts[0].o,
+      pend = E.parts[0].end;
+    const Rout = Math.max(+rOf(w, end).out || 0, +rOf(o, pend).out || 0),
+      Rin = Math.max(+rOf(w, end).in || 0, +rOf(o, pend).in || 0);
+    if (!(Rout > 0 || Rin > 0)) continue;
+    const P_ = E.P,
+      d = E.d,
+      dp = E.parts[0].d;
+    const phi = Math.acos(clamp(dot(d, dp), -1, 1));
+    if (phi < 0.09 || phi > Math.PI - 0.09) continue;
+    const h = w.th / 2,
+      hp = o.th / 2;
+    const l = P(-d.y, d.x),
+      lp = P(-dp.y, dp.x);
+    const left = d.x * dp.y - d.y * dp.x > 0;
+    const no = left ? mul(l, -1) : l;
+    const nop = dot(lp, d) < 0 ? lp : mul(lp, -1);
+    const V = lineX(add(P_, mul(no, h)), d, add(P_, mul(nop, hp)), dp),
+      Vi = lineX(sub(P_, mul(no, h)), d, sub(P_, mul(nop, hp)), dp);
+    if (!V || !Vi) continue;
+    const bis = nrm(add(d, dp));
+    const Lmax = Math.min(dist(w.a, w.b), dist(o.a, o.b)) * 0.9;
+    const sOut = dot(no, B.n) > 0 ? 1 : -1;
+    const half = (C, R, T1, T2, convex) => {
+      const m = nrm(add(nrm(sub(T1, C)), nrm(sub(T2, C))));
+      return { C, R, P0: T1, Pm: add(C, mul(m, R)), convex };
+    };
+    if (Rout > 0 && Math.min(Rout, Lmax * Math.tan(phi / 2)) > Math.min(w.th, o.th) + 1) {
+      // a curved wall segment: the outer face at R, the inner one at R − th
+      const R = Math.min(Rout, Lmax * Math.tan(phi / 2));
+      const t = R / Math.tan(phi / 2);
+      const T1 = add(V, mul(d, t)),
+        T2 = add(V, mul(dp, t));
+      const Cc = sub(T1, mul(no, R));
+      out[end][sOut] = half(Cc, R, T1, T2, true);
+      const r = R - w.th;
+      if (r > 1) out[end][-sOut] = half(Cc, r, add(Cc, mul(no, r)), add(Cc, mul(nop, r)), false);
+      continue;
+    }
+    if (Rout > 0) {
+      const R = Math.min(Rout, Lmax * Math.tan(phi / 2));
+      const t = R / Math.tan(phi / 2);
+      const Cc = add(V, mul(bis, R / Math.sin(phi / 2)));
+      out[end][sOut] = half(Cc, R, add(V, mul(d, t)), add(V, mul(dp, t)), true);
+    }
+    if (Rin > 0) {
+      const r = Math.min(Rin, Lmax * Math.tan(phi / 2));
+      const t = r / Math.tan(phi / 2);
+      const Ci = add(Vi, mul(bis, r / Math.sin(phi / 2)));
+      out[end][-sOut] = half(Ci, r, add(Vi, mul(d, t)), add(Vi, mul(dp, t)), false);
+    }
+  }
+  return out;
 }
 
 // ===== elements/wall-tie.js =====
