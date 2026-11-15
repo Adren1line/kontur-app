@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.42';
+const APP_VER = '59.43';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -19541,41 +19541,8 @@ function build3(e) {
         return meshGroup(mb.meshes(), {});
       }
       const pts = ductPath3(e);
-      for (let i = 1; i < pts.length; i++) {
-        let a = pts[i - 1],
-          b = pts[i];
-        const dx = b[0] - a[0],
-          dy = b[1] - a[1],
-          L = Math.hypot(dx, dy);
-        if (L < 1e-6) {
-          // a vertical leg (a dip under a beam, a step): the section turns over the narrow side, the width stays
-          // across the run; it overlaps the level legs by half the height to close the corners
-          if (e.shape === 'rect' && Math.abs(b[2] - a[2]) > 1) {
-            let u = null;
-            for (const k of [i - 2, i]) {
-              const p0 = pts[k],
-                p1 = pts[k + 1];
-              if (!p0 || !p1) continue;
-              const l = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-              if (l > 1) {
-                u = [(p1[0] - p0[0]) / l, (p1[1] - p0[1]) / l];
-                break;
-              }
-            }
-            const sg = Math.sign(b[2] - a[2]);
-            const sv = u ? [-u[1], u[0], 0] : null;
-            mb.obox([a[0], a[1], a[2] - (sg * Hh) / 2], [b[0], b[1], b[2] + (sg * Hh) / 2], W, Hh, col, undefined, sv);
-          }
-          continue;
-        }
-        const ux = dx / L,
-          uy = dy / L,
-          ea = i > 1 ? W / 2 : 0,
-          eb = i < pts.length - 1 ? W / 2 : 0;
-        a = [a[0] - ux * ea, a[1] - uy * ea, a[2]];
-        b = [b[0] + ux * eb, b[1] + uy * eb, b[2]];
-        if (e.shape === 'rect') mb.obox(a, b, W, Hh, col);
-      }
+      // a rectangular duct: one body with mitred corners (nothing past the elbows)
+      if (e.shape === 'rect') rectDuctBody(mb, pts, W, Hh, col);
       if (e.shape !== 'rect') {
         const ends = [
           [e.from, 0],
@@ -19604,20 +19571,12 @@ function build3(e) {
           }
         }
       });
-      ductJoints(e, mb, col, W, Hh);
+      // the parts it is made of: joints of the straight bars, the ends of the elbows
+      ductDetails3(mb, e, W, Hh, col, hvShade(col, -0.28));
       try {
         penetrationMesh(mb, e);
       } catch (err) {
         console.error(err);
-      }
-      if (isPvc(e)) {
-        // the connectors of the 2 m channels: a sleeve a little larger than the channel
-        mb.tag('Соединитель каналов ПВХ');
-        for (const j of pvcJointPts(e)) {
-          const a = j.c.map((x, k) => x - j.u[k] * 25),
-            b = j.c.map((x, k) => x + j.u[k] * 25);
-          mb.obox(a, b, W + 6, Hh + 6, '#e4e6e8');
-        }
       }
       if (e.tap && pts.length > 1) {
         // the saddle on the main and the rolled (beaded) joint at the spigot of a rigid connection
@@ -25347,6 +25306,12 @@ function renderSpecLevel() {
         put(bends, 'tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт' }, r => {
           r.q++;
           r.ids.push(e.id);
+        });
+      // the straight bars and their joints (nipples, flanges, sleeves)
+      for (const r of ductSysRows(e))
+        put(bends, 'ds' + e.mat + r.k, { name: `${r.name} · ${e.sys}`, u: 'шт' }, x => {
+          x.q += r.q;
+          x.ids.push(e.id);
         });
       // every turn made of the real elbows of the material
       const lib = ductLib(e);
@@ -135497,6 +135462,236 @@ function ductBadTurns(e) {
     .filter(t => !t.E || t.E.err > 3);
 }
 
+/*
+ * Straight parts and joints of a rigid duct system: the length of a straight part, what joins two parts and how much
+ * of a leg an elbow takes (its leg from the corner to its end, where the duct joins it).
+ */
+const DSYS = {
+  galvRound: { bar: 3000, bn: 'Воздуховод спирально-навивной', jn: 'Ниппель', jt: 'ring', fitJ: 0 },
+  galvRect: {
+    bar: 1250,
+    bn: 'Воздуховод прямоугольный оцинкованный, секция 1250 мм',
+    jn: 'Фланцевое соединение (шина 20, уголки, уплотнитель, крепёж)',
+    jt: 'flange',
+    fitJ: 1
+  },
+  pvcRound: { bar: 2000, bn: 'Труба ПВХ вентиляционная', jn: 'Соединитель ПВХ', jt: 'sleeve', fitJ: 0 },
+  pvcFlat: { bar: 2000, bn: 'Канал ПВХ плоский', jn: 'Соединитель каналов ПВХ', jt: 'sleeve', fitJ: 0 }
+};
+function ductSys(e) {
+  const L = ductLib(e);
+  if (L === DLIB.flex) return null;
+  if (L === DLIB.pvcFlat) return DSYS.pvcFlat;
+  if (L === DLIB.pvcRound) return e.shape === 'rect' ? DSYS.pvcFlat : DSYS.pvcRound;
+  return e.shape === 'rect' ? DSYS.galvRect : DSYS.galvRound;
+}
+/** Leg of an elbow (corner to its end) for a duct section: round — one diameter, rectangular — half the width + 50. */
+function elbowLeg(e, vertical) {
+  if (e.shape !== 'rect') return Math.max(60, +e.d || 160);
+  const ins = 2 * (+e.ins || 0);
+  return (vertical ? +e.hh : +e.w) / 2 + ins / 2 + 50;
+}
+/**
+ * The layout of a duct along its 3D path: per straight piece the free part between the elbows (where the straight
+ * duct goes), the joints between the bars, the ends of the elbows. { bars, joints: [{ c, u }], fitEnds: [{ c, u }],
+ * straightL }.
+ */
+function ductLayout(e) {
+  const S_ = ductSys(e);
+  const q = ductPath3(e);
+  const segs = [];
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1],
+      b = q[i];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    if (L < 1) continue;
+    segs.push({
+      a,
+      b,
+      L,
+      u: [(b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L],
+      vert: Math.abs(b[2] - a[2]) > 0.7 * L
+    });
+  }
+  const out = { bars: 0, joints: [], fitEnds: [], straightL: 0, elbows: 0 };
+  if (!S_) return out;
+  const at = (s, t) => [s.a[0] + s.u[0] * t, s.a[1] + s.u[1] * t, s.a[2] + s.u[2] * t];
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    // a turn at the start / end of this piece: the elbow takes its leg
+    const turn = j => {
+      if (j < 0 || j >= segs.length - 1) return false;
+      const u = segs[j].u,
+        v = segs[j + 1].u;
+      return u[0] * v[0] + u[1] * v[1] + u[2] * v[2] < Math.cos((3 * Math.PI) / 180);
+    };
+    const vt = j => segs[j] && segs[j + 1] && (segs[j].vert || segs[j + 1].vert);
+    const l0 = turn(i - 1) ? Math.min(s.L / 2, elbowLeg(e, vt(i - 1))) : 0,
+      l1 = turn(i) ? Math.min(s.L / 2, elbowLeg(e, vt(i))) : 0;
+    if (l0) out.fitEnds.push({ c: at(s, l0), u: s.u });
+    if (l1) {
+      out.fitEnds.push({ c: at(s, s.L - l1), u: s.u });
+      out.elbows++;
+    }
+    const free = s.L - l0 - l1;
+    if (free < 5) continue;
+    out.straightL += free;
+    const n = Math.max(1, Math.ceil(free / S_.bar - 1e-9));
+    out.bars += n;
+    for (let k = 1; k < n; k++) out.joints.push({ c: at(s, l0 + k * S_.bar), u: s.u });
+  }
+  return out;
+}
+/** Specification rows of the straight parts and joints of a rigid duct (PVC flat channels have their own). */
+function ductSysRows(e) {
+  const S_ = ductSys(e);
+  if (!S_ || S_ === DSYS.pvcFlat) return [];
+  const st = e.shape === 'rect' ? `${e.w}×${e.hh}` : `Ø${e.d}`;
+  const L = ductLayout(e);
+  const rows = [];
+  if (L.bars) rows.push({ k: 'b' + st, name: `${S_.bn} ${st}, L = ${S_.bar} мм (с подрезкой)`, q: L.bars });
+  // joints: between the bars; a flanged system also at both ends of every elbow
+  const nj = L.joints.length + (S_.fitJ ? L.fitEnds.length : 0);
+  if (nj) rows.push({ k: 'j' + st, name: `${S_.jn} ${st}`, q: nj });
+  return rows;
+}
+
+/* ---------- 3D ---------- */
+const dv3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  nrm: a => {
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    return [a[0] / l, a[1] / l, a[2] / l];
+  }
+};
+/** Rotation of vector x by the rotation taking unit a onto unit b (Rodrigues). */
+function rotAB(x, a, b) {
+  const k = dv3.cross(a, b),
+    s = Math.hypot(k[0], k[1], k[2]),
+    c = dv3.dot(a, b);
+  if (s < 1e-9) return c > 0 ? x.slice() : dv3.mul(x, -1);
+  const n = dv3.mul(k, 1 / s);
+  return dv3.add(dv3.add(dv3.mul(x, c), dv3.mul(dv3.cross(n, x), s)), dv3.mul(n, dv3.dot(n, x) * (1 - c)));
+}
+/**
+ * A rectangular duct body along a 3D polyline with mitred corners: the section (width across the run, height up
+ * on a level run) is carried along the path, so at a level turn the width turns with it and at a turn up or down the
+ * duct turns over its narrow side; each corner of the section runs straight to the bisector plane of the turn —
+ * nothing sticks out past the elbow.
+ */
+function rectDuctBody(mb, q, W, H, col) {
+  const segs = [];
+  for (let i = 1; i < q.length; i++) {
+    const d = dv3.sub(q[i], q[i - 1]),
+      L = Math.hypot(d[0], d[1], d[2]);
+    if (L > 0.5) segs.push({ a: q[i - 1], b: q[i], d: dv3.mul(d, 1 / L) });
+  }
+  if (!segs.length) return;
+  // the first frame: on a level run width horizontal and height up; a vertical first leg takes the next level run's
+  let s0, u0;
+  const lvl = segs.find(s => Math.abs(s.d[2]) < 0.7);
+  if (Math.abs(segs[0].d[2]) < 0.7) {
+    s0 = dv3.nrm([-segs[0].d[1], segs[0].d[0], 0]);
+    u0 = dv3.cross(s0, segs[0].d);
+    if (u0[2] < 0) u0 = dv3.mul(u0, -1);
+  } else {
+    const h = lvl ? lvl.d : [1, 0, 0];
+    s0 = dv3.nrm([-h[1], h[0], 0]);
+    u0 = dv3.nrm(dv3.cross(segs[0].d, s0));
+  }
+  const fr = [{ s: s0, u: u0 }];
+  for (let i = 1; i < segs.length; i++) {
+    const p = fr[i - 1];
+    fr.push({ s: dv3.nrm(rotAB(p.s, segs[i - 1].d, segs[i].d)), u: dv3.nrm(rotAB(p.u, segs[i - 1].d, segs[i].d)) });
+  }
+  const offs = [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1]
+  ];
+  // the end rings of each piece: on the bisector plane at a turn, square at the ends of the run
+  const ring = (i, end) => {
+    const sg = segs[i],
+      F = fr[i];
+    const V = end ? sg.b : sg.a;
+    const nb =
+      end && i < segs.length - 1
+        ? dv3.nrm(dv3.add(sg.d, segs[i + 1].d))
+        : !end && i > 0
+          ? dv3.nrm(dv3.add(segs[i - 1].d, sg.d))
+          : sg.d;
+    return offs.map(([a, b]) => {
+      const o = dv3.add(V, dv3.add(dv3.mul(F.s, (a * W) / 2), dv3.mul(F.u, (b * H) / 2)));
+      const den = dv3.dot(sg.d, nb);
+      const t = Math.abs(den) < 1e-6 ? 0 : dv3.dot(dv3.sub(V, o), nb) / den;
+      return dv3.add(o, dv3.mul(sg.d, t));
+    });
+  };
+  for (let i = 0; i < segs.length; i++) {
+    const A = ring(i, 0),
+      B = ring(i, 1);
+    for (let k = 0; k < 4; k++) {
+      const k2 = (k + 1) % 4;
+      mb.tri3(col, A[k], A[k2], B[k2]);
+      mb.tri3(col, A[k], B[k2], B[k]);
+    }
+    if (i === 0) {
+      mb.tri3(col, A[0], A[2], A[1]);
+      mb.tri3(col, A[0], A[3], A[2]);
+    }
+    if (i === segs.length - 1) {
+      mb.tri3(col, B[0], B[1], B[2]);
+      mb.tri3(col, B[0], B[2], B[3]);
+    }
+  }
+}
+/**
+ * Details of a rigid duct: the joints between the straight bars (nipple rings, flanges, PVC sleeves) and the ends of
+ * the elbows (the fitting's collar / flange) — the duct reads as the parts it is made of.
+ */
+function ductDetails3(mb, e, W, H, col, dark) {
+  const S_ = ductSys(e);
+  if (!S_) return;
+  const L = ductLayout(e);
+  const round = e.shape !== 'rect';
+  // a vertical leg keeps the width across the level run it turns from
+  const q = ductPath3(e);
+  const vside = c => {
+    let best = null,
+      bd = Infinity;
+    for (let i = 1; i < q.length; i++) {
+      const a = q[i - 1],
+        b = q[i];
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (l < 1) continue;
+      const d = Math.min(Math.hypot(a[0] - c[0], a[1] - c[1]), Math.hypot(b[0] - c[0], b[1] - c[1]));
+      if (d < bd) {
+        bd = d;
+        best = [-(b[1] - a[1]) / l, (b[0] - a[0]) / l, 0];
+      }
+    }
+    return best || undefined;
+  };
+  const band = (c, u, len, grow, cc) => {
+    const A = dv3.sub(c, dv3.mul(u, len / 2)),
+      B = dv3.add(c, dv3.mul(u, len / 2));
+    if (round) mb.tube(A, B, W / 2 + grow, cc, 24);
+    else mb.obox(A, B, W + 2 * grow, H + 2 * grow, cc, undefined, Math.abs(u[2]) > 0.7 ? vside(c) : undefined);
+  };
+  mb.tag(S_.jn);
+  const jl = S_.jt === 'flange' ? 16 : S_.jt === 'ring' ? 30 : 50;
+  const jg = S_.jt === 'flange' ? 8 : S_.jt === 'ring' ? 2.5 : 3;
+  for (const j of L.joints) band(j.c, j.u, jl, jg, S_.jt === 'sleeve' ? '#e4e6e8' : dark);
+  mb.tag(S_.jt === 'flange' ? 'Фланцы колен' : 'Концы колен (раструбы)');
+  for (const f of L.fitEnds)
+    band(f.c, f.u, S_.jt === 'flange' ? 16 : 24, S_.jt === 'flange' ? 8 : 2, S_.jt === 'sleeve' ? '#dcdfe2' : dark);
+}
+
 // ===== mep/hvac/duct-penetrations.js =====
 /**
  * mep/hvac/duct-penetrations.js
@@ -135621,7 +135816,10 @@ function penetrationRows(e) {
 /** 3D of the passes: the foam ring in the wall and, in a framed wall, the profile frame. mb in world coords. */
 function penetrationMesh(mb, e) {
   for (const c of ductWallCrossings(e)) {
-    const half = c.depth / 2 + 2;
+    // only inside the wall: from face to face along the duct (a skew crossing is longer than the thickness)
+    const nw = wallInfo(c.w).n;
+    const cs = Math.max(0.2, Math.abs(c.u[0] * nw.x + c.u[1] * nw.y));
+    const half = c.depth / 2 / cs - 1;
     const A = [c.p.x - c.u[0] * half, c.p.y - c.u[1] * half, c.z],
       B = [c.p.x + c.u[0] * half, c.p.y + c.u[1] * half, c.z];
     const Wd = c.round ? c.hole.D : c.hole.W,
