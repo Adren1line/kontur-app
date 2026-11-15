@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.20';
+const APP_VER = '59.26';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12649,6 +12649,7 @@ function changed() {
     if (curWS === 'draft') renderWS();
     if (OD.id != null && !$('#objdlg').hidden) odRefresh();
   }, 30);
+  validateSoon(true);
   sync3DSoon();
 }
 function addEnt(e) {
@@ -17195,6 +17196,91 @@ function drawModel(o = {}) {
   }
   return drawModel0(o);
 }
+/* Off-screen culling of the working plan. Only local kinds whose look stays near their points are skipped (devices,
+   fixtures, pipes, wires, ducts, openings, furniture, notes); walls, slabs, rooms, ceilings, dimensions and the rest
+   are always drawn. The box comes from the element's points plus a margin for symbols and captions; it is kept
+   until the document changes, and taken fresh for what is selected, hovered or being edited (a drag moves an
+   element without a document change). Sheets and exports draw everything (no `cull`). */
+const CULL_T = new Set([
+  'door',
+  'window',
+  'opening',
+  'fix',
+  'inst',
+  'dev',
+  'wire',
+  'pipe',
+  'duct',
+  'hvu',
+  'ac',
+  'acl',
+  'rad',
+  'tv',
+  'cab',
+  'kitchen',
+  'kisland',
+  'casework',
+  'curtain',
+  'molding',
+  'mirror',
+  'glass',
+  'track',
+  'tmod',
+  'note',
+  'shole'
+]);
+const boxMemo = new WeakMap();
+function entBox(e, fresh) {
+  const m = boxMemo.get(e);
+  if (!fresh && m && m.v === documentState.docVer) return m.b;
+  let b = null;
+  try {
+    const ps = samplePts(e) || [];
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const p of ps)
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+    if (x0 <= x1) b = [x0, y0, x1, y1];
+  } catch (err) {
+    b = null;
+  }
+  boxMemo.set(e, { v: documentState.docVer, b });
+  return b;
+}
+/** Cull statistics of the last frame (for the bench). */
+const cullStat = { drawn: 0, skipped: 0 };
+function cullScreen(vis, gripEnt) {
+  const a = s2w(0, H),
+    c = s2w(W, 0);
+  const mg = Math.max(1500, 200 / view.k);
+  const X0 = a.x - mg,
+    Y0 = a.y - mg,
+    X1 = c.x + mg,
+    Y1 = c.y + mg;
+  const live = commandsState.cmd && commandsState.cmd.ent;
+  const out = [];
+  let skipped = 0;
+  for (const e of vis) {
+    if (!CULL_T.has(e.type)) {
+      out.push(e);
+      continue;
+    }
+    const fresh = S.sel.has(e.id) || e === renderState.hoverEnt || e === gripEnt || e === live;
+    const b = entBox(e, fresh);
+    if (!b || (b[2] >= X0 && b[0] <= X1 && b[3] >= Y0 && b[1] <= Y1)) out.push(e);
+    else skipped++;
+  }
+  cullStat.drawn = out.length;
+  cullStat.skipped = skipped;
+  return out;
+}
 function drawModel0(o) {
   CAD.world = true;
   CAD.pen = null;
@@ -17211,7 +17297,8 @@ function drawModel0(o) {
   };
   // the height of the plan: what lies above it is not drawn (0 — no limit)
   const pz = +(o.planZ ?? (S.x && S.x.planZ)) || 0;
-  const vis = S.ents.filter(e => visible(e) && in2d(e) && (!o.only || o.only(e)) && !(pz > 0 && planElev(e) > pz));
+  let vis = S.ents.filter(e => visible(e) && in2d(e) && (!o.only || o.only(e)) && !(pz > 0 && planElev(e) > pz));
+  if (o.cull) vis = cullScreen(vis, gripEnt);
   for (const e of vis)
     if (e.type === 'slab') {
       const L = layerOf(e);
@@ -17441,7 +17528,7 @@ function render() {
   try {
     const sheet = renderHooks.sheet && renderHooks.sheet.on();
     if (!sheet && modes.grid) drawGrid();
-    const { wp } = sheet ? renderHooks.sheet.draw() : drawModel();
+    const { wp } = sheet ? renderHooks.sheet.draw() : drawModel({ cull: true });
     CAD.world = true;
     if (
       renderState.hoverEnt &&
@@ -17899,8 +17986,46 @@ function matFor(rgb, op = 1) {
 const edgeMat = () =>
   V3.edgeMat || (V3.edgeMat = new THREE.LineBasicMaterial({ color: 0x22262b, transparent: true, opacity: 0.55 }));
 // smooth vertex normals for ceramics: averages faces sharing a position, keeps creases sharper than ~56°
-function smoothNormals(pos) {
-  const nT = pos.length / 9,
+/* Vertices of a triangle soup grouped by position (rounded to 0.1 mm): gid[v] = group of vertex v, n = groups.
+   An open-addressing table on integer coordinates — the string keys of the first version took 3.5 s on the test
+   house when entering 3D. */
+function vertGroups(pos) {
+  const nV = (pos.length / 3) | 0,
+    gid = new Int32Array(nV),
+    qx = new Int32Array(nV),
+    qy = new Int32Array(nV),
+    qz = new Int32Array(nV);
+  let size = 16;
+  while (size < nV * 2) size <<= 1;
+  const mask = size - 1,
+    tab = new Int32Array(size).fill(-1);
+  let n = 0;
+  for (let v = 0; v < nV; v++) {
+    const x = Math.round(pos[v * 3] * 10),
+      y = Math.round(pos[v * 3 + 1] * 10),
+      z = Math.round(pos[v * 3 + 2] * 10);
+    qx[v] = x;
+    qy[v] = y;
+    qz[v] = z;
+    let h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) & mask;
+    for (;;) {
+      const r = tab[h];
+      if (r < 0) {
+        tab[h] = v;
+        gid[v] = n++;
+        break;
+      }
+      if (qx[r] === x && qy[r] === y && qz[r] === z) {
+        gid[v] = gid[r];
+        break;
+      }
+      h = (h + 1) & mask;
+    }
+  }
+  return { gid, n };
+}
+function faceNormals(pos) {
+  const nT = (pos.length / 9) | 0,
     fn = new Float32Array(nT * 3);
   for (let t = 0; t < nT; t++) {
     const o = t * 9;
@@ -17910,7 +18035,7 @@ function smoothNormals(pos) {
       bx = pos[o + 6] - pos[o],
       by = pos[o + 7] - pos[o + 1],
       bz = pos[o + 8] - pos[o + 2];
-    let x = ay * bz - az * by,
+    const x = ay * bz - az * by,
       y = az * bx - ax * bz,
       z = ax * by - ay * bx;
     const l = Math.hypot(x, y, z) || 1;
@@ -17918,25 +18043,33 @@ function smoothNormals(pos) {
     fn[t * 3 + 1] = y / l;
     fn[t * 3 + 2] = z / l;
   }
-  const key = i => Math.round(pos[i] * 10) + ',' + Math.round(pos[i + 1] * 10) + ',' + Math.round(pos[i + 2] * 10);
-  const M = new Map();
-  for (let v = 0; v < nT * 3; v++) {
-    const k = key(v * 3);
-    let a = M.get(k);
-    if (!a) M.set(k, (a = []));
-    a.push(v);
-  }
+  return fn;
+}
+/** Smooth normals of a triangle soup: faces meeting at a vertex within ~57° are averaged (either winding). */
+function smoothNormals(pos) {
+  const nT = (pos.length / 9) | 0,
+    nV = nT * 3,
+    fn = faceNormals(pos);
+  const { gid, n } = vertGroups(pos);
+  // members of each group in ascending order: start[g] .. start[g + 1] in mem
+  const start = new Int32Array(n + 1);
+  for (let v = 0; v < nV; v++) start[gid[v] + 1]++;
+  for (let g = 0; g < n; g++) start[g + 1] += start[g];
+  const fill = start.slice(0, n),
+    mem = new Int32Array(nV);
+  for (let v = 0; v < nV; v++) mem[fill[gid[v]]++] = v;
   const out = new Float32Array(pos.length);
-  for (let v = 0; v < nT * 3; v++) {
+  for (let v = 0; v < nV; v++) {
     const t = (v / 3) | 0,
       f0 = fn[t * 3],
       f1 = fn[t * 3 + 1],
-      f2 = fn[t * 3 + 2];
+      f2 = fn[t * 3 + 2],
+      g = gid[v];
     let sx = 0,
       sy = 0,
       sz = 0;
-    for (const w of M.get(key(v * 3))) {
-      const u = (w / 3) | 0;
+    for (let k = start[g], k1 = start[g + 1]; k < k1; k++) {
+      const u = (mem[k] / 3) | 0;
       let g0 = fn[u * 3],
         g1 = fn[u * 3 + 1],
         g2 = fn[u * 3 + 2];
@@ -17959,6 +18092,46 @@ function smoothNormals(pos) {
     out[v * 3 + 2] = sz / l;
   }
   return out;
+}
+/**
+ * Feature edges of a triangle soup, as THREE.EdgesGeometry draws them (an edge between faces turned by more than
+ * `deg`, and every edge with one face), as line-segment positions. Same integer grouping as smoothNormals: the
+ * three.js version builds string keys and took 1.9 s on the test house.
+ */
+function featureEdges(pos, deg = 28) {
+  const nT = (pos.length / 9) | 0,
+    fn = faceNormals(pos),
+    cosT = Math.cos((deg * Math.PI) / 180);
+  const { gid } = vertGroups(pos);
+  const first = new Map(),
+    out = [];
+  const seg = (va, vb) =>
+    out.push(pos[va * 3], pos[va * 3 + 1], pos[va * 3 + 2], pos[vb * 3], pos[vb * 3 + 1], pos[vb * 3 + 2]);
+  for (let t = 0; t < nT; t++) {
+    for (let k = 0; k < 3; k++) {
+      const va = t * 3 + k,
+        vb = t * 3 + ((k + 1) % 3);
+      let a = gid[va],
+        b = gid[vb];
+      if (a === b) continue; // degenerate
+      if (a > b) [a, b] = [b, a];
+      const key = a * 67108864 + b;
+      const f = first.get(key);
+      if (f === undefined) first.set(key, t * 4 + k);
+      else if (f >= 0) {
+        const u = f >> 2;
+        if (fn[u * 3] * fn[t * 3] + fn[u * 3 + 1] * fn[t * 3 + 1] + fn[u * 3 + 2] * fn[t * 3 + 2] <= cosT) seg(va, vb);
+        first.set(key, -1);
+      }
+    }
+  }
+  for (const f of first.values())
+    if (f >= 0) {
+      const t = f >> 2,
+        k = f & 3;
+      seg(t * 3 + k, t * 3 + ((k + 1) % 3));
+    }
+  return new Float32Array(out);
 }
 /** A group of raw meshes (no THREE objects): sheets collect the model geometry with it (sheets/soft3d.js). */
 const v3stub = d => ({
@@ -18100,7 +18273,8 @@ function meshGroup(meshes, opts = {}) {
     if (opts.edges && m.op >= 1 && m.pos.length < 9 * 20000) {
       let eg = (opts.shared && opts.shared.get('e' + m.pos.length + '_' + m.pos[0])) || null;
       if (!eg) {
-        eg = new THREE.EdgesGeometry(geo, 28);
+        eg = new THREE.BufferGeometry();
+        eg.setAttribute('position', new THREE.BufferAttribute(featureEdges(m.pos, 28), 3));
         if (opts.shared) opts.shared.set('e' + m.pos.length + '_' + m.pos[0], eg);
       }
       const l = new THREE.LineSegments(eg, edgeMat());
@@ -19598,9 +19772,56 @@ function sync3DSoon() {
   clearTimeout(s3T);
   s3T = setTimeout(sync3D, 40);
 }
-function sync3D(force) {
+/* Building the 3D of a big project takes seconds. Called without `force`, the work is cut into slices of
+   S3_SLICE ms with a frame painted between them: the scene fills in front of the user, the page stays alive, and an
+   edit in the meantime simply restarts the pass (what is built is kept). `force` = everything now, synchronously
+   (sheets, AR, views, tests). Elements waiting for their turn keep their old 3D. */
+const S3_SLICE = 45;
+let s3Tok = 0;
+const s3Done = [];
+function sync3D(force, then) {
   if (!V3.inited || (!is3D() && !force)) return;
+  if (then) s3Done.push(then);
+  const tok = ++s3Tok;
+  sync3DPass(force ? Infinity : S3_SLICE, tok);
+}
+/** True while a sliced pass is still building. */
+function sync3DBusy() {
+  return s3Tok > 0 && s3Busy;
+}
+let s3Busy = false,
+  s3Paint = 0;
+function sync3DNext(tok, paint) {
+  let fired = false;
+  const go = () => {
+    if (fired || tok !== s3Tok) return;
+    fired = true;
+    if (V3.inited && is3D()) sync3DPass(S3_SLICE, tok);
+    else s3Busy = false;
+  };
+  if (!paint) return void setTimeout(go, 0);
+  // after the next paint; the timer is the fallback for a hidden tab (no frames there)
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(go, 0));
+  setTimeout(go, 120);
+}
+/** Timing of the last build (for the bench): slices, the longest one and the sum, ms. */
+const s3Stat = { slices: 0, maxMs: 0, sumMs: 0 };
+function sync3DPass(budget, tok) {
+  const t0 = performance.now();
+  try {
+    sync3DPass0(budget, tok, t0);
+  } finally {
+    const d = performance.now() - t0;
+    if (!s3Stat.open) Object.assign(s3Stat, { slices: 0, maxMs: 0, sumMs: 0, open: true });
+    s3Stat.slices++;
+    s3Stat.maxMs = Math.max(s3Stat.maxMs, Math.round(d));
+    s3Stat.sumMs += Math.round(d);
+    if (!s3Busy) s3Stat.open = false;
+  }
+}
+function sync3DPass0(budget, tok, t0) {
   const seen = new Set();
+  let more = false;
   for (const e of S.ents) {
     const L = layerOf(e);
     if (!L) continue;
@@ -19613,23 +19834,44 @@ function sync3D(force) {
     seen.add(e.id);
     let o = V3.objs.get(e.id);
     if (!o || o.key !== k) {
-      if (o) {
-        if (V3.tc.object === o.obj) V3.tc.detach();
-        V3.root.remove(o.obj);
-        disposeObj(o.obj);
+      if (performance.now() - t0 > budget) {
+        more = true;
+        if (!o) continue;
+      } else {
+        if (o) {
+          if (V3.tc.object === o.obj) V3.tc.detach();
+          V3.root.remove(o.obj);
+          disposeObj(o.obj);
+        }
+        const obj = build3(e);
+        if (!obj) {
+          V3.objs.delete(e.id);
+          continue;
+        }
+        obj.userData.id = e.id;
+        V3.root.add(obj);
+        o = { key: k, obj, net: (isNetEnt(e) && e.type !== 'fix') || e.type === 'reinf' || e.type === 'load' };
+        V3.objs.set(e.id, o);
       }
-      const obj = build3(e);
-      if (!obj) {
-        V3.objs.delete(e.id);
-        continue;
-      }
-      obj.userData.id = e.id;
-      V3.root.add(obj);
-      o = { key: k, obj, net: (isNetEnt(e) && e.type !== 'fix') || e.type === 'reinf' || e.type === 'load' };
-      V3.objs.set(e.id, o);
     }
     o.obj.visible = L.on && netShown(e) && elemVis(e);
   }
+  if (more) {
+    s3Busy = true;
+    // a picture of the progress a few times a second: painting the scene after every slice would cost more than
+    // the slices themselves on a weak graphics card
+    const now = performance.now();
+    const paint = now - s3Paint > 300;
+    if (paint) {
+      s3Paint = now;
+      applySel3D();
+      applyClip();
+      req3();
+    }
+    sync3DNext(tok, paint);
+    return;
+  }
+  s3Busy = false;
   try {
     sync3DLevels(seen);
   } catch (err) {
@@ -19646,6 +19888,12 @@ function sync3D(force) {
   applyClip();
   fitShadow();
   req3();
+  for (const f of s3Done.splice(0))
+    try {
+      f();
+    } catch (err) {
+      console.error(err);
+    }
 }
 function applySel3D() {
   if (!V3.inited) return;
@@ -19737,11 +19985,24 @@ function setView(v) {
       const sb = document.querySelector('#v3bar [data-a="shadow"]');
       if (sb) sb.classList.toggle('on', !!V3.shadows);
       const first = !V3.fitted;
-      sync3D();
-      if (first) {
-        V3.fitted = true;
-        setTimeout(() => camTo('iso'), 30);
-      }
+      if (first) V3.fitted = true;
+      // the build goes in slices: the camera is fitted to what the first slice built, and fitted again to the whole
+      // model at the end — unless the user has moved it meanwhile
+      let at = null;
+      const fit = () => {
+        camTo('iso');
+        at = V3.cam.position.clone();
+      };
+      sync3D(
+        false,
+        first
+          ? () =>
+              setTimeout(() => {
+                if (!at || V3.cam.position.distanceTo(at) < 1) fit();
+              }, 30)
+          : null
+      );
+      if (first) setTimeout(() => sync3DBusy() && fit(), 30);
     }
   }
   if (v === 'spec') renderSpec();
@@ -32534,7 +32795,19 @@ function pipeZ(e) {
   }
   return zs;
 }
+/* The plan asks for the connection points of every fixture in every frame (pipe ends, joints): a manifold node lays
+   out its whole assembly for that (15 ms a frame on the test house). The points are kept per fixture until the
+   document changes or the fixture itself does (a drag changes it without a document change). Callers get copies. */
+const portsMemo = new WeakMap();
 function portsOf(f) {
+  const key = documentState.docVer + '|' + skinsState.ver + '|' + JSON.stringify(f);
+  const m = portsMemo.get(f);
+  if (m && m.key === key) return m.ps.map(q => ({ ...q }));
+  const ps = portsOf0(f);
+  portsMemo.set(f, { key, ps });
+  return ps.map(q => ({ ...q }));
+}
+function portsOf0(f) {
   const K = FIXK[f.kind];
   if (!K) return [];
   // a user model of the fixture brings its own connection anchors: the pipes go to them
@@ -41846,7 +42119,20 @@ function mfBoxes(e) {
   }
   return [...B.values()];
 }
+/* The clash check builds the node's 3D (50–100 ms on a big node), and the project checks ask for it after every edit
+   of anything. The node's geometry depends only on its own record, so the answer is kept per node and reused
+   until the record changes (any field: position, lines, outlets, fittings). */
+const mfClashMemo = new WeakMap();
 function mfClash(e) {
+  mfCfg(e);
+  const sig = JSON.stringify(e);
+  const m = mfClashMemo.get(e);
+  if (m && m.sig === sig) return m.out.slice();
+  const out = mfClash0(e);
+  mfClashMemo.set(e, { sig, out });
+  return out.slice();
+}
+function mfClash0(e) {
   const g = mfLay(e),
     bx = mfBoxes(e),
     out = [];
@@ -52472,6 +52758,9 @@ XT.node = {
 
 
 
+
+
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -52890,8 +53179,41 @@ function validate() {
   issVer = documentState.docVer;
   return out;
 }
+/* The checks of the whole project take 0.1–0.3 s on a big project, so they never run inside a frame or right in
+   the edit: the plan, the panel and the properties show the last result, and the new one is computed once the
+   user pauses (ISS_WAIT after the last change), then the marks and the panel are refreshed. validate() itself
+   stays synchronous for the code that needs the answer now (the agent, the export, the tests). */
+const ISS_WAIT = 300;
+let issTimer = 0;
+const issAfter = [];
+/** The last computed list of issues, possibly one edit old; never computes. */
+function issuesNow() {
+  return issCache || [];
+}
+/** True when the list matches the current document. */
+function issuesFresh() {
+  return !!issCache && issVer === documentState.docVer;
+}
+/** Asks for the checks once the user pauses. restart = a new edit came: the wait starts again. */
+function validateSoon(restart, then) {
+  if (then) issAfter.push(then);
+  if (issTimer && !restart) return;
+  clearTimeout(issTimer);
+  issTimer = setTimeout(validateIdle, ISS_WAIT);
+}
+function validateIdle() {
+  issTimer = 0;
+  const was = issCache;
+  validate();
+  for (const f of issAfter.splice(0)) f();
+  if (was !== issCache) {
+    renderIssues();
+    if (networkViewState.showIss) dirty();
+  }
+}
 function issuesFor(e) {
-  return validate().filter(i => i.id === e.id);
+  if (!issuesFresh()) validateSoon(false);
+  return issuesNow().filter(i => i.id === e.id);
 }
 function issuesPanel(e) {
   const L = issuesFor(e);
@@ -52900,8 +53222,10 @@ function issuesPanel(e) {
 }
 function xAfterAdd(e) {
   issVer = -1;
-  const L = validate().filter(i => i.id === e.id && i.lvl !== 'info');
-  for (const i of L) log('⚠ ' + i.msg, i.lvl === 'bad');
+  validateSoon(true, () => {
+    const L = issuesNow().filter(i => i.id === e.id && i.lvl !== 'info');
+    for (const i of L) log('⚠ ' + i.msg, i.lvl === 'bad');
+  });
 }
 
 // ===== view3d/network-view.js =====
@@ -53033,7 +53357,9 @@ function xRenderOverlay() {
     ctx.restore();
   }
   if (!networkViewState.showIss) return;
-  const L = validate();
+  // never computed here: the marks of the last check, the new one comes after the user pauses
+  if (!issuesFresh()) validateSoon(false);
+  const L = issuesNow();
   for (const i of L) {
     if (i.lvl === 'info') continue;
     const s = w2s(i.p);
@@ -89267,7 +89593,8 @@ function showTab(t) {
   $('#side').classList.add('open');
 }
 function renderIssues() {
-  const L = validate();
+  if (!issuesFresh()) validateSoon(false);
+  const L = issuesNow();
   const n = { bad: 0, warn: 0, info: 0 };
   L.forEach(i => n[i.lvl]++);
   const badge = $('#issN');
@@ -105155,7 +105482,8 @@ XT.opening = {
     const R = opReveal(e);
     const th = I ? I.w.th : 0;
     const gklWallHost = I && isKnauf(I.w);
-    if (e.reveal !== 'none')
+    // an opening made by a script or an old project has no reveal finish set: nothing to count
+    if (e.reveal && OPREVEAL[e.reveal] && e.reveal !== 'none')
       put(S_, 'rev' + e.reveal, { name: OPREVEAL[e.reveal].replace('Откосы: ', 'Отделка откосов: '), u: 'м²' }, r => {
         r.q += Math.round(((R.L * th) / 1e6) * 100) / 100;
         r.ids.push(e.id);
@@ -113372,6 +113700,7 @@ defineTools({
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -113498,6 +113827,28 @@ function xBoot() {
   const hooks = {
     render,
     wsView,
+    // for the performance bench (tools of the developer, not used by the app)
+    perf: {
+      drawEnt,
+      drawModel,
+      updateCursor,
+      sync3D,
+      renderIssues,
+      renderLayers,
+      renderBrowser,
+      updateProps,
+      snapshot,
+      build3,
+      in2d,
+      visible,
+      routeAll,
+      pts: samplePts,
+      validate,
+      issuesNow,
+      pushUndo,
+      sync3DBusy,
+      s3Stat
+    },
     kit: { kitDefaults, kitAutofill, kitChecks },
     vent: {
       flexConnect,
