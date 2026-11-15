@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.37';
+const APP_VER = '59.39';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -8279,7 +8279,13 @@ const FAMS = {
   eq: { n: 'Щит / коробка', cat: 'Электрика' },
   vterm: { n: 'Вентиляционное устройство', cat: 'Вентиляция' }
 };
-const DUCT_MATS = ['Оцинкованная сталь', 'ПВХ (пластиковый)', 'Гибкий алюминиевый', 'Полужёсткий алюминиевый'];
+const DUCT_MATS = [
+  'Оцинкованная сталь',
+  'ПВХ (пластиковый)',
+  'ПВХ плоский канал (система)',
+  'Гибкий алюминиевый',
+  'Полужёсткий алюминиевый'
+];
 const DUCT_INS = [0, 10, 25, 50];
 const VKINDS = ['Приток', 'Вытяжка', 'Кондиционер: подача', 'Кондиционер: забор', 'Рециркуляция'];
 /** Standard colours of the systems (7.1): supply blue, extract red, AC supply magenta, AC return light blue. */
@@ -13497,6 +13503,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -14441,7 +14448,7 @@ function mkDuct(opt = {}) {
         z: pts[0].z,
         sys,
         flow,
-        mat: flex && sec.shape !== 'rect' ? 'Гибкий алюминиевый' : DUCT_MATS[0],
+        mat: mkDuct.pvc && !flex ? PVC_MAT : flex && sec.shape !== 'rect' ? 'Гибкий алюминиевый' : DUCT_MATS[0],
         ins: 0,
         from: a ? a.id : null,
         to: b ? b.id : null,
@@ -14462,7 +14469,7 @@ function mkDuct(opt = {}) {
             ? `Расход, м³/ч <${flow}>:`
             : ask === 's'
               ? `Система (${S.vent.systems.map(s => s.id).join(', ')}) <${sys}>:`
-              : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${Math.round(z)}) или [Сечение/Высота (подъём, опуск)/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}${pts.length ? '/Отменить' : ''}]:`,
+              : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${Math.round(z)}) или [Сечение/Высота (подъём, опуск)/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}/${mkDuct.pvc ? 'Металл' : 'ПВХ'}${pts.length ? '/Отменить' : ''}]:`,
     hasValue: () => ask === 'z' || ask === 'q',
     onValue(v) {
       if (ask === 'z') {
@@ -14482,6 +14489,21 @@ function mkDuct(opt = {}) {
       ask = null;
     },
     onInput(s) {
+      // the flat PVC system: a 50×100 channel (or the chosen standard size), counted in its own parts
+      if (!ask && /^(пвх|pvc)$/i.test(s.trim())) {
+        mkDuct.pvc = true;
+        if (!(sec.shape === 'rect' && PVC_SIZES.some(([a, b]) => a === sec.w && b === sec.hh)))
+          sec = mkDuct.sec = { shape: 'rect', w: 100, hh: 50 };
+        log(
+          'Плоский канал ПВХ ' + secTxt(full()) + ': каналы по 2 м, соединители, колена, переходники — в спецификации'
+        );
+        return true;
+      }
+      if (!ask && /^(металл|оцинковка|metal)$/i.test(s.trim())) {
+        mkDuct.pvc = false;
+        log('Воздуховоды из оцинкованной стали');
+        return true;
+      }
       if (ask === 'sec') {
         const p = secParse(s);
         if (p) {
@@ -19077,6 +19099,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19291,6 +19314,7 @@ function key3Base(e) {
         e.ins,
         e.flex || 0,
         e.tap || 0,
+        e.mat || 0,
         e.type === 'wire' ? [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable] : 0,
         e.group != null ? groupOf(e.group).col : 0,
         e.sys ? sysOf(e.sys).col : 0,
@@ -19535,6 +19559,15 @@ function build3(e) {
         }
       });
       ductJoints(e, mb, col, W, Hh);
+      if (isPvc(e)) {
+        // the connectors of the 2 m channels: a sleeve a little larger than the channel
+        mb.tag('Соединитель каналов ПВХ');
+        for (const j of pvcJointPts(e)) {
+          const a = j.c.map((x, k) => x - j.u[k] * 25),
+            b = j.c.map((x, k) => x + j.u[k] * 25);
+          mb.obox(a, b, W + 6, Hh + 6, '#e4e6e8');
+        }
+      }
       if (e.tap && pts.length > 1) {
         // the saddle on the main and the rolled (beaded) joint at the spigot of a rigid connection
         const ring = (a, b, s0, s1, r) => {
@@ -23104,6 +23137,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -23299,6 +23333,12 @@ function fieldsFor(e) {
       { l: 'Отметка конца', k: 'dzb', num: true },
       { l: 'Расход, м³/ч', k: 'flow', num: true },
       { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
+      ...(e.mat === PVC_MAT
+        ? [
+            { l: 'Канал ПВХ', k: 'pvcsz', sel: PVC_SIZES.map(([a, b]) => [a + '×' + b, a + '×' + b + ' мм']) },
+            { l: 'Обратных клапанов', k: 'cv', num: true }
+          ]
+        : []),
       { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
     ];
   return (OLDF[e.type] || []).map(([l, k, kind]) => (kind === 'bool' ? { l, k, bool: true } : { l, k, num: true }));
@@ -23312,6 +23352,8 @@ function fieldGet(e, k) {
   if (k === 'swkey') return e.sw ? e.sw.dev + '|' + e.sw.key : '';
   const ty = e.type === 'wall' ? typeOf(e) : null;
   switch (k) {
+    case 'pvcsz':
+      return `${e.w}×${e.hh}`;
     case 'manual':
       return e.manual ? '1' : '';
     case 'ded':
@@ -23502,6 +23544,23 @@ function fieldSet(e, k, raw) {
     case 'mat':
     case 'size':
       e[k] = raw;
+      // the flat PVC system: a rectangular channel of a standard size (50×100 by default), lying flat
+      if (k === 'mat' && e.type === 'duct' && raw === PVC_MAT) {
+        e.flex = false;
+        if (!(e.shape === 'rect' && PVC_SIZES.some(([a, b]) => a === +e.w && b === +e.hh))) {
+          e.shape = 'rect';
+          e.w = 100;
+          e.hh = 50;
+        }
+      }
+      return;
+    case 'pvcsz': {
+      const [a, b] = String(raw).split('×').map(Number);
+      if (a > 0 && b > 0) Object.assign(e, { shape: 'rect', w: a, hh: b });
+      return;
+    }
+    case 'cv':
+      e.cv = Math.max(0, Math.round(v) || 0);
       return;
     case 'method':
       e.method = raw;
@@ -24850,6 +24909,7 @@ function initCatalog() {
 
 
 
+
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -25216,6 +25276,14 @@ function renderSpecLevel() {
         r.q += 2;
         r.ids.push(e.id);
       });
+    } else if (isPvc(e)) {
+      // the flat PVC system: channels of 2 m, connectors, elbows, adapters, valves, holders
+      for (const r of pvcSpec(e))
+        put(r.k.startsWith('bar') ? ducts : bends, 'pvc' + r.k, { name: r.name + ` · ${e.sys}`, u: r.u }, x => {
+          x.q += r.q;
+          if (r.k.startsWith('bar')) x.A = 0;
+          x.ids.push(e.id);
+        });
     } else if (e.type === 'duct') {
       const st = secTxt(e);
       put(ducts, e.sys + st + e.mat, { name: `Воздуховод ${st}, ${e.mat.toLowerCase()} · ${e.sys}`, u: 'м' }, r => {
@@ -31144,6 +31212,8 @@ function stretchLights(e) {
 
 
 
+
+
 /* ---------- transition elements: plinths, shadow gaps, cornices ---------- */
 const TRIMK = {
   plinth: { n: 'Плинтус напольный', zone: 'floor', prof: 'tr_plinth', bar: 2400 },
@@ -31508,6 +31578,176 @@ function trimWallAdd(kind, w, sd, tpl) {
   }
   return made;
 }
+/* ---------- editing ---------- */
+/** The developed s of a point on the face of a wall trim (nearest point of its face, the whole face). */
+function trimSAt(e, p) {
+  const w = byId(e.wall.id);
+  const F = facePath(w, e.wall.side, { ends: true });
+  let best = F.s0,
+    bd = Infinity;
+  const ss = faceSamples(F, F.s0, F.s1);
+  let step = 0;
+  for (let i = 0; i < ss.length - 1; i++) {
+    const n = Math.max(4, Math.ceil((ss[i + 1] - ss[i]) / 50));
+    for (let k = 0; k <= n; k++) {
+      const s_ = ss[i] + ((ss[i + 1] - ss[i]) * k) / n;
+      const d = dist(F.at(s_, 0), p);
+      if (d < bd) {
+        bd = d;
+        best = s_;
+        step = (ss[i + 1] - ss[i]) / n;
+      }
+    }
+  }
+  // refine to a fraction of a millimetre around the best sample
+  let lo = Math.max(F.s0, best - step),
+    hi = Math.min(F.s1, best + step);
+  for (let k = 0; k < 40; k++) {
+    const m1 = lo + (hi - lo) / 3,
+      m2 = hi - (hi - lo) / 3;
+    if (dist(F.at(m1, 0), p) < dist(F.at(m2, 0), p)) hi = m2;
+    else lo = m1;
+  }
+  best = (lo + hi) / 2;
+  return best;
+}
+/** Length parameter of the nearest point of a polyline (free trims). */
+function plParam(pts, p) {
+  let acc = 0,
+    best = 0,
+    bd = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i],
+      b = pts[i + 1],
+      L = dist(a, b);
+    if (L < 1e-9) continue;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (L * L)));
+    const q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    const d = dist(q, p);
+    if (d < bd) {
+      bd = d;
+      best = acc + t * L;
+    }
+    acc += L;
+  }
+  return best;
+}
+function plSub(pts, t0, t1) {
+  const out = [];
+  let acc = 0;
+  const at = (a, b, L, t) => ({ x: a.x + ((b.x - a.x) * t) / L, y: a.y + ((b.y - a.y) * t) / L });
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i],
+      b = pts[i + 1],
+      L = dist(a, b);
+    const s0 = acc,
+      s1 = acc + L;
+    if (s1 >= t0 && s0 <= t1 && L > 1e-9) {
+      if (!out.length) out.push(at(a, b, L, Math.max(0, t0 - s0)));
+      out.push(s1 <= t1 ? { ...b } : at(a, b, L, t1 - s0));
+    }
+    acc = s1;
+  }
+  return out;
+}
+/**
+ * Removes the piece of a trim between points p1 and p2 (an unwanted run behind a cabinet, across a niche): a wall
+ * trim stays two wall trims on the rest of the face, a free one two polylines. Returns the pieces left.
+ */
+function trimRemovePiece(e, p1, p2) {
+  if (e.wall) {
+    let a = trimSAt(e, p1),
+      b = trimSAt(e, p2);
+    if (a > b) [a, b] = [b, a];
+    const W = e.wall,
+      F = facePath(byId(W.id), W.side, { ends: true });
+    const lo = W.w0 ? F.s0 : +W.s0,
+      hi = W.w1 ? F.s1 : +W.s1;
+    const out = [];
+    if (a - lo > 20) out.push({ ...e, wall: { ...W, s1: Math.round(a), w1: false }, pts: [] });
+    if (hi - b > 20) out.push({ ...e, wall: { ...W, s0: Math.round(b), w0: false }, pts: [] });
+    for (const n of out) {
+      delete n.id;
+      n.pts = (trimWallPath(n) || []).map(q => ({ ...q }));
+    }
+    return out;
+  }
+  const pts = trimPath(e);
+  let a = plParam(pts, p1),
+    b = plParam(pts, p2);
+  if (a > b) [a, b] = [b, a];
+  const L = plen(pts);
+  const out = [];
+  if (a > 20) out.push({ ...e, closed: false, pts: plSub(pts, 0, a) });
+  if (L - b > 20) out.push({ ...e, closed: false, pts: plSub(pts, b, L) });
+  for (const n of out) delete n.id;
+  return out;
+}
+function mkTrimGap() {
+  let e = null,
+    p1 = null;
+  const near = p => {
+    let best = null,
+      bd = Infinity;
+    for (const x of S.ents) {
+      if (x.type !== 'trim' || !visible(x)) continue;
+      const pts = trimPath(x);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d = dist(segPt(pts[i], pts[i + 1], p), p);
+        if (d < bd) {
+          bd = d;
+          best = x;
+        }
+      }
+    }
+    return bd < Math.max(80, 12 / view.k) ? best : null;
+  };
+  return {
+    name: 'trimgap',
+    base: () => p1,
+    prompt: () =>
+      p1 ? 'Конец удаляемого участка:' : 'Удалить участок плинтуса / профиля: начало участка на элементе:',
+    onPoint(p) {
+      if (!p1) {
+        e = (mkTrimGap.e && S.ents.includes(mkTrimGap.e) && mkTrimGap.e) || near(p);
+        mkTrimGap.e = null;
+        if (!e) return void log('Укажите точку на плинтусе или профиле', true);
+        p1 = p;
+        return;
+      }
+      pushUndo();
+      const rest = trimRemovePiece(e, p1, p);
+      const i = S.ents.indexOf(e);
+      S.ents.splice(i, 1);
+      S.sel.delete(e.id);
+      rest.forEach((n, k) => {
+        n.id = S.nextId++;
+        S.ents.splice(i + k, 0, n);
+      });
+      changed();
+      log(rest.length ? `Участок удалён, осталось кусков: ${rest.length}` : 'Элемент удалён целиком');
+      return 'end';
+    },
+    onEnter: () => 'end',
+    preview(cur) {
+      if (!p1) return;
+      ctx.save();
+      ctx.strokeStyle = '#ef5f5f';
+      ctx.lineWidth = 3;
+      pathPoly([p1, cur], false);
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+}
+defineTools({
+  trimgap: {
+    command: { t: 'УДАЛИТЬ УЧАСТОК ПРОФИЛЯ', m: mkTrimGap, a: ['trimgap', 'удучасток'] },
+    title: 'Удалить участок плинтуса / профиля между двумя точками',
+    icon: '<path d="M2 14h5M13 14h5"/><path d="M8.5 11.5l3 3M11.5 11.5l-3 3"/>',
+    help: 'Две точки на плинтусе или профиле — участок между ними удаляется, остальное остаётся (у плинтуса по стене — по стене).'
+  }
+});
 /** True when the wall end of a wall trim is a rounding (the trim bends, no corner piece). */
 function trimRound(e, end) {
   const w = byId(e.wall.id);
@@ -31532,14 +31772,33 @@ XT.trim = {
     trimFree(n, e);
     n.pts = trimPts(n.wall ? e : n).map(f);
   },
-  grips: (e, set) =>
-    trimPts(e).map((v, i) => ({
+  grips: (e, set) => {
+    if (e.wall) {
+      // a wall trim: its ends slide along the face of the wall (it stays on the wall)
+      const P_ = trimPts(e);
+      const first = e.wall.side > 0 ? 0 : 1;
+      return [
+        [P_[0], first === 0 ? 's0' : 's1'],
+        [P_[P_.length - 1], first === 0 ? 's1' : 's0']
+      ].map(([v, k]) => ({
+        p: v,
+        apply: set((n, p) => {
+          const s_ = trimSAt(e, p);
+          n.wall = { ...n.wall, [k]: Math.round(s_), [k === 's0' ? 'w0' : 'w1']: false };
+          if (n.wall.s0 > n.wall.s1) [n.wall.s0, n.wall.s1] = [n.wall.s1, n.wall.s0];
+          n.pts = [];
+          n.pts = (trimWallPath(n) || []).map(q => ({ ...q }));
+        })
+      }));
+    }
+    return trimPts(e).map((v, i) => ({
       p: v,
       apply: set((n, p) => {
         trimFree(n, e);
         n.pts[i] = p;
       })
-    })),
+    }));
+  },
   draw(e, color, o, ghost, col) {
     const pr = getProf(e.prof, 'trim');
     const mx = Math.max(4, ...pr.pts.map(p => p[0]));
@@ -31627,14 +31886,33 @@ XT.trim = {
             ]
           ],
           ['Отметка', e.zone === 'ceil' ? 'z' : 'z', 'n'],
-          ['Замкнутый контур', 'closed', 'b'],
+          ...(e.wall
+            ? [
+                ['Начало по стене, мм', 'wall.s0', 'n'],
+                ['Конец по стене, мм', 'wall.s1', 'n'],
+                ['Огибать начало стены', 'wall.w0', 'b'],
+                ['Огибать конец стены', 'wall.w1', 'b']
+              ]
+            : [['Замкнутый контур', 'closed', 'b']]),
           ['Цвет', 'color', 'c'],
           ['Длина', (trimLen(e) / 1000).toFixed(2) + ' м', 'r']
         ]
       ]
     ]) +
-    `<div class="btnrow" style="grid-column:1/-1">${e.wall ? '<button class="btn pri" data-xa="trimchain" title="Поставить такой же элемент на соседние стены, соединённые с этой концами (дуги, скругления, углы)">Продолжить по соседним стенам</button>' : ''}<button class="btn" data-xa="profiles">Сечения (DXF)…</button></div>`,
+    `<div class="btnrow" style="grid-column:1/-1">${e.wall ? '<button class="btn pri" data-xa="trimchain" title="Поставить такой же элемент на соседние стены, соединённые с этой концами (дуги, скругления, углы)">Продолжить по соседним стенам</button>' : ''}<button class="btn" data-xa="trimgap" title="Две точки на элементе — участок между ними удаляется">Удалить участок…</button>${e.wall ? '<button class="btn" data-xa="trimfree" title="Сделать обычной ломаной: правка вершин, как при ручном вводе">Отвязать от стены</button>' : ''}<button class="btn" data-xa="profiles">Сечения (DXF)…</button></div>`,
   action(e, a) {
+    if (a === 'trimgap') {
+      mkTrimGap.e = e;
+      startCmd('trimgap');
+      return;
+    }
+    if (a === 'trimfree' && e.wall) {
+      pushUndo();
+      trimFree(e, e);
+      delete e.flex;
+      changed();
+      return;
+    }
     if (a !== 'trimchain' || !e.wall) return;
     const w = byId(e.wall.id);
     if (!w) return;
@@ -31656,6 +31934,10 @@ XT.trim = {
     log(n ? `Добавлено по соседним стенам: ${n}` : 'Соседние стены уже с этим элементом');
   },
   onSet(e, p, v) {
+    // a span edited by hand stops wrapping that end
+    if (p === 'wall.s0') e.wall.w0 = false;
+    if (p === 'wall.s1') e.wall.w1 = false;
+    if (e.wall && e.wall.s0 > e.wall.s1) [e.wall.s0, e.wall.s1] = [e.wall.s1, e.wall.s0];
     if (p === 'kind') {
       const k = TRIMK[v];
       e.prof = k.prof;
@@ -134969,6 +135251,7 @@ function buildLoads(out) {
 
 
 
+
 const HC_TOL = 2, // mm: overlap up to this is touching
   HC_SOFT = 50, // mm: assembly clearance
   HC_JOIN = 30, // mm: ends closer than this are a connection
@@ -135364,7 +135647,7 @@ function hvacQty() {
       sy = e.sys || '';
     if (e.ins > 0)
       put('Изоляция', `Изоляция воздуховодов ${e.ins} мм`, 'м²', (ductPerim(e) * ductLen(e)) / 1000, [e.id]);
-    if (plen(e.pts) > 0)
+    if (plen(e.pts) > 0 && !isPvc(e))
       put('Крепёж', 'Подвес воздуховода (шаг 1,5 м)', 'шт', Math.ceil(plen(e.pts) / 1500 - 1e-9), [e.id]);
     for (const [p, id] of [
       [e.pts[0], e.from],
@@ -135389,13 +135672,25 @@ function hvacQty() {
           // a tee: this end lands on a duct segment (counted by the branch), or three ends meet (counted once)
           if (same.some(h => !h.atEnd)) {
             const m = same.find(h => !h.atEnd).B;
-            put('Фасонные части', `Тройник ${secTxt(m)} / ${st} · ${sy}`, 'шт', 1, [e.id, m.id]);
+            put('Фасонные части', `Тройник${isPvc(m) ? ' ПВХ' : ''} ${secTxt(m)} / ${st} · ${sy}`, 'шт', 1, [
+              e.id,
+              m.id
+            ]);
           } else if (e.id < Math.min(...ends.map(h => h.B.id)))
-            put('Фасонные части', `Тройник ${st} · ${sy}`, 'шт', 1, [e.id, ...ends.map(h => h.B.id)]);
+            put('Фасонные части', `Тройник${isPvc(e) ? ' ПВХ' : ''} ${st} · ${sy}`, 'шт', 1, [
+              e.id,
+              ...ends.map(h => h.B.id)
+            ]);
         } else if (ends.length === 1 && e.id < ends[0].B.id && secTxt(ends[0].B) !== st) {
           const B = ends[0].B,
             [big, small] = ductArea(e) >= ductArea(B) ? [e, B] : [B, e];
-          put('Фасонные части', `Переход ${secTxt(big)} → ${secTxt(small)} · ${sy}`, 'шт', 1, [e.id, B.id]);
+          put(
+            'Фасонные части',
+            `${isPvc(big) || isPvc(small) ? (isPvc(big) && isPvc(small) ? 'Переход ПВХ' : 'Переходник ПВХ горизонтальный') : 'Переход'} ${secTxt(big)} → ${secTxt(small)} · ${sy}`,
+            'шт',
+            1,
+            [e.id, B.id]
+          );
         }
       } else if (!hit.length && !hcDev(id) && !hcUnitNear(vis, p))
         put('Фасонные части', `Заглушка ${st} · ${sy}`, 'шт', 1, [e.id]);
@@ -135422,6 +135717,145 @@ function hcUnitNear(vis, p) {
       poly = [LP(e, -D[0] / 2, 0), LP(e, D[0] / 2, 0), LP(e, D[0] / 2, D[1]), LP(e, -D[0] / 2, D[1])];
     return inPoly(p, poly) || hcPolyDist(p, poly) <= HC_CONN;
   });
+}
+
+// ===== mep/hvac/pvc-ducts.js =====
+/**
+ * mep/hvac/pvc-ducts.js
+ *
+ * Flat PVC duct system (plastic rectangular channels): channels of up to 2 m joined by connectors, horizontal and
+ * vertical elbows, adapters from rectangular to round — straight (horizontal) and angled (vertical, to a ceiling
+ * diffuser or a spigot below / above), tees, check valves, channel holders. A duct of the material PVC_MAT is
+ * counted in these parts instead of the metal fittings; its 3D shows the connectors at the channel joints.
+ * Horizontal elbow — the bend lies in the plane of the wide side (the channel turns lying flat); vertical — the
+ * channel turns over its narrow side (goes up or down).
+ */
+
+
+
+
+const PVC_MAT = 'ПВХ плоский канал (система)';
+/** Standard flat channel sizes (width × height, mm): 50×100 is the common one. */
+const PVC_SIZES = [
+  [100, 50],
+  [110, 55],
+  [120, 60],
+  [150, 50],
+  [204, 60],
+  [220, 90]
+];
+/** Max channel length, mm. */
+const PVC_BAR = 2000;
+const isPvc = e => e && e.type === 'duct' && e.mat === PVC_MAT && !e.flex;
+
+/** Straight 3D pieces of the duct path: [{ a, b, L, vert }]. */
+function pvcPieces(e) {
+  const q = ductPath3(e),
+    out = [];
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1],
+      b = q[i];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    if (L < 1) continue;
+    out.push({ a, b, L, vert: Math.abs(b[2] - a[2]) > 0.7 * L });
+  }
+  return out;
+}
+/** Bends: { ang (rounded to 15°), kind: 'h' | 'v' }. */
+function pvcBends(e) {
+  const P_ = pvcPieces(e),
+    out = [];
+  for (let i = 1; i < P_.length; i++) {
+    const A = P_[i - 1],
+      B = P_[i];
+    const u = [A.b[0] - A.a[0], A.b[1] - A.a[1], A.b[2] - A.a[2]].map(x => x / A.L),
+      v = [B.b[0] - B.a[0], B.b[1] - B.a[1], B.b[2] - B.a[2]].map(x => x / B.L);
+    const cs = Math.max(-1, Math.min(1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2]));
+    const ang = Math.round((Math.acos(cs) * 180) / Math.PI / 15) * 15;
+    if (ang < 15) continue;
+    // both pieces level: the channel turns lying flat; otherwise it turns over its narrow side
+    const level = Math.abs(u[2]) < 0.2 && Math.abs(v[2]) < 0.2;
+    out.push({ ang, kind: level ? 'h' : 'v' });
+  }
+  return out;
+}
+/** Channels of ≤ 2 m on each straight piece: { bars, joints, cuts: lengths of the last piece of each run }. */
+function pvcBars(e) {
+  let bars = 0,
+    joints = 0;
+  const cuts = [];
+  for (const p of pvcPieces(e)) {
+    const n = Math.max(1, Math.ceil(p.L / PVC_BAR - 1e-9));
+    bars += n;
+    joints += n - 1;
+    const rest = p.L - (n - 1) * PVC_BAR;
+    if (rest < PVC_BAR - 1) cuts.push(Math.round(rest));
+  }
+  return { bars, joints, cuts };
+}
+/** Connector positions along the path (3D points) for the model. */
+function pvcJointPts(e) {
+  const out = [];
+  for (const p of pvcPieces(e)) {
+    const n = Math.max(1, Math.ceil(p.L / PVC_BAR - 1e-9));
+    for (let k = 1; k < n; k++) {
+      const t = (k * PVC_BAR) / p.L;
+      out.push({
+        c: [p.a[0] + (p.b[0] - p.a[0]) * t, p.a[1] + (p.b[1] - p.a[1]) * t, p.a[2] + (p.b[2] - p.a[2]) * t],
+        u: [(p.b[0] - p.a[0]) / p.L, (p.b[1] - p.a[1]) / p.L, (p.b[2] - p.a[2]) / p.L]
+      });
+    }
+  }
+  return out;
+}
+/** Round diameter of what a duct end connects to (a terminal, a spigot): mm, or null. */
+function roundAt(id) {
+  const d = id != null ? byId(id) : null;
+  if (!d) return null;
+  if (d.type === 'dev' && DEVK[d.kind]) {
+    const s = String(d.size || DEVK[d.kind].size || '');
+    return /^\d+$/.test(s) ? +s : null;
+  }
+  if (d.type === 'duct' && d.shape !== 'rect') return +d.d || null;
+  return null;
+}
+/**
+ * The specification rows of a PVC duct: [{ k, name, u, q }]. Adapters at the ends that meet a round outlet:
+ * vertical (angled) when the outlet is above / below the channel (a ceiling diffuser, a drop), straight otherwise.
+ */
+function pvcSpec(e) {
+  const st = secTxt(e);
+  const rows = [];
+  const add = (k, name, q, u = 'шт') => {
+    if (q > 0) rows.push({ k, name, q, u });
+  };
+  const B = pvcBars(e);
+  add('bar' + st, `Канал ПВХ плоский ${st}, L = 2 м`, B.bars);
+  add('jn' + st, `Соединитель каналов ПВХ ${st}`, B.joints);
+  for (const b of pvcBends(e))
+    add(
+      `el${b.kind}${b.ang}${st}`,
+      `Колено ${b.kind === 'h' ? 'горизонтальное' : 'вертикальное'} ${b.ang}° ПВХ ${st}`,
+      1
+    );
+  const z = +e.z || 0;
+  for (const id of [e.from, e.to]) {
+    const D = roundAt(id);
+    if (!D) continue;
+    const d = byId(id);
+    const vert =
+      d.type === 'dev' &&
+      (DEVK[d.kind].mount === 'ceil' || DEVK[d.kind].mount === 'floor' || Math.abs((+d.z || 0) - z) > 1);
+    add(
+      `ad${vert ? 'v' : 'h'}${st}${D}`,
+      `Переходник ${vert ? 'вертикальный (угловой 90°)' : 'горизонтальный'} ПВХ ${st} → Ø${D}`,
+      1
+    );
+  }
+  if (+e.cv > 0) add('cv' + st, `Клапан обратный ПВХ ${st}`, +e.cv | 0);
+  const L = pvcPieces(e).reduce((a, p) => a + p.L, 0);
+  add('hold' + st, `Держатель канала ПВХ ${st} (шаг 1 м)`, Math.max(1, Math.ceil(L / 1000)));
+  return rows;
 }
 
 // ===== mep/plumbing/pipe-bundles.js =====
