@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.28';
+const APP_VER = '59.31';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12574,18 +12574,76 @@ function migrate() {
   xMigrate();
   syncWalls();
 }
+/* Undo steps without copies: a step keeps the document as pooled strings — one per element and one for the rest —
+   so an element that did not change between steps is stored once for all of them. 120 steps of a 400-element
+   project took ~45 MB as whole-project strings; now about one copy of the project plus what was changed. */
+const UNDO_POOL = new Map();
+function pooled(str) {
+  const hit = UNDO_POOL.get(str);
+  if (hit !== undefined) return hit;
+  UNDO_POOL.set(str, str);
+  return str;
+}
+/** One undo step of the current document. */
+function undoEntry() {
+  const ents = S.ents.map(e => pooled(JSON.stringify(e)));
+  const rest = pooled(snapshotRest());
+  return { u: 1, ents, rest };
+}
+function snapshotRest() {
+  return JSON.stringify({
+    layers: S.layers,
+    cur: S.cur,
+    nextId: S.nextId,
+    wtypes: S.wtypes,
+    elec: S.elec,
+    vent: S.vent,
+    ceil: S.ceil,
+    curWt: S.curWt,
+    profiles: S.profiles,
+    x: S.x
+  });
+}
+/** The document JSON of a step (a step may also be a plain snapshot string). */
+function undoJSON(st) {
+  if (typeof st === 'string') return st;
+  return '{"ents":[' + st.ents.join(',') + '],' + st.rest.slice(1);
+}
+/** True when a step equals the current document. */
+function undoSame(st) {
+  if (!st) return false;
+  if (typeof st === 'string') return st === snapshot();
+  if (st.ents.length !== S.ents.length || st.rest !== snapshotRest()) return false;
+  for (let i = 0; i < st.ents.length; i++) if (st.ents[i] !== JSON.stringify(S.ents[i])) return false;
+  return true;
+}
+/** Drops pooled strings no step refers to any more (cheap: runs when the pool has grown well past the steps). */
+function undoPrune() {
+  let live = 0;
+  for (const st of documentState.undoS.concat(documentState.redoS))
+    if (typeof st !== 'string') live += st.ents.length + 1;
+  if (UNDO_POOL.size < live * 2 + 2000) return;
+  const keep = new Set();
+  for (const st of documentState.undoS.concat(documentState.redoS))
+    if (typeof st !== 'string') {
+      for (const x of st.ents) keep.add(x);
+      keep.add(st.rest);
+    }
+  for (const k of UNDO_POOL.keys()) if (!keep.has(k)) UNDO_POOL.delete(k);
+}
 function pushUndo() {
-  documentState.undoS.push(snapshot());
+  documentState.undoS.push(undoEntry());
   if (documentState.undoS.length > 120) documentState.undoS.shift();
   documentState.redoS = [];
+  undoPrune();
 }
 function undo() {
   if (!documentState.undoS.length) {
     log('Нечего отменять');
     return;
   }
-  documentState.redoS.push(snapshot());
-  restore(documentState.undoS.pop());
+  documentState.redoS.push(undoEntry());
+  restore(undoJSON(documentState.undoS.pop()));
   changed();
   log('Отменено');
 }
@@ -12594,8 +12652,8 @@ function redo() {
     log('Нечего возвращать');
     return;
   }
-  documentState.undoS.push(snapshot());
-  restore(documentState.redoS.pop());
+  documentState.undoS.push(undoEntry());
+  restore(undoJSON(documentState.redoS.pop()));
   changed();
   log('Возвращено');
 }
@@ -12629,7 +12687,7 @@ function changed() {
   // structure must not intersect openings / shafts: roll the change back
   const clash = structGuard(documentState.undoS[documentState.undoS.length - 1]);
   if (clash && documentState.undoS.length) {
-    restore(documentState.undoS.pop());
+    restore(undoJSON(documentState.undoS.pop()));
     structGuard(documentState.undoS[documentState.undoS.length - 1]);
     log(clash, true);
   }
@@ -24266,7 +24324,7 @@ function updateProps() {
         const was = documentState.undoS[documentState.undoS.length - 1];
         for (const x of targets) fieldSet(x, k, inp.type === 'checkbox' ? inp.checked : inp.value);
         // a refused change leaves no empty undo step
-        if (snapshot() === was) documentState.undoS.pop();
+        if (undoSame(was)) documentState.undoS.pop();
         syncWalls();
         changed();
       })
@@ -46627,8 +46685,9 @@ const WPEN = w => {
   return 12;
 };
 function routeGrid(method) {
-  if (RG.v !== documentState.docVer) {
-    RG.v = documentState.docVer;
+  const sg = rtInputSig();
+  if (RG.v !== sg) {
+    RG.v = sg;
     RG.g = {};
   }
   if (RG.g[method]) return RG.g[method];
@@ -47087,12 +47146,46 @@ function rerouteAll() {
   pushUndo();
   for (const w of S.ents) if (w.type === 'wire') delete w.rt;
   RTE.v = -1;
+  RTE.sig = null;
   changed();
   log('Трассы проводов пересчитаны заново по текущей архитектуре');
 }
+/* Everything the cable routes depend on, as one string: walls, columns, beams, ceilings, slabs, devices, fixtures,
+   furniture (floor obstacles), pipes (hops), the wires themselves, the other levels' slabs and openings, the ceiling
+   height, the screed and the electrical settings. An edit of anything else (annotations, ducts and air equipment,
+   light / air calculations, curtains…) keeps the routes, the grids and the stack / hop passes as they are — the
+   checks after such an edit no longer re-route the whole house. Computed once per document version. */
+const RT_IGNORE = new Set(
+  'dim adim rdim text note sect node view3 xline point hatch ellipse spline circle arc line pline lcalc acalc duct hvu ac acl rhatch curtain molding mirror tv arpt load reinf'.split(
+    ' '
+  )
+);
+const RTI = { v: -1, s: '' };
+function rtInputSig() {
+  if (RTI.v === documentState.docVer) return RTI.s;
+  const parts = [S.ceil, S.x.screed || 0, JSON.stringify(S.elec)];
+  for (const e of S.ents)
+    if (!RT_IGNORE.has(e.type)) parts.push(JSON.stringify(e, (k, v) => (k === 'rt' ? undefined : v)));
+  const L = S.x && S.x.lv;
+  if (L && L.list && L.ents)
+    for (const l of L.list)
+      if (l.id !== L.cur)
+        for (const e of L.ents[l.id] || [])
+          if (e.type === 'slab' || e.type === 'shole') parts.push(l.id + ':' + JSON.stringify(e));
+  RTI.v = documentState.docVer;
+  RTI.s = parts.join('\n');
+  return RTI.s;
+}
 function routeAllWires() {
-  if (RTE.v === documentState.docVer && RTE.done) return;
-  RTE.v = documentState.docVer;
+  const dv = documentState.docVer;
+  if (RTE.done && (RTE.v === dv || RTE.sv === dv)) return;
+  if (RTE.done) {
+    RTE.sv = dv;
+    if (rtInputSig() === RTE.sig) return;
+  }
+  RTE.v = dv;
+  RTE.sv = dv;
+  RTE.sig = null; // taken after the passes: they write their results into the wires
   RTE.m = new Map();
   RTE.use = {};
   RTE.edges = {};
@@ -48167,6 +48260,7 @@ function routeAll() {
     } catch (err) {
       console.error(err);
     }
+    RTE.sig = rtInputSig(true);
   }
 }
 
@@ -53298,10 +53392,24 @@ function validateSoon(restart, then) {
   if (then) issAfter.push(then);
   if (issTimer && !restart) return;
   clearTimeout(issTimer);
-  issTimer = setTimeout(validateIdle, ISS_WAIT);
+  issTimer = setTimeout(() => validateIdle(0), ISS_WAIT);
 }
-function validateIdle() {
+/* The heaviest parts are computed in tasks of their own before the checks (each keeps its answer for the document
+   version): the page answers between them, and the longest pause is about the longest part, not their sum. An edit
+   in between restarts the wait (validateSoon from changed()). */
+const ISS_STAGES = [() => routeAll(), () => hvacClashes()];
+function validateIdle(stage = 0) {
   issTimer = 0;
+  const v0 = documentState.docVer;
+  if (stage < ISS_STAGES.length) {
+    try {
+      ISS_STAGES[stage]();
+    } catch (err) {
+      console.error(err);
+    }
+    issTimer = setTimeout(() => (documentState.docVer === v0 ? validateIdle(stage + 1) : validateSoon(true)), 0);
+    return;
+  }
   const was = issCache;
   validate();
   for (const f of issAfter.splice(0)) f();
