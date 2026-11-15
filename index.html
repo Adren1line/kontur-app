@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.45';
+const APP_VER = '59.46';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -67820,7 +67820,7 @@ function dbPanel(e, sysOpts) {
       const r = F.outs[i] || { q: 0, v: 0 };
       return cR(
         `Выход ${i + 1}${linked(i) ? ' ●' : ''}`,
-        `${dbSel(`outs.${i}.side`, o.side || 'F', DB_SIDE_OPTS)} ${dbTxt(`outs.${i}.sec`, o.sec, '100×50 / Ø125')} ` +
+        `${dbSel(`outs.${i}.side`, o.side || 'F', DB_SIDE_OPTS)} ${dbSecInputs(`outs.${i}`, o.sec)} ` +
           `${dbTxt(`outs.${i}.off`, o.off, 'смещ. авто', 70)}` +
           (e.split === 'set' ? ` ${dbTxt(`outs.${i}.q`, o.q, 'м³/ч', 56)}` : '') +
           ` <button class="btn" data-xa="dbdel${i}" title="Удалить выход">✕</button>` +
@@ -67846,7 +67846,7 @@ function dbPanel(e, sysOpts) {
       'Вход',
       esc(F.inTxt),
       cR('Грань', dbSel('inlet.side', (e.inlet && e.inlet.side) || 'L', DB_SIDE_OPTS)) +
-        cR('Сечение', dbTxt('inlet.sec', e.inlet && e.inlet.sec, 'Ø160 / 200×100', 110)) +
+        cR('Сечение', dbSecInputs('inlet', e.inlet && e.inlet.sec)) +
         cR('Смещение, мм', dbTxt('inlet.off', e.inlet && e.inlet.off, 'по центру / авто', 110)) +
         cR('Расход на входе, м³/ч', `<input type="number" data-x="flow" data-xt="n" value="${fmt(+e.flow || 0)}">`)
     ],
@@ -67887,12 +67887,50 @@ function dbPanel(e, sysOpts) {
   ]);
 }
 /** Normalisation after a field of the box changed: sections to their text, an empty offset / flow — automatic. */
+/** Standard diameters for a round opening made from a rectangular one (the nearest by area). */
+const DB_D = [100, 125, 160, 200, 250, 315, 355, 400];
+/**
+ * Section of an opening: the form (round Ø / rectangular) and its sizes — Ø, or width × height. Stored as one text
+ * («Ø125» / «100×50»); the form and the sizes are only the fields that edit it.
+ */
+function dbSecInputs(path, sec) {
+  const q = dbSec(sec);
+  const num = (k, v, t) =>
+    `<input type="number" data-x="${path}.${k}" data-xt="n" value="${v}" title="${t}" style="width:54px">`;
+  return (
+    dbSel(`${path}.shape`, q.shape, [
+      ['round', 'круглое Ø'],
+      ['rect', 'прямоуг.']
+    ]) +
+    ' ' +
+    (q.shape === 'rect'
+      ? `${num('w', q.w, 'Ширина, мм')}×${num('h', q.h, 'Высота, мм')}`
+      : `Ø${num('d', q.d, 'Диаметр, мм')}`)
+  );
+}
 function dbOnSet(e, p, v) {
-  const m = p.match(/^(inlet|outs\.(\d+))\.(sec|off|q)$/);
+  const m = p.match(/^(inlet|outs\.(\d+))\.(sec|off|q|shape|d|w|h)$/);
   if (!m) return;
   const o = m[2] != null ? e.outs[+m[2]] : e.inlet;
   if (!o) return;
-  if (m[3] === 'sec') o.sec = dbSec(v).txt;
+  const k = m[3];
+  if (k === 'shape' || k === 'd' || k === 'w' || k === 'h') {
+    // the field wrote o[k]: turn it into the section text and drop the helper key
+    delete o[k];
+    const q = dbSec(o.sec);
+    const n = Math.round(+v);
+    if (k === 'shape' && v === 'round' && q.shape === 'rect') {
+      // the round of about the same area, from the standard row
+      const de = Math.sqrt((4 * q.w * q.h) / Math.PI);
+      o.sec = 'Ø' + DB_D.reduce((a, d) => (Math.abs(d - de) < Math.abs(a - de) ? d : a), DB_D[0]);
+    } else if (k === 'shape' && v === 'rect' && q.shape === 'round')
+      o.sec = `${q.d}×${Math.max(50, Math.round(q.d / 20) * 10)}`;
+    else if (k === 'd' && n > 0) o.sec = 'Ø' + n;
+    else if (k === 'w' && n > 0) o.sec = `${n}×${q.h}`;
+    else if (k === 'h' && n > 0) o.sec = `${q.w}×${n}`;
+    return;
+  }
+  if (k === 'sec') o.sec = dbSec(v).txt;
   else {
     const n = parseFloat(String(v).replace(',', '.'));
     if (isFinite(n)) o[m[3]] = n;
