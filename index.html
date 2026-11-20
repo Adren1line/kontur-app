@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.47';
+const APP_VER = '59.48';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -63633,6 +63633,9 @@ CUTK['fix:fdrain'] = (e, where) => {
 
 
 
+
+
+
 /* baths: встраиваемые (экран / обстройка с плиткой / на ножках) и отдельностоящие (овал / прямоугольная)
    local: x along the length (centre), y from the wall (0) to the front (d), z up from the floor */
 var BATHM = {
@@ -63940,24 +63943,23 @@ function bathBuild(mb, e) {
         mb.box(-w / 2 + 5, d - 14 - t, 0, w / 2 - 5, d - 14, t, '#d6d3cc');
       }
     }
-    if (c.inst === 'gkl') bathGklScreen(mb, c);
+    if (c.inst === 'gkl') bathGklScreen(mb, c, e);
     if (c.inst === 'podium') {
       const T = 75,
         tc = c.tileCol || '#e9e6df',
         t = c.toe ? 90 : 0;
-      mb.tag('Обстройка: блок 75 + плитка');
-      mb.box(-w / 2, d - T, t, w / 2, d, h - 38, tc);
+      const fth = bathFin(c).th;
+      mb.tag('Обстройка: газобетон 75');
+      mb.box(-w / 2 + (c.endL ? 0 : fth), d - T, t, w / 2 - (c.endR ? 0 : fth), d - fth, h - 38, '#cfccc4');
+      for (const F of bathFinFaces(e)) bathFinDraw(mb, F);
       if (t) {
         mb.box(-w / 2, d - T - t, 0, w / 2, d - T, t, '#cfccc4');
         mb.tag('Ниша для ног');
         mb.box(-w / 2, d - T - t + 2, t - 2, w / 2, d - T, t, '#bdb9b0');
       }
-      if (!c.endL) {
-        mb.box(-w / 2, 0, 0, -w / 2 + T, d, h - 38, tc);
-      }
-      if (!c.endR) {
-        mb.box(w / 2 - T, 0, 0, w / 2, d, h - 38, tc);
-      }
+      mb.tag('Обстройка: газобетон 75');
+      if (!c.endL) mb.box(-w / 2 + fth, 0, 0, -w / 2 + T, d - fth, h - 38, '#cfccc4');
+      if (!c.endR) mb.box(w / 2 - T, 0, 0, w / 2 - fth, d - fth, h - 38, '#cfccc4');
       mb.tag('Плитка по борту');
       mb.box(-w / 2 - 10, d - 10, h - 38, w / 2 + 10, d + 12, h - 30, tc);
     }
@@ -64028,16 +64030,157 @@ const BATH_TOE = { h: 100, d: 70 };
 function bathScreenRuns(c) {
   const w = c.w,
     d = c.d,
-    yF = d - 3;
+    yF = c.inst === 'podium' ? d : d - 3;
   const r = [{ side: 'front', a: -w / 2, b: w / 2, f: yF }];
-  if (!c.endL) r.push({ side: 'L', a: 0, b: yF, f: -w / 2 + 3 });
-  if (!c.endR) r.push({ side: 'R', a: 0, b: yF, f: w / 2 - 3 });
+  const e3 = c.inst === 'podium' ? 0 : 3;
+  if (!c.endL) r.push({ side: 'L', a: 0, b: yF, f: -w / 2 + e3 });
+  if (!c.endR) r.push({ side: 'R', a: 0, b: yF, f: w / 2 - e3 });
   return r;
 }
-function bathGklScreen(mb, c) {
+/** A box in run coordinates: s along the run (a…b), n into the bath from the finish face (0 — the face), z. */
+function bathRunBox(mb, R, s0, s1, n0, n1, z0, z1, col) {
+  if (R.side === 'front') mb.box(s0, R.f - n1, z0, s1, R.f - n0, z1, col);
+  else if (R.side === 'L') mb.box(R.f + n0, s0, z0, R.f + n1, s1, z1, col);
+  else mb.box(R.f - n1, s0, z0, R.f - n0, s1, z1, col);
+}
+/* the finish of a screen / podium: any wall finish — tiles and large porcelain with their layout, paint, plaster,
+   panels; cfg.sfin = { k, tile: {…tile settings}, col } (old projects: tiles in cfg.tileCol) */
+const BATH_FIN_K = ['tile', 'stone', 'paint', 'plaster', 'veneer', 'mdfp', 'hpl'];
+function bathFin(c) {
+  const f = c.sfin || {};
+  const k = BATH_FIN_K.includes(f.k) ? f.k : 'tile';
+  const M = FINM[k];
+  const tile = isTileK(k) ? { ...tileCfg({ k }), ...(f.tile || {}) } : null;
+  return {
+    k,
+    M,
+    tile,
+    th: tile ? Math.round((+tile.t || 9) + (+tile.glue || 3)) : M.th,
+    col: f.col || (isTileK(k) ? c.tileCol : '') || M.col || '#e9e6df'
+  };
+}
+/**
+ * Faces of the finish of a screen / podium, each with its layout zone: [{ R, z: { x0, x1, z0, z1, k, tile, col,
+ * _cuts: the hatch openings, _mit: 45° mitres at the outer corners }, L: tile layout | null }].
+ */
+function bathFinFaces(e) {
+  const c = e.cfg;
+  if (c.type === 'free' || (c.inst !== 'gkl' && c.inst !== 'podium')) return [];
+  const F = bathFin(c);
+  const zTop = c.inst === 'podium' ? c.h - 38 : c.h - 40;
+  const runs = bathScreenRuns(c);
+  let hs = [];
+  try {
+    hs = hatchesNear(e).filter(h => h.plane === 'fix' && h.host === e.id);
+  } catch (err) {
+    hs = [];
+  }
+  const out = [];
+  for (const R of runs) {
+    const len = R.b - R.a;
+    const z0 = R.side === 'front' && c.toe ? (c.inst === 'podium' ? 90 : BATH_TOE.h) : 0;
+    // the hatch door in the front: no finish of the screen there (the door has its own), 2 mm gap round it
+    const cuts =
+      R.side === 'front'
+        ? hs.map(h => ({
+            x0: +h.lx - h.w / 2 - 2 - R.a,
+            x1: +h.lx + h.w / 2 + 2 - R.a,
+            z0: +h.z - 2,
+            z1: +h.z + +h.h + 2
+          }))
+        : [];
+    // outer corners of the screen: front ↔ open side
+    const mit = [];
+    if (R.side === 'front') {
+      if (!c.endL) mit.push({ v: true, x: 0, a: z0, b: zTop, corner: true });
+      if (!c.endR) mit.push({ v: true, x: len, a: z0, b: zTop, corner: true });
+    } else mit.push({ v: true, x: len, a: 0, b: zTop, corner: true });
+    const z = {
+      side: 1,
+      x0: 0,
+      x1: len,
+      z0,
+      z1: zTop,
+      k: F.k,
+      tile: F.tile,
+      col: F.col,
+      _cuts: cuts,
+      _mit: F.tile && (F.tile.miter || 'auto') !== 'off' ? mit : []
+    };
+    out.push({
+      R,
+      z,
+      F,
+      L: F.tile ? tileLayout(null, z) : null,
+      A: (len * (zTop - z0) - cuts.reduce((a, r) => a + (r.x1 - r.x0) * (r.z1 - r.z0), 0)) / 1e6
+    });
+  }
+  return out;
+}
+/** 3D of one finished face: the tiles of the layout on the glue (joints show), or one slab of the finish. */
+function bathFinDraw(mb, Fc) {
+  const { R, z, F, L } = Fc;
+  if (L) {
+    const t = +F.tile.t || 9;
+    mb.tag(`Отделка щита: плитка ${L.W}×${L.H}`);
+    // glue and grout behind the tiles: the joints show between them
+    for (const r of rectSub({ x0: 0, x1: z.x1, z0: z.z0, z1: z.z1 }, z._cuts))
+      bathRunBox(mb, R, R.a + r.x0, R.a + r.x1, 1, F.th, r.z0, r.z1, hexOk(F.tile.jcol) ? F.tile.jcol : '#cfd0cc');
+    for (const p of L.pieces) bathRunBox(mb, R, R.a + p.x0, R.a + p.x1, 0, t, p.z0, p.z1, F.col);
+  } else {
+    mb.tag(`Отделка щита: ${F.M.n}`);
+    for (const r of rectSub({ x0: 0, x1: z.x1, z0: z.z0, z1: z.z1 }, z._cuts))
+      bathRunBox(mb, R, R.a + r.x0, R.a + r.x1, 0, F.th, r.z0, r.z1, F.col);
+  }
+}
+/** Specification rows of the finish of a screen / podium. */
+function bathFinSpec(e) {
+  const faces = bathFinFaces(e);
+  if (!faces.length) return [];
+  const F = faces[0].F;
+  const A = faces.reduce((a, f) => a + f.A, 0);
+  const r2 = x => Math.round(x * 100) / 100;
+  const nm = e.cfg.inst === 'podium' ? 'обстройку ванны' : 'щит ванны';
+  if (!F.tile) return [['bfin' + F.k, `${F.M.n} на ${nm}, м²`, r2(A), 'м²']];
+  let n = 0,
+    mit = 0,
+    gr = 0,
+    gl = 0,
+    W = 0,
+    H = 0;
+  for (const f of faces) {
+    n += f.L.order;
+    mit += f.L.mitLen;
+    gr += tileGrout(f.L);
+    gl += tileGlue(f.L);
+    W = f.L.W;
+    H = f.L.H;
+  }
+  const r = [
+    [
+      'bft' + F.k + W + 'x' + H,
+      `${F.k === 'stone' ? 'Керамогранит' : 'Плитка'} ${W}×${H} на ${nm} (с запасом ${F.tile.waste}%)`,
+      n,
+      'шт'
+    ],
+    ['bfa' + F.k, `Площадь облицовки ${nm}, м²`, r2(A), 'м²'],
+    ['bpg', `Клей плиточный для облицовки ${nm}, кг`, Math.round(gl), 'кг'],
+    ['bfg', `Затирка швов облицовки ${nm}, кг`, Math.round(gr * 10) / 10, 'кг']
+  ];
+  if (mit > 1)
+    r.push([
+      'bfm',
+      `Запил плитки под 45° на углах ${nm === 'щит ванны' ? 'щита' : 'обстройки'}, м`,
+      Math.round(mit / 100) / 10,
+      'м'
+    ]);
+  return r;
+}
+function bathGklScreen(mb, c, e) {
   const h = c.h,
     zTop = h - 40,
-    tc = c.tileCol || '#e9e6df';
+    tc = bathFin(c).col;
+  const faces = e ? bathFinFaces(e) : [];
   const toe = c.toe ? BATH_TOE : null;
   // a box in run coordinates: s along the run (a…b), n into the bath from the tile face (0 — face), z
   const box = (R, s0, s1, n0, n1, z0, z1, col) => {
@@ -64049,8 +64192,12 @@ function bathGklScreen(mb, c) {
     const t = toe && R.side === 'front' ? toe : null;
     const z0 = t ? t.h : 0,
       back = t ? t.d : 0;
-    mb.tag('Щит ванны: плитка');
-    box(R, R.a, R.b, 0, BATH_TILE, z0, zTop, tc);
+    const Fc = faces.find(f => f.R.side === R.side);
+    if (Fc) bathFinDraw(mb, Fc);
+    else {
+      mb.tag('Щит ванны: плитка');
+      box(R, R.a, R.b, 0, BATH_TILE, z0, zTop, tc);
+    }
     mb.tag('Щит ванны: ГКЛВ 12,5');
     box(R, R.a + 1, R.b - 1, BATH_TILE, BATH_TILE + BATH_GKL, z0, zTop, '#b9c9b4');
     if (t) {
@@ -64092,8 +64239,7 @@ function bathGklSpec(c) {
     ['bgc', 'Профиль ПП 60×27 (стойки щита), м', r2((st * (H - 2 * BATH_PROF)) / 1000), 'м'],
     ['bgb', 'ГКЛВ 12,5 мм (щит ванны), м²', r2(A * 1.15), 'м²'],
     ['bgw', 'Гидроизоляция обмазочная по ГКЛВ щита, м²', r2(A), 'м²'],
-    ['bpt', 'Плитка на щит ванны (+10%), м²', r2(A * 1.1), 'м²'],
-    ['bpg', 'Клей плиточный для щита, кг', Math.round(A * 5), 'кг'],
+
     ['bgf', 'Крепёж щита: дюбель-гвозди 6×40, саморезы LN 9 и TN 25', 1, 'компл'],
     [
       'bph',
@@ -64120,10 +64266,20 @@ FIXK.bath = {
         z: c.toe && (c.inst === 'podium' || c.inst === 'gkl') ? 110 : 60,
         open: 'push',
         hinge: 'left',
-        tileTh: 12
+        tileTh: bathFin(c).th
       });
       return;
     }
+  },
+  onSet(e, p, v) {
+    const c = e.cfg;
+    if (!c.sfin) return;
+    if (p === 'cfg.sfin.fmt') {
+      const [a, b] = String(v).split('×').map(Number);
+      if (a > 0 && b > 0) c.sfin.tile = { ...(c.sfin.tile || {}), w: a, h: b };
+    }
+    // another material: its own defaults (tile sizes of porcelain differ)
+    if (p === 'cfg.sfin.k') delete c.sfin.tile;
   },
   n: 'Ванна',
   cfg: () => ({
@@ -64238,7 +64394,7 @@ FIXK.bath = {
               ? [
                   ['Слева стена (без торца)', 'cfg.endL', 'b'],
                   ['Справа стена (без торца)', 'cfg.endR', 'b'],
-                  ['Цвет плитки', 'cfg.tileCol', 'c']
+                  ...bathFinFields(c)
                 ]
               : []),
             ...(c.inst === 'gkl'
@@ -64339,12 +64495,12 @@ FIXK.bath = {
     if (!free && (c.inst === 'legs' || c.inst === 'screen')) r.push(['bleg' + c.mat, 'Каркас / ножки для ванны']);
     if (!free && c.inst === 'screen') r.push(['bsc' + c.w, `Экран под ванну ${c.w}`]);
     if (!free && c.inst === 'gkl') for (const x of bathGklSpec(c)) r.push(x);
+    if (!free && (c.inst === 'gkl' || c.inst === 'podium')) for (const x of bathFinSpec(e)) r.push(x);
     if (!free && c.inst === 'podium') {
       const A = (c.w * (c.h - 40) + (c.endL ? 0 : c.d * (c.h - 40)) + (c.endR ? 0 : c.d * (c.h - 40))) / 1e6;
       r.push(
         ['bpb', 'Обстройка ванны: газобетон 75 мм, м²', Math.round(A * 100) / 100, 'м²'],
-        ['bpt', 'Плитка на обстройку ванны (+10%), м²', Math.round(A * 1.1 * 100) / 100, 'м²'],
-        ['bpg', 'Клей плиточный для обстройки, кг', Math.round(A * 6.5), 'кг'],
+
         [
           'bph',
           'Лента гидроизоляционная бортовая (примыкание ванны), м',
@@ -64373,6 +64529,70 @@ CUTK['fix:bath'] = (e, where) => {
   if (c.type === 'free' || c.floorUnder) return null;
   return bathPolyW(e);
 };
+/** Properties of the finish of a screen / podium: material, colour, tile format, joint, layout, mitre. */
+function bathFinFields(c) {
+  const F = bathFin(c);
+  const r = [
+    ['Отделка щита', 'cfg.sfin.k', 's', BATH_FIN_K.map(k => [k, FINM[k].n])],
+    ['Цвет отделки', 'cfg.sfin.col', 'c']
+  ];
+  if (F.tile) {
+    const cur = `${Math.min(F.tile.w, F.tile.h)}×${Math.max(F.tile.w, F.tile.h)}`;
+    r.push(
+      [
+        'Формат плитки',
+        'cfg.sfin.fmt',
+        's',
+        [
+          ...TILEF.map(([a, b]) => [`${a}×${b}`, `${a}×${b}`]),
+          ...(TILEF.some(([a, b]) => `${a}×${b}` === cur) ? [] : [[cur, cur]])
+        ]
+      ],
+      [
+        'Ориентация',
+        'cfg.sfin.tile.ori',
+        's',
+        [
+          ['v', 'длинной стороной вертикально'],
+          ['h', 'длинной стороной горизонтально']
+        ]
+      ],
+      ['Шов, мм', 'cfg.sfin.tile.j', 's', [1, 1.5, 2, 3, 4, 5].map(v => [v, String(v)])],
+      [
+        'Раскладка',
+        'cfg.sfin.tile.pat',
+        's',
+        [
+          ['grid', 'прямая'],
+          ['half', 'со смещением 1/2'],
+          ['third', 'со смещением 1/3']
+        ]
+      ],
+      [
+        'По горизонтали',
+        'cfg.sfin.tile.ax',
+        's',
+        [
+          ['auto', 'авто'],
+          ['center', 'по центру плитки'],
+          ['joint', 'по центру шва'],
+          ['left', 'от левого края'],
+          ['right', 'от правого края']
+        ]
+      ],
+      [
+        'Запил 45° на углах',
+        'cfg.sfin.tile.miter',
+        's',
+        [
+          ['auto', 'да'],
+          ['off', 'нет']
+        ]
+      ]
+    );
+  }
+  return r;
+}
 function bathMigrate(e) {
   const c = e.cfg || {};
   if (c.mixer && c.mixPos == null) c.mixPos = bathMixDef(c);
@@ -64397,6 +64617,12 @@ function bathMigrate(e) {
     if (sz && c.sh0 != null) [c.w, c.d] = sz;
     if (!sz && c.sh0 != null && BATHSH[c.sh0] && BATHSH[c.sh0].size) [c.w, c.d] = [1700, c.type === 'free' ? 800 : 750];
     c.sh0 = c.shape;
+  }
+  // the finish of the screen: the format of the tiles as one value for the properties
+  if (c.type !== 'free' && (c.inst === 'gkl' || c.inst === 'podium')) {
+    if (!c.sfin) c.sfin = { k: 'tile' };
+    const F = bathFin(c);
+    if (F.tile) c.sfin.fmt = `${Math.min(F.tile.w, F.tile.h)}×${Math.max(F.tile.w, F.tile.h)}`;
   }
 }
 
