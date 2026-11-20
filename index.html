@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.49';
+const APP_VER = '59.50';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -63637,6 +63637,9 @@ CUTK['fix:fdrain'] = (e, where) => {
 
 
 
+
+
+
 /* baths: встраиваемые (экран / обстройка с плиткой / на ножках) и отдельностоящие (овал / прямоугольная)
    local: x along the length (centre), y from the wall (0) to the front (d), z up from the floor */
 var BATHM = {
@@ -63945,6 +63948,7 @@ function bathBuild(mb, e) {
       }
     }
     if (c.inst === 'gkl') bathGklScreen(mb, c, e);
+    bathSealBuild(mb, e);
     if (c.inst === 'podium') {
       const T = 75,
         tc = c.tileCol || '#e9e6df',
@@ -64241,13 +64245,7 @@ function bathGklSpec(c) {
     ['bgb', 'ГКЛВ 12,5 мм (щит ванны), м²', r2(A * 1.15), 'м²'],
     ['bgw', 'Гидроизоляция обмазочная по ГКЛВ щита, м²', r2(A), 'м²'],
 
-    ['bgf', 'Крепёж щита: дюбель-гвозди 6×40, саморезы LN 9 и TN 25', 1, 'компл'],
-    [
-      'bph',
-      'Лента гидроизоляционная бортовая (примыкание ванны), м',
-      Math.round((c.w + (c.endL ? c.d : 0) + (c.endR ? c.d : 0)) / 100) / 10,
-      'м'
-    ]
+    ['bgf', 'Крепёж щита: дюбель-гвозди 6×40, саморезы LN 9 и TN 25', 1, 'компл']
   ];
 }
 FIXK.bath = {
@@ -64354,7 +64352,11 @@ FIXK.bath = {
     }
     return r;
   },
-  k3: e => 0,
+  // the seal follows the walls the rim meets; the hatches cut the screen finish
+  k3: e => [
+    bathWallContacts(e).map(C => [Math.round(C.a.x), Math.round(C.a.y), Math.round(C.b.x), Math.round(C.b.y)]),
+    hatchesNear(e).map(h => [h.lx, h.w, h.h, h.z])
+  ],
   build(mb, e) {
     bathMigrate(e);
     bathBuild(mb, e);
@@ -64390,6 +64392,7 @@ FIXK.bath = {
         : [
             ['Установка', 'cfg.inst', 's', Object.entries(BATHI)],
             ['Покрытие пола под ванной', 'cfg.floorUnder', 'b'],
+            ['Шов у стены', 'cfg.seal', 's', Object.entries(BATH_SEAL)],
             ...(c.inst !== 'legs' ? [['Ниша для ног', 'cfg.toe', 'b']] : []),
             ...(c.inst === 'podium' || c.inst === 'gkl'
               ? [
@@ -64497,18 +64500,10 @@ FIXK.bath = {
     if (!free && c.inst === 'screen') r.push(['bsc' + c.w, `Экран под ванну ${c.w}`]);
     if (!free && c.inst === 'gkl') for (const x of bathGklSpec(c)) r.push(x);
     if (!free && (c.inst === 'gkl' || c.inst === 'podium')) for (const x of bathFinSpec(e)) r.push(x);
+    if (!free) for (const x of bathSealSpec(e)) r.push(x);
     if (!free && c.inst === 'podium') {
       const A = (c.w * (c.h - 40) + (c.endL ? 0 : c.d * (c.h - 40)) + (c.endR ? 0 : c.d * (c.h - 40))) / 1e6;
-      r.push(
-        ['bpb', 'Обстройка ванны: газобетон 75 мм, м²', Math.round(A * 100) / 100, 'м²'],
-
-        [
-          'bph',
-          'Лента гидроизоляционная бортовая (примыкание ванны), м',
-          Math.round((c.w + (c.endL ? c.d : 0) + (c.endR ? c.d : 0)) / 100) / 10,
-          'м'
-        ]
-      );
+      r.push(['bpb', 'Обстройка ванны: газобетон 75 мм, м²', Math.round(A * 100) / 100, 'м²']);
     }
     return r;
   }
@@ -64530,6 +64525,97 @@ CUTK['fix:bath'] = (e, where) => {
   if (c.type === 'free' || c.floorUnder) return null;
   return bathPolyW(e);
 };
+/* a built-in bath against the walls: the rim right at the wall, the wall finish comes down onto the rim, the joint
+   is sealed — sanitary silicone, or a bath border (PVC / ceramic angle) on silicone */
+const BATH_SEAL = { sealant: 'герметик', border: 'бортик (уголок) на герметике', none: 'без уплотнения' };
+/** Where the rim meets the walls: [{ w, side, a, b (world ends on the face), len }] — from the covered parts. */
+function bathWallContacts(e) {
+  const c = e.cfg;
+  if (!c || c.type === 'free') return [];
+  const out = [];
+  for (const w of S.ents) {
+    if (w.type !== 'wall' || !w.a || !w.b) continue;
+    for (const side of [1, -1]) {
+      let ob;
+      try {
+        ob = sideObstacles(w, side);
+      } catch (err) {
+        continue;
+      }
+      for (const r of ob) {
+        if (r.e !== e) continue;
+        const wi = wallInfo(w);
+        const x0 = Math.max(0, r.x0),
+          x1 = Math.min(wi.L, r.x1);
+        if (x1 - x0 < 20) continue;
+        const off = mul(wi.n, (side * w.th) / 2);
+        out.push({ w, side, a: add(add(w.a, mul(wi.u, x0)), off), b: add(add(w.a, mul(wi.u, x1)), off), len: x1 - x0 });
+      }
+    }
+  }
+  return out;
+}
+/** 3D of the seal along the rim at the walls, in the local frame of the bath. */
+function bathSealBuild(mb, e) {
+  const c = e.cfg,
+    k = c.seal || 'sealant';
+  if (k === 'none') return;
+  const s = devS(e),
+    f = devF(e);
+  const loc = p => [dot(sub(p, e.p), s), dot(sub(p, e.p), f)];
+  const zr = rimZ(c, 0);
+  for (const C of bathWallContacts(e)) {
+    const A = loc(C.a),
+      B = loc(C.b);
+    // into the bath: perpendicular to the joint, toward the middle of the bath
+    let nx = -(B[1] - A[1]),
+      ny = B[0] - A[0];
+    const l = Math.hypot(nx, ny) || 1;
+    nx /= l;
+    ny /= l;
+    const mx = (A[0] + B[0]) / 2,
+      my = (A[1] + B[1]) / 2;
+    if (nx * (0 - mx) + ny * (c.d / 2 - my) < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    // the seal lies on the finish of the wall that comes down onto the rim (tiles 12 mm, paint 1 …)
+    let fth = 0;
+    try {
+      const wi = wallInfo(C.w);
+      const t = dot(sub(add(C.a, mul(sub(C.b, C.a), 0.5)), C.w.a), wi.u);
+      fth = faceFinishAt(C.w, C.side, t, (+e.z || 0) + zr + 100).th || 0;
+    } catch (err) {
+      fth = 0;
+    }
+    const at = (P_, dn, z) => [P_[0] + nx * (dn + fth), P_[1] + ny * (dn + fth), z];
+    if (k === 'border') {
+      mb.tag('Бортик для ванны (уголок)');
+      mb.obox(at(A, 13, zr + 2), at(B, 13, zr + 2), 26, 4, '#f3f3f1');
+      mb.obox(at(A, 2, zr), at(B, 2, zr), 4, 30, '#f3f3f1');
+    } else {
+      mb.tag('Герметик санитарный (шов ванна — стена)');
+      mb.obox(at(A, 3, zr), at(B, 3, zr), 6, 6, '#fbfbfb');
+    }
+  }
+}
+/** Specification rows of the joint bath — walls (silicone tubes 280 ml ≈ 7.5 m of a 6×6 bead, border pieces 1.85 m). */
+function bathSealSpec(e) {
+  const c = e.cfg,
+    k = c.seal || 'sealant';
+  const L = bathWallContacts(e).reduce((a, C) => a + C.len, 0);
+  if (!L) return [];
+  const r = [['bph', 'Лента гидроизоляционная бортовая (примыкание ванны к стенам), м', Math.round(L / 100) / 10, 'м']];
+  if (k === 'none') return r;
+  r.push([
+    'bsil',
+    'Герметик санитарный силиконовый, туба 280 мл (шов ванна — стена)',
+    Math.max(1, Math.ceil(L / 7500)),
+    'шт'
+  ]);
+  if (k === 'border') r.push(['bbrd', 'Бортик (уголок) для ванны ПВХ, L = 1,85 м', Math.ceil((L * 1.05) / 1850), 'шт']);
+  return r;
+}
 /** Properties of the finish of a screen / podium: material, colour, tile format, joint, layout, mitre. */
 function bathFinFields(c) {
   const F = bathFin(c);
