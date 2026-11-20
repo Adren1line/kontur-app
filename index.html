@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.52';
+const APP_VER = '59.53';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -27127,7 +27127,7 @@ const WSDEF = [
     ab: 'Эл.',
     g: [
       ['Устройства', ['socket', 'switch', 'fout', 'eout']],
-      ['Свет', ['light', 'track', 'tmod', 'lcalc']],
+      ['Свет', ['light', 'track', 'tmod', 'ledline', 'lcalc']],
       ['Щит и кабели', ['eq', 'wire']]
     ]
   },
@@ -27225,6 +27225,7 @@ const TLBL = {
   gbody: 'Тело',
   rhatch: 'Люк',
   wniche: 'Ниша',
+  ledline: 'Подсветка',
   reinf: 'Усиление',
   load: 'Нагрузка',
   roomfill: 'Помещение',
@@ -125268,6 +125269,37 @@ XT.wniche = {
     void wi;
     return meshGroup(mb.meshes(), { edges: true });
   },
+  /** lines of the shelf / niche lighting (mep/electrical/led-lines.js): near the front edge, by the mode */
+  ledSegs(e, mode) {
+    const F = wnFrame(e);
+    if (!F) return [];
+    const z0 = (+F.w.z || 0) + (+e.z || 0),
+      z1 = z0 + e.h;
+    const y = F.face - e.side * Math.min(25, F.dIn / 3);
+    const pt = (x, z) => {
+      const p = F.P2(x, y);
+      return [p.x, p.y, z];
+    };
+    const top = [pt(F.x0 + 10, z1 - 10), pt(F.x1 - 10, z1 - 10)];
+    const sh = e.shelves || {};
+    const n = Math.max(0, Math.round(+sh.n || 0));
+    const SM = WN_SHELF[sh.mat] || WN_SHELF.glass;
+    if (mode === 'shelves') {
+      const out = [top];
+      for (let i = 1; i <= n; i++) {
+        const zc = z0 + (e.h * i) / (n + 1) - SM.th / 2 - 5;
+        out.push([pt(F.x0 + 10, zc), pt(F.x1 - 10, zc)]);
+      }
+      return out;
+    }
+    const sides = [
+      [pt(F.x0 + 12, z0 + 10), pt(F.x0 + 12, z1 - 10)],
+      [pt(F.x1 - 12, z0 + 10), pt(F.x1 - 12, z1 - 10)]
+    ];
+    if (mode === 'sides') return sides;
+    if (mode === 'perim') return [top, [pt(F.x0 + 10, z0 + 10), pt(F.x1 - 10, z0 + 10)], ...sides];
+    return [top];
+  },
   group: e => `Ниша ${fmt(e.w)}×${fmt(e.h)}×${fmt(e.d)}`,
   panel(e) {
     const F = wnFrame(e);
@@ -136088,6 +136120,356 @@ function moduleSvg(m, k, X, Y, w, hc, on, des) {
   return s;
 }
 
+// ===== mep/electrical/led-lines.js =====
+/**
+ * mep/electrical/led-lines.js
+ *
+ * Lighting of shelves and niches («Подсветка», ПОДСВЕТКА) — one tool: a click on a niche (or on anything that
+ * offers lighting lines: XT[type].ledSegs(e, mode) — niches, wall shelves, hanging furniture) puts an LED strip in an
+ * aluminium profile where it belongs: under the top of the niche, under every shelf, along the reveals, round the
+ * niche; a click elsewhere — a free line by two points. The line follows its object when the object changes.
+ *
+ * Strip: 12 / 24 V, 4.8…19.2 W/m, colour temperature; profile: surface, recessed, corner; diffuser. The load goes
+ * into the low-voltage plan (power-supplies.js → psuPlan): a power supply in the panel, in a PSU box or next to the
+ * strip, the cable by voltage drop. Specification: strip (reels of 5 m), profiles of 2 m, diffuser, end caps,
+ * connectors, switch / sensor.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const LED_W = [4.8, 9.6, 14.4, 19.2];
+const LED_PROF = { surf: 'накладной', rec: 'врезной (в паз)', corner: 'угловой 45°', none: 'без профиля' };
+const LED_CT = { 2700: '2700 K тёплый', 3000: '3000 K', 4000: '4000 K нейтральный' };
+/** Where on a niche the lines go. */
+const LED_MODE = {
+  top: 'под верхом (вдоль фронта)',
+  shelves: 'под каждой полкой',
+  sides: 'по боковым откосам',
+  perim: 'по периметру ниши'
+};
+TN.ledline = 'Подсветка (LED-лента)';
+/** Segments of a line: from its object (src) by the mode, or its own points. [[x,y,z],[x,y,z]] */
+function ledSegs(e) {
+  if (e.src != null) {
+    const o = byId(e.src);
+    const X = o && XT[o.type];
+    if (X && X.ledSegs) {
+      try {
+        return X.ledSegs(o, e.mode || 'top') || [];
+      } catch (err) {
+        return [];
+      }
+    }
+    return [];
+  }
+  return e.segs || [];
+}
+const ledLen = e => ledSegs(e).reduce((a, [p, q]) => a + Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]), 0);
+const ledCfg = e => ({
+  W: LED_W.includes(+e.wpm) ? +e.wpm : 9.6,
+  U: +e.volt === 12 ? 12 : 24,
+  prof: LED_PROF[e.prof] ? e.prof : 'surf',
+  ct: LED_CT[e.ct] ? +e.ct : 3000
+});
+XT.ledline = {
+  layer: 'Освещение',
+  net: 'el',
+  prims: e => ledSegs(e).map(([a, b]) => ({ t: 's', a: P(a[0], a[1]), b: P(b[0], b[1]) })),
+  keys: e =>
+    ledSegs(e).flatMap(([a, b]) => [
+      { p: P(a[0], a[1]), k: 'end' },
+      { p: P(b[0], b[1]), k: 'end' }
+    ]),
+  sample: e => ledSegs(e).flatMap(([a, b]) => [P(a[0], a[1]), P(b[0], b[1])]),
+  map(n, e, f) {
+    if (e.src != null || !e.segs) return;
+    n.segs = e.segs.map(([a, b]) => {
+      const A = f(P(a[0], a[1])),
+        B = f(P(b[0], b[1]));
+      return [
+        [A.x, A.y, a[2]],
+        [B.x, B.y, b[2]]
+      ];
+    });
+  },
+  draw(e, color, o, ghost, col) {
+    const sg = ledSegs(e);
+    if (!sg.length) return;
+    ctx.save();
+    ctx.strokeStyle = o && o.sel ? '#5b8def' : col || '#f0b44c';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([6, 2, 1.5, 2]);
+    for (const [a, b] of sg) {
+      const A = w2s(P(a[0], a[1])),
+        B = w2s(P(b[0], b[1]));
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if (!ghost && view.k > 0.08) {
+      const [a, b] = sg[0];
+      const s = w2s(P((a[0] + b[0]) / 2, (a[1] + b[1]) / 2));
+      const C = ledCfg(e);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = '10px "IBM Plex Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`LED ${C.W} Вт/м · ${(ledLen(e) / 1000).toFixed(2)} м`, s.x, s.y - 8);
+    }
+    ctx.restore();
+  },
+  k3: e => [ledSegs(e), e.prof, e.ct],
+  build3(e) {
+    const sg = ledSegs(e);
+    if (!sg.length) return null;
+    const C = ledCfg(e);
+    const mb = MB();
+    const glow = C.ct <= 2700 ? '#ffd27a' : C.ct >= 4000 ? '#f4f7ff' : '#ffe6a8';
+    for (const [a, b] of sg) {
+      if (C.prof !== 'none') {
+        mb.tag(`Профиль ${LED_PROF[C.prof]}`);
+        mb.obox(a, b, 17, 8, '#c9ced4');
+      }
+      mb.tag(`LED-лента ${C.U} В ${C.W} Вт/м, ${C.ct} K`);
+      mb.obox([a[0], a[1], a[2] - 4.5], [b[0], b[1], b[2] - 4.5], 11, 1.5, glow);
+    }
+    return meshGroup(mb.meshes(), { edges: false });
+  },
+  group: e => `Подсветка ${(ledLen(e) / 1000).toFixed(2)} м`,
+  panel(e) {
+    const C = ledCfg(e);
+    const L = ledLen(e) / 1000;
+    const o = e.src != null ? byId(e.src) : null;
+    return (
+      xGroups(e, [
+        [
+          'Подсветка',
+          `${L.toFixed(2)} м · ${Math.round(L * C.W)} Вт`,
+          [
+            ...(o && XT[o.type] && XT[o.type].ledSegs ? [['Где', 'mode', 's', Object.entries(LED_MODE)]] : []),
+            ['Мощность ленты, Вт/м', 'wpm', 's', LED_W.map(v => [v, String(v).replace('.', ',')])],
+            [
+              'Напряжение',
+              'volt',
+              's',
+              [
+                [24, '24 В'],
+                [12, '12 В']
+              ]
+            ],
+            ['Цветовая температура', 'ct', 's', Object.entries(LED_CT)],
+            ['Профиль', 'prof', 's', Object.entries(LED_PROF)],
+            ['Блок питания', 'psu', 's', targetOptions(e)],
+            [
+              'Управление',
+              'ctl',
+              's',
+              [
+                ['sw', 'выключатель / общая группа'],
+                ['sensor', 'датчик движения / касания в профиле'],
+                ['dim', 'диммер']
+              ]
+            ]
+          ]
+        ]
+      ]) + cR('Длина и мощность', `${L.toFixed(2)} м · ${(L * C.W).toFixed(1)} Вт · ${C.U} В`)
+    );
+  },
+  /** load for the low-voltage plan (power-supplies.js): a power supply in the panel / a PSU box / next to the strip */
+  lvLoad(e) {
+    const sg = ledSegs(e);
+    if (!sg.length) return null;
+    const C = ledCfg(e);
+    const [a] = sg[0];
+    return {
+      P: Math.round((ledLen(e) / 1000) * C.W * 10) / 10,
+      U: C.U,
+      target: e.psu || 'local',
+      p: P(a[0], a[1]),
+      z: a[2],
+      du: 5
+    };
+  },
+  spec(e, put) {
+    const C = ledCfg(e);
+    const L = ledLen(e);
+    if (L < 1) return;
+    const S_ = 'Подсветка полок и ниш';
+    const row = (k, name, u, v, dec = 0) =>
+      v > 0 &&
+      put(S_, k, { name, u }, r => {
+        r.q = Math.round((r.q + v) * 10 ** dec) / 10 ** dec;
+        r.ids.push(e.id);
+      });
+    const n = ledSegs(e).length;
+    row(
+      `led${C.U}-${C.W}-${C.ct}`,
+      `Лента светодиодная ${C.U} В, ${String(C.W).replace('.', ',')} Вт/м, ${C.ct} K, IP20 (катушка 5 м)`,
+      'шт',
+      Math.ceil((L * 1.05) / 5000)
+    );
+    row(
+      `ledm${C.U}-${C.W}-${C.ct}`,
+      `Лента светодиодная ${C.U} В ${String(C.W).replace('.', ',')} Вт/м — длина по проекту`,
+      'м',
+      L / 1000,
+      2
+    );
+    if (C.prof !== 'none') {
+      row(
+        'ledp' + C.prof,
+        `Профиль алюминиевый ${LED_PROF[C.prof]} для LED-ленты, L = 2 м`,
+        'шт',
+        Math.ceil((L * 1.05) / 2000)
+      );
+      row('ledd' + C.prof, 'Рассеиватель матовый для профиля, L = 2 м', 'шт', Math.ceil((L * 1.05) / 2000));
+      row('ledc' + C.prof, 'Заглушки торцевые профиля (пара)', 'шт', n);
+      row('ledh' + C.prof, 'Клипсы крепления профиля', 'шт', Math.ceil(L / 500) + n);
+    }
+    row('ledk', 'Коннектор / провод питания ленты', 'шт', n);
+    if (e.ctl === 'sensor') row('leds', 'Датчик для LED-профиля (движение / касание)', 'шт', 1);
+    if (e.ctl === 'dim') row('ledim', `Диммер для LED-ленты ${C.U} В`, 'шт', 1);
+  }
+};
+
+/** Command ПОДСВЕТКА: a click on a niche / shelf — lines where they belong; elsewhere — a free line by two points. */
+function mkLedLine() {
+  let first = null;
+  const D = (S.x.led = S.x.led || { mode: 'top', wpm: 9.6, z: 2200 });
+  const findSrc = p => {
+    let best = null,
+      bd = Infinity;
+    for (const o of S.ents) {
+      const X = XT[o.type];
+      if (!X || !X.ledSegs) continue;
+      // distance to the outline (segments of prims), else to the sample points
+      let segs = [];
+      try {
+        segs = (X.prims ? X.prims(o) : []).filter(q => q.t === 's');
+      } catch (err) {
+        segs = [];
+      }
+      const pts = segs.length ? [] : (X.sample ? X.sample(o) : []) || [];
+      for (const q of segs) {
+        const d = dist(segPt(q.a, q.b, p), p);
+        if (d < bd) {
+          bd = d;
+          best = o;
+        }
+      }
+      for (const q of pts) {
+        const d = dist(q, p);
+        if (d < bd) {
+          bd = d;
+          best = o;
+        }
+      }
+    }
+    return bd < Math.max(250, 20 / view.k) ? best : null;
+  };
+  const make = o => {
+    pushUndo();
+    const e = {
+      type: 'ledline',
+      id: S.nextId++,
+      wpm: D.wpm,
+      volt: 24,
+      ct: 3000,
+      prof: 'surf',
+      psu: 'local',
+      ctl: 'sw',
+      layer: 'Освещение',
+      ...o
+    };
+    S.ents.push(e);
+    changed();
+    log(`Подсветка: ${(ledLen(e) / 1000).toFixed(2)} м, ${Math.round((ledLen(e) / 1000) * e.wpm)} Вт`);
+    return e;
+  };
+  return {
+    name: 'ledline',
+    prompt: () =>
+      first
+        ? 'Подсветка: вторая точка линии:'
+        : `Подсветка: щёлкните нишу или полку (или первую точку свободной линии) [Где: ${LED_MODE[D.mode]} — Верх/Полки/Бока/Периметр; Высота ${D.z}]:`,
+    onInput(s) {
+      const t = s.trim().toLowerCase();
+      const m = {
+        в: 'top',
+        верх: 'top',
+        п: 'shelves',
+        полки: 'shelves',
+        б: 'sides',
+        бока: 'sides',
+        пер: 'perim',
+        периметр: 'perim'
+      }[t];
+      if (m) {
+        D.mode = m;
+        return true;
+      }
+      const z = t.match(/^(высота|h)?\s*(\d+)$/);
+      if (z) {
+        D.z = +z[2];
+        return true;
+      }
+      return false;
+    },
+    onPoint(p) {
+      const z3 = W3.last && Date.now() - W3.last.t < 600 ? W3.last.z : null;
+      if (!first) {
+        const o = findSrc(p);
+        if (o) {
+          make({ src: o.id, mode: D.mode });
+          return;
+        }
+        first = { p, z: z3 != null ? z3 : D.z };
+        return;
+      }
+      make({
+        segs: [
+          [
+            [first.p.x, first.p.y, first.z],
+            [p.x, p.y, z3 != null ? z3 : first.z]
+          ]
+        ]
+      });
+      first = null;
+    },
+    onEnter() {
+      if (first) {
+        first = null;
+        return;
+      }
+      return 'end';
+    }
+  };
+}
+defineTools({
+  ledline: {
+    command: { t: 'ПОДСВЕТКА', m: mkLedLine, a: ['ledline', 'подсветка', 'лента', 'led'] },
+    title: 'Подсветка полок и ниш (LED-лента в профиле) · ПОДСВЕТКА',
+    icon: '<path d="M3 6h14M3 6v3M17 6v3"/><path d="M5 12l-1 2M10 12v3M15 12l1 2"/>',
+    help: 'Щелчок по нише или полке — LED-лента в профиле там, где нужно: под верхом, под каждой полкой, по откосам или по периметру (опция «Где»). Щелчок в другом месте — свободная линия по двум точкам. В свойствах — мощность, напряжение, температура, профиль, блок питания (в щите, в щитке БП или рядом), управление. Нагрузка уходит в расчёт блоков питания и кабелей.'
+  }
+});
+void fmt;
+
 // ===== mep/electrical/panel-wiring.js =====
 /**
  * mep/electrical/panel-wiring.js
@@ -136366,6 +136748,7 @@ function wires3D(mb, L, z0, yM, yB) {
 
 
 
+
 const EO_USE = {
   led: 'Светодиодная лента',
   lamp: 'Светильник',
@@ -136474,6 +136857,17 @@ function consumers() {
         z: devZ(e),
         du: +eo.du || 5
       });
+    }
+    // any element with its own low-voltage load (LED lines of shelves and niches)
+    const X = XT[e.type];
+    if (X && X.lvLoad && visible(e)) {
+      let L = null;
+      try {
+        L = X.lvLoad(e);
+      } catch (err) {
+        L = null;
+      }
+      if (L && L.P > 0) out.push({ id: e.id, e, ...L });
     }
     if (e.type === 'track' && e.psu && e.psu !== 'own' && visible(e)) {
       const K = TRK[e.kind] || TRK.mag48;
