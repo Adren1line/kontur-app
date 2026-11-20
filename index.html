@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.51';
+const APP_VER = '59.52';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12025,7 +12025,28 @@ function opInfo(o) {
 
 /** All niches/openings that cut the wall build-up: door/window openings and niches, plus revision hatches. */
 function wallNiches(w) {
-  return [...wallOpeningNiches(w), ...hatchWallNiches(w)];
+  return [...wallOpeningNiches(w), ...hatchWallNiches(w), ...userNiches(w)];
+}
+/** Niches drawn by the user (elements/wall-niches.js): cut to their depth, never through (12.5 mm stay). */
+function userNiches(w) {
+  const out = [];
+  for (const e of S.ents) {
+    if (e.type !== 'wniche' || e.host !== w.id) continue;
+    const z = +e.z || 0;
+    out.push({
+      x0: e.t - e.w / 2,
+      x1: e.t + e.w / 2,
+      z0: z,
+      z1: z + e.h,
+      side: e.side > 0 ? 1 : -1,
+      depth: clamp(+e.d || 0, 5, Math.max(5, w.th - 12.5)),
+      raw: +e.d || 0,
+      n: `Ниша ${Math.round(e.w)}×${Math.round(e.h)}×${Math.round(e.d)}`,
+      id: e.id,
+      user: true
+    });
+  }
+  return out;
 }
 
 // ===== core/entity-geometry.js =====
@@ -27086,7 +27107,7 @@ const WSDEF = [
     ab: 'Констр.',
     g: [
       ['Несущие', ['col', 'beam']],
-      ['ГКЛ и тела', ['gbody', 'rhatch']],
+      ['ГКЛ и тела', ['gbody', 'wniche', 'rhatch']],
       ['Усиления', ['reinf', 'load']]
     ]
   },
@@ -27203,6 +27224,7 @@ const TLBL = {
   beam: 'Ригель',
   gbody: 'Тело',
   rhatch: 'Люк',
+  wniche: 'Ниша',
   reinf: 'Усиление',
   load: 'Нагрузка',
   roomfill: 'Помещение',
@@ -39166,6 +39188,14 @@ function sideObstacles0(w, side) {
       if (!poly || poly.length < 3) continue;
       const oz = +o.z || 0;
       push(band(poly), oz, oz + (+o.h || 0), 'wall', o);
+      continue;
+    }
+    // a niche in this side: the face is not there (the niche has its own finish inside)
+    if (o.type === 'wniche') {
+      if (o.host === w.id && (o.side > 0 ? 1 : -1) === side) {
+        const z = +o.z || 0;
+        out.push({ x0: o.t - o.w / 2, x1: o.t + o.w / 2, z0: z, z1: z + o.h, by: 'niche', e: o });
+      }
       continue;
     }
     const B = o.kind != null ? FACE_BLOCKERS[o.type + ':' + o.kind] : null;
@@ -124995,6 +125025,489 @@ function wallFaceRounds(w, B, J) {
   }
   return out;
 }
+
+// ===== elements/wall-niches.js =====
+/**
+ * elements/wall-niches.js
+ *
+ * Niches in walls and partitions («Ниша», НИША): a recess pushed into a wall side — like push/pull of the converter:
+ * the outline on the face (two points along the wall, in 3D — two corners on the wall), then the depth by the
+ * cursor going into the wall (or typed). The depth grip on the plan pushes / pulls the back of the niche.
+ *
+ * The niche cuts the wall in 3D and on sections (walls.js → wallNiches), a framed wall gets its frame round the niche
+ * automatically (studs and ПН lintels, the wall frame code), the finish of the wall side stops at its edges. Inside:
+ * lining of the back and the reveals (GKL in a framed wall, plaster in a block one), corner bead on the front edges,
+ * its own finish (paint, tiles, stone, panels…), shelves.
+ * Entity: { type:'wniche', host (wall id), side ±1, t (centre along the wall from w.a), w, h, z (bottom from the
+ * wall bottom), d (depth from the structural face), fin: { k, col }, shelves: { n, th, mat } }.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** Materials of the niche inside: the finishes of walls, glass / GKL shelves. */
+const WN_FIN = ['paint', 'tile', 'stone', 'plaster', 'veneer', 'hpl'];
+const WN_SHELF = {
+  glass: { n: 'стекло закалённое', th: 8, col: '#cfe3ee' },
+  gkl: { n: 'ГКЛ на профиле', th: 40, col: '#ecebe5' },
+  wood: { n: 'дерево / МДФ', th: 25, col: '#b98e62' }
+};
+/** Defaults of the next niche (also the options of the command). */
+function wnDef() {
+  if (!S.x.wniche) S.x.wniche = { h: 600, z: 1000, d: 75, fin: 'tile' };
+  return S.x.wniche;
+}
+/** Frame of a niche: its wall, the axes, the face and the corner points in the wall frame. */
+function wnFrame(e) {
+  const w = byId(e.host);
+  if (!w || w.type !== 'wall') return null;
+  const wi = wallInfo(w);
+  const face = (e.side * w.th) / 2;
+  const P2 = (x, y) => add(add(w.a, mul(wi.u, x)), mul(wi.n, y));
+  return { w, wi, face, P2, x0: e.t - e.w / 2, x1: e.t + e.w / 2, dIn: wnDepth(e, w) };
+}
+/** Depth actually cut: not through the wall (at least 12.5 mm stay — the board of the other side). */
+function wnDepth(e, w = byId(e.host)) {
+  return w ? clamp(+e.d || 0, 5, Math.max(5, w.th - 12.5)) : +e.d || 0;
+}
+/** The niches of a wall in the form of wallNiches (walls.js): the wall is cut there, a framed wall is framed round it. */
+function userWallNiches(w) {
+  const out = [];
+  for (const e of S.ents) {
+    if (e.type !== 'wniche' || e.host !== w.id) continue;
+    out.push({
+      x0: e.t - e.w / 2,
+      x1: e.t + e.w / 2,
+      z0: +e.z || 0,
+      z1: (+e.z || 0) + e.h,
+      side: e.side,
+      depth: wnDepth(e, w),
+      raw: +e.d,
+      n: `Ниша ${fmt(e.w)}×${fmt(e.h)}×${fmt(e.d)}`,
+      id: e.id,
+      user: true
+    });
+  }
+  return out;
+}
+/** Inner surfaces of a niche (mm²): back, reveals (2 sides, top, bottom), front edges (corner bead). */
+function wnAreas(e) {
+  const d = wnDepth(e);
+  return {
+    back: e.w * e.h,
+    rev: 2 * (e.w + e.h) * d,
+    all: e.w * e.h + 2 * (e.w + e.h) * d,
+    edge: 2 * (e.w + e.h)
+  };
+}
+const wnFin = e => {
+  const k = WN_FIN.includes(e.fin && e.fin.k) ? e.fin.k : 'paint';
+  return {
+    k,
+    M: FINM[k],
+    col: (e.fin && hexOk(e.fin.col) && e.fin.col) || FINM[k].col || (isTileK(k) ? '#e8e5df' : '#f1f0ea')
+  };
+};
+
+TN.wniche = 'Ниша в стене';
+XT.wniche = {
+  layer: 'Стены',
+  hosted: true,
+  prims: e => {
+    const F = wnFrame(e);
+    if (!F) return [];
+    const a = F.P2(F.x0, F.face),
+      b = F.P2(F.x1, F.face),
+      c = F.P2(F.x1, F.face - e.side * F.dIn),
+      d = F.P2(F.x0, F.face - e.side * F.dIn);
+    return [
+      { t: 's', a, b },
+      { t: 's', a: b, b: c },
+      { t: 's', a: c, b: d },
+      { t: 's', a: d, b: a }
+    ];
+  },
+  keys: e => {
+    const F = wnFrame(e);
+    if (!F) return [];
+    return [
+      { p: F.P2(F.x0, F.face), k: 'end' },
+      { p: F.P2(F.x1, F.face), k: 'end' },
+      { p: F.P2(e.t, F.face), k: 'mid' },
+      { p: F.P2(F.x0, F.face - e.side * F.dIn), k: 'end' },
+      { p: F.P2(F.x1, F.face - e.side * F.dIn), k: 'end' }
+    ];
+  },
+  sample: e => XT.wniche.prims(e).map(s => s.a),
+  /** grips: the two ends along the wall, the back of the niche — push / pull the depth */
+  grips: (e, set) => {
+    const F = wnFrame(e);
+    if (!F) return [];
+    const loc = p => dot(sub(p, F.w.a), F.wi.u);
+    const depthAt = p => -e.side * (dot(sub(p, F.w.a), F.wi.n) - F.face);
+    return [
+      {
+        p: F.P2(F.x0, F.face),
+        apply: set((n, p) => {
+          const x1 = n.t + n.w / 2,
+            x0 = Math.min(loc(p), x1 - 50);
+          n.w = Math.round(x1 - x0);
+          n.t = Math.round((x0 + x1) / 2);
+        })
+      },
+      {
+        p: F.P2(F.x1, F.face),
+        apply: set((n, p) => {
+          const x0 = n.t - n.w / 2,
+            x1 = Math.max(loc(p), x0 + 50);
+          n.w = Math.round(x1 - x0);
+          n.t = Math.round((x0 + x1) / 2);
+        })
+      },
+      {
+        p: F.P2(e.t, F.face - e.side * F.dIn),
+        apply: set((n, p) => {
+          n.d = Math.round(clamp(depthAt(p), 5, F.w.th - 12.5));
+        })
+      }
+    ];
+  },
+  map(n, e, f) {
+    // moved / copied along its wall
+    const F = wnFrame(e);
+    if (!F) return;
+    const p = f(F.P2(e.t, F.face));
+    n.t = Math.round(clamp(dot(sub(p, F.w.a), F.wi.u), e.w / 2, F.wi.L - e.w / 2));
+  },
+  draw(e, color, o, ghost, col) {
+    const F = wnFrame(e);
+    if (!F) return;
+    const q = [
+      F.P2(F.x0, F.face),
+      F.P2(F.x1, F.face),
+      F.P2(F.x1, F.face - e.side * F.dIn),
+      F.P2(F.x0, F.face - e.side * F.dIn)
+    ];
+    ctx.save();
+    // the recess: the hole in the wall hatch shows the void, the outline dashed (the niche is above / below the cut)
+    ctx.fillStyle = o && o.sel ? 'rgba(91,141,239,0.25)' : 'rgba(255,255,255,0.85)';
+    pathPoly(q);
+    ctx.fill();
+    ctx.strokeStyle = col || color || '#c9a24a';
+    ctx.lineWidth = o && o.sel ? 1.6 : 1;
+    ctx.setLineDash([5, 3]);
+    pathPoly(q);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (!ghost && e.w * view.k > 40) {
+      const s = w2s(F.P2(e.t, F.face + e.side * 120));
+      ctx.font = '10px "IBM Plex Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(`ниша ${fmt(e.w)}×${fmt(e.h)}, гл. ${fmt(e.d)}, низ ${fmt(e.z)}`, s.x, s.y);
+    }
+    ctx.restore();
+  },
+  k3: e => {
+    const F = wnFrame(e);
+    return F ? [F.w.a, F.w.b, F.w.th, F.w.z, e.side, e.t, e.w, e.h, e.z, e.d, e.fin, e.shelves] : null;
+  },
+  /** 3D: the finish of the back and the reveals (the cut itself is in the wall), shelves */
+  build3(e) {
+    const F = wnFrame(e);
+    if (!F) return null;
+    const { w, wi } = F;
+    const z0 = (+w.z || 0) + (+e.z || 0),
+      z1 = z0 + e.h,
+      d = F.dIn;
+    const fin = wnFin(e);
+    const th = Math.min(isTileK(fin.k) ? 10 : 2, d / 3);
+    const xf = (x, y, z) => {
+      const p = F.P2(x, y);
+      return [p.x, p.y, z];
+    };
+    const mb = MB(xf);
+    // local box: x along the wall, y across (wall frame), z absolute
+    const box = (xa, xb, ya, yb, za, zb, c) =>
+      mb.box(Math.min(xa, xb), Math.min(ya, yb), za, Math.max(xa, xb), Math.max(ya, yb), zb, c);
+    const yB = F.face - e.side * d;
+    mb.tag(`Ниша: отделка — ${fin.M.n}`);
+    box(F.x0, F.x1, yB, yB + e.side * th, z0, z1, fin.col);
+    box(F.x0, F.x0 + th, yB, F.face, z0, z1, fin.col);
+    box(F.x1 - th, F.x1, yB, F.face, z0, z1, fin.col);
+    box(F.x0, F.x1, yB, F.face, z0, z0 + th, fin.col);
+    box(F.x0, F.x1, yB, F.face, z1 - th, z1, fin.col);
+    const sh = e.shelves || {};
+    const n = Math.max(0, Math.min(10, Math.round(+sh.n || 0)));
+    if (n) {
+      const SM = WN_SHELF[sh.mat] || WN_SHELF.glass;
+      mb.tag(`Полка в нише: ${SM.n}`);
+      for (let i = 1; i <= n; i++) {
+        const zc = z0 + (e.h * i) / (n + 1);
+        box(F.x0 + th, F.x1 - th, yB + e.side * th, F.face, zc - SM.th / 2, zc + SM.th / 2, SM.col);
+      }
+    }
+    void wi;
+    return meshGroup(mb.meshes(), { edges: true });
+  },
+  group: e => `Ниша ${fmt(e.w)}×${fmt(e.h)}×${fmt(e.d)}`,
+  panel(e) {
+    const F = wnFrame(e);
+    const fin = wnFin(e);
+    const A = wnAreas(e);
+    const framed = F && isFramedType(typeOf(F.w));
+    const warn =
+      F && +e.d > F.w.th - 12.5
+        ? `<dt></dt><dd class="warn" style="text-align:left">Глубина ${fmt(e.d)} мм больше, чем позволяет стена ${fmt(F.w.th)} мм — ниша прорежет обратную сторону; вырезано ${fmt(F.dIn)} мм.</dd>`
+        : '';
+    return (
+      xGroups(e, [
+        [
+          'Ниша',
+          `${fmt(e.w)}×${fmt(e.h)}×${fmt(e.d)}`,
+          [
+            ['Ширина, мм', 'w', 'n'],
+            ['Высота, мм', 'h', 'n'],
+            ['Низ от пола, мм', 'z', 'n'],
+            ['Глубина, мм', 'd', 'n'],
+            ['Положение по стене (центр), мм', 't', 'n'],
+            [
+              'Сторона стены',
+              'side',
+              's',
+              [
+                [1, 'А'],
+                [-1, 'Б']
+              ]
+            ]
+          ]
+        ],
+        [
+          'Отделка внутри',
+          fin.M.n,
+          [
+            ['Материал', 'fin.k', 's', WN_FIN.map(k => [k, FINM[k].n])],
+            ['Цвет', 'fin.col', 'c'],
+            ['Уголок на кромках', 'bead', 'b']
+          ]
+        ],
+        [
+          'Полки',
+          `${+(e.shelves || {}).n || 0}`,
+          [
+            ['Количество', 'shelves.n', 'n'],
+            ['Материал', 'shelves.mat', 's', Object.entries(WN_SHELF).map(([k, v]) => [k, v.n])]
+          ]
+        ]
+      ]) +
+      cR(
+        'Площадь внутри',
+        `${(A.all / 1e6).toFixed(2)} м² (дно ${(A.back / 1e6).toFixed(2)}, откосы ${(A.rev / 1e6).toFixed(2)})`
+      ) +
+      cR('Каркас', framed ? 'обрамление ниши — в каркасе стены (стойки, перемычки ПН)' : 'вырез в кладке') +
+      warn
+    );
+  },
+  onSet(e, p) {
+    if (p === 'side') e.side = +e.side > 0 ? 1 : -1;
+    e.w = Math.max(50, +e.w || 50);
+    e.h = Math.max(50, +e.h || 50);
+    e.d = Math.max(5, +e.d || 5);
+  },
+  spec(e, put) {
+    const F = wnFrame(e);
+    if (!F) return;
+    const S_ = 'Ниши в стенах';
+    const A = wnAreas(e);
+    const row = (k, name, u, v, dec = 2) =>
+      v > 0 &&
+      put(S_, k, { name, u }, r => {
+        r.q = Math.round((r.q + v) * 10 ** dec) / 10 ** dec;
+        r.ids.push(e.id);
+      });
+    const framed = isFramedType(typeOf(F.w));
+    row('wn', 'Ниша в стене (устройство)', 'шт', 1, 0);
+    if (framed) {
+      row('wngkl', 'ГКЛ(В) 12,5 — дно и откосы ниш (+15 %)', 'м²', (A.all / 1e6) * 1.15);
+      row('wnscr', 'Саморезы TN 25 для обшивки ниш', 'шт', Math.ceil((A.all / 1e6) * 30), 0);
+    } else {
+      row('wncut', 'Вырез ниши в кладке / бетоне', 'м³', (e.w * e.h * F.dIn) / 1e9, 3);
+      row('wnpl', 'Штукатурка дна и откосов ниш', 'м²', A.all / 1e6);
+    }
+    if (e.bead !== false) row('wnbead', 'Уголок перфорированный ПУ 31×31 — кромки ниш', 'м', A.edge / 1000, 1);
+    const fin = wnFin(e);
+    if (isTileK(fin.k)) {
+      const c = tileCfg({ k: fin.k });
+      const n = Math.ceil(((A.all * 1.15) / (c.w * c.h)) * 1);
+      row('wnt' + fin.k, `${fin.M.n} ${c.w}×${c.h} — ниши (с подрезкой +15 %)`, 'шт', n, 0);
+      row('wnta' + fin.k, `${fin.M.n} — площадь ниш`, 'м²', A.all / 1e6);
+      row('wntm', 'Запил плитки под 45° на кромках ниш', 'м', A.edge / 1000, 1);
+    } else row('wnf' + fin.k, `${fin.M.n} — ниши`, 'м²', A.all / 1e6);
+    const sh = e.shelves || {};
+    const n = Math.max(0, Math.round(+sh.n || 0));
+    if (n) {
+      const SM = WN_SHELF[sh.mat] || WN_SHELF.glass;
+      row('wnsh' + (sh.mat || 'glass'), `Полка в нише: ${SM.n} ${fmt(e.w - 4)}×${fmt(wnDepth(e) - 5)}`, 'шт', n, 0);
+      if ((sh.mat || 'glass') === 'glass') row('wnshh', 'Полкодержатель для стекла (пара на полку)', 'шт', n * 2, 0);
+    }
+  }
+};
+
+/** Command НИША: two points on a wall side along the wall (in 3D — two corners), then the depth into the wall. */
+function mkWallNiche() {
+  let first = null,
+    rect = null;
+  const D = wnDef();
+  return {
+    name: 'wniche',
+    prompt: () =>
+      !first
+        ? `Ниша: первая точка на стороне стены (в 3D — угол ниши) [Высота ${D.h}/Низ ${D.z}/Глубина ${D.d}]:`
+        : !rect
+          ? 'Ниша: вторая точка вдоль стены (в 3D — противоположный угол):'
+          : 'Ниша: глубина — уведите курсор в стену или введите число (Enter — по умолчанию):',
+    onInput(s) {
+      const m = s
+        .trim()
+        .toLowerCase()
+        .match(/^(в|высота|н|низ|г|глубина)?\s*(-?\d+(?:[.,]\d+)?)$/);
+      if (!m) return false;
+      const v = Math.abs(parseFloat(m[2].replace(',', '.')));
+      if (rect && !m[1]) {
+        finish(v);
+        return true;
+      }
+      const k = m[1] || '';
+      if (/^в/.test(k)) D.h = v;
+      else if (/^н/.test(k)) D.z = v;
+      else D.d = v;
+      return true;
+    },
+    onPoint(p) {
+      const ws = wallSideAt(p);
+      if (!rect) {
+        if (!ws) return log('Рядом нет стены', true);
+        const z3 = W3.last && Date.now() - W3.last.t < 600 ? W3.last.z - (+ws.w.z || 0) : null;
+        if (!first) {
+          first = { ...ws, z3 };
+          return;
+        }
+        if (first.w !== ws.w || first.side !== ws.side)
+          return log('Вторая точка — на той же стороне той же стены', true);
+        const x0 = Math.min(first.t, ws.t),
+          x1 = Math.max(first.t, ws.t);
+        if (x1 - x0 < 50) return log('Ниша слишком узкая', true);
+        let z0 = D.z,
+          z1 = D.z + D.h;
+        if (first.z3 != null && z3 != null && Math.abs(first.z3 - z3) > 50) {
+          z0 = Math.round(Math.min(first.z3, z3) / 5) * 5;
+          z1 = Math.round(Math.max(first.z3, z3) / 5) * 5;
+        }
+        rect = { w: ws.w, side: ws.side, x0, x1, z0, z1 };
+        return;
+      }
+      // the depth: how far the cursor went into the wall from the face
+      const wi = wallInfo(rect.w);
+      const dIn = -rect.side * (dot(sub(p, rect.w.a), wi.n) - (rect.side * rect.w.th) / 2);
+      finish(dIn > 4 ? dIn : D.d);
+    },
+    onEnter() {
+      if (rect) {
+        finish(D.d);
+        return;
+      }
+      if (first) {
+        first = null;
+        return;
+      }
+      return 'end';
+    },
+    preview(cur) {
+      const ws = rect ? { w: rect.w, side: rect.side, wi: wallInfo(rect.w) } : wallSideAt(cur);
+      if (!ws) return;
+      const wi = ws.wi || wallInfo(ws.w);
+      const face = (ws.side * ws.w.th) / 2;
+      const W = (x, y) => add(add(ws.w.a, mul(wi.u, x)), mul(wi.n, y));
+      ctx.save();
+      ctx.strokeStyle = '#c9a24a';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      if (rect) {
+        const dIn = clamp(-rect.side * (dot(sub(cur, rect.w.a), wi.n) - face), 5, rect.w.th - 12.5);
+        pathPoly([
+          W(rect.x0, face),
+          W(rect.x1, face),
+          W(rect.x1, face - rect.side * dIn),
+          W(rect.x0, face - rect.side * dIn)
+        ]);
+        ctx.stroke();
+        const s = w2s(W((rect.x0 + rect.x1) / 2, face + rect.side * 150));
+        ctx.fillStyle = '#c9a24a';
+        ctx.font = '11px "IBM Plex Sans", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`глубина ${fmt(Math.round(dIn))}`, s.x, s.y);
+      } else if (first && first.w === ws.w && first.side === ws.side) {
+        pathPoly([W(first.t, face), W(ws.t, face), W(ws.t, face - ws.side * D.d), W(first.t, face - ws.side * D.d)]);
+        ctx.stroke();
+      } else {
+        pathPoly([W(ws.t, face - ws.side * D.d), W(ws.t, face + ws.side * 100)], false);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  };
+  function finish(d) {
+    const r = rect;
+    pushUndo();
+    const e = {
+      type: 'wniche',
+      id: S.nextId++,
+      host: r.w.id,
+      side: r.side,
+      t: Math.round((r.x0 + r.x1) / 2),
+      w: Math.round(r.x1 - r.x0),
+      h: Math.round(r.z1 - r.z0),
+      z: Math.round(r.z0),
+      d: Math.round(clamp(d, 5, r.w.th - 12.5)),
+      fin: { k: D.fin || 'tile' },
+      layer: r.w.layer || 'Стены'
+    };
+    S.ents.push(e);
+    D.d = e.d;
+    D.h = e.h;
+    D.z = e.z;
+    first = null;
+    rect = null;
+    changed();
+    log(`Ниша ${fmt(e.w)}×${fmt(e.h)}, глубина ${fmt(e.d)} мм${e.d < +D.d ? '' : ''}`);
+  }
+}
+defineTools({
+  wniche: {
+    command: { t: 'НИША', m: mkWallNiche, a: ['wniche', 'ниша', 'niche', 'нишавстене'] },
+    title: 'Ниша в стене или перегородке · НИША',
+    icon: '<rect x="3" y="3" width="14" height="14"/><rect x="7" y="7" width="6" height="6"/><path d="M3 3l4 4M17 3l-4 4M3 17l4-4M17 17l-4-4"/>',
+    help: 'Ниша — как «тяни/толкай»: две точки на стороне стены (в 3D — два угла ниши), затем уведите курсор в стену — это глубина (или введите число). Высота, низ и глубина по умолчанию — опции команды. После — ручки на плане: концы вдоль стены и дно (тянуть/толкать глубину). В каркасной стене обрамление ниши добавляется в каркас, отделка стены обходит нишу, внутри — своя отделка, уголок, полки.'
+  }
+});
 
 // ===== elements/wall-tie.js =====
 /**
