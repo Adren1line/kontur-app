@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.48';
+const APP_VER = '59.49';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -40195,7 +40195,8 @@ function tileMiterLines(w, z, c = tileCfg(z)) {
     [0, 0],
     [1, wi.L]
   ]) {
-    if (Math.abs((end ? z.x1 : z.x0) - x) > 5) continue;
+    // a zone drawn by points up to the corner reaches it (within 30 mm)
+    if (Math.abs((end ? z.x1 : z.x0) - x) > 30) continue;
     if (wallEndOuter(w, wi, end, s)) out.push({ v: true, x: end ? z.x1 : z.x0, a: z.z0, b: z.z1, corner: true });
   }
   if (mode === 'auto')
@@ -115099,6 +115100,8 @@ function solRenderSide() {
     h += `<div class="kv"><span>${p.ins ? '↳ ' : ''}${esc(p.n)}</span><b>${p.A != null ? p.A.toFixed(2) + ' м², ' + p.sheets + ' л., ' : ''}${p.V.toFixed(3)} м³ · ${Math.round(p.kg)} кг</b></div>`;
   for (const f of Q.fins)
     h += `<div class="kv"><span>${esc(f.n)}${f.tw ? ' ' + f.tw + '×' + f.th : ''}</span><b>${f.A.toFixed(2)} м²${f.pcs ? ' · ' + f.pcs + ' шт' : ''} · ${Math.round(f.kg)} кг</b></div>`;
+  if (Q.miter > 1)
+    h += `<div class="kv"><span>Запил 45° на наружных рёбрах</span><b>${(Q.miter / 1000).toFixed(2)} м</b></div>`;
   if ((e.pts || []).length) h += `<div class="kv"><span>Электроточки</span><b>${e.pts.length}</b></div>`;
   h += `<div class="kv tot"><span>Итого масса</span><b>${Math.round(Q.mass)} кг</b></div>`;
   // history
@@ -123365,7 +123368,52 @@ function solidCalc(e) {
     fins.set(key, g);
     mass += (f.area / 1e6) * S_.kgm2;
   }
-  return { parts, fins: [...fins.values()], faces, mass, points: e.pts || [], bb: R.bb };
+  return { parts, fins: [...fins.values()], faces, mass, points: e.pts || [], bb: R.bb, miter: solidMiter(faces) };
+}
+/**
+ * 45° mitre of tiles / stone on the outer edges of a body: the length of the convex edges where two faces with a
+ * tile finish meet (e.g. the corners of a bath niche box, an installation box). Faces may be split into several
+ * polygons by the CSG — edges are matched by collinear overlap. mm.
+ */
+function solidMiter(faces) {
+  const tiled = f => !f.contact && f.fin && (f.fin.k === 'tile' || f.fin.k === 'stone') && f.fin.miter !== 'off';
+  const T = faces.filter(tiled);
+  const edges = f => {
+    const out = [];
+    for (const q of f.polys) for (let i = 0; i < q.v.length; i++) out.push([q.v[i], q.v[(i + 1) % q.v.length]]);
+    return out;
+  };
+  const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  let L = 0;
+  for (let i = 0; i < T.length; i++)
+    for (let j = i + 1; j < T.length; j++) {
+      const f = T[i],
+        g = T[j];
+      // an outer (convex) edge: the other face lies behind the plane of this one
+      if (dot3(sub3(g.c, f.c), f.n) > -1 || Math.abs(dot3(f.n, g.n)) > 0.98) continue;
+      let len = 0;
+      for (const [a, b] of edges(f)) {
+        const d = sub3(b, a),
+          l = Math.hypot(...d);
+        if (l < 1) continue;
+        const u = d.map(x => x / l);
+        for (const [p, q] of edges(g)) {
+          // both ends of g's edge on the line of f's edge
+          const on = r => {
+            const w = sub3(r, a),
+              t = dot3(w, u);
+            return Math.hypot(w[0] - u[0] * t, w[1] - u[1] * t, w[2] - u[2] * t) < 1 ? t : null;
+          };
+          const tp = on(p),
+            tq = on(q);
+          if (tp == null || tq == null) continue;
+          len += Math.max(0, Math.min(l, Math.max(tp, tq)) - Math.max(0, Math.min(tp, tq)));
+        }
+      }
+      L += len;
+    }
+  return L;
 }
 
 /* ---------- element type ---------- */
@@ -123564,6 +123612,7 @@ XT.solid = {
         );
       if (f.k === 'tile') row('sglue', 'Клей плиточный (≈ 5 кг/м²)', 'кг', f.A * 5, 1);
     }
+    row('smit', 'Запил плитки / камня под 45° на наружных рёбрах тел', 'м', Q.miter / 1000, 2);
     for (const p of Q.points)
       row('spt' + p.kind, `${SPTS[p.kind] || p.kind} в теле (подрозетник для полых стен / в массиве)`, 'шт', 1, 0);
     row('smass', `Масса: ${e.name || 'тело'} (конструкция + отделка)`, 'кг', Q.mass, 0);
