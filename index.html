@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.56';
+const APP_VER = '59.57';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7795,12 +7795,363 @@ const documentState = {
   docVer: 0
 };
 
+// ===== core/history.js =====
+/**
+ * core/history.js
+ *
+ * Persistence and undo: snapshot/restore, autosave to localStorage, undo/redo stacks, changed(), addEnt(),
+ * eraseIds().
+ */
+
+
+
+
+
+
+
+/* Extension points of the model. The model layer is called by nothing above it by name: the blocks above register their
+   reactions here at load (an explicit numeric `order` keeps the old call order; equal orders keep registration order). */
+const byOrder = (a, b) => a.order - b.order;
+const changeHooks = [];
+const changeGuards = [];
+const addHooks = [];
+const restoreHooks = [];
+const orderedAdd = (list, fn, order) => {
+  list.push({ fn, order });
+  list.sort(byOrder);
+};
+/** Defaults of the document parts a loaded project may lack: docDefaults.wtypes / profiles / elec / vent = () => value. */
+const docDefaults = {};
+/** fn() runs at the end of every changed(), after save(), in the order of `order` (view2d 10, panels 20, checks 30, 3D 40). */
+const afterChange = (fn, order = 50) => orderedAdd(changeHooks, fn, order);
+/** fn(lastUndoStep) -> message|null: runs first in changed(); a message means the change was rolled back (structGuard). */
+const guardChange = fn => changeGuards.push(fn);
+/** fn(e) runs after addEnt() has added e and called changed(). */
+const afterAdd = (fn, order = 50) => orderedAdd(addHooks, fn, order);
+/** fn() runs at the end of restore(), after the project has been loaded and migrated. */
+const afterRestore = (fn, order = 50) => orderedAdd(restoreHooks, fn, order);
+const say = (msg, bad) => {
+  if (uiHooks.log) uiHooks.log(msg, bad);
+};
+
+/* persistence & undo */
+const KEY = 'kontur-cad-v2';
+function snapshot() {
+  return JSON.stringify({
+    ents: S.ents,
+    layers: S.layers,
+    cur: S.cur,
+    nextId: S.nextId,
+    wtypes: S.wtypes,
+    elec: S.elec,
+    vent: S.vent,
+    ceil: S.ceil,
+    curWt: S.curWt,
+    profiles: S.profiles,
+    x: S.x
+  });
+}
+function restore(js) {
+  const o = JSON.parse(js);
+  S.ents = o.ents;
+  S.layers = o.layers;
+  S.cur = o.cur;
+  S.nextId = o.nextId;
+  S.wtypes = o.wtypes && o.wtypes.length ? o.wtypes : docDefaults.wtypes();
+  S.elec = o.elec || docDefaults.elec();
+  S.vent = o.vent || docDefaults.vent();
+  S.ceil = o.ceil || 2700;
+  S.curWt = o.curWt || (uiHooks.lastWt && uiHooks.lastWt()) || 'wt_gb';
+  S.profiles = o.profiles && o.profiles.length ? o.profiles : docDefaults.profiles();
+  S.x = o.x || defaultX();
+  xMigrate();
+  if (uiHooks.onChanged) uiHooks.onChanged();
+  S.sel = new Set([...S.sel].filter(id => S.ents.some(e => e.id === id)));
+  for (const r of restoreHooks) r.fn();
+}
+/* Undo steps without copies: a step keeps the document as pooled strings — one per element and one for the rest —
+   so an element that did not change between steps is stored once for all of them. 120 steps of a 400-element
+   project took ~45 MB as whole-project strings; now about one copy of the project plus what was changed. */
+const UNDO_POOL = new Map();
+function pooled(str) {
+  const hit = UNDO_POOL.get(str);
+  if (hit !== undefined) return hit;
+  UNDO_POOL.set(str, str);
+  return str;
+}
+/** One undo step of the current document. */
+function undoEntry() {
+  const ents = S.ents.map(e => pooled(JSON.stringify(e)));
+  const rest = pooled(snapshotRest());
+  return { u: 1, ents, rest };
+}
+function snapshotRest() {
+  return JSON.stringify({
+    layers: S.layers,
+    cur: S.cur,
+    nextId: S.nextId,
+    wtypes: S.wtypes,
+    elec: S.elec,
+    vent: S.vent,
+    ceil: S.ceil,
+    curWt: S.curWt,
+    profiles: S.profiles,
+    x: S.x
+  });
+}
+/** The document JSON of a step (a step may also be a plain snapshot string). */
+function undoJSON(st) {
+  if (typeof st === 'string') return st;
+  return '{"ents":[' + st.ents.join(',') + '],' + st.rest.slice(1);
+}
+/** True when a step equals the current document. */
+function undoSame(st) {
+  if (!st) return false;
+  if (typeof st === 'string') return st === snapshot();
+  if (st.ents.length !== S.ents.length || st.rest !== snapshotRest()) return false;
+  for (let i = 0; i < st.ents.length; i++) if (st.ents[i] !== JSON.stringify(S.ents[i])) return false;
+  return true;
+}
+/** Drops pooled strings no step refers to any more (cheap: runs when the pool has grown well past the steps). */
+function undoPrune() {
+  let live = 0;
+  for (const st of documentState.undoS.concat(documentState.redoS))
+    if (typeof st !== 'string') live += st.ents.length + 1;
+  if (UNDO_POOL.size < live * 2 + 2000) return;
+  const keep = new Set();
+  for (const st of documentState.undoS.concat(documentState.redoS))
+    if (typeof st !== 'string') {
+      for (const x of st.ents) keep.add(x);
+      keep.add(st.rest);
+    }
+  for (const k of UNDO_POOL.keys()) if (!keep.has(k)) UNDO_POOL.delete(k);
+}
+function pushUndo() {
+  documentState.undoS.push(undoEntry());
+  if (documentState.undoS.length > 120) documentState.undoS.shift();
+  documentState.redoS = [];
+  undoPrune();
+}
+function undo() {
+  if (!documentState.undoS.length) {
+    say('Нечего отменять');
+    return;
+  }
+  documentState.redoS.push(undoEntry());
+  restore(undoJSON(documentState.undoS.pop()));
+  changed();
+  say('Отменено');
+}
+function redo() {
+  if (!documentState.redoS.length) {
+    say('Нечего возвращать');
+    return;
+  }
+  documentState.undoS.push(undoEntry());
+  restore(undoJSON(documentState.redoS.pop()));
+  changed();
+  say('Возвращено');
+}
+let saveT = null;
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(async () => {
+    const js = snapshot();
+    if (vaultState.mode === 'none') {
+      // no encryption in this window: as before
+      idb.put('kv', js, 'project');
+      try {
+        localStorage.setItem(KEY, js);
+      } catch (_) {}
+      return;
+    }
+    if (!vaultState.key) return; // locked: nothing is written over the protected project
+    try {
+      await idb.put('kv', await vaultSeal(js), 'project');
+      // the open copy of earlier versions goes away
+      try {
+        localStorage.removeItem(KEY);
+      } catch (_) {}
+    } catch (err) {
+      console.error(err);
+    }
+  }, 400);
+}
+function changed() {
+  // structure must not intersect openings / shafts: roll the change back
+  const top = () => documentState.undoS[documentState.undoS.length - 1];
+  const clash = changeGuards.map(g => g(top())).find(Boolean);
+  if (clash && documentState.undoS.length) {
+    restore(undoJSON(documentState.undoS.pop()));
+    for (const g of changeGuards) g(top());
+    say(clash, true);
+  }
+  // fix-ups after an edit (free wall ends joined to the walls they touch, …)
+  if (uiHooks.afterEdit) uiHooks.afterEdit();
+  // the caches of geometry (walls) are keyed by docVer: bump it before the fix-ups read them, and after they wrote
+  documentState.docVer++;
+  if (uiHooks.onChanged) uiHooks.onChanged();
+  documentState.docVer++;
+  save();
+  for (const h of changeHooks) h.fn();
+  // one event for everything that listens to the model; a transaction fills it in, a plain call does not know what changed
+  if (!txCur)
+    bus.emit('model:ents-changed', txEmit || { name: null, ids: null, types: null, added: null, removed: null });
+}
+/* Transactions. tx(name, fn) = pushUndo(); fn(t); changed(); event 'model:ents-changed' { name, ids, types, added, removed }.
+   t.add(e) pushes e into S.ents (new id if it has none), t.patch(id, obj) assigns fields of an element, t.remove(id) deletes it,
+   t.touch(e) says that e was changed in place. A tx inside a tx joins it: one undo step, one changed(), one event at the end of
+   the outer one. An exception in fn restores the document from the undo step taken at the start, re-throws, emits nothing. */
+let txCur = null;
+let txEmit = null;
+function tx(name, fn) {
+  if (txCur) return fn(txCur.t);
+  const redoS = documentState.redoS;
+  const rec = { ids: new Set(), types: new Set(), added: new Set(), removed: new Set() };
+  const note = e => {
+    rec.ids.add(e.id);
+    rec.types.add(e.type);
+  };
+  const entOf = id => {
+    const e = S.ents.find(x => x.id === id);
+    if (!e) throw new Error('tx ' + name + ': no element ' + id);
+    return e;
+  };
+  const t = {
+    add(e) {
+      if (e.id == null) e.id = S.nextId++;
+      S.ents.push(e);
+      note(e);
+      rec.added.add(e.id);
+      return e;
+    },
+    patch(id, obj) {
+      const e = entOf(id);
+      Object.assign(e, obj);
+      note(e);
+      return e;
+    },
+    remove(id) {
+      const e = entOf(id);
+      S.ents.splice(S.ents.indexOf(e), 1);
+      S.sel.delete(id);
+      note(e);
+      rec.removed.add(id);
+      return e;
+    },
+    touch(e) {
+      note(e);
+      return e;
+    }
+  };
+  pushUndo();
+  const step = documentState.undoS[documentState.undoS.length - 1];
+  txCur = { t };
+  let res;
+  try {
+    res = fn(t);
+  } catch (err) {
+    txCur = null;
+    const at = documentState.undoS.indexOf(step);
+    if (at >= 0) documentState.undoS.length = at;
+    documentState.docVer++; // the caches keyed by docVer must not answer for the elements that were just replaced
+    restore(undoJSON(step));
+    documentState.redoS = redoS;
+    throw err;
+  }
+  txCur = null;
+  txEmit = {
+    name,
+    ids: [...rec.ids],
+    types: [...rec.types],
+    added: [...rec.added],
+    removed: [...rec.removed]
+  };
+  try {
+    changed();
+  } finally {
+    txEmit = null;
+  }
+  return res;
+}
+function addEnt(e) {
+  pushUndo();
+  e.id = S.nextId++;
+  e.layer = e.layer || S.cur;
+  if (docView.vp != null && ANN_TYPES.has(e.type) && e.vp == null) e.vp = docView.vp;
+  else if (docView.vp == null && docView.stage != null && ANN_TYPES.has(e.type) && e.stage == null)
+    e.stage = docView.stage;
+  if (uiHooks.annAdd && uiHooks.annAdd(e) === false) return e;
+  S.ents.push(e);
+  // drawn from another workspace (menu, command line): the plan turns to the section of the new element
+  if (uiHooks.entAdded) uiHooks.entAdded(e);
+  changed();
+  for (const h of addHooks) h.fn(e);
+  return e;
+}
+function eraseIds(ids) {
+  const set = new Set(ids);
+  for (const e of S.ents) if (e.type === 'view3' && e.vw && e.vw.hatch != null && set.has(e.vw.hatch)) set.add(e.id);
+  for (const e of S.ents)
+    if ((e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted)) && set.has(e.host))
+      set.add(e.id);
+  for (const e of S.ents) if (e.type === 'note' && set.has(e.target)) e.target = null;
+  if (S.x && set.has(S.x.clip)) S.x.clip = null;
+  S.ents = S.ents.filter(e => !set.has(e.id));
+  set.forEach(id => S.sel.delete(id));
+  return set.size;
+}
+
+// ===== app/migrate.js =====
+/**
+ * app/migrate.js
+ *
+ * Upgrades older project data (fields added in later versions) when a project is loaded. The model owns only the
+ * registry and the migrations of its own data; every block registers the migration of its data from its own module:
+ * migrate.step(fn, order) — steps run in the order of `order` (equal orders: registration order).
+ * Orders in use: 10 wall types and walls, 20 profiles, 30-31 doors / windows, 40 document extras (S.x), 41 wiring keys,
+ * 50 air system colours, 60-62 furniture / door entry / devices, 70 layers of old element kinds, 90 wall joints.
+ */
+
+
+
+const steps = [];
+const migrate = {
+  step(fn, order = 50) {
+    steps.push({ fn, order });
+    steps.sort((a, b) => a.order - b.order);
+  }
+};
+/** Runs every registered migration (called by restore()). */
+function xMigrate() {
+  for (const s of steps) s.fn();
+}
+
+migrate.step(() => {
+  S.x = S.x || defaultX();
+  const dx = defaultX();
+  for (const k of Object.keys(dx)) if (S.x[k] == null) S.x[k] = dx[k];
+}, 40);
+migrate.step(() => {
+  for (const L of [
+    ['Потолки'],
+    ['Переходные элементы'],
+    ['Водоснабжение'],
+    ['Канализация'],
+    ['Усиления'],
+    ['Аннотации']
+  ])
+    if (!S.layers.some(l => l.name === L[0]) && S.ents.some(e => e.layer === L[0])) ensureLayer(L[0]);
+}, 70);
+
 // ===== elements/wall-types.js =====
 /**
  * elements/wall-types.js
  *
  * Wall types: Knauf systems and layered walls, materials, finishes.
  */
+
+
 
 
 
@@ -8168,6 +8519,58 @@ function knaufToCustom(t) {
   );
   return { kind: 'custom', name: t.name + ' (конструктор)', layers, dr: t.dr, drw: t.drw };
 }
+function coreOf(w) {
+  const ct = computeType(typeOf(w));
+  return ct.layers.reduce((a, l) => (l.th > a.th ? l : a), ct.layers[0] || { m: '', th: 0, cls: 'block' });
+}
+/** Framed (dry) construction: a Knauf system or a custom type with a frame layer. */
+const isFramedType = t =>
+  !!(t && (t.kind === 'knauf' || (t.kind === 'custom' && (t.layers || []).some(l => l.k === 'frame'))));
+const isKnauf = w => isFramedType(typeOf(w));
+const isRC = w => coreOf(w).cls === 'conc';
+function cavityOf(w) {
+  const t = typeOf(w);
+  if (!isFramedType(t)) return 0;
+  const ct = computeType(t);
+  return ct.info.prof || 0;
+}
+function sheetLayers(w, side) {
+  const t = typeOf(w);
+  if (!isFramedType(t)) return 0;
+  if (t.kind === 'custom') {
+    // boards outside the frames on the requested side (A: before the first frame, B: after the last)
+    const ls = t.layers,
+      fi = ls.findIndex(l => l.k === 'frame'),
+      li = ls.length - 1 - [...ls].reverse().findIndex(l => l.k === 'frame');
+    return (side > 0 ? ls.slice(0, fi) : ls.slice(li + 1)).filter(l => l.k === 'board').length;
+  }
+  const s = KN[t.sys];
+  if (s.kind === 'lin') return side > 0 ? 1 : 0;
+  return s.ly;
+}
+
+docDefaults.wtypes = defaultWallTypes;
+/* migration of older projects: every wall has a type and finishes of both sides */
+migrate.step(() => {
+  if (!S.wtypes.some(t => t.id === S.curWt)) S.curWt = S.wtypes[0].id;
+  for (const e of S.ents)
+    if (e.type === 'wall') {
+      if (!e.wt || !S.wtypes.some(t => t.id === e.wt)) {
+        let t = S.wtypes.find(t => t.kind === 'layers' && Math.abs(computeType(t).total - e.th) < 0.01);
+        if (!t) {
+          const id = 'wt_m' + Math.round(e.th * 10);
+          t = S.wtypes.find(x => x.id === id);
+          if (!t) {
+            t = { id, name: `Стена ${fmt(e.th)} мм`, kind: 'layers', layers: [{ m: 'Кладка (обобщённо)', th: e.th }] };
+            S.wtypes.push(t);
+          }
+        }
+        e.wt = t.id;
+      }
+      if (!e.fa) e.fa = defFin();
+      if (!e.fb) e.fb = defFin();
+    }
+}, 10);
 
 // ===== mep/engineering-data.js =====
 /**
@@ -8176,6 +8579,7 @@ function knaufToCustom(t) {
  * Engineering reference data: cables, breakers, laying methods, device kinds, groups, ventilation systems and
  * ducts.
  */
+
 
 
 
@@ -8451,6 +8855,19 @@ const rgbHex = c =>
         .padStart(2, '0')
     )
     .join('');
+const LP = (e, x, y) => {
+  const s = devS(e),
+    f = devF(e);
+  return add(add(e.p, mul(s, x)), mul(f, y));
+};
+const xfLocal = (e, z0 = 0) => {
+  const s = devS(e),
+    f = devF(e);
+  return (x, y, z) => [e.p.x + s.x * x + f.x * y, e.p.y + s.y * x + f.y * y, z + z0];
+};
+
+docDefaults.elec = defaultElec;
+docDefaults.vent = defaultVent;
 
 // ===== elements/profiles.js =====
 /**
@@ -8458,6 +8875,7 @@ const rgbHex = c =>
  *
  * Profiles (sections) for door/window frames, extensions and casings.
  */
+
 
 
 
@@ -8619,12 +9037,16 @@ function getProf(id, kind) {
 const profOpts = kind => S.profiles.filter(p => p.kind === kind).map(p => [p.id, p.name]);
 const profReady = p => PK[p.kind].an.every(([k]) => p.an && p.an[k]);
 
+docDefaults.profiles = defaultProfiles;
+
 // ===== elements/doors.js =====
 /**
  * elements/doors.js
  *
  * Door configurator model (leaves, frames, hardware), entry doors.
  */
+
+
 
 
 
@@ -9014,12 +9436,21 @@ function frSteel() {
   };
 }
 
+migrate.step(() => {
+  for (const e of S.ents) if (e.type === 'door' && !e.cfg) e.cfg = defDoorCfg();
+}, 30);
+migrate.step(() => {
+  for (const e of S.ents) if (e.type === 'door' && e.cfg && !e.cfg.entry) e.cfg.entry = defEntry();
+}, 61);
+
 // ===== elements/windows.js =====
 /**
  * elements/windows.js
  *
  * Window configurator model.
  */
+
+
 
 
 
@@ -9257,6 +9688,13 @@ function winModel(e) {
   };
 }
 const hingeAtHigh = (M, s) => (s.hg === 'L' ? M.leftAtS1 : !M.leftAtS1);
+
+migrate.step(() => {
+  for (const e of S.ents)
+    if (e.type === 'window' && !e.cfg) {
+      e.cfg = defWinCfg(e.w);
+    }
+}, 31);
 
 // ===== io/dxf.js =====
 /**
@@ -12048,6 +12486,20 @@ function userNiches(w) {
   }
   return out;
 }
+function wallFrame(w) {
+  const wi = wallInfo(w);
+  const o = w.a,
+    u = wi.u,
+    n = wi.n,
+    z0 = w.z || 0;
+  return {
+    wi,
+    xf: (x, y, z) => [o.x + u.x * x + n.x * y, o.y + u.y * x + n.y * y, z + z0],
+    pt: (t, d = 0) => add(add(o, mul(u, t)), mul(n, d))
+  };
+}
+
+migrate.step(syncWalls, 90);
 
 // ===== core/entity-geometry.js =====
 /**
@@ -12539,275 +12991,6 @@ function mapEnt(e, f, dA = 0) {
     }
   }
   return n;
-}
-
-// ===== core/history.js =====
-/**
- * core/history.js
- *
- * Persistence and undo: snapshot/restore, autosave to localStorage, undo/redo stacks, changed(), addEnt(),
- * eraseIds().
- */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* persistence & undo */
-const KEY = 'kontur-cad-v2';
-function snapshot() {
-  return JSON.stringify({
-    ents: S.ents,
-    layers: S.layers,
-    cur: S.cur,
-    nextId: S.nextId,
-    wtypes: S.wtypes,
-    elec: S.elec,
-    vent: S.vent,
-    ceil: S.ceil,
-    curWt: S.curWt,
-    profiles: S.profiles,
-    x: S.x
-  });
-}
-function restore(js) {
-  const o = JSON.parse(js);
-  S.ents = o.ents;
-  S.layers = o.layers;
-  S.cur = o.cur;
-  S.nextId = o.nextId;
-  S.wtypes = o.wtypes && o.wtypes.length ? o.wtypes : defaultWallTypes();
-  S.elec = o.elec || defaultElec();
-  S.vent = o.vent || defaultVent();
-  S.ceil = o.ceil || 2700;
-  S.curWt = o.curWt || (uiHooks.lastWt && uiHooks.lastWt()) || 'wt_gb';
-  S.profiles = o.profiles && o.profiles.length ? o.profiles : defaultProfiles();
-  S.x = o.x || defaultX();
-  migrate();
-  if (uiHooks.onChanged) uiHooks.onChanged();
-  S.sel = new Set([...S.sel].filter(id => S.ents.some(e => e.id === id)));
-  levelsState.LVGEN = (levelsState.LVGEN || 0) + 1;
-  levelsState.LVU = null;
-  try {
-    if (typeof lvBtn === 'function') lvBtn();
-  } catch (_) {}
-}
-function migrate() {
-  if (!S.wtypes.some(t => t.id === S.curWt)) S.curWt = S.wtypes[0].id;
-  for (const e of S.ents)
-    if (e.type === 'wall') {
-      if (!e.wt || !S.wtypes.some(t => t.id === e.wt)) {
-        let t = S.wtypes.find(t => t.kind === 'layers' && Math.abs(computeType(t).total - e.th) < 0.01);
-        if (!t) {
-          const id = 'wt_m' + Math.round(e.th * 10);
-          t = S.wtypes.find(x => x.id === id);
-          if (!t) {
-            t = { id, name: `Стена ${fmt(e.th)} мм`, kind: 'layers', layers: [{ m: 'Кладка (обобщённо)', th: e.th }] };
-            S.wtypes.push(t);
-          }
-        }
-        e.wt = t.id;
-      }
-      if (!e.fa) e.fa = defFin();
-      if (!e.fb) e.fb = defFin();
-    }
-  for (const p of defaultProfiles()) if (!S.profiles.some(x => x.id === p.id)) S.profiles.push(p);
-  for (const e of S.ents) {
-    if (e.type === 'door' && !e.cfg) e.cfg = defDoorCfg();
-    if (e.type === 'window' && !e.cfg) {
-      e.cfg = defWinCfg(e.w);
-    }
-  }
-  xMigrate();
-  syncWalls();
-}
-/* Undo steps without copies: a step keeps the document as pooled strings — one per element and one for the rest —
-   so an element that did not change between steps is stored once for all of them. 120 steps of a 400-element
-   project took ~45 MB as whole-project strings; now about one copy of the project plus what was changed. */
-const UNDO_POOL = new Map();
-function pooled(str) {
-  const hit = UNDO_POOL.get(str);
-  if (hit !== undefined) return hit;
-  UNDO_POOL.set(str, str);
-  return str;
-}
-/** One undo step of the current document. */
-function undoEntry() {
-  const ents = S.ents.map(e => pooled(JSON.stringify(e)));
-  const rest = pooled(snapshotRest());
-  return { u: 1, ents, rest };
-}
-function snapshotRest() {
-  return JSON.stringify({
-    layers: S.layers,
-    cur: S.cur,
-    nextId: S.nextId,
-    wtypes: S.wtypes,
-    elec: S.elec,
-    vent: S.vent,
-    ceil: S.ceil,
-    curWt: S.curWt,
-    profiles: S.profiles,
-    x: S.x
-  });
-}
-/** The document JSON of a step (a step may also be a plain snapshot string). */
-function undoJSON(st) {
-  if (typeof st === 'string') return st;
-  return '{"ents":[' + st.ents.join(',') + '],' + st.rest.slice(1);
-}
-/** True when a step equals the current document. */
-function undoSame(st) {
-  if (!st) return false;
-  if (typeof st === 'string') return st === snapshot();
-  if (st.ents.length !== S.ents.length || st.rest !== snapshotRest()) return false;
-  for (let i = 0; i < st.ents.length; i++) if (st.ents[i] !== JSON.stringify(S.ents[i])) return false;
-  return true;
-}
-/** Drops pooled strings no step refers to any more (cheap: runs when the pool has grown well past the steps). */
-function undoPrune() {
-  let live = 0;
-  for (const st of documentState.undoS.concat(documentState.redoS))
-    if (typeof st !== 'string') live += st.ents.length + 1;
-  if (UNDO_POOL.size < live * 2 + 2000) return;
-  const keep = new Set();
-  for (const st of documentState.undoS.concat(documentState.redoS))
-    if (typeof st !== 'string') {
-      for (const x of st.ents) keep.add(x);
-      keep.add(st.rest);
-    }
-  for (const k of UNDO_POOL.keys()) if (!keep.has(k)) UNDO_POOL.delete(k);
-}
-function pushUndo() {
-  documentState.undoS.push(undoEntry());
-  if (documentState.undoS.length > 120) documentState.undoS.shift();
-  documentState.redoS = [];
-  undoPrune();
-}
-function undo() {
-  if (!documentState.undoS.length) {
-    log('Нечего отменять');
-    return;
-  }
-  documentState.redoS.push(undoEntry());
-  restore(undoJSON(documentState.undoS.pop()));
-  changed();
-  log('Отменено');
-}
-function redo() {
-  if (!documentState.redoS.length) {
-    log('Нечего возвращать');
-    return;
-  }
-  documentState.undoS.push(undoEntry());
-  restore(undoJSON(documentState.redoS.pop()));
-  changed();
-  log('Возвращено');
-}
-let saveT = null;
-function save() {
-  clearTimeout(saveT);
-  saveT = setTimeout(async () => {
-    const js = snapshot();
-    if (vaultState.mode === 'none') {
-      // no encryption in this window: as before
-      idb.put('kv', js, 'project');
-      try {
-        localStorage.setItem(KEY, js);
-      } catch (_) {}
-      return;
-    }
-    if (!vaultState.key) return; // locked: nothing is written over the protected project
-    try {
-      await idb.put('kv', await vaultSeal(js), 'project');
-      // the open copy of earlier versions goes away
-      try {
-        localStorage.removeItem(KEY);
-      } catch (_) {}
-    } catch (err) {
-      console.error(err);
-    }
-  }, 400);
-}
-let uiT = null;
-function changed() {
-  // structure must not intersect openings / shafts: roll the change back
-  const clash = structGuard(documentState.undoS[documentState.undoS.length - 1]);
-  if (clash && documentState.undoS.length) {
-    restore(undoJSON(documentState.undoS.pop()));
-    structGuard(documentState.undoS[documentState.undoS.length - 1]);
-    log(clash, true);
-  }
-  // fix-ups after an edit (free wall ends joined to the walls they touch, …)
-  if (uiHooks.afterEdit) uiHooks.afterEdit();
-  // the caches of geometry (walls) are keyed by docVer: bump it before the fix-ups read them, and after they wrote
-  documentState.docVer++;
-  if (uiHooks.onChanged) uiHooks.onChanged();
-  documentState.docVer++;
-  save();
-  dirty();
-  clearTimeout(uiT);
-  uiT = setTimeout(() => {
-    renderLayers();
-    renderBrowser();
-    updateProps();
-    if (sceneState.viewMode === 'spec') renderSpec();
-    renderIssues();
-    if (curWS === 'draft') renderWS();
-    if (OD.id != null && !$('#objdlg').hidden) odRefresh();
-  }, 30);
-  validateSoon(true);
-  sync3DSoon();
-}
-function addEnt(e) {
-  pushUndo();
-  e.id = S.nextId++;
-  e.layer = e.layer || S.cur;
-  if (docView.vp != null && ANN_TYPES.has(e.type) && e.vp == null) e.vp = docView.vp;
-  else if (docView.vp == null && docView.stage != null && ANN_TYPES.has(e.type) && e.stage == null)
-    e.stage = docView.stage;
-  if (uiHooks.annAdd && uiHooks.annAdd(e) === false) return e;
-  S.ents.push(e);
-  // drawn from another workspace (menu, command line): the plan turns to the section of the new element
-  if (uiHooks.entAdded) uiHooks.entAdded(e);
-  changed();
-  xAfterAdd(e);
-  return e;
-}
-function eraseIds(ids) {
-  const set = new Set(ids);
-  for (const e of S.ents) if (e.type === 'view3' && e.vw && e.vw.hatch != null && set.has(e.vw.hatch)) set.add(e.id);
-  for (const e of S.ents)
-    if ((e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted)) && set.has(e.host))
-      set.add(e.id);
-  for (const e of S.ents) if (e.type === 'note' && set.has(e.target)) e.target = null;
-  if (S.x && set.has(S.x.clip)) S.x.clip = null;
-  S.ents = S.ents.filter(e => !set.has(e.id));
-  set.forEach(id => S.sel.delete(id));
-  return set.size;
 }
 
 // ===== samples/sample.js =====
@@ -15397,6 +15580,8 @@ function initCommandLine() {
   });
 }
 
+uiHooks.log = log;
+
 // ===== view2d/snapping.js =====
 /**
  * view2d/snapping.js
@@ -16025,6 +16210,7 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
+
 
 
 
@@ -18226,6 +18412,8 @@ function reportRenderError(err) {
   }
 }
 
+afterChange(() => dirty(), 10);
+
 // ===== view3d/scene.js =====
 /**
  * view3d/scene.js
@@ -18830,7 +19018,6 @@ function cats3() {
  *
  * 3D cutaway (walls between camera and view centre drop to a low stub).
  */
-
 
 
 
@@ -20487,6 +20674,8 @@ function initBuild() {
       })
   );
 }
+
+afterChange(() => sync3DSoon(), 40);
 
 // ===== ui/pointer.js =====
 /**
@@ -23067,22 +23256,6 @@ function initLayersPanel() {
 
 
 /* UI: project browser */
-const TN = {
-  line: 'Отрезок',
-  pline: 'Полилиния',
-  circle: 'Круг',
-  arc: 'Дуга',
-  dim: 'Размер',
-  text: 'Текст',
-  wall: 'Стена',
-  door: 'Дверь',
-  window: 'Окно',
-  slab: 'Перекрытие',
-  inst: 'Объект',
-  dev: 'Устройство',
-  wire: 'Кабельная трасса',
-  duct: 'Воздуховод'
-};
 function groupName(e) {
   switch (e.type) {
     case 'wall': {
@@ -23173,7 +23346,6 @@ function initBrowserPanel() {
  *
  * Properties panel of the selection.
  */
-
 
 
 
@@ -29534,15 +29706,9 @@ async function openJson(f) {
 /**
  * core/xt.js
  *
- * XT — registry of element types (each type provides prims, draw, build3, panel, spec …), network-view flags and
- * local frames of placed elements.
+ * XT — registry of element types (each type provides prims, draw, build3, panel, spec …), Russian type names (TN),
+ * network-view flags and the default extension data of a project.
  */
-
-
-
-
-
-
 /**
  * @typedef {object} ElementType  Contract of an element type registered as XT[type]. Every member is optional
  * unless noted; the generic code (picking, snapping, rendering, 3D, properties, specification, checks) calls
@@ -29580,7 +29746,22 @@ async function openJson(f) {
 
 /** @type {Record<string, ElementType>} Registry of element types; each feature module adds its own: XT.track = {…}. */
 const XT = {};
-Object.assign(TN, {
+/** Russian names of element types (project browser, properties); feature modules add their own: TN.glass = '…'. */
+const TN = {
+  line: 'Отрезок',
+  pline: 'Полилиния',
+  circle: 'Круг',
+  arc: 'Дуга',
+  dim: 'Размер',
+  text: 'Текст',
+  wall: 'Стена',
+  door: 'Дверь',
+  window: 'Окно',
+  slab: 'Перекрытие',
+  inst: 'Объект',
+  dev: 'Устройство',
+  wire: 'Кабельная трасса',
+  duct: 'Воздуховод',
   ceil: 'Потолок',
   trim: 'Переходный элемент',
   col: 'Колонна',
@@ -29594,7 +29775,7 @@ Object.assign(TN, {
   note: 'Выноска',
   sect: 'Разрез',
   node: 'Узел'
-});
+};
 function defaultX() {
   return {
     ascale: 50,
@@ -29622,57 +29803,6 @@ const NVN = {
   vt: ['Вентиляция', '#5b8def'],
   str: ['Усиления', '#e07a5f']
 };
-const LP = (e, x, y) => {
-  const s = devS(e),
-    f = devF(e);
-  return add(add(e.p, mul(s, x)), mul(f, y));
-};
-const xfLocal = (e, z0 = 0) => {
-  const s = devS(e),
-    f = devF(e);
-  return (x, y, z) => [e.p.x + s.x * x + f.x * y, e.p.y + s.y * x + f.y * y, z + z0];
-};
-function wallFrame(w) {
-  const wi = wallInfo(w);
-  const o = w.a,
-    u = wi.u,
-    n = wi.n,
-    z0 = w.z || 0;
-  return {
-    wi,
-    xf: (x, y, z) => [o.x + u.x * x + n.x * y, o.y + u.y * x + n.y * y, z + z0],
-    pt: (t, d = 0) => add(add(o, mul(u, t)), mul(n, d))
-  };
-}
-function coreOf(w) {
-  const ct = computeType(typeOf(w));
-  return ct.layers.reduce((a, l) => (l.th > a.th ? l : a), ct.layers[0] || { m: '', th: 0, cls: 'block' });
-}
-/** Framed (dry) construction: a Knauf system or a custom type with a frame layer. */
-const isFramedType = t =>
-  !!(t && (t.kind === 'knauf' || (t.kind === 'custom' && (t.layers || []).some(l => l.k === 'frame'))));
-const isKnauf = w => isFramedType(typeOf(w));
-const isRC = w => coreOf(w).cls === 'conc';
-function cavityOf(w) {
-  const t = typeOf(w);
-  if (!isFramedType(t)) return 0;
-  const ct = computeType(t);
-  return ct.info.prof || 0;
-}
-function sheetLayers(w, side) {
-  const t = typeOf(w);
-  if (!isFramedType(t)) return 0;
-  if (t.kind === 'custom') {
-    // boards outside the frames on the requested side (A: before the first frame, B: after the last)
-    const ls = t.layers,
-      fi = ls.findIndex(l => l.k === 'frame'),
-      li = ls.length - 1 - [...ls].reverse().findIndex(l => l.k === 'frame');
-    return (side > 0 ? ls.slice(0, fi) : ls.slice(li + 1)).filter(l => l.k === 'board').length;
-  }
-  const s = KN[t.sys];
-  if (s.kind === 'lin') return side > 0 ? 1 : 0;
-  return s.ly;
-}
 
 // ===== ui/forms.js =====
 /**
@@ -29879,6 +30009,7 @@ function bindMeta(el, e) {
  *
  * Load-bearing structure: columns and beams.
  */
+
 
 
 
@@ -32522,6 +32653,7 @@ function gbodyLoad(e) {
 
 
 
+
 /* ---------- reinforcements inside walls: steel tubes, OSB / plywood ---------- */
 const TUBES = [
   '40x20x2',
@@ -34600,6 +34732,7 @@ defineTools({
 
 
 
+
 /* ---------- plumbing fixtures with connection ports ---------- */
 const CER = '#f3f4f6',
   CHR = '#c7ccd2',
@@ -35717,7 +35850,6 @@ XT.fix = {
  *
  * Sanitary model library: GROHE/TECE installations, WC pans, catalogue editor.
  */
-
 
 
 
@@ -40441,7 +40573,6 @@ function tilePanel(w, z, i) {
  *
  * Manifold node constructor (water / heating / underfloor): components, layout, ports, checks.
  */
-
 
 
 
@@ -46063,6 +46194,7 @@ function renderCollTab(el) {
 
 
 
+
 /* ---------- modular wiring devices: frame + mechanisms + back boxes ---------- */
 const MODK = {
   s: { n: 'Розетка 2К+З', f: 'socket' },
@@ -46338,6 +46470,10 @@ function drawBlkPosts(e, G_) {
   });
   devTag(e, Lb(x1 + 0.45 * r, 0.6 * r), r, col);
 }
+
+migrate.step(() => {
+  for (const e of S.ents) if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
+}, 62);
 
 // ===== mep/electrical/panel.js =====
 /**
@@ -49100,6 +49236,8 @@ function elecEngSpec(put) {
 
 
 
+
+
 function wireClass(e) {
   const k = wireKind(e);
   return k === 'rj45' || k === 'tv'
@@ -49591,6 +49729,8 @@ function switchIssues(add_) {
     }
   }
 }
+
+migrate.step(() => setTimeout0(migrateKeys), 41);
 
 // ===== mep/plumbing/collector-legacy.js =====
 /**
@@ -53767,6 +53907,7 @@ XT.node = {
 
 
 
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -54273,12 +54414,16 @@ function xAfterAdd(e) {
   });
 }
 
+afterChange(() => validateSoon(true), 30);
+afterAdd(xAfterAdd);
+
 // ===== view3d/network-view.js =====
 /**
  * view3d/network-view.js
  *
  * Network view: highlight engineering networks, x-ray other elements, clipping.
  */
+
 
 
 
@@ -57593,12 +57738,21 @@ function initLevels() {
   }, 0);
 }
 
+afterRestore(() => {
+  levelsState.LVGEN = (levelsState.LVGEN || 0) + 1;
+  levelsState.LVU = null;
+  try {
+    if (typeof lvBtn === 'function') lvBtn();
+  } catch (_) {}
+});
+
 // ===== elements/stairs.js =====
 /**
  * elements/stairs.js
  *
  * Stairs: geometry, solids, treads/finishes, railings on stairs, plan, checks, walls under stairs.
  */
+
 
 
 
@@ -63670,7 +63824,6 @@ CUTK['fix:fdrain'] = (e, where) => {
 
 
 
-
 /* baths: встраиваемые (экран / обстройка с плиткой / на ножках) и отдельностоящие (овал / прямоугольная)
    local: x along the length (centre), y from the wall (0) to the front (d), z up from the floor */
 var BATHM = {
@@ -64766,6 +64919,7 @@ function bathMigrate(e) {
 
 
 
+
 /* ---------- slab openings ---------- */
 var SHK = { round: 'Круглое (алмазное бурение)', rect: 'Прямоугольное (проём)' };
 function sholePoly(e) {
@@ -65083,6 +65237,7 @@ defineTools({
  *
  * Ventilation shafts: precast blocks, brick and modular shafts, ducts in boxes.
  */
+
 
 
 
@@ -65802,6 +65957,7 @@ function galvSpec(e, L, H, put, S_) {
  * - noise at a terminal by its face velocity, against the room limit.
  * Norms are defaults the project can change (S.vent.norm).
  */
+
 
 
 
@@ -66743,6 +66899,15 @@ function avSeparate(noUndo) {
   changed();
   return rep;
 }
+
+/* v59.4: the standard colours of the air systems changed; a system that had a standard colour follows */
+migrate.step(() => {
+  if (S.vent && S.vent.systems && !S.vent.colv) {
+    for (const x of S.vent.systems)
+      if (VKCOL[x.kind] && VKCOL_OLD.includes(String(x.col).toLowerCase())) x.col = VKCOL[x.kind];
+    S.vent.colv = 2;
+  }
+}, 50);
 
 // ===== mep/hvac/dist-box.js =====
 /**
@@ -74230,7 +74395,6 @@ function blkSpec(e, put) {
 
 
 
-
 /** inserts of floor boxes; m — modules (a post = 2 modules 22,5×45) */
 const FLM = {
   sock: { n: 'Розетка 2К+З 230 В', m: 2, pw: 500, col: '#e9e9e6' },
@@ -77891,6 +78055,7 @@ defineTools({
 
 
 
+
 /* генератор зеркал (как у дверей): форма, рама/фацет, подсветка (контурная, фронтальная, светильник), сенсор, подогрев, навеска */
 var MRS = { rect: 'прямоугольное', round: 'круглое', oval: 'овальное', arch: 'арка', capsule: 'капсула' };
 var MRF = {
@@ -78407,6 +78572,7 @@ defineTools({
  *
  * Case furniture: parts of an LDSP carcass with sizes and edging, hardware, 3D.
  */
+
 
 
 
@@ -79077,12 +79243,24 @@ defineTools({
   }
 });
 
+/* v39.11: furniture keeps the height it was given; the old automatic filler strip to the ceiling is dropped */
+migrate.step(() => {
+  for (const e of S.ents)
+    if (e.type === 'casework' && e.cfg && !e.cfg.hv) {
+      const c = e.cfg;
+      if (!(+c.H > 0)) c.H = Math.round((S.ceil || 2700) - (+c.gTop || 0));
+      if (c.topFill === 'strip') c.topFill = 'none';
+      c.hv = 1;
+    }
+}, 60);
+
 // ===== interior/tv.js =====
 /**
  * interior/tv.js
  *
  * TV sets with stands and wall brackets.
  */
+
 
 
 
@@ -91422,6 +91600,10 @@ function cwGeneralInside(M) {
 
 
 
+
+
+
+
 function renderTools() {
   tb.innerHTML = '';
   const ws = WS.find(w => w.id === curWS) || WS[0];
@@ -91809,6 +91991,21 @@ function renderIssues() {
       dirty();
     };
 }
+
+/* refresh of the panels after an edit: one pass 30 ms after the last change */
+let panelsT = null;
+afterChange(() => {
+  clearTimeout(panelsT);
+  panelsT = setTimeout(() => {
+    renderLayers();
+    renderBrowser();
+    updateProps();
+    if (sceneState.viewMode === 'spec') renderSpec();
+    renderIssues();
+    if (curWS === 'draft') renderWS();
+    if (OD.id != null && !$('#objdlg').hidden) odRefresh();
+  }, 30);
+}, 20);
 
 // ===== ui/layer-switch.js =====
 /**
@@ -97644,10 +97841,10 @@ uiHooks.phaseMat3 = e => {
 /** Sets the phase display of the current context (the open stage, or the model). */
 function setPhaseMode(m) {
   const st = stageById(docView.stage);
-  pushUndo();
-  if (st) st.phase = m;
-  else S.x.phaseMode = m;
-  changed();
+  tx('setPhaseMode', () => {
+    if (st) st.phase = m;
+    else S.x.phaseMode = m;
+  });
   refresh3();
 }
 function refresh3() {
@@ -98271,6 +98468,7 @@ function odAxis(e) {
  * Commands that create BIM elements: ceilings, columns, beams, GKL bodies, reinforcement, loads, pipes,
  * fixtures, trims, notes, sections, nodes; 3D picking helpers for them.
  */
+
 
 
 
@@ -101405,6 +101603,7 @@ defineTools({
 
 
 
+
 /** Molding sections added to the project's profiles when missing (X — off the wall, Y — across). */
 const ML_PROFILES = [
   {
@@ -102294,6 +102493,10 @@ function mlChains(items, L, H) {
   }
   return out;
 }
+
+migrate.step(() => {
+  for (const p of defaultProfiles()) if (!S.profiles.some(x => x.id === p.id)) S.profiles.push(p);
+}, 20);
 
 // ===== elements/zone-tools.js =====
 /**
@@ -104641,55 +104844,6 @@ function renderList() {
 }
 uiHooks.openArNotes = openArNotes;
 
-// ===== app/migrate.js =====
-/**
- * app/migrate.js
- *
- * Upgrades older project data (fields added in later versions) when a project is loaded.
- */
-
-
-
-
-
-
-
-
-/* ---------- migration, sample, glue ---------- */
-function xMigrate() {
-  S.x = S.x || defaultX();
-  setTimeout0(migrateKeys);
-  const dx = defaultX();
-  for (const k of Object.keys(dx)) if (S.x[k] == null) S.x[k] = dx[k];
-
-  // v59.4: the standard colours of the air systems changed; a system that had a standard colour follows
-  if (S.vent && S.vent.systems && !S.vent.colv) {
-    for (const x of S.vent.systems)
-      if (VKCOL[x.kind] && VKCOL_OLD.includes(String(x.col).toLowerCase())) x.col = VKCOL[x.kind];
-    S.vent.colv = 2;
-  }
-  for (const e of S.ents) {
-    // v39.11: furniture keeps the height it was given; the old automatic filler strip to the ceiling is dropped
-    if (e.type === 'casework' && e.cfg && !e.cfg.hv) {
-      const c = e.cfg;
-      if (!(+c.H > 0)) c.H = Math.round((S.ceil || 2700) - (+c.gTop || 0));
-      if (c.topFill === 'strip') c.topFill = 'none';
-      c.hv = 1;
-    }
-    if (e.type === 'door' && e.cfg && !e.cfg.entry) e.cfg.entry = defEntry();
-    if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
-  }
-  for (const L of [
-    ['Потолки'],
-    ['Переходные элементы'],
-    ['Водоснабжение'],
-    ['Канализация'],
-    ['Усиления'],
-    ['Аннотации']
-  ])
-    if (!S.layers.some(l => l.name === L[0]) && S.ents.some(e => e.layer === L[0])) ensureLayer(L[0]);
-}
-
 // ===== agent/flow.js =====
 /**
  * agent/flow.js
@@ -106090,13 +106244,14 @@ function removeVertex(e, i) {
     log(`Нельзя: у объекта останется меньше ${minPts(e)} точек`, true);
     return false;
   }
-  pushUndo();
-  const n = e.pts.length;
-  e.pts.splice(i, 1);
-  for (const k of PARALLEL) if (Array.isArray(e[k]) && e[k].length === n) e[k].splice(i, 1);
-  // a route recalculates from its new points
-  if (e.rt) delete e.rt;
-  changed();
+  tx('removeVertex', t => {
+    const n = e.pts.length;
+    e.pts.splice(i, 1);
+    for (const k of PARALLEL) if (Array.isArray(e[k]) && e[k].length === n) e[k].splice(i, 1);
+    // a route recalculates from its new points
+    if (e.rt) delete e.rt;
+    t.touch(e);
+  });
   log('Вершина удалена — линия идёт напрямую через соседние точки');
   return true;
 }
@@ -106106,14 +106261,15 @@ function addVertex(e, i, p) {
   const a = e.pts[i],
     b = e.pts[(i + 1) % n];
   if (!a || !b) return false;
-  pushUndo();
-  const q = p ? P(p.x, p.y) : mid(a, b);
-  if (a.z != null && b.z != null && a.z === b.z) q.z = a.z;
-  e.pts.splice(i + 1, 0, q);
-  for (const k of PARALLEL)
-    if (Array.isArray(e[k]) && e[k].length === n) e[k].splice(i + 1, 0, typeof e[k][i] === 'number' ? 0 : e[k][i]);
-  if (e.rt) delete e.rt;
-  changed();
+  tx('addVertex', t => {
+    const q = p ? P(p.x, p.y) : mid(a, b);
+    if (a.z != null && b.z != null && a.z === b.z) q.z = a.z;
+    e.pts.splice(i + 1, 0, q);
+    for (const k of PARALLEL)
+      if (Array.isArray(e[k]) && e[k].length === n) e[k].splice(i + 1, 0, typeof e[k][i] === 'number' ? 0 : e[k][i]);
+    if (e.rt) delete e.rt;
+    t.touch(e);
+  });
   log('Вершина добавлена в середине отрезка — тяните её ручку');
   return true;
 }
@@ -107163,6 +107319,7 @@ function initLayoutView() {
  * and the part of the box outside the outline is filled back (openingFills), so every function that works with
  * rectangular openings keeps working; areas, perimeters and the specification use the real outline.
  */
+
 
 
 
@@ -120701,7 +120858,6 @@ function panelPlan(F, sa, sb, da, db, seg) {
 
 
 
-
 const ceilOf = () => S.ceil || 2700;
 /** The wall at a plan point (the end of a glass run against a wall): { framed } or null. */
 function glassWallAt(p) {
@@ -124344,6 +124500,7 @@ const GLULAM_BEAM = ['100×200', '140×240', '140×280', '160×320', '185×360',
 
 
 
+
 const TOL = 2; // mm: touching is fine, penetration is not
 
 /** Plan footprint and height range of an element that a structural member must not intersect, or null. */
@@ -124469,6 +124626,8 @@ function structGuard(undoTop) {
 function structClashIssues(add_) {
   for (const c of structClashes()) add_(c.a, 'bad', c.msg + '. Сместите элемент.', c.a.p || c.a.a);
 }
+
+guardChange(structGuard);
 
 // ===== elements/wall-arc.js =====
 /**
@@ -125151,7 +125310,6 @@ function wallFaceRounds(w, B, J) {
  * Entity: { type:'wniche', host (wall id), side ±1, t (centre along the wall from w.a), w, h, z (bottom from the
  * wall bottom), d (depth from the structural face), fin: { k, col }, shelves: { n, th, mat } }.
  */
-
 
 
 
@@ -136286,7 +136444,6 @@ function moduleSvg(m, k, X, Y, w, hc, on, des) {
 
 
 
-
 const LED_W = [4.8, 9.6, 14.4, 19.2];
 const LED_PROF = { surf: 'накладной', rec: 'врезной (в паз)', corner: 'угловой 45°', none: 'без профиля' };
 const LED_CT = { 2700: '2700 K тёплый', 3000: '3000 K', 4000: '4000 K нейтральный' };
@@ -138100,7 +138257,6 @@ function penetrationMesh(mb, e) {
  * from the same geometry (fittings, insulation, hangers, wall penetrations, flexible connectors).
  * Duct z is the AXIS height (build3 draws the section centred on z); units are mm.
  */
-
 
 
 
