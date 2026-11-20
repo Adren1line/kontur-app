@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.46';
+const APP_VER = '59.47';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -25049,7 +25049,7 @@ function renderSpecLevel() {
             u: 'м²'
           },
           r => {
-            r.q += Math.max(0, A - zonesArea(e, side === 'А' ? 1 : -1));
+            r.q += Math.max(0, A - zonesArea(e, side === 'А' ? 1 : -1) - sideObstArea(e, side === 'А' ? 1 : -1));
             r.ids.push(e.id);
           }
         );
@@ -39102,8 +39102,98 @@ function zoneOpsRects(w) {
   const wi = wallInfo(w);
   return wi.ops.flatMap(o => winOpRects(o.o, o.s0, o.s1));
 }
+/**
+ * Elements that stand against a wall face and close part of it, by type:kind → (e) => { poly: world outline,
+ * z0, z1 (absolute heights) } | null. A built-in bath registers itself (mep/plumbing/baths.js): no finish behind it
+ * below the rim.
+ */
+const FACE_BLOCKERS = {};
+const OBST_MEMO = new WeakMap();
+/**
+ * Covered parts of a wall side — no finish there: walls abutting or crossing the face (T- and X-joints, the inner
+ * corners at the ends) and elements standing against it (a built-in bath up to its rim). Wall frame: x along the
+ * axis from w.a, z from the bottom of the wall. [{ x0, x1, z0, z1, by: 'wall' | 'bath' | …, e }]
+ */
+function sideObstacles(w, side) {
+  const key = documentState.docVer + ':' + side;
+  let m = OBST_MEMO.get(w);
+  if (!m || m.v !== documentState.docVer) OBST_MEMO.set(w, (m = { v: documentState.docVer }));
+  if (m[key]) return m[key];
+  return (m[key] = sideObstacles0(w, side));
+}
+function sideObstacles0(w, side) {
+  const wi = wallInfo(w);
+  if (wi.arc) return [];
+  const u = wi.u,
+    n = wi.n,
+    L = wi.L;
+  const c0 = side * (w.th / 2 + 2),
+    wz0 = +w.z || 0,
+    wz1 = wz0 + (+w.h || 0);
+  // x range where the outline crosses the line just in front of the face
+  const band = (poly, off = 2) => {
+    const c = c0 + side * (off - 2);
+    const xs = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i],
+        q = poly[(i + 1) % poly.length];
+      const pa = [dot(sub(p, w.a), u), dot(sub(p, w.a), n)],
+        qa = [dot(sub(q, w.a), u), dot(sub(q, w.a), n)];
+      if ((pa[1] - c) * (qa[1] - c) <= 0 && pa[1] !== qa[1])
+        xs.push(pa[0] + ((qa[0] - pa[0]) * (c - pa[1])) / (qa[1] - pa[1]));
+    }
+    return xs.length >= 2 ? [Math.min(...xs), Math.max(...xs)] : null;
+  };
+  const out = [];
+  const push = (r, z0, z1, by, e) => {
+    if (!r) return;
+    const x0 = Math.max(r[0], -w.th),
+      x1 = Math.min(r[1], L + w.th);
+    const a = Math.max(z0, wz0) - wz0,
+      b = Math.min(z1, wz1) - wz0;
+    if (x1 - x0 > 1 && b - a > 1) out.push({ x0, x1, z0: a, z1: b, by, e });
+  };
+  for (const o of S.ents) {
+    if (o === w) continue;
+    if (o.type === 'wall') {
+      if (!o.a || !o.b || (w.__lv !== undefined && o.__lv !== undefined && o.__lv !== w.__lv)) continue;
+      let poly;
+      try {
+        poly = wallInfo(o).poly;
+      } catch (err) {
+        continue;
+      }
+      if (!poly || poly.length < 3) continue;
+      const oz = +o.z || 0;
+      push(band(poly), oz, oz + (+o.h || 0), 'wall', o);
+      continue;
+    }
+    const B = o.kind != null ? FACE_BLOCKERS[o.type + ':' + o.kind] : null;
+    if (!B) continue;
+    let b = null;
+    try {
+      b = B(o);
+    } catch (err) {
+      b = null;
+    }
+    // an element counts as standing against the face within 30 mm of it
+    if (b && b.poly && b.poly.length >= 3) push(band(b.poly, 30), b.z0, b.z1, b.by || o.kind, o);
+  }
+  return out;
+}
+/** Everything a zone does not cover on its side: openings and the covered parts (sideObstacles). */
+function zoneCuts(w, side) {
+  return [...zoneOpsRects(w), ...sideObstacles(w, side)];
+}
+/** Area of the covered parts of a wall side within the wall (m²) — taken off a whole-side finish. */
+function sideObstArea(w, side) {
+  const L = wallInfo(w).L;
+  let A = 0;
+  for (const r of sideObstacles(w, side)) A += Math.max(0, Math.min(L, r.x1) - Math.max(0, r.x0)) * (r.z1 - r.z0);
+  return A / 1e6;
+}
 function zoneRects(w, z) {
-  return rectSub({ x0: z.x0, x1: z.x1, z0: z.z0, z1: z.z1 }, zoneOpsRects(w));
+  return rectSub({ x0: z.x0, x1: z.x1, z0: z.z0, z1: z.z1 }, zoneCuts(w, z.side));
 }
 function zoneArea(w, z) {
   return zoneRects(w, z).reduce((a, r) => a + (r.x1 - r.x0) * (r.z1 - r.z0), 0) / 1e6;
@@ -39220,7 +39310,7 @@ function zoneFollows(w, z) {
 }
 /** Pieces of a zone in face coordinates (x = s): the panels of its layout (panels) or the whole span, minus openings. */
 function zonePieces(w, z, FP, panels) {
-  const ops = zoneOpsRects(w);
+  const ops = zoneCuts(w, z.side);
   const out = [];
   if (panels && (FINM[z.k] || {}).panel) {
     const G = panelGrid(z, FP.sa, FP.sb);
@@ -39240,7 +39330,7 @@ function zonePanels(w, z) {
   for (const [a, b] of G.cols)
     for (const [c, d] of G.rows) {
       const whole = b - a >= G.pw - 1 && (G.ph ? d - c >= G.ph - 1 : true);
-      const rs = rectSub({ x0: a, x1: b, z0: c, z1: d }, zoneOpsRects(w));
+      const rs = rectSub({ x0: a, x1: b, z0: c, z1: d }, zoneCuts(w, z.side));
       if (!rs.length) continue;
       if (whole && rs.length === 1 && rs[0].x1 - rs[0].x0 >= b - a - 1 && rs[0].z1 - rs[0].z0 >= d - c - 1) full++;
       else cut++;
@@ -39953,7 +40043,7 @@ function tileLayoutAt(w, z, c, ox, oz) {
     px = W + j,
     pz = H + j;
   const sh = c.pat === 'half' ? px / 2 : c.pat === 'third' ? px / 3 : 0;
-  const ops = zoneOpsRects(w);
+  const ops = z._cuts || zoneCuts(w, z.side);
   const out = [];
   const r0 = Math.floor((z.z0 - oz) / pz) - 1,
     r1 = Math.ceil((z.z1 - oz) / pz) + 1;
@@ -40030,8 +40120,9 @@ function tileLayout(w, z) {
   const c = tileCfg(z);
   const { W, H } = tileDims(c),
     j = +c.j || 0;
-  const mit = tileMiterLines(w, z, c);
-  const key = JSON.stringify([c, z.x0, z.x1, z.z0, z.z1, wallInfo(w).ops.map(o => [o.s0, o.s1, o.o.sill, o.o.h]), mit]);
+  const mit = z._mit || tileMiterLines(w, z, c);
+  const cuts = z._cuts || zoneCuts(w, z.side);
+  const key = JSON.stringify([c, z.x0, z.x1, z.z0, z.z1, cuts.map(r => [r.x0, r.x1, r.z0, r.z1]), mit]);
   if (z._tl && z._tlk === key) return z._tl;
   let best = null;
   for (const ox of tileOrigins(z.x0, z.x1, W, j, c.ax, c.px, c.anc))
@@ -40216,7 +40307,7 @@ function tileSVG(w, z) {
     const bad = (p.cx && p.w < mc) || (p.cz && p.h < mc);
     h += `<rect x="${X(p.x0).toFixed(1)}" y="${Yv(p.z1).toFixed(1)}" width="${Math.max(0.5, (p.x1 - p.x0) * kx).toFixed(1)}" height="${Math.max(0.5, (p.z1 - p.z0) * k).toFixed(1)}" fill="${bad ? '#e5655c' : p.full ? col : col}" ${p.full ? '' : `stroke="${bad ? '#a32' : '#e0902f'}" stroke-width="1"`}/>`;
   }
-  for (const o of zoneOpsRects(w)) {
+  for (const o of z._cuts || zoneCuts(w, z.side)) {
     const a = Math.max(o.x0, z.x0),
       b = Math.min(o.x1, z.x1),
       c0 = Math.max(o.z0, z.z0),
@@ -60002,6 +60093,11 @@ function cuttersIn(pts, where, lv) {
   const b = cutBoxOf(pts.map(p => [p.x, p.y]));
   return planCutters(where, lv).filter(c => boxOverlap(b, c.box));
 }
+/** What cuts a floor covering: everything that cuts the floor, and what stands on the floor with no covering under
+ * it (where 'cover': a built-in bath unless the covering goes under it). */
+function coverCuttersIn(pts, lv) {
+  return [...cuttersIn(pts, 'floor', lv), ...cuttersIn(pts, 'cover', lv)];
+}
 /** 2D: limits the following drawing to the zone minus the cutters (even–odd clip); call inside ctx.save(). */
 function clipZone(pts, cutters) {
   ctx.beginPath();
@@ -62144,7 +62240,7 @@ function coverLayout(z) {
       })(),
       cc,
       cc.on && cc.mat !== 'carpet' ? coverTrans(z, cc).map(t => [t.o.id, t.rect, t.depth]) : 0,
-      cuttersIn(z.pts, 'floor', z.__lv).map(k => k.q)
+      coverCuttersIn(z.pts, z.__lv).map(k => k.q)
     ]);
   } catch (err) {
     key = null;
@@ -62378,7 +62474,7 @@ function coverLayout0(z) {
     }
   }
   // pieces around convectors, columns, floor boxes, drain grates: cut out, counted as cut pieces
-  const cuts = cuttersIn(z.pts, 'floor', z.__lv);
+  const cuts = coverCuttersIn(z.pts, z.__lv);
   if (cuts.length) {
     const np = [];
     for (const pc of R.pieces) {
@@ -62732,7 +62828,7 @@ function coverMesh(z, mb, f) {
   const jcol = M.wood ? fcShade(c.col, 0.55) : '#bcbab4';
   // grout / seam base just below the pieces
   mb.tag('Швы покрытия');
-  const cuts = cuttersIn(z.pts, 'floor', z.__lv);
+  const cuts = coverCuttersIn(z.pts, z.__lv);
   for (const q of [z.pts, ...R.trans.filter(t => t.depth > 0).map(t => t.rect)]) {
     const P_ = q.map(p => [p.x, p.y]);
     const T0 = triPolyXY(P_).map(t => t.map(i => P_[i]));
@@ -63534,6 +63630,9 @@ CUTK['fix:fdrain'] = (e, where) => {
 
 
 
+
+
+
 /* baths: встраиваемые (экран / обстройка с плиткой / на ножках) и отдельностоящие (овал / прямоугольная)
    local: x along the length (centre), y from the wall (0) to the front (d), z up from the floor */
 var BATHM = {
@@ -64133,6 +64232,7 @@ FIXK.bath = {
         ? []
         : [
             ['Установка', 'cfg.inst', 's', Object.entries(BATHI)],
+            ['Покрытие пола под ванной', 'cfg.floorUnder', 'b'],
             ...(c.inst !== 'legs' ? [['Ниша для ног', 'cfg.toe', 'b']] : []),
             ...(c.inst === 'podium' || c.inst === 'gkl'
               ? [
@@ -64255,6 +64355,23 @@ FIXK.bath = {
     }
     return r;
   }
+};
+/* a built-in bath closes the walls it stands against up to its rim (no finish behind it, the finish of the wall
+   comes down onto the rim) and, unless cfg.floorUnder, the floor covering under it */
+const bathPolyW = e => bathOutline(e.cfg, 0, false).map(([x, y]) => LP(e, x, y));
+FACE_BLOCKERS['fix:bath'] = e => {
+  bathMigrate(e);
+  const c = e.cfg;
+  if (c.type === 'free') return null;
+  const z = +e.z || 0;
+  return { poly: bathPolyW(e), z0: z - 50, z1: z + rimZ(c, 0), by: 'bath' };
+};
+CUTK['fix:bath'] = (e, where) => {
+  if (where !== 'cover') return null;
+  bathMigrate(e);
+  const c = e.cfg;
+  if (c.type === 'free' || c.floorUnder) return null;
+  return bathPolyW(e);
 };
 function bathMigrate(e) {
   const c = e.cfg || {};
@@ -106019,7 +106136,7 @@ function layoutData() {
     const L = tileLayout(w, z),
       c = L.c;
     const R = zoneRects(w, z);
-    const ops = zoneOpsRects(w)
+    const ops = zoneCuts(w, z.side)
       .map(o => ({
         x0: Math.max(o.x0, z.x0),
         x1: Math.min(o.x1, z.x1),
