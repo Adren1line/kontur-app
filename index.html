@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.55';
+const APP_VER = '59.56';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -116982,6 +116982,77 @@ function agSummary(opts) {
       if (Array.isArray(out[k])) for (const o of out[k]) if (agProp.has(o.id)) o.proposed = true;
   return out;
 }
+
+// ===== core/bus.js =====
+/**
+ * core/bus.js
+ *
+ * bus — the event bus of the kernel: blocks announce what happened (emit) and other blocks react (on) without importing
+ * each other. Listeners are called synchronously in the order of subscription; a listener that throws is logged with
+ * console.error and does not stop the others.
+ */
+/** @type {Map<string, Set<Function>>} listeners by event name */
+const handlers = new Map();
+
+/**
+ * Event bus of the kernel.
+ * @namespace bus
+ */
+const bus = {
+  /**
+   * Subscribes fn to the event.
+   * @param {string} name event name
+   * @param {(data?:any)=>void} fn listener
+   * @returns {()=>void} function that unsubscribes this listener
+   */
+  on(name, fn) {
+    let s = handlers.get(name);
+    if (!s) handlers.set(name, (s = new Set()));
+    s.add(fn);
+    return () => bus.off(name, fn);
+  },
+  /**
+   * Removes the listener; unknown name or listener is ignored.
+   * @param {string} name event name
+   * @param {Function} fn listener given to on()
+   */
+  off(name, fn) {
+    const s = handlers.get(name);
+    if (!s) return;
+    s.delete(fn);
+    if (!s.size) handlers.delete(name);
+  },
+  /**
+   * Calls the listeners of the event synchronously. The list is copied first, so listeners may subscribe or
+   * unsubscribe while the event runs.
+   * @param {string} name event name
+   * @param {any} [data] payload given to every listener
+   */
+  emit(name, data) {
+    const s = handlers.get(name);
+    if (!s) return;
+    for (const fn of [...s]) {
+      try {
+        fn(data);
+      } catch (err) {
+        console.error('bus: listener of "' + name + '" failed', err);
+      }
+    }
+  },
+  /**
+   * Subscribes fn for one call only.
+   * @param {string} name event name
+   * @param {(data?:any)=>void} fn listener
+   * @returns {()=>void} function that cancels the subscription before it fires
+   */
+  once(name, fn) {
+    const off = bus.on(name, data => {
+      off();
+      fn(data);
+    });
+    return off;
+  }
+};
 
 // ===== core/csg.js =====
 /**
