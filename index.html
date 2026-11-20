@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.53';
+const APP_VER = '59.54';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -82102,7 +82102,9 @@ var CW_PR = {
   rack: 'Стеллаж открытый (без задней стенки, на опорах или к стене)',
   tumba: 'Тумба / комод (выдвижные ящики)',
   wallcab: 'Навесной шкаф',
-  box: 'Глухой короб (зашить трубы, стояк, закрыть нишу)'
+  box: 'Глухой короб (зашить трубы, стояк, закрыть нишу)',
+  shelf: 'Навесная полка (открытая, на скрытом крепеже)',
+  nichecab: 'Мебель в нишу (встроенная: шкаф над инсталляцией, в нишу стены)'
 };
 /** Front types: thickness, sheet material for the cutting list (or an order item), mass kg/m². */
 var CW_FT = {
@@ -82343,7 +82345,8 @@ function cwGeom(e) {
   const FT = cwFT(c);
   const ft = slide || noFront ? 0 : FT.t;
   const rail = slide ? 100 : 0;
-  const Dc = Math.max(250, c.D - ft - rail);
+  // shelves and furniture in a niche can be shallow (a niche in a partition is 75–200 mm deep)
+  const Dc = Math.max(c.product === 'shelf' || c.product === 'nichecab' ? 80 : 250, c.D - ft - rail);
   const yB = +c.gB || 0,
     yF = yB + Dc;
   const zb = c.base === 'floor' ? 0 : c.base === 'hang' ? +c.hangZ : +c.plH;
@@ -83007,7 +83010,9 @@ function cwHardware(e, G = cwGeom(e), U = cwUnits(e, G)) {
       G.secs.reduce((a, S_) => a + (S_.w > 900 ? 6 : 4), 0)
     );
   if (c.base === 'plinth') add_('Регулятор (подпятник) для цоколя', G.secs.length * 4);
-  if (c.base === 'hang') add_('Навес для шкафа Häfele + монтажная шина (пара)', G.secs.length);
+  if (c.base === 'hang' && c.product === 'shelf')
+    add_('Крепёж полки скрытый (стержни Ø12 / кронштейн-невидимка), пара', G.secs.length);
+  else if (c.base === 'hang') add_('Навес для шкафа Häfele + монтажная шина (пара)', G.secs.length);
   add_('Крепление корпуса к стене (уголок / анкер)', G.secs.length * 2);
   add_(
     'Уголок крепления добора / фальшпланки',
@@ -83020,7 +83025,8 @@ function cwHardware(e, G = cwGeom(e), U = cwUnits(e, G)) {
   if (fixedN) {
     add_('Крепление глухой панели к корпусу: уголок мебельный 20×20 с саморезами', fixedN * 4);
   }
-  if (c.base === 'hang') add_('Навес мебельный регулируемый (пара) с монтажной шиной', Math.max(1, G.secs.length));
+  if (c.base === 'hang' && c.product !== 'shelf')
+    add_('Навес мебельный регулируемый (пара) с монтажной шиной', Math.max(1, G.secs.length));
   if (c.back === 'none' && c.base !== 'hang')
     add_('Крепление к стене от опрокидывания (уголок + дюбель)', Math.max(2, Math.ceil(G.secs.length / 2) * 2));
   const nh = doors.length + G.fronts.filter(f => f.kind === 'drawer' || f.kind === 'flap').length;
@@ -83288,7 +83294,20 @@ function cwApply(e, product) {
     rack: { open: 'none', build: 'single', D: 350, base: 'legs', plH: 60, back: 'none', H: 2000 },
     tumba: { open: 'hinge', build: 'single', D: 500, base: 'legs', plH: 100, H: 800, ft: 'mdf', handle: 'push' },
     wallcab: { open: 'hinge', build: 'single', D: 320, base: 'hang', hangZ: 1450, H: 2170, ft: 'mdf', handle: 'push' },
-    box: { open: 'fixed', build: 'built', D: 250, base: 'floor', ft: 'mdf', H: 0, gL: 3, gR: 3 }
+    box: { open: 'fixed', build: 'built', D: 250, base: 'floor', ft: 'mdf', H: 0, gL: 3, gR: 3 },
+    shelf: { open: 'none', build: 'single', D: 250, base: 'hang', hangZ: 1300, H: 1600, back: 'none', ft: 'ldsp' },
+    nichecab: {
+      open: 'hinge',
+      build: 'built',
+      D: 250,
+      base: 'hang',
+      hangZ: 1150,
+      H: 0,
+      ft: 'mdf',
+      handle: 'push',
+      gL: 3,
+      gR: 3
+    }
   }[product];
   Object.assign(c, { topFill: 'none' }, T || {}); // a template adds nothing over the product
   c.gTop = cwLiftGap(c);
@@ -83302,7 +83321,9 @@ function cwApply(e, product) {
     rack: ['shelves'],
     tumba: ['chest'],
     wallcab: ['shelves'],
-    box: ['open']
+    box: ['open'],
+    shelf: ['shelves'],
+    nichecab: ['shelves']
   }[product] || ['shelves'];
   e.secs = [];
   let id = 1,
@@ -83319,7 +83340,9 @@ function cwApply(e, product) {
       const sec = { id: id++, run: R.i, w: 0, zones: p.z.map(z => ({ ...z })) };
       if (product === 'hall' && p === CW_SP.shoes) sec.leaves = 1;
       if (p === CW_SP.chest) Object.assign(sec, { xdrAll: true, xdr: 3 });
-      if (product === 'wallcab') sec.zones = [{ k: 'shelves', n: 1, h: 0 }];
+      if (product === 'wallcab' || product === 'nichecab') sec.zones = [{ k: 'shelves', n: 1, h: 0 }];
+      // a hanging shelf: an open box, one board inside only when it is tall
+      if (product === 'shelf') sec.zones = [{ k: 'shelves', n: 0, h: 0 }];
       e.secs.push(sec);
     }
   }
@@ -83984,6 +84007,21 @@ XT.casework = {
     return meshGroup(cwMeshes(e), { edges: true });
   },
   group: e => `${CW_PR[e.cfg.product] || 'Корпусная мебель'} · ${e.secs.length} секц.`,
+  /** lighting lines (mep/electrical/led-lines.js): under the bottom of hanging furniture and shelves, at the front */
+  ledSegs(e, mode) {
+    const G = cwGeom(e);
+    const z = (+e.z || 0) + G.zb - 3;
+    const out = [];
+    for (const R of G.runs) {
+      const xf = cwXF(R);
+      const y = G.yF - 25;
+      if (mode === 'sides') {
+        out.push([xf(R.x0 + 12, y, z + 3 + G.t), xf(R.x0 + 12, y, (+e.z || 0) + G.zt - G.t)]);
+        out.push([xf(R.x1 - 12, y, z + 3 + G.t), xf(R.x1 - 12, y, (+e.z || 0) + G.zt - G.t)]);
+      } else out.push([xf(R.x0 + 10, y, z), xf(R.x1 - 10, y, z)]);
+    }
+    return out;
+  },
   panel(e) {
     return (
       cwPanelForm(e) +
@@ -125063,6 +125101,7 @@ function wallFaceRounds(w, B, J) {
 
 
 
+
 /** Materials of the niche inside: the finishes of walls, glass / GKL shelves. */
 const WN_FIN = ['paint', 'tile', 'stone', 'plaster', 'veneer', 'hpl'];
 const WN_SHELF = {
@@ -125355,8 +125394,12 @@ XT.wniche = {
         `${(A.all / 1e6).toFixed(2)} м² (дно ${(A.back / 1e6).toFixed(2)}, откосы ${(A.rev / 1e6).toFixed(2)})`
       ) +
       cR('Каркас', framed ? 'обрамление ниши — в каркасе стены (стойки, перемычки ПН)' : 'вырез в кладке') +
-      warn
+      warn +
+      `<dt></dt><dd><button class="btn" data-xa="nichecab" title="Встроенная мебель в размер ниши: корпус на глубину ниши, фасады вровень со стеной">Мебель в нишу</button></dd>`
     );
+  },
+  action(e, a) {
+    if (a === 'nichecab') wnFurniture(e);
   },
   onSet(e, p) {
     if (p === 'side') e.side = +e.side > 0 ? 1 : -1;
@@ -125403,6 +125446,28 @@ XT.wniche = {
   }
 };
 
+/**
+ * Built-in furniture in the size of a niche: a run along the back of the niche, the depth of the niche (the fronts
+ * flush with the wall face), from the bottom to the top of the niche, 3 mm mounting gaps at the reveals.
+ */
+function wnFurniture(e) {
+  const F = wnFrame(e);
+  if (!F) return null;
+  pushUndo();
+  const yBack = F.face - e.side * F.dIn;
+  const n = mul(F.wi.n, e.side);
+  const f = cwCreate([{ a: F.P2(F.x0, yBack), b: F.P2(F.x1, yBack), n }], 'nichecab');
+  const z0 = (+F.w.z || 0) + (+e.z || 0);
+  Object.assign(f.cfg, { D: Math.round(F.dIn), hangZ: z0, H: z0 + e.h, gL: 3, gR: 3, gTop: 3, build: 'built' });
+  f.runs[0].wa = true;
+  f.runs[0].wb = true;
+  f.niche = e.id;
+  changed();
+  log(
+    `Мебель в нишу ${fmt(e.w)}×${fmt(e.h)}, глубина ${fmt(F.dIn)} мм — откройте генератор мебели для фасадов и наполнения`
+  );
+  return f;
+}
 /** Command НИША: two points on a wall side along the wall (in 3D — two corners), then the depth into the wall. */
 function mkWallNiche() {
   let first = null,
