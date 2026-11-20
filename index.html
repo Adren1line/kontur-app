@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.50';
+const APP_VER = '59.51';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -115186,6 +115186,9 @@ function solRenderSide() {
     h += `<div class="kv"><span>${p.ins ? '↳ ' : ''}${esc(p.n)}</span><b>${p.A != null ? p.A.toFixed(2) + ' м², ' + p.sheets + ' л., ' : ''}${p.V.toFixed(3)} м³ · ${Math.round(p.kg)} кг</b></div>`;
   for (const f of Q.fins)
     h += `<div class="kv"><span>${esc(f.n)}${f.tw ? ' ' + f.tw + '×' + f.th : ''}</span><b>${f.A.toFixed(2)} м²${f.pcs ? ' · ' + f.pcs + ' шт' : ''} · ${Math.round(f.kg)} кг</b></div>`;
+  for (const p of Q.parts)
+    if (p.frame)
+      h += `<div class="kv"><span>↳ каркас ${esc(p.frame.P.n)}, шаг ${p.frame.step}</span><b>${(p.frame.total / 1000).toFixed(1)} м · стоек ${p.frame.nStud}</b></div>`;
   if (Q.miter > 1)
     h += `<div class="kv"><span>Запил 45° на наружных рёбрах</span><b>${(Q.miter / 1000).toFixed(2)} м</b></div>`;
   if ((e.pts || []).length) h += `<div class="kv"><span>Электроточки</span><b>${e.pts.length}</b></div>`;
@@ -123432,7 +123435,8 @@ function solidCalc(e) {
       const pieces = [];
       for (const f of fs) for (const c of faceLayout(e, f, 'sheet').cells) pieces.push({ w: c.cw, h: c.ch });
       const sheets = packSheets(pieces, 2500) * ly;
-      Object.assign(r, { A, ly, sheets, frameM: A * 2.6, kg: A * (M.kgm2 * ly + M.frame) });
+      const FR = solidFrame(e, p.mat, fs);
+      Object.assign(r, { A, ly, sheets, frameM: FR.total / 1000, frame: FR, kg: A * (M.kgm2 * ly + M.frame) });
     }
     mass += r.kg;
     parts.push(r);
@@ -123463,7 +123467,10 @@ function solidCalc(e) {
  */
 function solidMiter(faces) {
   const tiled = f => !f.contact && f.fin && (f.fin.k === 'tile' || f.fin.k === 'stone') && f.fin.miter !== 'off';
-  const T = faces.filter(tiled);
+  return solidEdgeLen(faces.filter(tiled), true);
+}
+/** Length of the edges shared by the faces of the list (convexOnly: the outer edges only), mm. */
+function solidEdgeLen(T, convexOnly) {
   const edges = f => {
     const out = [];
     for (const q of f.polys) for (let i = 0; i < q.v.length; i++) out.push([q.v[i], q.v[(i + 1) % q.v.length]]);
@@ -123477,7 +123484,8 @@ function solidMiter(faces) {
       const f = T[i],
         g = T[j];
       // an outer (convex) edge: the other face lies behind the plane of this one
-      if (dot3(sub3(g.c, f.c), f.n) > -1 || Math.abs(dot3(f.n, g.n)) > 0.98) continue;
+      if (Math.abs(dot3(f.n, g.n)) > 0.98) continue;
+      if (convexOnly && dot3(sub3(g.c, f.c), f.n) > -1) continue;
       let len = 0;
       for (const [a, b] of edges(f)) {
         const d = sub3(b, a),
@@ -123499,6 +123507,83 @@ function solidMiter(faces) {
       }
       L += len;
     }
+  return L;
+}
+
+/* ---------- frame of the framed parts ---------- */
+/** Frame systems of a body: runners along the base (walls / floor / ceiling), studs or ribs with a step, profiles
+ * on the edges. */
+const SFRAME = {
+  pp: { n: 'ПП 60×27 + ПН 28×27', stud: 'Профиль ПП 60×27', run: 'Профиль ПН 28×27', len: 3000 },
+  ps50: { n: 'ПС 50×50 + ПН 50×40', stud: 'Профиль ПС 50×50', run: 'Профиль ПН 50×40', len: 3000 },
+  ps75: { n: 'ПС 75×50 + ПН 75×40', stud: 'Профиль ПС 75×50', run: 'Профиль ПН 75×40', len: 3000 },
+  wood: { n: 'Брус 40×50', stud: 'Брус 40×50 (стойки, рёбра)', run: 'Брус 40×50 (по основанию)', len: 3000, wood: true }
+};
+/** Frame settings of a body: system and step of the studs (OSB — on a wooden frame by default). */
+function solidFrameCfg(e, mat) {
+  const fr = e.fr || {};
+  const prof = SFRAME[fr.prof] ? fr.prof : mat === 'osbf' ? 'wood' : 'pp';
+  return { prof, P: SFRAME[prof], step: +fr.step > 100 ? +fr.step : 400 };
+}
+/**
+ * Frame of one framed material of a body: studs on every clad face (vertical faces — vertical studs across the width,
+ * horizontal faces — ribs across the shorter side) with the step, profiles on the edges between clad faces, runners
+ * where the body meets a wall / the floor / the ceiling or another part. Lengths in mm.
+ */
+function solidFrame(e, mat, fs) {
+  const C = solidFrameCfg(e, mat);
+  let studs = 0,
+    nStud = 0,
+    perim = 0;
+  for (const f of fs) {
+    const D = face2D(f);
+    const w = D.bb.x1 - D.bb.x0,
+      h = D.bb.y1 - D.bb.y0;
+    for (const q of D.polys)
+      for (let i = 0; i < q.length; i++) {
+        const a = q[i],
+          b = q[(i + 1) % q.length];
+        perim += Math.hypot(b[0] - a[0], b[1] - a[1]);
+      }
+    const vert = Math.abs(f.n[2]) < 0.3;
+    const across = vert ? w : Math.max(w, h),
+      along = vert ? h : Math.min(w, h);
+    const n = Math.max(0, Math.ceil(across / C.step - 1e-6) - 1);
+    nStud += n;
+    studs += n * along;
+  }
+  // a face split into several polygons by the CSG has inner seams: they are in the perimeter twice
+  const shared = solidEdgeLen(fs, false);
+  const base = Math.max(0, perim - 2 * shared - solidSplitLen(fs));
+  const outer = solidEdgeLen(fs, true);
+  return { ...C, studs, nStud, shared, base, outer, total: studs + shared + base };
+}
+/** Length of the seams inside faces (one face split into polygons by the CSG), counted twice — as in perimeters. */
+function solidSplitLen(fs) {
+  let L = 0;
+  for (const f of fs) {
+    if (f.polys.length < 2) continue;
+    const segs = [];
+    for (const q of f.polys) for (let i = 0; i < q.v.length; i++) segs.push([q.v[i], q.v[(i + 1) % q.v.length]]);
+    for (let i = 0; i < segs.length; i++)
+      for (let j = i + 1; j < segs.length; j++) {
+        const [a, b] = segs[i],
+          [p, q] = segs[j];
+        const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+          l = Math.hypot(...d);
+        if (l < 1) continue;
+        const u = d.map(x => x / l);
+        const on = r => {
+          const w = [r[0] - a[0], r[1] - a[1], r[2] - a[2]],
+            t = w[0] * u[0] + w[1] * u[1] + w[2] * u[2];
+          return Math.hypot(w[0] - u[0] * t, w[1] - u[1] * t, w[2] - u[2] * t) < 1 ? t : null;
+        };
+        const tp = on(p),
+          tq = on(q);
+        if (tp == null || tq == null) continue;
+        L += 2 * Math.max(0, Math.min(l, Math.max(tp, tq)) - Math.max(0, Math.min(tp, tq)));
+      }
+  }
   return L;
 }
 
@@ -123647,6 +123732,24 @@ XT.solid = {
             ['Название', 'name', 't'],
             ['Материал новых объёмов', 'mat', 's', Object.entries(SMAT).map(([k, v]) => [k, v.n])],
             ['Слоёв обшивки (каркас)', 'ly', 'n'],
+            ['Каркас', 'fr.prof', 's', Object.entries(SFRAME).map(([k, v]) => [k, v.n])],
+            [
+              'Шаг стоек, мм',
+              'fr.step',
+              's',
+              [
+                [400, '400'],
+                [600, '600'],
+                [300, '300']
+              ]
+            ],
+            ...Q.parts
+              .filter(p => p.frame)
+              .map(p => [
+                'Каркас: ' + p.frame.P.n,
+                `${(p.frame.total / 1000).toFixed(1)} м · стоек ${p.frame.nStud} · по основанию ${(p.frame.base / 1000).toFixed(1)} м`,
+                'r'
+              ]),
             ...rows,
             ...Q.fins.map(f => [
               f.n + (f.tw ? ` ${f.tw}×${f.th}` : ''),
@@ -123676,13 +123779,36 @@ XT.solid = {
       if (p.ins) row('sins' + p.mat, `Закладная: ${p.n}`, 'м³', p.V, 3);
       else if (M.kind === 'frame') {
         row('ssh' + p.mat, `${M.sheet} — листы 1200×2500 по раскладке (${M.n})`, 'шт', p.sheets, 0);
+        const FR = p.frame;
+        const pcs = L => Math.ceil((L * 1.1) / FR.P.len);
+        const ln = L => `${(L / 1000).toFixed(1).replace('.', ',')} м`;
         row(
-          'sfr' + p.mat,
-          `Каркас ${p.mat === 'osbf' ? 'брус 40×50' : 'ПП 60/27 + ПН 28/27'} (≈ 2,6 м/м²)`,
-          'м',
-          p.frameM,
-          1
+          'sfs' + FR.prof,
+          `${FR.P.stud}, L = 3 м — стойки/рёбра шаг ${FR.step} и рёбра тела (${ln(FR.studs + FR.shared)})`,
+          'шт',
+          pcs(FR.studs + FR.shared),
+          0
         );
+        row(
+          'sfb' + FR.prof,
+          `${FR.P.run}, L = 3 м — по основанию: стена / пол / потолок (${ln(FR.base)})`,
+          'шт',
+          pcs(FR.base),
+          0
+        );
+        if (!FR.P.wood) {
+          row('sfc', 'Соединитель профилей / прямой подвес (по 2 на стойку)', 'шт', FR.nStud * 2, 0);
+          row(
+            'sfl',
+            'Саморезы LN 9 (металл — металл: 4 на стойку, 1 на 0,5 м ребра)',
+            'шт',
+            FR.nStud * 4 + Math.ceil(FR.shared / 500),
+            0
+          );
+          row('sfd', 'Дюбель-гвоздь 6×40 (крепление к основанию, шаг 500)', 'шт', Math.ceil(FR.base / 500) + 2, 0);
+          row('sft', 'Лента уплотнительная под профиль по основанию', 'м', FR.base / 1000, 1);
+        } else row('sfd', 'Крепёж бруса к основанию (анкер / саморез, шаг 500)', 'шт', Math.ceil(FR.base / 500) + 2, 0);
+        if (FR.outer > 1) row('sfu', 'Уголок перфорированный ПУ 31×31 на наружные рёбра', 'м', FR.outer / 1000, 1);
         row('sscr' + p.mat, 'Саморезы для обшивки (≈ 30 шт/м² на слой)', 'шт', Math.ceil(p.A * p.ly * 30), 0);
       } else row('svol' + p.mat, `${M.n} — объём тела`, 'м³', p.V, 3);
     }
