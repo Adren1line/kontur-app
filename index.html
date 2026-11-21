@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.60';
+const APP_VER = '59.61';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12517,8 +12517,6 @@ migrate.step(syncWalls, 90);
 
 
 
-
-
 function instHull(e) {
   const a = ASSETS.get(e.asset);
   const r = e.rot || 0;
@@ -12642,13 +12640,6 @@ function prims(e) {
       return closedSegs(textBox(e));
     case 'inst':
       return closedSegs(instHull(e));
-    case 'dev':
-      return [{ t: 'c', c: devCenter(e), r: devR() }];
-    case 'wire': {
-      const r = [];
-      for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
-      return r;
-    }
     default: {
       const X = XT[e.type];
       if (X && X.prims) return X.prims(e);
@@ -12704,24 +12695,6 @@ function entDist(e, p) {
   }
   if (e.type === 'text' && inPoly(p, textBox(e))) return 0;
   if (e.type === 'inst' && !flatCat(e.layer) && inPoly(p, instHull(e))) return -0.5;
-  if (e.type === 'dev') {
-    const d = dist(devCenter(e), p);
-    return d < devR() * 1.1 ? -2 : d - devR();
-  }
-  if (e.type === 'wire' && NV.on && S.elec.eng !== false && e.id != null) {
-    try {
-      const R = wireRoute(e);
-      if (R.pts3.length > 1) {
-        let m = Infinity;
-        for (let i = 1; i < R.pts3.length; i++) {
-          const a = R.pts3[i - 1],
-            b = R.pts3[i];
-          m = Math.min(m, dist(segPt(P(a[0], a[1]), P(b[0], b[1]), p), p));
-        }
-        return Math.max(0, m - R.gof / 2);
-      }
-    } catch (err) {}
-  }
   let m = Infinity;
   for (const q of prims(e)) m = Math.min(m, primDist(q, p));
   return m;
@@ -12775,14 +12748,6 @@ function keyPts(e) {
       r.push({ p: e.p, k: 'ins' });
       instHull(e).forEach(p => r.push({ p, k: 'end' }));
       break;
-    case 'dev':
-      r.push({ p: e.p, k: 'ins' });
-      break;
-    case 'wire': {
-      e.pts.forEach((p, i) => r.push({ p, k: 'end' }));
-      for (let i = 0; i < e.pts.length - 1; i++) r.push({ p: mid(e.pts[i], e.pts[i + 1]), k: 'mid' });
-      break;
-    }
     default: {
       const X = XT[e.type];
       if (X && X.keys) X.keys(e).forEach(x => r.push(x));
@@ -12821,13 +12786,6 @@ function samplePts(e) {
       return textBox(e);
     case 'inst':
       return instHull(e);
-    case 'dev': {
-      const c = devCenter(e),
-        r = devR();
-      return [P(c.x - r, c.y - r), P(c.x + r, c.y - r), P(c.x + r, c.y + r), P(c.x - r, c.y + r)];
-    }
-    case 'wire':
-      return e.pts;
     default: {
       const X = XT[e.type];
       if (X && X.sample) return X.sample(e);
@@ -12863,12 +12821,8 @@ function mapEnt(e, f, dA = 0) {
       n.rot = (e.rot || 0) + dA;
       break;
     case 'inst':
-    case 'dev':
       n.p = f(e.p);
       n.rot = (e.rot || 0) + dA;
-      break;
-    case 'wire':
-      n.pts = e.pts.map(f);
       break;
     default: {
       const X = XT[n.type];
@@ -15846,7 +15800,6 @@ function acquire(r, w) {
 
 
 
-
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -15979,22 +15932,6 @@ function gripsOf0(e) {
     case 'text':
     case 'inst':
       return [{ p: e.p, apply: set((n, p) => (n.p = p)) }];
-    case 'dev':
-      return [
-        {
-          p: e.p,
-          apply: set((n, p) => {
-            const d = DEVK[n.kind];
-            const pl = placeOnWall(p, d ? d.mount : 'ceil');
-            n.p = pl.p;
-            if (pl.host) {
-              n.rot = pl.rot;
-              n.host = pl.host;
-            }
-          })
-        }
-      ];
-    case 'wire':
     case 'spline':
       return e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }));
     default: {
@@ -17187,12 +17124,6 @@ function drawEnt(e, color, o = {}) {
           if (!ghost) drawInstPorts(e);
           break;
         }
-        case 'dev':
-          drawDev(e, color, o);
-          break;
-        case 'wire':
-          drawWire(e, color, o);
-          break;
         default: {
           const X = XT[e.type];
           if (X && X.draw) X.draw(e, color, o, ghost, col);
@@ -19198,8 +19129,6 @@ function cutLabels() {
 
 
 
-
-
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19317,44 +19246,6 @@ function key3Base(e) {
   switch (e.type) {
     case 'inst':
       return JSON.stringify([e.asset, ASSETS.has(e.asset), e.p, e.rot, e.z]);
-    case 'dev':
-      return JSON.stringify([
-        e.lc || 0,
-        e.kind,
-        e.p,
-        e.rot,
-        e.z,
-        e.size,
-        e.group != null ? groupOf(e.group).col : 0,
-        e.sys ? sysOf(e.sys).col : 0,
-        e.blk || 0,
-        e.kind === 'panel' ? S.x.panel : 0,
-        NV.on && (DEVK[e.kind] || {}).box ? documentState.docVer : 0,
-        (DEVK[e.kind] || {}).k3 ? DEVK[e.kind].k3(e) : 0
-      ]);
-    case 'wire': {
-      const zs = [e.from, e.to].map(id => {
-        const d = id != null ? byId(id) : null;
-        return d ? d.z : null;
-      });
-      return JSON.stringify([
-        e.type,
-        e.pts,
-        e.z,
-        e.d,
-        e.w,
-        e.hh,
-        e.shape,
-        e.ins,
-        e.flex || 0,
-        e.tap || 0,
-        e.mat || 0,
-        [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable],
-        e.group != null ? groupOf(e.group).col : 0,
-        e.sys ? sysOf(e.sys).col : 0,
-        zs
-      ]);
-    }
     case 'line':
     case 'pline':
     case 'circle':
@@ -19481,6 +19372,38 @@ function buildDuct3(e) {
   }
   return meshGroup(mb.meshes(), { edges: e.shape === 'rect' });
 }
+/** 3D model of a device (XT.dev.build3): socket/switch blocks, light fittings, the symbol model. */
+function buildDev3(e) {
+  const g = devMeshes(e);
+  g.position.set(e.p.x, e.p.y, 0);
+  g.rotation.z = e.rot || 0;
+  return g;
+}
+/** 3D model of a cable route (XT.wire.build3): the real route (ceiling, screed, chases) or a plain tube with drops to the boxes. */
+function buildWire3(e) {
+  // the real route: behind the ceiling / in the screed / in chases, drops inside the wall to the box
+  if (S.elec.eng !== false) {
+    const g = wireEng3D(e);
+    if (g) return g;
+  }
+  const col = wireColor(e),
+    z = e.z || 0,
+    mb = MB(),
+    pts = e.pts.map(p => [p.x, p.y, z]);
+  const ends = [
+    [e.from, 0],
+    [e.to, pts.length - 1]
+  ].map(([id, i]) => {
+    const d = id != null ? byId(id) : null;
+    if (!(d && d.type === 'dev' && Math.abs(d.z - z) > 1)) return null;
+    // the drop goes inside the wall, not on its face
+    const f = devF(d);
+    pts[i] = [pts[i][0] - f.x * 25, pts[i][1] - f.y * 25, z];
+    return [pts[i][0], pts[i][1], d.z];
+  });
+  mb.sweep(roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], 45).pts, 8, col, 8);
+  return meshGroup(mb.meshes(), {});
+}
 function build3(e) {
   switch (e.type) {
     case 'inst': {
@@ -19495,36 +19418,6 @@ function build3(e) {
       g.position.set(e.p.x, e.p.y, e.z || 0);
       g.rotation.z = e.rot || 0;
       return g;
-    }
-    case 'dev': {
-      const g = devMeshes(e);
-      g.position.set(e.p.x, e.p.y, 0);
-      g.rotation.z = e.rot || 0;
-      return g;
-    }
-    case 'wire': {
-      // the real route: behind the ceiling / in the screed / in chases, drops inside the wall to the box
-      if (S.elec.eng !== false) {
-        const g = wireEng3D(e);
-        if (g) return g;
-      }
-      const col = wireColor(e),
-        z = e.z || 0,
-        mb = MB(),
-        pts = e.pts.map(p => [p.x, p.y, z]);
-      const ends = [
-        [e.from, 0],
-        [e.to, pts.length - 1]
-      ].map(([id, i]) => {
-        const d = id != null ? byId(id) : null;
-        if (!(d && d.type === 'dev' && Math.abs(d.z - z) > 1)) return null;
-        // the drop goes inside the wall, not on its face
-        const f = devF(d);
-        pts[i] = [pts[i][0] - f.x * 25, pts[i][1] - f.y * 25, z];
-        return [pts[i][0], pts[i][1], d.z];
-      });
-      mb.sweep(roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], 45).pts, 8, col, 8);
-      return meshGroup(mb.meshes(), {});
     }
     case 'line':
     case 'pline':
@@ -20199,9 +20092,8 @@ function devMeshes(e) {
 /** Cache key of the 3D model of an element (null = no 3D). */
 function key3(e) {
   const k = key3Base(e);
-  if (k && e.type === 'wire') return k + wireHopsKey(e) + jbWireKey(e);
-  if (k && e.type === 'dev' && (e.kind === 'jbox' || e.kind === 'jboxc')) return k + jbSig(jbOfDev(e));
-  return k;
+  const X = XT[e.type];
+  return k && X && X.k3tail ? k + X.k3tail(e) : k;
 }
 
 /** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
@@ -22922,14 +22814,9 @@ function initLayersPanel() {
 
 
 
-
 /* UI: project browser */
 function groupName(e) {
   switch (e.type) {
-    case 'dev':
-      return (DEVK[e.kind] || {}).n || 'Устройство';
-    case 'wire':
-      return `Трасса гр.${e.group} · ${e.cable}`;
     case 'inst': {
       const a = ASSETS.get(e.asset);
       if (!a) return 'Объект без геометрии';
@@ -23146,6 +23033,130 @@ function ductFields(e) {
     { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
   ];
 }
+/** Simple fields of a device for the properties table (XT.dev.fields). */
+function devFields(e) {
+  const d = DEVK[e.kind] || {};
+  const F = [
+    {
+      l: 'Тип',
+      k: 'kind',
+      sel: Object.keys(DEVK)
+        .filter(k => DEVK[k].f === d.f)
+        .map(k => [k, DEVK[k].n])
+    },
+    { l: d.mount === 'ceil' ? 'Отметка потолка' : 'Высота установки', k: 'z', num: true }
+  ];
+  if (d.f === 'vterm')
+    F.push(
+      { l: 'Система', k: 'sys', sel: sysOpts() },
+      { l: 'Расход, м³/ч', k: 'flow', num: true },
+      { l: 'Размер (Ø или Ш×В)', k: 'size', txt: true }
+    );
+  else if (e.kind !== 'panel')
+    F.push({ l: 'Группа', k: 'group', sel: grpOpts() }, { l: 'Мощность, Вт', k: 'pw', num: true });
+  if (d.f === 'socket' && !d.weak) F.push({ l: 'Назначение', k: 'ded', sel: Object.entries(DEDICATED) });
+  if (d.f === 'light')
+    F.push({
+      l: 'Выключатель (клавиша)',
+      k: 'swk',
+      sel: [
+        ['', '— не назначен'],
+        ...allKeys().map(k => [
+          k.dev + '|' + k.key,
+          `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
+        ])
+      ]
+    });
+  F.push({ l: 'Поворот, °', k: 'rotd', num: true });
+  return F;
+}
+/** Simple fields of a cable route for the properties table (XT.wire.fields). */
+function wireFields() {
+  return [
+    {
+      l: 'Клавиша выключателя',
+      k: 'swkey',
+      sel: [
+        ['', '— (питание / розетки)'],
+        ...allKeys().map(k => [
+          k.dev + '|' + k.key,
+          `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
+        ])
+      ]
+    },
+    { l: 'Группа', k: 'group', sel: grpOpts() },
+    { l: 'Кабель', k: 'cable', sel: CABLES.map(c => [c, c]) },
+    { l: 'Прокладка', k: 'method', sel: Object.entries(METHODS).map(([k, m]) => [k, m.n]) },
+    { l: 'Отметка трассы', k: 'z', num: true },
+    {
+      l: 'Монтажная трасса',
+      k: 'manual',
+      sel: [
+        ['', 'авто (кратчайшая, пакетами)'],
+        ['1', 'вручную — по линии провода']
+      ]
+    }
+  ];
+}
+/**
+ * Properties panel of a device (XT.dev.panel): the system or the group data, the light options (devCfgPanel), the panel
+ * of its kind (DEVK[kind].panel) and the block of mechanisms (blkPanel).
+ */
+function devPanel(e) {
+  let h = '';
+  const ro = (k, v) => (h += `<dt>${k}</dt><dd>${v}</dd>`);
+  const d = DEVK[e.kind] || {};
+  if (d.f === 'vterm') {
+    const sy = sysOf(e.sys);
+    ro('Система', `${esc(sy.id)} · ${esc(sy.kind)}`);
+  } else if (e.group != null) {
+    const g = groupOf(e.group);
+    ro('Автомат группы', esc(g.brk));
+    ro('Кабель группы', esc(g.cable));
+  }
+  if (typeof devCfgPanel === 'function') h += devCfgPanel(e);
+  if (DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
+  if (e.blk) h += blkPanel(e);
+  return h;
+}
+/** Button row of a device under the properties table (XT.dev.panelAfter). */
+function devPanelAfter(e) {
+  const d = DEVK[e.kind] || {};
+  return `<div class="btnrow"><button class="btn" id="bMEPopen">${d.f === 'vterm' ? 'Системы вентиляции…' : 'Группы электрики…'}</button></div>`;
+}
+/** Form of a device in the object dialog (XT.dev.dialogPanel): the fields, the block of mechanisms, the light options, the panel of its kind. */
+function devDialogPanel(e) {
+  let h = '';
+  for (const f of fieldsFor(e)) h += propRow(f, [e]);
+  if (e.blk) h += blkPanel(e);
+  h += devCfgPanel(e);
+  if (DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
+  return h;
+}
+/** Properties panel of a cable route (XT.wire.panel): the cable length and its ends. */
+function wirePanel(e) {
+  let h = '';
+  const ro = (k, v) => (h += `<dt>${k}</dt><dd>${v}</dd>`);
+  const L = wireLen(e);
+  h += `<div class="hd">Длина кабеля</div>`;
+  ro('В плане', (L.plan / 1000).toFixed(2) + ' м');
+  ro('Опуски к устройствам', (L.drops / 1000).toFixed(2) + ' м');
+  ro('Запас на подключение', (L.reserve / 1000).toFixed(2) + ' м');
+  if (L.extra) ro('Возврат до светильника', (L.extra / 1000).toFixed(2) + ' м');
+  ro('Итого', `<b>${(L.total / 1000).toFixed(2)} м</b>`);
+  const a = e.from != null ? byId(e.from) : null,
+    b = e.to != null ? byId(e.to) : null;
+  ro('Откуда', a ? esc(DEVK[a.kind].n) : '—');
+  ro('Куда', b ? esc(DEVK[b.kind].n) : '—');
+  return h;
+}
+/** Button rows of a cable route under the properties table (XT.wire.panelAfter). */
+function wirePanelAfter() {
+  return (
+    `<div class="btnrow"><button class="btn" id="bReroute" title="Трасса зафиксирована и не меняется при правке стен или скрытии слоёв. Нажмите, чтобы проложить заново.">Перетрассировать</button></div>` +
+    `<div class="btnrow"><button class="btn" id="bMEPopen">Группы электрики…</button></div>`
+  );
+}
 function fieldsFor(e) {
   if (e.type === 'text')
     return [
@@ -23169,68 +23180,6 @@ function fieldsFor(e) {
       { l: 'Маскировка фона', k: 'bg', bool: true }
     ];
   if (XT[e.type]) return XT[e.type].fields ? XT[e.type].fields(e) : [];
-  if (e.type === 'dev') {
-    const d = DEVK[e.kind] || {};
-    const F = [
-      {
-        l: 'Тип',
-        k: 'kind',
-        sel: Object.keys(DEVK)
-          .filter(k => DEVK[k].f === d.f)
-          .map(k => [k, DEVK[k].n])
-      },
-      { l: d.mount === 'ceil' ? 'Отметка потолка' : 'Высота установки', k: 'z', num: true }
-    ];
-    if (d.f === 'vterm')
-      F.push(
-        { l: 'Система', k: 'sys', sel: sysOpts() },
-        { l: 'Расход, м³/ч', k: 'flow', num: true },
-        { l: 'Размер (Ø или Ш×В)', k: 'size', txt: true }
-      );
-    else if (e.kind !== 'panel')
-      F.push({ l: 'Группа', k: 'group', sel: grpOpts() }, { l: 'Мощность, Вт', k: 'pw', num: true });
-    if (d.f === 'socket' && !d.weak) F.push({ l: 'Назначение', k: 'ded', sel: Object.entries(DEDICATED) });
-    if (d.f === 'light')
-      F.push({
-        l: 'Выключатель (клавиша)',
-        k: 'swk',
-        sel: [
-          ['', '— не назначен'],
-          ...allKeys().map(k => [
-            k.dev + '|' + k.key,
-            `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
-          ])
-        ]
-      });
-    F.push({ l: 'Поворот, °', k: 'rotd', num: true });
-    return F;
-  }
-  if (e.type === 'wire')
-    return [
-      {
-        l: 'Клавиша выключателя',
-        k: 'swkey',
-        sel: [
-          ['', '— (питание / розетки)'],
-          ...allKeys().map(k => [
-            k.dev + '|' + k.key,
-            `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
-          ])
-        ]
-      },
-      { l: 'Группа', k: 'group', sel: grpOpts() },
-      { l: 'Кабель', k: 'cable', sel: CABLES.map(c => [c, c]) },
-      { l: 'Прокладка', k: 'method', sel: Object.entries(METHODS).map(([k, m]) => [k, m.n]) },
-      { l: 'Отметка трассы', k: 'z', num: true },
-      {
-        l: 'Монтажная трасса',
-        k: 'manual',
-        sel: [
-          ['', 'авто (кратчайшая, пакетами)'],
-          ['1', 'вручную — по линии провода']
-        ]
-      }
-    ];
   return (OLDF[e.type] || []).map(([l, k, kind]) => (kind === 'bool' ? { l, k, bool: true } : { l, k, num: true }));
 }
 function fieldGet(e, k) {
@@ -24119,7 +24068,7 @@ function updateProps() {
     $('#bMEP2').onclick = () => openMEP();
     return;
   }
-  const nm = e => (e.type === 'dev' ? (DEVK[e.kind] || {}).n || 'Устройство' : TN[e.type]);
+  const nm = e => (XT[e.type] && XT[e.type].name ? XT[e.type].name(e) : TN[e.type]);
   const layers = [...new Set(es.map(e => e.layer))];
   const allWalls = es.every(e => e.type === 'wall');
   let h = `<dl class="props"><dt>Выбрано</dt><dd title="${esc(es.length === 1 ? nm(es[0]) : '')}">${es.length === 1 ? esc(nm(es[0])) : es.length + ' · ' + [...new Set(es.map(nm))].slice(0, 3).map(esc).join(', ')}</dd>`;
@@ -24208,33 +24157,6 @@ function updateProps() {
         h += `<dt>Текст</dt><dd style="text-align:left;white-space:pre-wrap;font-family:var(--f-ui)">${esc(e.s)}</dd>`;
         after = `<div class="btnrow"><button class="btn pri" id="pTextEd">Редактировать текст…</button></div>` + after;
       }
-      if (e.type === 'dev') {
-        const d = DEVK[e.kind] || {};
-        if (d.f === 'vterm') {
-          const sy = sysOf(e.sys);
-          ro('Система', `${esc(sy.id)} · ${esc(sy.kind)}`);
-        } else if (e.group != null) {
-          const g = groupOf(e.group);
-          ro('Автомат группы', esc(g.brk));
-          ro('Кабель группы', esc(g.cable));
-        }
-        after += `<div class="btnrow"><button class="btn" id="bMEPopen">${d.f === 'vterm' ? 'Системы вентиляции…' : 'Группы электрики…'}</button></div>`;
-      }
-      if (e.type === 'wire') {
-        after += `<div class="btnrow"><button class="btn" id="bReroute" title="Трасса зафиксирована и не меняется при правке стен или скрытии слоёв. Нажмите, чтобы проложить заново.">Перетрассировать</button></div>`;
-        const L = wireLen(e);
-        h += `<div class="hd">Длина кабеля</div>`;
-        ro('В плане', (L.plan / 1000).toFixed(2) + ' м');
-        ro('Опуски к устройствам', (L.drops / 1000).toFixed(2) + ' м');
-        ro('Запас на подключение', (L.reserve / 1000).toFixed(2) + ' м');
-        if (L.extra) ro('Возврат до светильника', (L.extra / 1000).toFixed(2) + ' м');
-        ro('Итого', `<b>${(L.total / 1000).toFixed(2)} м</b>`);
-        const a = e.from != null ? byId(e.from) : null,
-          b = e.to != null ? byId(e.to) : null;
-        ro('Откуда', a ? esc(DEVK[a.kind].n) : '—');
-        ro('Куда', b ? esc(DEVK[b.kind].n) : '—');
-        after += `<div class="btnrow"><button class="btn" id="bMEPopen">Группы электрики…</button></div>`;
-      }
       if (e.type === 'inst') {
         const a = ASSETS.get(e.asset);
         h += `<dt>Наименование</dt><dd><input type="text" id="pName" value="${esc(e.name || (a ? a.name : ''))}"></dd>`;
@@ -24270,9 +24192,6 @@ function updateProps() {
   }
   if (es.length === 1) {
     if (XT[e.type] && XT[e.type].panel) h += XT[e.type].panel(e);
-    if (e.type === 'dev' && typeof devCfgPanel === 'function') h += devCfgPanel(e);
-    if (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
-    if (e.type === 'dev' && e.blk) h += blkPanel(e);
     if (odSupports(e))
       after = `<div class="btnrow"><button class="btn pri" data-xa="obj">Параметры объекта…</button></div>` + after;
     if (XT[e.type] && XT[e.type].panelAfter) after += XT[e.type].panelAfter(e);
@@ -24289,7 +24208,6 @@ function updateProps() {
     changed();
   };
   const targets = allWalls ? es : [e];
-  if (es.length === 1 && e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].bind) DEVK[e.kind].bind(el, e, changed);
   if (es.length === 1 && XT[e.type] && XT[e.type].bind) XT[e.type].bind(el, e, changed);
   el.querySelectorAll('[data-f]').forEach(
     inp =>
@@ -24360,14 +24278,6 @@ function updateProps() {
   if (bs) bs.onclick = () => openCatalog(e.asset);
   const bw = $('#bWTopen');
   if (bw) bw.onclick = () => openWT(e.wt);
-  const brr = $('#bReroute');
-  if (brr)
-    brr.onclick = () => {
-      pushUndo();
-      for (const x of es) if (x.type === 'wire') delete x.rt;
-      changed();
-      log('Трасса пересчитана');
-    };
   document.querySelectorAll('#props [data-lk],[data-lk]').forEach(
     sl =>
       (sl.onchange = () => {
@@ -24390,13 +24300,10 @@ function updateProps() {
   if (bm)
     bm.onclick = () =>
       openMEP(
-        (XT[e.type] && XT[e.type].net === 'vt') || (e.type === 'dev' && DEVK[e.kind].f === 'vterm') ? 'vt' : 'el'
+        XT[e.type] && XT[e.type].mepTab ? XT[e.type].mepTab(e) : XT[e.type] && XT[e.type].net === 'vt' ? 'vt' : 'el'
       );
   if (es.length === 1) {
-    xBindForm(el, e, (p, v) => {
-      if (e.type === 'dev' && p.startsWith('blk.')) onBlockFieldSet(e, p, v);
-      if (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].onSet) DEVK[e.kind].onSet(e, p, v);
-    });
+    xBindForm(el, e);
     bindXA(el, e);
     bindMeta(el, e);
   }
@@ -24722,7 +24629,6 @@ function initCatalog() {
  *
  * Specification (bill of quantities) of the whole project, across levels; the Specification tab.
  */
-
 
 
 
@@ -25168,7 +25074,6 @@ function xSpec() {
     if (!visible(e)) continue;
     const X = XT[e.type];
     if (X && X.spec) X.spec(e, put);
-    if (e.type === 'dev' && e.blk) blkSpec(e, put);
   }
   wireJointsSpec(put);
   psuSpec(put);
@@ -29151,14 +29056,19 @@ async function openJson(f) {
  * 3D
  * @property {(e)=>any} k3                cache key: the 3D model is rebuilt only when JSON(k3) changes; null = no 3D
  * @property {boolean} k3own              k3 returns the whole key (the key is JSON(k3)); otherwise the key is JSON([e, k3(e)])
+ * @property {(e)=>string} k3tail         string appended to the cache key (what the model depends on besides k3: cables ending in a box, hops of a wire); '' = nothing
  * @property {(e)=>THREE.Object3D} build3 3D model (usually MB → meshGroup)
  * @property {(e)=>THREE.Object3D} parts3 exploded / "parts" model for the object dialog and views
  * Properties and data
  * @property {(e)=>string} group          one-line description for the project browser
+ * @property {(e)=>string} name           name of the element in the «Выбрано» line of the properties panel (default: TN[type])
  * @property {(e)=>string} panel          HTML of the properties panel (use xGroups / xRows from ui/forms.js)
  * @property {(e)=>string} panelAfter     HTML under the properties table (button rows): after «Параметры объекта…», before the issues
+ * @property {(e)=>string} dialogPanel    HTML of the form in the object dialog when it differs from `panel` (default: panel)
+ * @property {(e)=>'el'|'vt'} mepTab      tab of the engineering dialog opened by the button #bMEPopen (default: 'vt' when net === 'vt', else 'el')
  * @property {(e)=>Field[]} fields        simple fields for the generic properties table
  * @property {(e,path,value)=>void} onSet called after a form field changed (derived values, normalisation)
+ * @property {(el,e,changed)=>void} bind     binds the controls of the panel after it was rendered (buttons, selects of its own)
  * @property {(e,action,el,button)=>void} action  buttons with data-xa="action" in the panel
  * @property {(e,put)=>void} spec         specification rows: put(section, key, {name, u}, row => {row.q += …})
  * @property {(e,cat)=>[string,string,string|null]} ifc  IFC export: [class, predefined type, property set]
@@ -53866,14 +53776,8 @@ afterAdd(xAfterAdd);
 
 
 
-
 /* ---------- network view & 3D clipping ---------- */
 function netKey(e) {
-  if (e.type === 'wire') return /UTP|RG/.test(e.cable) ? 'low' : 'el';
-  if (e.type === 'dev') {
-    const d = DEVK[e.kind] || {};
-    return d.f === 'vterm' ? 'vt' : d.weak ? 'low' : 'el';
-  }
   const X = XT[e.type];
   if (!X || !X.net) return null;
   return typeof X.net === 'function' ? X.net(e) : X.net;
@@ -72398,7 +72302,6 @@ function refPts(e) {
     }
     return r;
   }
-  if (e.type === 'dev') return [{ p: e.p, z: e.z || 0 }];
   if (e.type === 'pipe') {
     const zs = pipeZ(e);
     return e.pts.map((p, i) => ({ p, z: zs[i] }));
@@ -72409,8 +72312,7 @@ function hatchReach(h) {
   const out = [];
   for (const e of S.ents) {
     // and every element that names its own service points (a ducted air conditioner, a unit over the ceiling)
-    if (e.id === h.id || !(['fix', 'dev', 'pipe'].includes(e.type) || (XT[e.type] && XT[e.type].accessPoints)))
-      continue;
+    if (e.id === h.id || !(['fix', 'pipe'].includes(e.type) || (XT[e.type] && XT[e.type].accessPoints))) continue;
     if (refPts(e).some(r => inHatchReach(h, r.p, r.z))) out.push(e);
   }
   return out;
@@ -72429,7 +72331,6 @@ function inGbody(p) {
 function needsAccess(e) {
   const X = XT[e.type];
   if (X && X.needsAccess) return X.needsAccess(e);
-  if (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].access) return DEVK[e.kind].access(e);
   if (e.type === 'fix') {
     const c = e.cfg || {};
     if (e.kind === 'manifold') {
@@ -72443,13 +72344,6 @@ function needsAccess(e) {
         : 'Стояк водоснабжения в коробе — нужен люк к кранам и счётчикам';
     if (e.kind === 'bath' && c.type !== 'free' && c.inst && c.inst !== 'legs')
       return `Сифон ванны закрыт ${c.inst === 'podium' ? 'обстройкой' : 'экраном'} — нужен люк у слива`;
-  }
-  if (e.type === 'dev' && e.kind === 'jboxc')
-    return 'Распаячная коробка над потолком должна оставаться доступной (ПУЭ 2.1.23) — люк в потолке под коробкой';
-  if (e.type === 'dev' && e.kind === 'jbox') {
-    const w = e.host != null ? byId(e.host) : null;
-    if ((w && w.type === 'wall' && isKnauf(w)) || (e.z || 0) >= S.ceil - 60)
-      return 'Распаячная коробка должна оставаться доступной (ПУЭ 2.1.23) — люк или съёмная крышка';
   }
   return null;
 }
@@ -97394,8 +97288,6 @@ uiHooks.phaseCol3 = e => {
 
 
 
-
-
 /* ---------- Archicad-like object settings: form + 3D / exploded preview ---------- */
 [
   'Нагрузка',
@@ -97671,22 +97563,14 @@ function odFormHtml(e) {
         cR('Направляющие ПН', `${(G.pnLen / 1000).toFixed(1)} м → ${G.pnCount} × L3000`) +
         (G.doorStuds ? cR('Стойки у дверей', `${G.doorStuds} — усилить брусом или UA`) : '');
     }
-  } else if (e.type === 'dev') {
-    const fl = fieldsFor(e);
-    for (const f of fl) h += propRow(f, [e]);
-    if (e.blk) h += blkPanel(e);
-    h += devCfgPanel(e);
-    if (DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
-  } else if (XT[e.type] && XT[e.type].panel) h += XT[e.type].panel(e);
+  } else if (XT[e.type] && (XT[e.type].dialogPanel || XT[e.type].panel))
+    h += (XT[e.type].dialogPanel || XT[e.type].panel)(e);
   h += '</dl>' + metaPanel(e) + issuesPanel(e);
   return h;
 }
 function odBindForm(f, e) {
   if (e.type === 'door' || e.type === 'window') bindCfg(f, e);
-  xBindForm(f, e, (p, v) => {
-    if (e.type === 'dev' && p.startsWith('blk.')) onBlockFieldSet(e, p, v);
-    if (e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].onSet) DEVK[e.kind].onSet(e, p, v);
-  });
+  xBindForm(f, e);
   bindXA(f, e);
   bindMeta(f, e);
   f.querySelectorAll('[data-f]').forEach(
@@ -134731,7 +134615,6 @@ function ifcToProject(els, opts, shift, mkInst) {
 
 
 
-
 const IFC64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
 /** 128-bit hash of a string (cyrb128) → the 22-character compressed IFC GlobalId; the same key gives the same id. */
 function ifcGuid(key) {
@@ -134824,10 +134707,6 @@ function ifcClassOf(e, cat) {
       return ['IFCPIPESEGMENT', 'NOTDEFINED', null];
     case 'fix':
       return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
-    case 'dev':
-      if (isLight(e)) return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
-      if (isSwitch(e)) return ['IFCSWITCHINGDEVICE', 'SWITCH', null];
-      return ['IFCOUTLET', /tv|lan|data|rj|тв|интернет/i.test(e.kind || '') ? 'DATAOUTLET' : 'POWEROUTLET', null];
   }
   const X = XT[e.type];
   if (X && X.ifc) return X.ifc(e, cat);
@@ -135771,6 +135650,129 @@ function svgToCad(cad, svgText, opt = {}) {
   });
   return cad;
 }
+
+// ===== mep/electrical/dev-xt.js =====
+/**
+ * mep/electrical/dev-xt.js
+ *
+ * XT.dev — the element type «dev» (a device: socket, switch, light, panel, junction box, … and the ventilation
+ * terminals and units of kind vterm) in the registry of element types: plan primitives and picking distance, snap
+ * point, grip (a device is placed on a wall or under the ceiling by its kind), mapping, plan drawing, 3D (cache key
+ * and model), the network view, project browser group, the properties panel, the object dialog form, simple fields,
+ * the revision hatch rules, the specification of the block of mechanisms and the IFC class. The bodies are the
+ * existing functions (view2d/render.js, view3d/build.js, ui/properties.js); what depends on the kind comes from the
+ * hooks of DEVK[kind] (panel, bind, onSet, access, k3 …), the type itself is not split.
+ * The ventilation terminals (DEVK[kind].f === 'vterm') belong to the hvac block by the table of types, but they are
+ * the same entity type: the single record stays here (the split is a later step).
+ * Entity: { type:'dev', kind (key of DEVK), p, rot, z, group | sys + flow + size, blk, host, … } — see devices.js.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+XT.dev = {
+  net: e => {
+    const d = DEVK[e.kind] || {};
+    return d.f === 'vterm' ? 'vt' : d.weak ? 'low' : 'el';
+  },
+  prims: e => [{ t: 'c', c: devCenter(e), r: devR() }],
+  /** Inside the symbol: −2 (outside — the distance to its circle). */
+  dist: (e, p) => {
+    const d = dist(devCenter(e), p);
+    return d < devR() * 1.1 ? -2 : d - devR();
+  },
+  keys: e => [{ p: e.p, k: 'ins' }],
+  sample: e => {
+    const c = devCenter(e),
+      r = devR();
+    return [P(c.x - r, c.y - r), P(c.x + r, c.y - r), P(c.x + r, c.y + r), P(c.x - r, c.y + r)];
+  },
+  map: (n, e, f, dA) => {
+    n.p = f(e.p);
+    n.rot = (e.rot || 0) + dA;
+  },
+  grips: (e, set) => [
+    {
+      p: e.p,
+      apply: set((n, p) => {
+        const d = DEVK[n.kind];
+        const pl = placeOnWall(p, d ? d.mount : 'ceil');
+        n.p = pl.p;
+        if (pl.host) {
+          n.rot = pl.rot;
+          n.host = pl.host;
+        }
+      })
+    }
+  ],
+  draw: (e, color, o) => drawDev(e, color, o),
+  k3own: true,
+  k3: e => [
+    e.lc || 0,
+    e.kind,
+    e.p,
+    e.rot,
+    e.z,
+    e.size,
+    e.group != null ? groupOf(e.group).col : 0,
+    e.sys ? sysOf(e.sys).col : 0,
+    e.blk || 0,
+    e.kind === 'panel' ? S.x.panel : 0,
+    NV.on && (DEVK[e.kind] || {}).box ? documentState.docVer : 0,
+    (DEVK[e.kind] || {}).k3 ? DEVK[e.kind].k3(e) : 0
+  ],
+  /** A junction box also depends on the cables that end in it. */
+  k3tail: e => (e.kind === 'jbox' || e.kind === 'jboxc' ? jbSig(jbOfDev(e)) : ''),
+  build3: e => buildDev3(e),
+  group: e => (DEVK[e.kind] || {}).n || 'Устройство',
+  name: e => (DEVK[e.kind] || {}).n || 'Устройство',
+  panel: e => devPanel(e),
+  panelAfter: e => devPanelAfter(e),
+  dialogPanel: e => devDialogPanel(e),
+  fields: e => devFields(e),
+  /** The ventilation tab for a terminal, the electrical one for the rest. */
+  mepTab: e => ((DEVK[e.kind] || {}).f === 'vterm' ? 'vt' : 'el'),
+  /** The form of the kind (DEVK[kind].bind). */
+  bind: (el, e, changed) => {
+    if (DEVK[e.kind] && DEVK[e.kind].bind) DEVK[e.kind].bind(el, e, changed);
+  },
+  onSet: (e, p, v) => {
+    if (p.startsWith('blk.')) onBlockFieldSet(e, p, v);
+    if (DEVK[e.kind] && DEVK[e.kind].onSet) DEVK[e.kind].onSet(e, p, v);
+  },
+  accessPoints: e => [{ p: e.p, z: e.z || 0 }],
+  needsAccess: e => {
+    if (DEVK[e.kind] && DEVK[e.kind].access) return DEVK[e.kind].access(e);
+    if (e.kind === 'jboxc')
+      return 'Распаячная коробка над потолком должна оставаться доступной (ПУЭ 2.1.23) — люк в потолке под коробкой';
+    if (e.kind === 'jbox') {
+      const w = e.host != null ? byId(e.host) : null;
+      if ((w && w.type === 'wall' && isKnauf(w)) || (e.z || 0) >= S.ceil - 60)
+        return 'Распаячная коробка должна оставаться доступной (ПУЭ 2.1.23) — люк или съёмная крышка';
+    }
+    return null;
+  },
+  /** Rows of the block of mechanisms (the rest of a device goes into the tables of the specification by its kind). */
+  spec: (e, put) => {
+    if (e.blk) blkSpec(e, put);
+  },
+  ifc: e => {
+    if (isLight(e)) return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
+    if (isSwitch(e)) return ['IFCSWITCHINGDEVICE', 'SWITCH', null];
+    return ['IFCOUTLET', /tv|lan|data|rj|тв|интернет/i.test(e.kind || '') ? 'DATAOUTLET' : 'POWEROUTLET', null];
+  }
+};
 
 // ===== mep/electrical/device-series.js =====
 /**
@@ -137778,6 +137780,114 @@ function buildLoads(out) {
     out.set(e.w.id, Math.max(out.get(e.w.id) || 0, P));
   }
 }
+
+// ===== mep/electrical/wire-xt.js =====
+/**
+ * mep/electrical/wire-xt.js
+ *
+ * XT.wire — the element type «wire» (a cable route between devices, the panel and the light fittings) in the registry
+ * of element types: plan primitives, picking distance (along the real route in the network view), snap points, grips,
+ * mapping, plan drawing, 3D (cache key with the hops over other cables, and the model), the network view, project
+ * browser group, the properties panel with its button rows, the «re-route» button and simple fields. The bodies are
+ * the existing functions (routing.js, cable-hops.js, view2d/render.js, view3d/build.js, ui/properties.js).
+ * The cable rows of the specification are still collected per level in docs/spec.js (they share the table with the devices).
+ * Entity: { type:'wire', pts, z, from, to, group, cable, method, sw, manual, rt, … } — see wiring.js.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+XT.wire = {
+  net: e => (/UTP|RG/.test(e.cable) ? 'low' : 'el'),
+  prims: e => {
+    const r = [];
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
+    return r;
+  },
+  /** In the network view the distance to the real route (behind the ceiling, in the screed); otherwise null — to the plan line. */
+  dist: (e, p) => {
+    if (NV.on && S.elec.eng !== false && e.id != null) {
+      try {
+        const R = wireRoute(e);
+        if (R.pts3.length > 1) {
+          let m = Infinity;
+          for (let i = 1; i < R.pts3.length; i++) {
+            const a = R.pts3[i - 1],
+              b = R.pts3[i];
+            m = Math.min(m, dist(segPt(P(a[0], a[1]), P(b[0], b[1]), p), p));
+          }
+          return Math.max(0, m - R.gof / 2);
+        }
+      } catch (err) {}
+    }
+    return null;
+  },
+  keys: e => {
+    const r = [];
+    e.pts.forEach(p => r.push({ p, k: 'end' }));
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ p: mid(e.pts[i], e.pts[i + 1]), k: 'mid' });
+    return r;
+  },
+  sample: e => e.pts,
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  draw: (e, color, o) => drawWire(e, color, o),
+  k3own: true,
+  k3: e => {
+    const zs = [e.from, e.to].map(id => {
+      const d = id != null ? byId(id) : null;
+      return d ? d.z : null;
+    });
+    return [
+      e.type,
+      e.pts,
+      e.z,
+      e.d,
+      e.w,
+      e.hh,
+      e.shape,
+      e.ins,
+      e.flex || 0,
+      e.tap || 0,
+      e.mat || 0,
+      [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable],
+      e.group != null ? groupOf(e.group).col : 0,
+      e.sys ? sysOf(e.sys).col : 0,
+      zs
+    ];
+  },
+  /** The hops over other cables and the junction boxes on the route. */
+  k3tail: e => wireHopsKey(e) + jbWireKey(e),
+  build3: e => buildWire3(e),
+  group: e => `Трасса гр.${e.group} · ${e.cable}`,
+  panel: e => wirePanel(e),
+  panelAfter: () => wirePanelAfter(),
+  fields: () => wireFields(),
+  /** The «re-route» button: drops the fixed route. */
+  bind: (el, e, changed) => {
+    const b = el.querySelector('#bReroute');
+    if (b)
+      b.onclick = () => {
+        pushUndo();
+        delete e.rt;
+        changed();
+        log('Трасса пересчитана');
+      };
+  }
+};
 
 // ===== mep/hvac/duct-fittings.js =====
 /**
