@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.63';
+const APP_VER = '59.64';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -23611,6 +23611,19 @@ function initCatalog() {
  * docs/spec.js
  *
  * Specification (bill of quantities) of the whole project, across levels; the Specification tab.
+ *
+ * The module is a framework: it assembles, sorts, totals and prints; the tables are contributed by the blocks with
+ * specSection(id, { order, title, collect(ctx), priced, sort }). A section is one of
+ *  • a table: `collect(ctx)` returns the rows, `title` is the heading, `order` the position (base tables 10–99, the priced
+ *    tables 10000 and up come last);
+ *  • a filler: `collect(ctx)` puts rows through ctx.put(title, key, {name, u}, row => …) and returns nothing; `title` (optional)
+ *    fixes the position of that table among the filled ones, `order` is the order in which the fillers run;
+ *  • a position only: `title` + `order` without `collect` — the rows come from XT[type].spec(e, put) of the element types.
+ * Tables that are filled through put() and have no position come after the positioned ones, in the order of their first row.
+ * Run order: the sections with order < 100 (the base tables), then XT[type].spec of the elements, then the rest by order.
+ * ctx: ents (visible elements), put(sectionOrBucket, key, init, f), bucket(), rows(bucket), q2(v), memo(key, fn).
+ * A row {name, u, q, ids, base?, A?}: ids are the elements to select on the plan; base: true joins the row to the base table of
+ * the same title (a slab — «Конструкции», a duct — «Вентиляция»); A adds the area to the name.
  */
 
 
@@ -23622,403 +23635,82 @@ function initCatalog() {
 
 
 
+/** Order from which the rows put by the element types (XT[type].spec) are collected. */
+const XT_ORDER = 100;
+/** Position of a filled table whose title no section has fixed. */
+const FREE_ORDER = 5000;
+const SECTIONS = [];
 
+/**
+ * Registers a section of the specification (see the header). The same id replaces the earlier section.
+ * @param {string} id
+ * @param {{order:number, title?:string, collect?:(ctx:object)=>(object[]|void), priced?:boolean, sort?:(a:object,b:object)=>number}} o
+ */
+function specSection(id, o) {
+  const i = SECTIONS.findIndex(s => s.id === id);
+  if (i >= 0) SECTIONS.splice(i, 1);
+  SECTIONS.push({ id, ...o });
+  SECTIONS.sort((a, b) => a.order - b.order);
+}
 
+const q2 = v => Math.round(v * 100) / 100;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* specification */
-function renderSpecLevel() {
-  const T = [];
-  const q2 = v => Math.round(v * 100) / 100;
-  const bucket = () => new Map();
+/**
+ * Runs the sections over the visible elements and assembles the tables:
+ * { T: base tables [title, rows] with the base rows joined in and the filled tables after them, xs: the filled tables as they were put,
+ * priced: [{s, rows}] }. onlyFilled skips the sections that return their rows (the base and the priced tables).
+ */
+function gather(onlyFilled) {
+  const filled = new Map(); // title -> rows put by the sections and by the element types
   const put = (m, k, init, f) => {
+    if (typeof m === 'string') {
+      if (!filled.has(m)) filled.set(m, new Map());
+      m = filled.get(m);
+    }
     if (!m.has(k)) m.set(k, { ...init, q: 0, ids: [] });
     const r = m.get(k);
     f(r);
     return r;
   };
-  const dkit = bucket(),
-    wkit = bucket(),
-    walls = bucket(),
-    fins = bucket(),
-    opens = bucket(),
-    kn = bucket(),
-    mas = bucket(),
-    devs = bucket(),
-    cables = bucket(),
-    boxes = bucket(),
-    insts = bucket();
-  for (const e of S.ents) {
-    if (!visible(e)) continue;
-    if (e.type === 'wall') {
-      const ty = typeOf(e),
-        ct = computeType(ty),
-        L = arcOf(e) ? arcOf(e).L : dist(e.a, e.b),
-        ops = hosted(e.id);
-      const opA = ops.reduce((a, o) => a + opArea(o) * (Math.max(0, Math.min(o.h, e.h - (o.sill || 0))) / o.h), 0);
-      const A = Math.max(0, (L * e.h) / 1e6 - opA);
-      // rounded outer corners: GKL segment strips + putty (framed) / sawn corner + mortar + mesh (solid walls)
-      if (e.rnd) {
-        const kn = isKnauf(e);
-        const J = joinsAll().get(e.id);
-        let fin = 0;
-        for (const l of ct.layers) {
-          if (l.cls !== 'plas') break;
-          fin += l.th;
-        }
-        const G = kn ? gklWall(e) : null;
-        const nL = G ? Math.max(...G.sides.map(sd => sd.layers.length), 1) : 1;
-        const q = cornerFinishQty(e, J, kn, fin, nL);
-        const row = (k, name, u, v, dec = 1) =>
-          v > 0 &&
-          put(walls, k, { name, u }, r => {
-            r.q = Math.round((r.q + v) * 10 ** dec) / 10 ** dec;
-            r.ids.push(e.id);
-          });
-        row('wrS', 'Радиусные углы: полосы ГКЛ 12,5 (сегменты 50–150 мм на радиус), площадь', 'м²', q.stripA, 2);
-        row('wrSn', 'Радиусные углы: полосы ГКЛ, количество', 'шт', q.strips, 0);
-        row('wrP', 'Радиусные углы: шпаклёвка гипсовая (выравнивание полос в радиус, затирка)', 'кг', q.putty, 1);
-        row('wrT', 'Радиусные углы: лента серпянка на стыки полос', 'м', q.tape, 1);
-        row('wrC', 'Радиусные углы: спил и стёсывание угла кладки (работы)', 'м', q.cuts, 1);
-        row('wrM', 'Радиусные углы: раствор / клей для скругления спиленного угла', 'м³', q.mortar, 3);
-        row('wrN', 'Радиусные углы: сетка штукатурная (стеклосетка) по радиусу', 'м²', q.mesh, 2);
-      }
-      put(walls, ty ? ty.id : '?', { name: ty ? ty.name : 'Стена', u: 'м²' }, r => {
-        r.q += A;
-        r.L = (r.L || 0) + L / 1000;
-        r.ids.push(e.id);
-      });
-      for (const [side, f] of [
-        ['А', e.fa],
-        ['Б', e.fb]
-      ]) {
-        if (!f || f.k === 'none' || (side === 'Б' && ct.info.lin)) continue;
-        put(
-          fins,
-          f.k + '|' + (f.ral || f.col),
-          {
-            name: FIN[f.k] + ' · ' + (f.ral ? f.ral + ' ' + ((RAL.find(r => r[0] === f.ral) || [])[1] || '') : f.col),
-            u: 'м²'
-          },
-          r => {
-            r.q += Math.max(0, A - zonesArea(e, side === 'А' ? 1 : -1) - sideObstArea(e, side === 'А' ? 1 : -1));
-            r.ids.push(e.id);
-          }
-        );
-      }
-      zonesSpec(e, put, fins);
-      if (ty && ty.kind === 'custom') customSpec(e, ty, ct, A, put, kn, mas);
-      else if (ty && ty.kind === 'knauf') {
-        const sd = KN[ty.sys],
-          c = ct.info.cons,
-          pr = ct.info.prof;
-        const sides = sd.kind === 'part' ? ['sa', 'sb'] : ['sa'];
-        for (const sd_ of sides) {
-          const per = c ? c.sheet / (sd.kind === 'part' ? 2 : 1) : 1.0;
-          put(kn, 's' + ty[sd_], { name: `КНАУФ-лист ${SHEETS[ty[sd_]].n}, 12,5 мм`, u: 'м²' }, r => {
-            r.q += A * per;
-            r.ids.push(e.id);
-          });
-        }
-        if (c) {
-          put(kn, 'pn' + pr, { name: `Профиль ПН ${pr}/40`, u: 'м' }, r => (r.q += c.pn * A));
-          put(kn, 'ps' + pr, { name: `Профиль ПС ${pr}/50`, u: 'м' }, r => (r.q += c.ps * A));
-          for (const [k, n, u] of [
-            ['tn25', 'Шуруп TN 25', 'шт'],
-            ['tn35', 'Шуруп TN 35', 'шт'],
-            ['tn55', 'Шуруп TN 55', 'шт'],
-            ['dowel', 'Дюбель-гвоздь', 'шт'],
-            ['seal', 'Лента уплотнительная', 'м'],
-            ['arm', 'Лента армирующая', 'м'],
-            ['fug', 'Шпаклёвка для стыков', 'кг']
-          ])
-            if (c[k]) put(kn, k, { name: n, u }, r => (r.q += c[k] * A));
-          put(kn, 'prim', { name: 'Грунтовка Тифенгрунд', u: 'л' }, r => (r.q += 0.2 * A));
-        } else if (ty.sys === 'С623')
-          put(kn, 'pp', { name: 'Профиль ПП 60/27 (ориентир. 2 м/м²)', u: 'м' }, r => (r.q += 2 * A));
-        if (ty.ins) put(kn, 'wool', { name: 'Минеральная вата', u: 'м²' }, r => (r.q += (sd.fr === 2 ? 2 : 1) * A));
-      } else
-        for (const l of ct.layers) {
-          const md = MATS[l.m];
-          if (!md || md.cls === 'air') continue;
-          if (md.cls === 'plas') put(mas, l.m + l.th, { name: `${l.m}, ${fmt(l.th)} мм`, u: 'м²' }, r => (r.q += A));
-          else put(mas, l.m, { name: l.m, u: 'м³' }, r => (r.q += (A * l.th) / 1000));
-        }
-    } else if (e.type === 'door') {
-      const M = doorModel(e);
-      if (!M) continue;
-      const c = M.c;
-      const lsz = leafSize(e);
-      const id = e.id;
-      const per = (2 * M.H + M.W) / 1000;
-      put(
-        opens,
-        'd' + c.mode + c.leaf.count + Math.round(lsz.w) + 'x' + Math.round(lsz.h),
-        {
-          name: `Дверь ${c.mode === 'hidden' ? 'скрытая' : c.mode === 'entry' ? 'входная металлическая' : 'распашная'}, полотно ${fmt(lsz.w)}×${fmt(lsz.h)}${c.leaf.count === 2 ? ', 2 створки' : ''}`,
-          u: 'шт'
-        },
-        r => {
-          r.q++;
-          r.ids.push(id);
-        }
-      );
-      put(
-        dkit,
-        'leaf' + c.leaf.glass + c.leaf.th + (c.leaf.paint ? 'p' : c.leaf.color),
-        {
-          name: `Полотно ${GLASS_T[c.leaf.glass].toLowerCase()}, ${c.leaf.th} мм, ${c.leaf.paint ? 'под покраску' : (DCOL.find(x => x[0] === c.leaf.color) || [0, 'свой цвет'])[1]}`,
-          u: 'шт'
-        },
-        r => {
-          r.q += M.leaves.length;
-          r.ids.push(id);
-        }
-      );
-      put(dkit, 'fr' + c.frame.prof, { name: `Коробка: ${M.fr.name}`, u: 'м' }, r => {
-        r.q += per;
-        r.ids.push(id);
-      });
-      if (M.ext)
-        put(
-          dkit,
-          'ex' + c.ext.prof + Math.round(M.ext.width),
-          { name: `Добор: ${M.ext.prof.name}, ширина ${fmt(M.ext.width)} мм`, u: 'м' },
-          r => {
-            r.q += per;
-            r.ids.push(id);
-          }
-        );
-      const cs = (c.casing.a ? 1 : 0) + (c.casing.b ? 1 : 0);
-      if (cs) {
-        const cp = getProf(c.casing.prof, 'casing');
-        const cw = Math.max(...cp.pts.map(p => p[0])) - Math.min(...cp.pts.map(p => p[0]));
-        put(dkit, 'cs' + c.casing.prof, { name: `Наличник: ${cp.name}`, u: 'м' }, r => {
-          r.q += (cs * (2 * (M.H + cw) + M.W + 2 * cw)) / 1000;
-          r.ids.push(id);
-        });
-      }
-      put(dkit, 'h' + c.hinges.type, { name: `Петли: ${HINGE_T[c.hinges.type].toLowerCase()}`, u: 'шт' }, r => {
-        r.q += c.hinges.count * M.leaves.length;
-        r.ids.push(id);
-      });
-      if (c.handle.type !== 'none')
-        put(
-          dkit,
-          'hd' + c.handle.type + (c.handle.series || 'round'),
-          {
-            name: `Ручка ${HANDLE_T[c.handle.type].toLowerCase()}${c.handle.type !== 'flush' ? ', серия «' + (HANDLE_SER[c.handle.series || 'round'] || '') + '»' : ''} (комплект)`,
-            u: 'шт'
-          },
-          r => {
-            r.q++;
-            r.ids.push(id);
-          }
-        );
-      if (c.lock.type !== 'none')
-        put(dkit, 'lk' + c.lock.type, { name: LOCK_T[c.lock.type], u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(id);
-        });
-      if (c.closer && c.closer.type !== 'none')
-        put(dkit, 'cl' + c.closer.type, { name: CLOSER_T[c.closer.type], u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(id);
-        });
-      if (c.stop.type !== 'none')
-        put(dkit, 'st' + c.stop.type, { name: `Стопор ${STOP_T[c.stop.type].toLowerCase()}`, u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(id);
-        });
-      const thr = (c.thr && c.thr.type) || 'none';
-      if (thr === 'drop')
-        for (const l of M.leaves)
-          put(
-            dkit,
-            'thd' + Math.round(l.w - 20),
-            { name: `Порог автоматический выпадающий ${Math.round(l.w - 20)} мм`, u: 'шт' },
-            r => {
-              r.q++;
-              r.ids.push(id);
-            }
-          );
-      if (thr === 'profile')
-        put(dkit, 'thp' + Math.round(M.W), { name: `Порог-профиль алюминиевый ${Math.round(M.W)} мм`, u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(id);
-        });
-      const sl = sealCalc(e, M);
-      if (sl.len)
-        put(dkit, 'seal' + sl.type, { name: `Уплотнитель: ${SEAL_T[sl.type].toLowerCase()} (+5 %)`, u: 'м' }, r => {
-          r.q = Math.round((r.q + sl.len * 1.05) * 10) / 10;
-          r.ids.push(id);
-        });
-    } else if (e.type === 'window') {
-      if (e.cfg && e.cfg.kind === 'alu') {
-        aluSpec(e, put, opens, wkit);
-        continue;
-      }
-      const M = winModel(e);
-      if (!M) continue;
-      const c = M.c,
-        id = e.id;
-      if (M.door) {
-        const F = M.door,
-          D = c.door;
-        put(
-          opens,
-          'bd' + c.sys + c.glass + Math.round(F.fx1 - F.fx0) + 'x' + Math.round(F.fz1 - F.fz0) + D.t + D.panel,
-          {
-            name: `Балконная дверь ${M.sy.n} ${fmt(F.fx1 - F.fx0)}×${fmt(F.fz1 - F.fz0)}, ${c.glass}, ${SASH_T[D.t === 'turn' ? 'turn' : 'tt'].toLowerCase()}${D.panel === 'half' ? ', нижняя сэндвич-панель' : ''} (в составе балконного блока)`,
-            u: 'шт'
-          },
-          r => {
-            r.q++;
-            r.ids.push(id);
-          }
-        );
-        for (const [k, n, q, u] of [
-          ['bdh', 'Фурнитура балконной двери: петли дверные усиленные, ножницы, запоры (комплект)', 1, 'шт'],
-          ['bdr', 'Ручка балконной двери двусторонняя (нажимная внутри + ракушка снаружи)', 1, 'шт'],
-          ['bdl', 'Балконная защёлка (фиксатор закрытого положения)', D.latch ? 1 : 0, 'шт'],
-          ['bdt', 'Порог балконной двери алюминиевый, низкий', (F.fx1 - F.fx0) / 1000, 'м'],
-          ['bdc', 'Соединительный профиль окно — дверь (с уплотнением)', (M.z1 - M.z0) / 1000, 'м'],
-          ['bdn', 'Москитная сетка дверная на петлях', D.net ? 1 : 0, 'шт']
-        ])
-          if (q)
-            put(wkit, k, { name: n, u }, r => {
-              r.q = Math.round((r.q + q) * 100) / 100;
-              r.ids.push(id);
-            });
-      }
-      const opn = c.cols.filter(k => k.t !== 'fixed').length;
-      put(
-        opens,
-        'w' + c.sys + c.glass + e.w + 'x' + e.h + JSON.stringify(c.cols.map(k => k.t)),
-        {
-          name: `${M.door ? 'Оконная часть балконного блока' : 'Окно'} ${M.sy.n} ${fmt(M.x1 - M.x0)}×${fmt(M.z1 - M.z0)}, ${c.glass}, ${c.cols.map(k => SASH_T[k.t].toLowerCase()).join(' + ')}${c.transom ? ' + фрамуга' : ''}`,
-          u: 'шт'
-        },
-        r => {
-          r.q++;
-          r.ids.push(id);
-        }
-      );
-      if (c.sill.on)
-        put(
-          wkit,
-          's' + c.sill.mat + Math.round(c.sill.over - M.dIn),
-          { name: `Подоконник ${SILL_M[c.sill.mat][0].toLowerCase()}, глубина ${fmt(c.sill.over - M.dIn)} мм`, u: 'м' },
-          r => {
-            r.q += (M.door ? M.wx1 - M.wx0 + c.sill.side : e.w + 2 * c.sill.side) / 1000;
-            r.ids.push(id);
-          }
-        );
-      if (c.drip.on)
-        put(
-          wkit,
-          'd' + Math.round(-M.dOut + c.drip.over),
-          { name: `Отлив, ширина ${fmt(M.dOut + M.T + c.drip.over)} мм`, u: 'м' },
-          r => {
-            r.q += ((M.door ? M.wx1 - M.wx0 : e.w) + 40) / 1000;
-            r.ids.push(id);
-          }
-        );
-      const nets = c.cols.filter(k => k.t !== 'fixed' && k.net).length;
-      if (nets)
-        put(wkit, 'net', { name: 'Москитная сетка', u: 'шт' }, r => {
-          r.q += nets;
-          r.ids.push(id);
-        });
-      if (c.slopes !== 'none')
-        put(wkit, 'sl' + c.slopes, { name: `Откосы: ${SLOPE_T[c.slopes].toLowerCase()}`, u: 'м²' }, r => {
-          r.q += ((2 * e.h + e.w) * -M.dIn) / 1e6;
-          r.ids.push(id);
-        });
-      if (opn)
-        put(wkit, 'hw', { name: 'Комплект фурнитуры на створку (петли, запоры, ручка)', u: 'шт' }, r => {
-          r.q += opn;
-          r.ids.push(id);
-        });
-    } else if (e.type === 'dev') {
-      const d = DEVK[e.kind];
-      if (!d || e.blk) continue;
-      const nm =
-        d.f === 'vterm'
-          ? `${d.n} ${e.size ? (sizeWH(e.size).round ? 'Ø' + e.size : e.size.replace('x', '×')) : ''} · ${e.sys}`
-          : d.specName
-            ? d.specName(e)
-            : d.n;
-      put(devs, (d.f === 'vterm' ? 'v' : 'e') + nm, { name: nm, u: 'шт', vt: d.f === 'vterm' }, r => {
-        r.q++;
-        r.ids.push(e.id);
-      });
-      if (d.spec) d.spec(e, (k, init, f) => put(boxes, 'x' + k, init, f));
-      if (d.box)
-        put(boxes, 'b', { name: 'Подрозетник Ø68', u: 'шт' }, r => {
-          r.q += d.box;
-          r.ids.push(e.id);
-        });
-    } else if (e.type === 'wire')
-      put(cables, e.cable, { name: e.cable, u: 'м' }, r => {
-        r.q += wireLen(e).total / 1000;
-        r.ids.push(e.id);
-      });
-    else if (e.type === 'inst') {
-      const a = ASSETS.get(e.asset);
-      if (!a) continue;
-      const pr = { ...(a.props || {}), ...(e.props || {}) };
-      const nm = a.ifc ? a.ifc.type || a.ifc.cls : e.name || a.name;
-      const price = priceOf({ props: pr });
-      put(
-        insts,
-        e.layer + '|' + (a.ifc ? nm : a.id + '|' + (e.name || '') + '|' + price),
-        { name: nm, u: 'шт', art: pr['Артикул'] || '', price, cat: e.layer },
-        r => {
-          r.q++;
-          r.ids.push(e.id);
-        }
-      );
+  const memo = new Map();
+  const ctx = {
+    ents: S.ents.filter(e => visible(e)),
+    put,
+    bucket: () => new Map(),
+    rows: m => [...m.values()],
+    q2,
+    memo: (k, fn) => {
+      if (!memo.has(k)) memo.set(k, fn());
+      return memo.get(k);
     }
+  };
+  const tables = [],
+    pricedTables = [],
+    pos = new Map();
+  const xtPass = () => {
+    for (const e of ctx.ents) {
+      const X = XT[e.type];
+      if (X && X.spec) X.spec(e, put);
+    }
+  };
+  let xtDone = false;
+  for (const s of SECTIONS) {
+    if (onlyFilled && (s.order < XT_ORDER || s.priced)) continue;
+    if (!xtDone && s.order >= XT_ORDER) {
+      xtPass();
+      xtDone = true;
+    }
+    const res = s.collect && s.collect(ctx);
+    if (Array.isArray(res)) (s.priced ? pricedTables : tables).push({ s, rows: s.sort ? res.sort(s.sort) : res });
+    else if (s.title) pos.set(s.title, s.order);
   }
-  const rows = m => [...m.values()];
-  T.push(['Конструкции', [...rows(walls).map(r => ({ ...r, name: `${r.name} · ${q2(r.L)} м` })), ...rows(opens)]]);
-  T.push(['Комплектация дверей', rows(dkit)]);
-  T.push(['Комплектация окон', rows(wkit)]);
-  T.push(['Отделка стен', rows(fins)]);
-  T.push(['Материалы Кнауф (по расходу на 1 м² из техлиста С11)', rows(kn)]);
-  T.push(['Кладка, бетон, штукатурка', rows(mas)]);
-  T.push([
-    'Электрика',
-    [...rows(devs).filter(r => !r.vt), ...rows(boxes), ...rows(cables).map(r => ({ ...r, name: `Кабель ${r.name}` }))]
-  ]);
-  T.push([
-    'Вентиляция',
-    [...hvacQty().map(r => ({ name: r.name, u: r.u, q: r.q, ids: r.ids })), ...rows(devs).filter(r => r.vt)]
-  ]);
+  if (!xtDone) xtPass();
+  const T = tables.map(t => [t.s.title, t.rows]);
+  const at = t => (pos.has(t) ? pos.get(t) : FREE_ORDER);
   // rows of the types that belong to the tables above (a slab — «Конструкции», a duct — «Вентиляция») carry base: true:
   // they join those tables (ducts with the surface area in the name, before the fittings); the rest are separate tables
-  for (const [t, r] of xSpec()) {
+  const xs = [...filled.entries()].map(([t, m]) => [t, [...m.values()]]).sort((a, b) => at(a[0]) - at(b[0]));
+  for (const [t, r] of xs) {
     const own = T.find(x => x[0] === t),
       base = r.filter(x => x.base),
       rest = r.filter(x => !x.base);
@@ -24031,126 +23723,31 @@ function renderSpecLevel() {
     }
     if (rest.length) T.push([t, rest]);
   }
-  let total = 0;
-  const catRows = rows(insts).sort((a, b) => a.cat.localeCompare(b.cat));
-  catRows.forEach(r => {
-    if (r.price != null) total += r.price * r.q;
-  });
-  const tbl = (title, rs, priced) =>
-    rs.length
+  return { T, xs, priced: pricedTables };
+}
+
+/** The tables filled through put() (rows of the element types, panel, collector, colours …): [title, rows], in the display order. */
+function xSpec() {
+  return gather(true).xs;
+}
+
+/* specification */
+function renderSpecLevel() {
+  const { T, priced: pricedTables } = gather(false);
+  const tbl = (title, rs, priced) => {
+    let total = 0;
+    if (priced)
+      rs.forEach(r => {
+        if (r.price != null) total += r.price * r.q;
+      });
+    return rs.length
       ? `<h3>${esc(title)}</h3><div class="tblwrap"><table class="sp"><thead><tr><th>Наименование</th>${priced ? '<th>Артикул</th>' : ''}<th style="text-align:right">Кол-во</th><th>Ед.</th>${priced ? '<th style="text-align:right">Цена</th><th style="text-align:right">Сумма</th>' : ''}</tr></thead><tbody>${rs.map(r => `<tr data-ids="${(r.ids || []).join(',')}"><td>${esc(r.name)}</td>${priced ? `<td data-l="Артикул">${esc(r.art)}</td>` : ''}<td class="n">${['шт', 'уп', 'л', 'компл'].includes(r.u) ? Math.round(r.q) : q2(r.q).toFixed(2)}</td><td>${r.u}</td>${priced ? `<td class="n" data-l="Цена">${r.price != null ? fmtMoney(r.price) : '—'}</td><td class="n" data-l="Сумма">${r.price != null ? fmtMoney(r.price * r.q) : '—'}</td>` : ''}</tr>`).join('')}${priced ? `<tr class="tot"><td colspan="5">Итого по позициям с ценой</td><td class="n">${fmtMoney(total)}</td></tr>` : ''}</tbody></table></div>`
       : '';
+  };
   $('#spec').innerHTML =
     `<h2>Спецификация проекта</h2><p class="sub">Собирается из модели автоматически. Площади стен — за вычетом проёмов; материалы Кнауф — по нормам расхода на 1 м²; кабель — с опусками к устройствам и запасом на подключение; воздуховоды — с опусками к решёткам. Щелчок по строке выделяет элементы на плане.</p>` +
       T.map(([t, r]) => tbl(t, r, false)).join('') +
-      tbl('Мебель и оборудование из каталога', catRows, true) || '<p>В проекте пока нет элементов.</p>';
-}
-/* ---------- specification additions ---------- */
-function xSpec() {
-  const sec = new Map();
-  const put = (s, k, init, f) => {
-    if (!sec.has(s)) sec.set(s, new Map());
-    const m = sec.get(s);
-    if (!m.has(k)) m.set(k, { ...init, q: 0, ids: [] });
-    f(m.get(k));
-  };
-  for (const e of S.ents) {
-    if (!visible(e)) continue;
-    const X = XT[e.type];
-    if (X && X.spec) X.spec(e, put);
-  }
-  wireJointsSpec(put);
-  psuSpec(put);
-  try {
-    elecEngSpec(put);
-  } catch (err) {
-    console.error(err);
-  }
-  if (S.x.panel.mods.length && S.ents.some(e => e.type === 'dev')) {
-    const S_ = 'Щит (по составу из вкладки «Щит»)';
-    const sz = panelSize();
-    put(S_, 'box', { name: `Корпус щита на ${sz.box} модулей`, u: 'шт' }, r => {
-      r.q = 1;
-    });
-    for (const m of S.x.panel.mods)
-      put(S_, m.k + m.r, { name: `${(MODL[m.k] || {}).n} ${m.r || ''}`.trim(), u: 'шт' }, r => r.q++);
-    put(S_, 'bus', { name: 'Шины N и PE, гребёнка (комплект)', u: 'шт' }, r => {
-      r.q = 1;
-    });
-  }
-  // the simple collector — only when no manifold unit is modelled (that one has its own specification)
-  if (S.ents.some(e => e.type === 'fix') && !mfNodes().length) {
-    const C_ = S.x.coll;
-    if (C_.auto) buildColl();
-    const it = collItems();
-    if (it.length) {
-      for (const [n, q] of it) put('Коллектор водоснабжения', 'c' + n, { name: n, u: 'шт' }, r => (r.q += q));
-    }
-  }
-  const order = [
-    'Электрика: соединения и перемычки',
-    'Несущие конструкции',
-    'Потолки',
-    'Переходные элементы',
-    'ГКЛ: раскрой и каркас (шт)',
-    'Усиления',
-    'Входные двери',
-    'Электроустановочные изделия (модульно)',
-    'Щит (по составу из вкладки «Щит»)',
-    'Водоснабжение',
-    'Канализация',
-    'Отопление',
-    'Коллектор водоснабжения',
-    'Сантехника'
-  ];
-  // colours of the elements: RAL Classic and NCS for paint colours, the name for metals
-  const DRAFT = new Set([
-    'line',
-    'pline',
-    'arc',
-    'circle',
-    'text',
-    'mtext',
-    'dim',
-    'leader',
-    'hatch',
-    'tag',
-    'note',
-    'img',
-    'rev',
-    'sec',
-    'cam'
-  ]);
-  const used = palUsed(
-    S.ents.filter(e => visible(e) && !DRAFT.has(e.type) && !/^(Размеры|Текст|Аннотации)$/.test(e.layer || ''))
-  );
-  const SC = 'Цвета и покрытия (RAL Classic / NCS)';
-  // colours from the palette — by their code; the others are gathered under the nearest RAL
-  const grp = new Map();
-  for (const [hex, set] of used) {
-    const I = palInfo(hex),
-      k = I.kind === 'metal' ? 'm' + I.key : (I.exact ? 'r' : 'a') + I.ral;
-    if (!grp.has(k)) grp.set(k, { I, hexes: [], ents: new Set() });
-    const G = grp.get(k);
-    G.hexes.push(hex);
-    for (const e of set) G.ents.add(e);
-  }
-  for (const [k, G] of [...grp.entries()].sort(
-    (a, b) => a[0].slice(1).localeCompare(b[0].slice(1)) || a[0].localeCompare(b[0])
-  )) {
-    const where = [...new Set([...G.ents].map(e => e.layer || '—'))].join(', ');
-    const name =
-      G.I.kind === 'metal'
-        ? 'Металл: ' + G.I.name
-        : palLabel(G.hexes[0]) + (G.I.exact ? '' : ' — цвет не из палитры, указан ближайший');
-    put(SC, 'col' + k, { name: name + ' — ' + where, u: 'шт' }, r => {
-      r.q += G.ents.size;
-      for (const e of G.ents) r.ids.push(e.id);
-    });
-  }
-  return [...sec.entries()]
-    .sort((a, b) => ((order.indexOf(a[0]) + 99) % 99) - ((order.indexOf(b[0]) + 99) % 99))
-    .map(([t, m]) => [t, [...m.values()]]);
+      pricedTables.map(t => tbl(t.s.title, t.rows, true)).join('') || '<p>В проекте пока нет элементов.</p>';
 }
 
 /** Specification tab: all levels of the project. */
@@ -24168,67 +23765,6 @@ function initSpec() {
     setView('plan');
     log('Элементы строки выделены на плане');
   });
-}
-
-/**
- * Materials of a custom wall type per its area A (m²): boards (+5 %), screws by layer (outer 29 / inner 13 per m²),
- * frame studs and tracks by step, brackets of furring frames, insulation, sealing tape, dowels; masonry by volume,
- * plaster / glue by area.
- */
-function customSpec(e, ty, ct, A, put, kn, mas) {
-  const L = ct.layers;
-  const row = (grp, k, name, u, v, dec = 2) =>
-    v > 0 &&
-    put(grp, k, { name, u }, r => {
-      r.q = Math.round((r.q + v) * 10 ** dec) / 10 ** dec;
-      r.ids.push(e.id);
-    });
-  // boards: runs of boards next to a frame; the outermost board of a run gets 29 screws/m², the inner ones 13;
-  // screw length = boards from this one to the frame + 10 mm
-  L.forEach((l, i) => {
-    if (l.cls !== 'gkl') return;
-    row(kn, 'cb' + l.sheet, `${l.m} (+5 %)`, 'м²', A * 1.05);
-    let a = i,
-      b = i;
-    while (a > 0 && L[a - 1].cls === 'gkl') a--;
-    while (b < L.length - 1 && L[b + 1].cls === 'gkl') b++;
-    const frameRight = b < L.length - 1 && L[b + 1].frame,
-      frameLeft = a > 0 && L[a - 1].frame;
-    if (!frameRight && !frameLeft) return; // glued / screwed to the base: no frame screws
-    const toFrame = frameRight ? L.slice(i, b + 1) : L.slice(a, i + 1);
-    const outer = frameRight ? i === a : i === b;
-    const tot = toFrame.reduce((s_, x) => s_ + x.th, 0) + 10;
-    const len = tot <= 25 ? 25 : tot <= 35 ? 35 : tot <= 45 ? 45 : 55;
-    row(kn, 'csc' + len, `Шуруп TN ${len} (саморез по металлу / дереву)`, 'шт', A * (outer ? 29 : 13), 0);
-  });
-  for (const l of L) {
-    if (l.frame) {
-      const p = l.prof,
-        stud = l.step || 600;
-      row(kn, 'cfs' + p.n, `${p.n.split(' + ')[0]} — стойки (шаг ${stud})`, 'м', (A * 1000) / stud);
-      row(kn, 'cft' + p.track, `${p.track} — направляющие / обвязка`, 'м', A * 0.7);
-      if (l.brk && l.brk !== 'none') {
-        const K = BRK[l.brk],
-          n = (A * 1e6) / (stud * l.bn * l.bz);
-        row(kn, 'cfb' + l.brk, K.n, 'шт', n, 0);
-        row(kn, 'cfba', 'Анкер-клин / дюбель 6×40 для кронштейнов', 'шт', n * K.dowel, 0);
-        row(kn, 'cfbs', 'Шуруп LN 9 (кронштейн — профиль)', 'шт', n * K.screw, 0);
-      }
-      if (p.kind === 'furring' || p.kind === 'stud') row(kn, 'cdw', 'Дюбель-гвоздь 6×40', 'шт', A * 1.6, 0);
-      row(kn, 'csl', 'Лента уплотнительная', 'м', A * 1.2);
-      if (l.ins) row(kn, 'cin' + l.ins.n + l.insTh, `${l.ins.n}, ${l.insTh} мм`, 'м²', A);
-    } else if (l.insu) row(kn, 'cin' + l.m + l.th, `${l.m}, ${l.th} мм`, 'м²', A);
-  }
-  if (L.some(l => l.cls === 'gkl')) {
-    row(kn, 'carm', 'Лента армирующая (стыки)', 'м', A * 1.5);
-    row(kn, 'cfug', 'Шпаклёвка для стыков', 'кг', A * 0.6 * L.filter(l => l.cls === 'gkl').length);
-  }
-  for (const l of L) {
-    if (l.cls === 'gkl' || l.frame || l.insu || l.cls === 'air') continue;
-    const md = MATS[l.m];
-    if (md && (md.cls === 'plas' || /клей/i.test(l.m))) row(mas, l.m + l.th, `${l.m}, ${fmt(l.th)} мм`, 'м²', A);
-    else row(mas, 'v' + l.m, l.m, 'м³', (A * l.th) / 1000, 3);
-  }
 }
 
 // ===== ui/wall-types-dialog.js =====
@@ -123698,6 +123234,468 @@ function solidInfo(e) {
   };
 }
 
+// ===== elements/spec-building.js =====
+/**
+ * elements/spec-building.js
+ *
+ * Specification sections of the building block: the walls (types, GKL / Knauf layout, masonry, finishes, rounded corners),
+ * the openings (door and window buckets, door and window hardware) and the positions of the titles that the element types
+ * fill through XT[type].spec (bearing structure, ceilings, trims, GKL layout, reinforcement, entry doors).
+ * One pass over the walls, doors and windows fills the base tables: they share the wall area and the «opens» bucket
+ * (doors and windows interleave in the order of the elements). The table «Отделка стен» is the finishes block (elements/spec-finishes.js).
+ * Sections: «Конструкции», «Комплектация дверей», «Комплектация окон», «Материалы Кнауф …»,
+ * «Кладка, бетон, штукатурка».
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** Type, computed type, length (mm) and net area (m², without the openings) of a wall; shared with the finishes table. */
+function wallSpecArea(e) {
+  const ty = typeOf(e),
+    ct = computeType(ty),
+    L = arcOf(e) ? arcOf(e).L : dist(e.a, e.b),
+    ops = hosted(e.id);
+  const opA = ops.reduce((a, o) => a + opArea(o) * (Math.max(0, Math.min(o.h, e.h - (o.sill || 0))) / o.h), 0);
+  const A = Math.max(0, (L * e.h) / 1e6 - opA);
+  return { ty, ct, L, A };
+}
+
+/** One pass over the visible walls, doors and windows: the buckets of all base tables of the building. */
+function collectBuilding(ctx) {
+  const { put, bucket } = ctx;
+  const dkit = bucket(),
+    wkit = bucket(),
+    walls = bucket(),
+    opens = bucket(),
+    kn = bucket(),
+    mas = bucket();
+  for (const e of ctx.ents) {
+    if (e.type === 'wall') {
+      const { ty, ct, L, A } = wallSpecArea(e);
+      // rounded outer corners: GKL segment strips + putty (framed) / sawn corner + mortar + mesh (solid walls)
+      if (e.rnd) {
+        const kn = isKnauf(e);
+        const J = joinsAll().get(e.id);
+        let fin = 0;
+        for (const l of ct.layers) {
+          if (l.cls !== 'plas') break;
+          fin += l.th;
+        }
+        const G = kn ? gklWall(e) : null;
+        const nL = G ? Math.max(...G.sides.map(sd => sd.layers.length), 1) : 1;
+        const q = cornerFinishQty(e, J, kn, fin, nL);
+        const row = (k, name, u, v, dec = 1) =>
+          v > 0 &&
+          put(walls, k, { name, u }, r => {
+            r.q = Math.round((r.q + v) * 10 ** dec) / 10 ** dec;
+            r.ids.push(e.id);
+          });
+        row('wrS', 'Радиусные углы: полосы ГКЛ 12,5 (сегменты 50–150 мм на радиус), площадь', 'м²', q.stripA, 2);
+        row('wrSn', 'Радиусные углы: полосы ГКЛ, количество', 'шт', q.strips, 0);
+        row('wrP', 'Радиусные углы: шпаклёвка гипсовая (выравнивание полос в радиус, затирка)', 'кг', q.putty, 1);
+        row('wrT', 'Радиусные углы: лента серпянка на стыки полос', 'м', q.tape, 1);
+        row('wrC', 'Радиусные углы: спил и стёсывание угла кладки (работы)', 'м', q.cuts, 1);
+        row('wrM', 'Радиусные углы: раствор / клей для скругления спиленного угла', 'м³', q.mortar, 3);
+        row('wrN', 'Радиусные углы: сетка штукатурная (стеклосетка) по радиусу', 'м²', q.mesh, 2);
+      }
+      put(walls, ty ? ty.id : '?', { name: ty ? ty.name : 'Стена', u: 'м²' }, r => {
+        r.q += A;
+        r.L = (r.L || 0) + L / 1000;
+        r.ids.push(e.id);
+      });
+      if (ty && ty.kind === 'custom') customSpec(e, ty, ct, A, put, kn, mas);
+      else if (ty && ty.kind === 'knauf') {
+        const sd = KN[ty.sys],
+          c = ct.info.cons,
+          pr = ct.info.prof;
+        const sides = sd.kind === 'part' ? ['sa', 'sb'] : ['sa'];
+        for (const sd_ of sides) {
+          const per = c ? c.sheet / (sd.kind === 'part' ? 2 : 1) : 1.0;
+          put(kn, 's' + ty[sd_], { name: `КНАУФ-лист ${SHEETS[ty[sd_]].n}, 12,5 мм`, u: 'м²' }, r => {
+            r.q += A * per;
+            r.ids.push(e.id);
+          });
+        }
+        if (c) {
+          put(kn, 'pn' + pr, { name: `Профиль ПН ${pr}/40`, u: 'м' }, r => (r.q += c.pn * A));
+          put(kn, 'ps' + pr, { name: `Профиль ПС ${pr}/50`, u: 'м' }, r => (r.q += c.ps * A));
+          for (const [k, n, u] of [
+            ['tn25', 'Шуруп TN 25', 'шт'],
+            ['tn35', 'Шуруп TN 35', 'шт'],
+            ['tn55', 'Шуруп TN 55', 'шт'],
+            ['dowel', 'Дюбель-гвоздь', 'шт'],
+            ['seal', 'Лента уплотнительная', 'м'],
+            ['arm', 'Лента армирующая', 'м'],
+            ['fug', 'Шпаклёвка для стыков', 'кг']
+          ])
+            if (c[k]) put(kn, k, { name: n, u }, r => (r.q += c[k] * A));
+          put(kn, 'prim', { name: 'Грунтовка Тифенгрунд', u: 'л' }, r => (r.q += 0.2 * A));
+        } else if (ty.sys === 'С623')
+          put(kn, 'pp', { name: 'Профиль ПП 60/27 (ориентир. 2 м/м²)', u: 'м' }, r => (r.q += 2 * A));
+        if (ty.ins) put(kn, 'wool', { name: 'Минеральная вата', u: 'м²' }, r => (r.q += (sd.fr === 2 ? 2 : 1) * A));
+      } else
+        for (const l of ct.layers) {
+          const md = MATS[l.m];
+          if (!md || md.cls === 'air') continue;
+          if (md.cls === 'plas') put(mas, l.m + l.th, { name: `${l.m}, ${fmt(l.th)} мм`, u: 'м²' }, r => (r.q += A));
+          else put(mas, l.m, { name: l.m, u: 'м³' }, r => (r.q += (A * l.th) / 1000));
+        }
+    } else if (e.type === 'door') {
+      const M = doorModel(e);
+      if (!M) continue;
+      const c = M.c;
+      const lsz = leafSize(e);
+      const id = e.id;
+      const per = (2 * M.H + M.W) / 1000;
+      put(
+        opens,
+        'd' + c.mode + c.leaf.count + Math.round(lsz.w) + 'x' + Math.round(lsz.h),
+        {
+          name: `Дверь ${c.mode === 'hidden' ? 'скрытая' : c.mode === 'entry' ? 'входная металлическая' : 'распашная'}, полотно ${fmt(lsz.w)}×${fmt(lsz.h)}${c.leaf.count === 2 ? ', 2 створки' : ''}`,
+          u: 'шт'
+        },
+        r => {
+          r.q++;
+          r.ids.push(id);
+        }
+      );
+      put(
+        dkit,
+        'leaf' + c.leaf.glass + c.leaf.th + (c.leaf.paint ? 'p' : c.leaf.color),
+        {
+          name: `Полотно ${GLASS_T[c.leaf.glass].toLowerCase()}, ${c.leaf.th} мм, ${c.leaf.paint ? 'под покраску' : (DCOL.find(x => x[0] === c.leaf.color) || [0, 'свой цвет'])[1]}`,
+          u: 'шт'
+        },
+        r => {
+          r.q += M.leaves.length;
+          r.ids.push(id);
+        }
+      );
+      put(dkit, 'fr' + c.frame.prof, { name: `Коробка: ${M.fr.name}`, u: 'м' }, r => {
+        r.q += per;
+        r.ids.push(id);
+      });
+      if (M.ext)
+        put(
+          dkit,
+          'ex' + c.ext.prof + Math.round(M.ext.width),
+          { name: `Добор: ${M.ext.prof.name}, ширина ${fmt(M.ext.width)} мм`, u: 'м' },
+          r => {
+            r.q += per;
+            r.ids.push(id);
+          }
+        );
+      const cs = (c.casing.a ? 1 : 0) + (c.casing.b ? 1 : 0);
+      if (cs) {
+        const cp = getProf(c.casing.prof, 'casing');
+        const cw = Math.max(...cp.pts.map(p => p[0])) - Math.min(...cp.pts.map(p => p[0]));
+        put(dkit, 'cs' + c.casing.prof, { name: `Наличник: ${cp.name}`, u: 'м' }, r => {
+          r.q += (cs * (2 * (M.H + cw) + M.W + 2 * cw)) / 1000;
+          r.ids.push(id);
+        });
+      }
+      put(dkit, 'h' + c.hinges.type, { name: `Петли: ${HINGE_T[c.hinges.type].toLowerCase()}`, u: 'шт' }, r => {
+        r.q += c.hinges.count * M.leaves.length;
+        r.ids.push(id);
+      });
+      if (c.handle.type !== 'none')
+        put(
+          dkit,
+          'hd' + c.handle.type + (c.handle.series || 'round'),
+          {
+            name: `Ручка ${HANDLE_T[c.handle.type].toLowerCase()}${c.handle.type !== 'flush' ? ', серия «' + (HANDLE_SER[c.handle.series || 'round'] || '') + '»' : ''} (комплект)`,
+            u: 'шт'
+          },
+          r => {
+            r.q++;
+            r.ids.push(id);
+          }
+        );
+      if (c.lock.type !== 'none')
+        put(dkit, 'lk' + c.lock.type, { name: LOCK_T[c.lock.type], u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(id);
+        });
+      if (c.closer && c.closer.type !== 'none')
+        put(dkit, 'cl' + c.closer.type, { name: CLOSER_T[c.closer.type], u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(id);
+        });
+      if (c.stop.type !== 'none')
+        put(dkit, 'st' + c.stop.type, { name: `Стопор ${STOP_T[c.stop.type].toLowerCase()}`, u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(id);
+        });
+      const thr = (c.thr && c.thr.type) || 'none';
+      if (thr === 'drop')
+        for (const l of M.leaves)
+          put(
+            dkit,
+            'thd' + Math.round(l.w - 20),
+            { name: `Порог автоматический выпадающий ${Math.round(l.w - 20)} мм`, u: 'шт' },
+            r => {
+              r.q++;
+              r.ids.push(id);
+            }
+          );
+      if (thr === 'profile')
+        put(dkit, 'thp' + Math.round(M.W), { name: `Порог-профиль алюминиевый ${Math.round(M.W)} мм`, u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(id);
+        });
+      const sl = sealCalc(e, M);
+      if (sl.len)
+        put(dkit, 'seal' + sl.type, { name: `Уплотнитель: ${SEAL_T[sl.type].toLowerCase()} (+5 %)`, u: 'м' }, r => {
+          r.q = Math.round((r.q + sl.len * 1.05) * 10) / 10;
+          r.ids.push(id);
+        });
+    } else if (e.type === 'window') {
+      if (e.cfg && e.cfg.kind === 'alu') {
+        aluSpec(e, put, opens, wkit);
+        continue;
+      }
+      const M = winModel(e);
+      if (!M) continue;
+      const c = M.c,
+        id = e.id;
+      if (M.door) {
+        const F = M.door,
+          D = c.door;
+        put(
+          opens,
+          'bd' + c.sys + c.glass + Math.round(F.fx1 - F.fx0) + 'x' + Math.round(F.fz1 - F.fz0) + D.t + D.panel,
+          {
+            name: `Балконная дверь ${M.sy.n} ${fmt(F.fx1 - F.fx0)}×${fmt(F.fz1 - F.fz0)}, ${c.glass}, ${SASH_T[D.t === 'turn' ? 'turn' : 'tt'].toLowerCase()}${D.panel === 'half' ? ', нижняя сэндвич-панель' : ''} (в составе балконного блока)`,
+            u: 'шт'
+          },
+          r => {
+            r.q++;
+            r.ids.push(id);
+          }
+        );
+        for (const [k, n, q, u] of [
+          ['bdh', 'Фурнитура балконной двери: петли дверные усиленные, ножницы, запоры (комплект)', 1, 'шт'],
+          ['bdr', 'Ручка балконной двери двусторонняя (нажимная внутри + ракушка снаружи)', 1, 'шт'],
+          ['bdl', 'Балконная защёлка (фиксатор закрытого положения)', D.latch ? 1 : 0, 'шт'],
+          ['bdt', 'Порог балконной двери алюминиевый, низкий', (F.fx1 - F.fx0) / 1000, 'м'],
+          ['bdc', 'Соединительный профиль окно — дверь (с уплотнением)', (M.z1 - M.z0) / 1000, 'м'],
+          ['bdn', 'Москитная сетка дверная на петлях', D.net ? 1 : 0, 'шт']
+        ])
+          if (q)
+            put(wkit, k, { name: n, u }, r => {
+              r.q = Math.round((r.q + q) * 100) / 100;
+              r.ids.push(id);
+            });
+      }
+      const opn = c.cols.filter(k => k.t !== 'fixed').length;
+      put(
+        opens,
+        'w' + c.sys + c.glass + e.w + 'x' + e.h + JSON.stringify(c.cols.map(k => k.t)),
+        {
+          name: `${M.door ? 'Оконная часть балконного блока' : 'Окно'} ${M.sy.n} ${fmt(M.x1 - M.x0)}×${fmt(M.z1 - M.z0)}, ${c.glass}, ${c.cols.map(k => SASH_T[k.t].toLowerCase()).join(' + ')}${c.transom ? ' + фрамуга' : ''}`,
+          u: 'шт'
+        },
+        r => {
+          r.q++;
+          r.ids.push(id);
+        }
+      );
+      if (c.sill.on)
+        put(
+          wkit,
+          's' + c.sill.mat + Math.round(c.sill.over - M.dIn),
+          { name: `Подоконник ${SILL_M[c.sill.mat][0].toLowerCase()}, глубина ${fmt(c.sill.over - M.dIn)} мм`, u: 'м' },
+          r => {
+            r.q += (M.door ? M.wx1 - M.wx0 + c.sill.side : e.w + 2 * c.sill.side) / 1000;
+            r.ids.push(id);
+          }
+        );
+      if (c.drip.on)
+        put(
+          wkit,
+          'd' + Math.round(-M.dOut + c.drip.over),
+          { name: `Отлив, ширина ${fmt(M.dOut + M.T + c.drip.over)} мм`, u: 'м' },
+          r => {
+            r.q += ((M.door ? M.wx1 - M.wx0 : e.w) + 40) / 1000;
+            r.ids.push(id);
+          }
+        );
+      const nets = c.cols.filter(k => k.t !== 'fixed' && k.net).length;
+      if (nets)
+        put(wkit, 'net', { name: 'Москитная сетка', u: 'шт' }, r => {
+          r.q += nets;
+          r.ids.push(id);
+        });
+      if (c.slopes !== 'none')
+        put(wkit, 'sl' + c.slopes, { name: `Откосы: ${SLOPE_T[c.slopes].toLowerCase()}`, u: 'м²' }, r => {
+          r.q += ((2 * e.h + e.w) * -M.dIn) / 1e6;
+          r.ids.push(id);
+        });
+      if (opn)
+        put(wkit, 'hw', { name: 'Комплект фурнитуры на створку (петли, запоры, ручка)', u: 'шт' }, r => {
+          r.q += opn;
+          r.ids.push(id);
+        });
+    }
+  }
+  return { dkit, wkit, walls, opens, kn, mas };
+}
+
+specSection('constructions', {
+  order: 10,
+  title: 'Конструкции',
+  collect(ctx) {
+    const B = ctx.memo('building', () => collectBuilding(ctx));
+    return [...ctx.rows(B.walls).map(r => ({ ...r, name: `${r.name} · ${ctx.q2(r.L)} м` })), ...ctx.rows(B.opens)];
+  }
+});
+specSection('door-kit', {
+  order: 20,
+  title: 'Комплектация дверей',
+  collect: ctx => ctx.rows(ctx.memo('building', () => collectBuilding(ctx)).dkit)
+});
+specSection('window-kit', {
+  order: 30,
+  title: 'Комплектация окон',
+  collect: ctx => ctx.rows(ctx.memo('building', () => collectBuilding(ctx)).wkit)
+});
+specSection('knauf', {
+  order: 50,
+  title: 'Материалы Кнауф (по расходу на 1 м² из техлиста С11)',
+  collect: ctx => ctx.rows(ctx.memo('building', () => collectBuilding(ctx)).kn)
+});
+specSection('masonry', {
+  order: 60,
+  title: 'Кладка, бетон, штукатурка',
+  collect: ctx => ctx.rows(ctx.memo('building', () => collectBuilding(ctx)).mas)
+});
+
+// positions of the tables that the element types fill through XT[type].spec (the rows come from the types themselves)
+specSection('bearing', { order: 110, title: 'Несущие конструкции' });
+specSection('ceilings', { order: 120, title: 'Потолки' });
+specSection('trims', { order: 130, title: 'Переходные элементы' });
+specSection('gkl-layout', { order: 140, title: 'ГКЛ: раскрой и каркас (шт)' });
+specSection('reinforcement', { order: 150, title: 'Усиления' });
+specSection('entry-doors', { order: 160, title: 'Входные двери' });
+
+/**
+ * Materials of a custom wall type per its area A (m²): boards (+5 %), screws by layer (outer 29 / inner 13 per m²),
+ * frame studs and tracks by step, brackets of furring frames, insulation, sealing tape, dowels; masonry by volume,
+ * plaster / glue by area.
+ */
+function customSpec(e, ty, ct, A, put, kn, mas) {
+  const L = ct.layers;
+  const row = (grp, k, name, u, v, dec = 2) =>
+    v > 0 &&
+    put(grp, k, { name, u }, r => {
+      r.q = Math.round((r.q + v) * 10 ** dec) / 10 ** dec;
+      r.ids.push(e.id);
+    });
+  // boards: runs of boards next to a frame; the outermost board of a run gets 29 screws/m², the inner ones 13;
+  // screw length = boards from this one to the frame + 10 mm
+  L.forEach((l, i) => {
+    if (l.cls !== 'gkl') return;
+    row(kn, 'cb' + l.sheet, `${l.m} (+5 %)`, 'м²', A * 1.05);
+    let a = i,
+      b = i;
+    while (a > 0 && L[a - 1].cls === 'gkl') a--;
+    while (b < L.length - 1 && L[b + 1].cls === 'gkl') b++;
+    const frameRight = b < L.length - 1 && L[b + 1].frame,
+      frameLeft = a > 0 && L[a - 1].frame;
+    if (!frameRight && !frameLeft) return; // glued / screwed to the base: no frame screws
+    const toFrame = frameRight ? L.slice(i, b + 1) : L.slice(a, i + 1);
+    const outer = frameRight ? i === a : i === b;
+    const tot = toFrame.reduce((s_, x) => s_ + x.th, 0) + 10;
+    const len = tot <= 25 ? 25 : tot <= 35 ? 35 : tot <= 45 ? 45 : 55;
+    row(kn, 'csc' + len, `Шуруп TN ${len} (саморез по металлу / дереву)`, 'шт', A * (outer ? 29 : 13), 0);
+  });
+  for (const l of L) {
+    if (l.frame) {
+      const p = l.prof,
+        stud = l.step || 600;
+      row(kn, 'cfs' + p.n, `${p.n.split(' + ')[0]} — стойки (шаг ${stud})`, 'м', (A * 1000) / stud);
+      row(kn, 'cft' + p.track, `${p.track} — направляющие / обвязка`, 'м', A * 0.7);
+      if (l.brk && l.brk !== 'none') {
+        const K = BRK[l.brk],
+          n = (A * 1e6) / (stud * l.bn * l.bz);
+        row(kn, 'cfb' + l.brk, K.n, 'шт', n, 0);
+        row(kn, 'cfba', 'Анкер-клин / дюбель 6×40 для кронштейнов', 'шт', n * K.dowel, 0);
+        row(kn, 'cfbs', 'Шуруп LN 9 (кронштейн — профиль)', 'шт', n * K.screw, 0);
+      }
+      if (p.kind === 'furring' || p.kind === 'stud') row(kn, 'cdw', 'Дюбель-гвоздь 6×40', 'шт', A * 1.6, 0);
+      row(kn, 'csl', 'Лента уплотнительная', 'м', A * 1.2);
+      if (l.ins) row(kn, 'cin' + l.ins.n + l.insTh, `${l.ins.n}, ${l.insTh} мм`, 'м²', A);
+    } else if (l.insu) row(kn, 'cin' + l.m + l.th, `${l.m}, ${l.th} мм`, 'м²', A);
+  }
+  if (L.some(l => l.cls === 'gkl')) {
+    row(kn, 'carm', 'Лента армирующая (стыки)', 'м', A * 1.5);
+    row(kn, 'cfug', 'Шпаклёвка для стыков', 'кг', A * 0.6 * L.filter(l => l.cls === 'gkl').length);
+  }
+  for (const l of L) {
+    if (l.cls === 'gkl' || l.frame || l.insu || l.cls === 'air') continue;
+    const md = MATS[l.m];
+    if (md && (md.cls === 'plas' || /клей/i.test(l.m))) row(mas, l.m + l.th, `${l.m}, ${fmt(l.th)} мм`, 'м²', A);
+    else row(mas, 'v' + l.m, l.m, 'м³', (A * l.th) / 1000, 3);
+  }
+}
+
+// ===== elements/spec-finishes.js =====
+/**
+ * elements/spec-finishes.js
+ *
+ * Specification section of the finishes block: the table «Отделка стен» — the surface finishes of the wall faces (paint,
+ * plaster, tiles …) and the finishing zones of the walls, per area of the wall without the openings.
+ */
+
+
+
+
+
+specSection('wall-finish', {
+  order: 40,
+  title: 'Отделка стен',
+  collect(ctx) {
+    const { put, bucket } = ctx;
+    const fins = bucket();
+    for (const e of ctx.ents) {
+      if (e.type !== 'wall') continue;
+      const { ct, A } = wallSpecArea(e);
+      for (const [side, f] of [
+        ['А', e.fa],
+        ['Б', e.fb]
+      ]) {
+        if (!f || f.k === 'none' || (side === 'Б' && ct.info.lin)) continue;
+        put(
+          fins,
+          f.k + '|' + (f.ral || f.col),
+          {
+            name: FIN[f.k] + ' · ' + (f.ral ? f.ral + ' ' + ((RAL.find(r => r[0] === f.ral) || [])[1] || '') : f.col),
+            u: 'м²'
+          },
+          r => {
+            r.q += Math.max(0, A - zonesArea(e, side === 'А' ? 1 : -1) - sideObstArea(e, side === 'А' ? 1 : -1));
+            r.ids.push(e.id);
+          }
+        );
+      }
+      zonesSpec(e, put, fins);
+    }
+    return ctx.rows(fins);
+  }
+});
+
 // ===== elements/steel-profiles.js =====
 /**
  * elements/steel-profiles.js
@@ -137571,6 +137569,110 @@ defineTools({
   }
 });
 
+// ===== mep/electrical/spec-electrical.js =====
+/**
+ * mep/electrical/spec-electrical.js
+ *
+ * Specification sections of the electrical block: the «Электрика» table (devices, junction / mounting boxes, cables) and the
+ * tables that are filled through put(): joints and jumpers, power supplies, the rows of the wire routes (corrugation, chases,
+ * boxes, clips, hops), the panel «по составу из вкладки «Щит»» and the positions of the device tables.
+ * The vent terminals (dev of the kind vterm) are counted by the hvac block (mep/hvac/spec-hvac.js).
+ */
+
+
+
+
+
+
+
+
+/** Devices, boxes and cables of the visible elements, in the order of the elements. */
+function collectElectrical(ctx) {
+  const { put, bucket } = ctx;
+  const devs = bucket(),
+    cables = bucket(),
+    boxes = bucket();
+  for (const e of ctx.ents) {
+    if (e.type === 'dev') {
+      const d = DEVK[e.kind];
+      if (!d || e.blk) continue;
+      const nm =
+        d.f === 'vterm'
+          ? `${d.n} ${e.size ? (sizeWH(e.size).round ? 'Ø' + e.size : e.size.replace('x', '×')) : ''} · ${e.sys}`
+          : d.specName
+            ? d.specName(e)
+            : d.n;
+      put(devs, (d.f === 'vterm' ? 'v' : 'e') + nm, { name: nm, u: 'шт', vt: d.f === 'vterm' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+      if (d.spec) d.spec(e, (k, init, f) => put(boxes, 'x' + k, init, f));
+      if (d.box)
+        put(boxes, 'b', { name: 'Подрозетник Ø68', u: 'шт' }, r => {
+          r.q += d.box;
+          r.ids.push(e.id);
+        });
+    }
+    if (e.type === 'wire')
+      put(cables, e.cable, { name: e.cable, u: 'м' }, r => {
+        r.q += wireLen(e).total / 1000;
+        r.ids.push(e.id);
+      });
+  }
+  return { devs, cables, boxes };
+}
+
+specSection('electrical', {
+  order: 70,
+  title: 'Электрика',
+  collect(ctx) {
+    const { devs, boxes, cables } = collectElectrical(ctx);
+    return [
+      ...ctx.rows(devs).filter(r => !r.vt),
+      ...ctx.rows(boxes),
+      ...ctx.rows(cables).map(r => ({ ...r, name: `Кабель ${r.name}` }))
+    ];
+  }
+});
+specSection('electrical-joints', {
+  order: 100,
+  title: 'Электрика: соединения и перемычки',
+  collect: ctx => void wireJointsSpec(ctx.put)
+});
+// the following tables have no fixed position: they come after the tables of the element types, in the order of their rows
+specSection('electrical-psu', { order: 101, collect: ctx => void psuSpec(ctx.put) });
+specSection('electrical-routes', {
+  order: 102,
+  collect(ctx) {
+    try {
+      elecEngSpec(ctx.put);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+});
+// the table is filled by the device types (devices-3d.js)
+specSection('electrical-fittings', { order: 170, title: 'Электроустановочные изделия (модульно)' });
+specSection('panel', {
+  order: 180,
+  title: 'Щит (по составу из вкладки «Щит»)',
+  collect(ctx) {
+    const { put } = ctx;
+    if (S.x.panel.mods.length && S.ents.some(e => e.type === 'dev')) {
+      const S_ = 'Щит (по составу из вкладки «Щит»)';
+      const sz = panelSize();
+      put(S_, 'box', { name: `Корпус щита на ${sz.box} модулей`, u: 'шт' }, r => {
+        r.q = 1;
+      });
+      for (const m of S.x.panel.mods)
+        put(S_, m.k + m.r, { name: `${(MODL[m.k] || {}).n} ${m.r || ''}`.trim(), u: 'шт' }, r => r.q++);
+      put(S_, 'bus', { name: 'Шины N и PE, гребёнка (комплект)', u: 'шт' }, r => {
+        r.q = 1;
+      });
+    }
+  }
+});
+
 // ===== mep/electrical/wire-colors.js =====
 /**
  * mep/electrical/wire-colors.js
@@ -139287,6 +139389,38 @@ function pvcSpec(e) {
   return rows;
 }
 
+// ===== mep/hvac/spec-hvac.js =====
+/**
+ * mep/hvac/spec-hvac.js
+ *
+ * Specification section of the hvac block: the «Вентиляция» table. The ducts and fittings come from hvacQty() (clash and
+ * quantity calculation of the duct network); the vent terminals are the devices of the kind vterm (the rest of dev is the
+ * electrical block). Ducts of XT.duct join the table through the rows with base: true (docs/spec.js).
+ */
+
+
+
+
+specSection('hvac', {
+  order: 80,
+  title: 'Вентиляция',
+  collect(ctx) {
+    const { put, bucket } = ctx;
+    const devs = bucket();
+    for (const e of ctx.ents) {
+      if (e.type !== 'dev') continue;
+      const d = DEVK[e.kind];
+      if (!d || e.blk || d.f !== 'vterm') continue;
+      const nm = `${d.n} ${e.size ? (sizeWH(e.size).round ? 'Ø' + e.size : e.size.replace('x', '×')) : ''} · ${e.sys}`;
+      put(devs, 'v' + nm, { name: nm, u: 'шт', vt: true }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+    }
+    return [...hvacQty().map(r => ({ name: r.name, u: r.u, q: r.q, ids: r.ids })), ...ctx.rows(devs)];
+  }
+});
+
 // ===== mep/plumbing/pipe-bundles.js =====
 /**
  * mep/plumbing/pipe-bundles.js
@@ -140737,6 +140871,40 @@ defineTools({
   }
 });
 
+// ===== mep/plumbing/spec-plumbing.js =====
+/**
+ * mep/plumbing/spec-plumbing.js
+ *
+ * Specification sections of the plumbing block: the simple water collector (only when no manifold unit is modelled — that
+ * one has its own specification) and the positions of the tables that the pipes, fixtures and risers fill through
+ * XT[type].spec (water supply, sewer, heating pipes, plumbing fixtures).
+ */
+
+
+
+
+
+specSection('water', { order: 190, title: 'Водоснабжение' });
+specSection('sewer', { order: 200, title: 'Канализация' });
+specSection('heating', { order: 210, title: 'Отопление' });
+specSection('collector', {
+  order: 220,
+  title: 'Коллектор водоснабжения',
+  collect(ctx) {
+    const { put } = ctx;
+    // the simple collector — only when no manifold unit is modelled (that one has its own specification)
+    if (S.ents.some(e => e.type === 'fix') && !mfNodes().length) {
+      const C_ = S.x.coll;
+      if (C_.auto) buildColl();
+      const it = collItems();
+      if (it.length) {
+        for (const [n, q] of it) put('Коллектор водоснабжения', 'c' + n, { name: n, u: 'шт' }, r => (r.q += q));
+      }
+    }
+  }
+});
+specSection('fixtures', { order: 230, title: 'Сантехника' });
+
 // ===== mep/plumbing/tece-modules.js =====
 /**
  * mep/plumbing/tece-modules.js
@@ -141378,6 +141546,109 @@ defineTools({
     title:
       'Развести водоснабжение: линии ХВС и ГВС от коллектора к каждому прибору в полу, в обход стен, приборов и мебели, рядом идущие — в общих коридорах · ВОДОСНАБЖЕНИЕ',
     icon: '<path d="M4 6h5v12"/><path d="M4 10h9v8"/><path d="M4 14h13v4" class="t"/>'
+  }
+});
+
+// ===== ui/spec-catalog.js =====
+/**
+ * ui/spec-catalog.js
+ *
+ * Specification section «Мебель и оборудование из каталога»: the catalog instances (type inst) with article and price;
+ * docs/spec.js sorts the rows by layer and totals the priced positions.
+ */
+
+
+
+
+specSection('catalog', {
+  order: 10000,
+  title: 'Мебель и оборудование из каталога',
+  priced: true,
+  sort: (a, b) => a.cat.localeCompare(b.cat),
+  collect(ctx) {
+    const { put, bucket } = ctx;
+    const insts = bucket();
+    for (const e of ctx.ents) {
+      if (e.type !== 'inst') continue;
+      const a = ASSETS.get(e.asset);
+      if (!a) continue;
+      const pr = { ...(a.props || {}), ...(e.props || {}) };
+      const nm = a.ifc ? a.ifc.type || a.ifc.cls : e.name || a.name;
+      const price = priceOf({ props: pr });
+      put(
+        insts,
+        e.layer + '|' + (a.ifc ? nm : a.id + '|' + (e.name || '') + '|' + price),
+        { name: nm, u: 'шт', art: pr['Артикул'] || '', price, cat: e.layer },
+        r => {
+          r.q++;
+          r.ids.push(e.id);
+        }
+      );
+    }
+    return ctx.rows(insts);
+  }
+});
+
+// ===== ui/spec-colors.js =====
+/**
+ * ui/spec-colors.js
+ *
+ * Specification section «Цвета и покрытия (RAL Classic / NCS)»: the colours of the elements (RAL Classic and NCS for paint
+ * colours, the name for metals), summed over the model elements; the annotations of the drawing are not counted.
+ */
+
+
+
+specSection('colors', {
+  order: 9000,
+  title: 'Цвета и покрытия (RAL Classic / NCS)',
+  collect(ctx) {
+    const { put } = ctx;
+    // colours of the elements: RAL Classic and NCS for paint colours, the name for metals
+    const DRAFT = new Set([
+      'line',
+      'pline',
+      'arc',
+      'circle',
+      'text',
+      'mtext',
+      'dim',
+      'leader',
+      'hatch',
+      'tag',
+      'note',
+      'img',
+      'rev',
+      'sec',
+      'cam'
+    ]);
+    const used = palUsed(
+      ctx.ents.filter(e => !DRAFT.has(e.type) && !/^(Размеры|Текст|Аннотации)$/.test(e.layer || ''))
+    );
+    const SC = 'Цвета и покрытия (RAL Classic / NCS)';
+    // colours from the palette — by their code; the others are gathered under the nearest RAL
+    const grp = new Map();
+    for (const [hex, set] of used) {
+      const I = palInfo(hex),
+        k = I.kind === 'metal' ? 'm' + I.key : (I.exact ? 'r' : 'a') + I.ral;
+      if (!grp.has(k)) grp.set(k, { I, hexes: [], ents: new Set() });
+      const G = grp.get(k);
+      G.hexes.push(hex);
+      for (const e of set) G.ents.add(e);
+    }
+    for (const [k, G] of [...grp.entries()].sort(
+      (a, b) => a[0].slice(1).localeCompare(b[0].slice(1)) || a[0].localeCompare(b[0])
+    )) {
+      const where = [...new Set([...G.ents].map(e => e.layer || '—'))].join(', ');
+      const name =
+        G.I.kind === 'metal'
+          ? 'Металл: ' + G.I.name
+          : palLabel(G.hexes[0]) + (G.I.exact ? '' : ' — цвет не из палитры, указан ближайший');
+      put(SC, 'col' + k, { name: name + ' — ' + where, u: 'шт' }, r => {
+        r.q += G.ents.size;
+        for (const e of G.ents) r.ids.push(e.id);
+      });
+    }
   }
 });
 
