@@ -8837,7 +8837,7 @@ html[data-form='tablet'] #app #status #views {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.78';
+const APP_VER = '59.79';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -10436,7 +10436,14 @@ const secTxt = e => (e.shape === 'rect' ? `${fmt(e.w)}×${fmt(e.hh)}` : `Ø${fmt
 const ductW = e => (e.shape === 'rect' ? e.w : e.d);
 const ductArea = e => (e.shape === 'rect' ? (e.w * e.hh) / 1e6 : (Math.PI * e.d * e.d) / 4e6);
 const ductPerim = e => (e.shape === 'rect' ? (2 * (e.w + e.hh)) / 1000 : (Math.PI * e.d) / 1000);
-const ductVel = e => (e.flow ? e.flow / 3600 / ductArea(e) : 0);
+/** Calculated state of a duct, set by the hvac block (the flow of a duct is never typed): flowHooks.duct(e) → { flow, v, vmax, ratio } | null. */
+const flowHooks = { duct: null };
+/** Calculated state of a duct: { flow, v, vmax, ratio } or null outside a network. */
+const ductCalc = e => (flowHooks.duct ? flowHooks.duct(e) : null);
+/** Calculated flow of a duct, m³/h (0 outside a network). */
+const ductFlow = e => (flowHooks.duct && flowHooks.duct(e) ? flowHooks.duct(e).flow : 0);
+/** Calculated air velocity in a duct, m/s (0 outside a network). */
+const ductVel = e => (flowHooks.duct && flowHooks.duct(e) ? flowHooks.duct(e).v : 0);
 const plen = pts => {
   let s = 0;
   for (let i = 1; i < pts.length; i++) s += dist(pts[i - 1], pts[i]);
@@ -14608,6 +14615,10 @@ function ventFlexMaxSet(v) {
 function ventVmaxSet(v) {
   S.vent.vmax = v;
 }
+/** Sets the plan colouring of the ducts by velocity against the recommended one (S.vent.velColor). */
+function ventVelColorSet(v) {
+  S.vent.velColor = !!v;
+}
 
 // ===== blocks/views/views-api.js =====
 /**
@@ -16291,7 +16302,7 @@ function mkDuct(opt = {}) {
   let sec = mkDuct.sec || { shape: 'round', d: 160 },
     z = mkDuct.z ?? S.ceil - 150,
     sys = S.vent.cur || S.vent.systems[0].id,
-    flow = mkDuct.flow || 100,
+    flow = 0, // the flow of a duct is calculated from the network (hvac/air-calc), never typed
     ask = null;
   // a rigid duct goes straight out of / into a spigot for 100–150 mm before it turns (half the way ahead, within that)
   const exitLen = ahead => Math.max(100, Math.min(150, Math.max(0, ahead) * 0.5));
@@ -16471,10 +16482,6 @@ function mkDuct(opt = {}) {
       }
       if (kw(s, 'си', 'система')) {
         ask = 's';
-        return true;
-      }
-      if (kw(s, 'р', 'расход', 'q')) {
-        ask = 'q';
         return true;
       }
       if (kw(s, 'о', 'отменить', 'u') && pts.length) {
@@ -18760,10 +18767,17 @@ function flexPlanPts(e) {
   }
   return out.length > 1 ? out : e.pts;
 }
+/** Colour of a duct by the ratio of its velocity to the recommended one (null without a calculation). */
+function ductVelColor(c) {
+  if (!c || !c.vmax) return null;
+  return c.ratio <= 0.9 ? '#3fae6a' : c.ratio <= 1.1 ? '#e0a82e' : '#ef5f5f';
+}
 function drawDuct(e, color, o = {}) {
   const ghost = color === 'ghost',
     sy = sysOf(e.sys),
-    col = ghost ? C.ghost : o.sel ? C.sel : sy.col;
+    // optional colour by the velocity against the recommended one: green ≤ 90 %, amber ≤ 110 %, red above
+    vc = !ghost && !o.sel && S.vent && S.vent.velColor ? ductVelColor(ductCalc(e)) : null,
+    col = ghost ? C.ghost : o.sel ? C.sel : vc || sy.col;
   if (e.pts.length < 2) return;
   const hw = ductW(e) / 2 + (e.ins || 0);
   // a flexible duct is drawn along the same rounded route as in the 3D model (its radius, the plan projection)
@@ -18774,7 +18788,7 @@ function drawDuct(e, color, o = {}) {
   if (o.dim) ctx.globalAlpha = 0.4;
   if (!ghost) ductBreakClip(e);
   pathPoly(l.concat(r.slice().reverse()));
-  ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(sy.col, 0.3);
+  ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(vc || sy.col, 0.3);
   ctx.fill();
   // transitions at the ends (a spigot of another Ø): a short cone
   for (const t of o.trans || []) {
@@ -18869,8 +18883,9 @@ function drawDuct(e, color, o = {}) {
     pathPoly([tipP, add(bk, mul(nn, ah * 0.5)), sub(bk, mul(nn, ah * 0.5))]);
     ctx.fillStyle = col;
     ctx.fill();
-    const v = ductVel(e),
-      bad = v > (S.vent.vmax || 4);
+    const cd = ductCalc(e),
+      v = cd ? cd.v : 0,
+      bad = cd ? cd.ratio > 1.1 : v > (S.vent.vmax || 4);
     const sm = w2s(add(m, mul(P(-u.y, u.x), hw + 16 / view.k)));
     let an = -ang(u);
     if (an > Math.PI / 2) an -= Math.PI;
@@ -18882,7 +18897,9 @@ function drawDuct(e, color, o = {}) {
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = bad ? '#ef5f5f' : col;
     ctx.fillText(
-      e.flex ? `${secTxt(e)} гибк.` : `${e.sys} · ${secTxt(e)} · ${fmt(+e.flow || 0)} м³/ч · ${v.toFixed(1)} м/с`,
+      e.flex
+        ? `${secTxt(e)} гибк.`
+        : `${e.sys} · ${secTxt(e)} · ${fmt(Math.round(cd ? cd.flow : 0))} м³/ч · ${v.toFixed(1)} м/с`,
       0,
       0
     );
@@ -24829,6 +24846,7 @@ function fieldGet(e, k) {
     case 'kn_ins':
       return !!(ty && ty.ins);
     case 'sec':
+    case 'secStd':
       return e.shape === 'rect' ? `${fmt(e.w)}x${fmt(e.hh)}` : fmt(e.d);
     case 'z':
       return e.type === 'duct' ? Math.round(ductAxisZ(e)) : (e.z ?? '');
@@ -25038,7 +25056,8 @@ function fieldSet(e, k, raw) {
       if (k === 'dza') e.z = e.pts[0].z;
       return;
     }
-    case 'sec': {
+    case 'sec':
+    case 'secStd': {
       const p = secParse(raw);
       if (p) Object.assign(e, p);
       else log('Сечение: 160 или 200x100', true);
@@ -25085,6 +25104,7 @@ function fieldSet(e, k, raw) {
   e[k] = v;
 }
 function propRow(f, es) {
+  if (f.ro != null) return `<dt>${f.l}</dt><dd title="${esc(f.tip || '')}">${f.ro}</dd>`; // a calculated value, read only
   const e = es[0],
     v = fieldGet(e, f.k),
     same = es.every(x => String(fieldGet(x, f.k)) === String(v));
@@ -65384,6 +65404,7 @@ function galvSpec(e, L, H, put, S_) {
 
 
 
+
 /** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
 const AV_NORM = {
   person: 60, // m³/h per person in living rooms
@@ -65477,10 +65498,15 @@ function avSlabU() {
   const lv = lvCur();
   return (lv.h || (S.ceil || 2700) + 300) + (lv.top || 0) - (lv.slab || 200);
 }
-/** Local loss of an inline part, ζ by the velocity in its Ø (silencer ≈ 2 — 15–25 Pa at 4 m/s; reducer — a cone). */
-const AV_PART_ZETA = { sil: 2, red: 0.1, tee: 0 };
 /** Late hooks set by the air units module (a direct import would make a cycle). */
 const hvHooksAv = { spigots: null, acSpigots: null };
+/** Machine of a network source: { q, pa, qmax, curve, setQ } — nominal point from the catalogue, the set flow. */
+function avMachine(u) {
+  if (u.type === 'hvu') return hvMachine(u);
+  if (u.type === 'ac') return acMachine(u);
+  const q = +u.flow || (DEVK[u.kind] || {}).flow || 0;
+  return { q, pa: +u.pa || (u.kind === 'vfan' ? 200 : 150), qmax: +u.qmax || 0, curve: u.curve, setQ: q };
+}
 /** Drawn false ceiling under a point, mm; null when no drawn ceiling covers it (over a wall, an open space). */
 function avFcDrawn(p) {
   let best = null;
@@ -65743,22 +65769,7 @@ function avCooling() {
 }
 
 /* ---------- duct network ---------- */
-const AV_RND = [100, 125, 160, 200, 250, 315, 355, 400, 450, 500, 560, 630];
-const AV_REC = [100, 150, 200, 250, 300, 400, 500, 600, 800, 1000];
 const avKey = p => Math.round(p.x / 30) + ':' + Math.round(p.y / 30);
-/** Hydraulic diameter, m. */
-const avDe = e => (e.shape === 'rect' ? (2 * e.w * e.hh) / (e.w + e.hh) : e.d) / 1000;
-/** Friction loss, Pa/m (Altshul, galvanized steel 0.1 mm). */
-function avFric(e, flow) {
-  const A = ductArea(e),
-    v = flow / 3600 / A,
-    de = avDe(e);
-  if (!v || !de) return { v: 0, R: 0, pd: 0 };
-  const Re = (v * de) / 15.1e-6;
-  const lam = 0.11 * Math.pow(0.0001 / de + 68 / Re, 0.25);
-  const pd = (1.2 * v * v) / 2;
-  return { v, R: (lam / de) * pd, pd };
-}
 /**
  * The network of one system: pieces of ducts between joints, the source, terminals, flows, pressure.
  * Returns { sys, src, srcName, pieces, terms, crit, ok, msg }.
@@ -66009,7 +66020,48 @@ function avNet(sysId) {
       for (const pc of res.pieces)
         if ([pc.pts[0], pc.pts[pc.pts.length - 1]].some(p => dist(p, P(q.p[0], q.p[1])) < 80)) outside.add(pc);
   res.loose = res.pieces.filter(pc => !pc.up && !pc.chamber && !outside.has(pc)).length;
-  // flows: sum of terminals below
+  // the intake leg: the ducts that bring the air to the unit (outdoor air for a supply system, the exhaust leg for an
+  // extract one) are in series with the system: their loss is added to the pressure the machine must develop
+  const legs = [];
+  if (res.unit && res.unit.type === 'hvu' && hvHooksAv.spigots) {
+    const role = res.unit.sysS === sysId ? 'oda' : 'eha';
+    const sq = hvHooksAv.spigots(res.unit).find(x => x.role === role);
+    const todo = res.pieces.filter(
+      pc =>
+        !pc.up &&
+        !pc.chamber &&
+        sq &&
+        outside.has(pc) &&
+        [pc.pts[0], pc.pts[pc.pts.length - 1]].some(p => dist(p, P(sq.p[0], sq.p[1])) < 80)
+    );
+    const inLeg = new Set(todo);
+    while (todo.length) {
+      const c = todo.pop();
+      for (const o of res.pieces)
+        if (!o.up && !o.chamber && !inLeg.has(o) && [o.a, o.b].some(k => k === c.a || k === c.b)) {
+          inLeg.add(o);
+          todo.push(o);
+        }
+    }
+    for (const pc of inLeg) {
+      pc.leg = true;
+      outside.add(pc);
+      legs.push(pc);
+    }
+    res.loose = res.pieces.filter(pc => !pc.up && !pc.chamber && !outside.has(pc)).length;
+  }
+  res.legs = legs;
+  res.dir = avRole(sysId) === 'ex' || /забор/i.test(sysOf(sysId).kind || '') ? -1 : 1; // + supply, − suction
+  const mach = res.unit ? avMachine(res.unit) : null;
+  res.machine = mach;
+  // sections of the pieces (a part counts as a short duct of its own Ø)
+  for (const pc of res.pieces) {
+    const pd_ = pc.part ? +pc.part.d || 200 : 250;
+    pc.e = pc.d || { shape: 'round', d: pd_, w: pd_, hh: pd_, ins: 0 };
+    pc.F = afArea(pc.e);
+  }
+  // design flows: the sum of the project flows of the terminals below; where none is set the flow of the parent is
+  // shared among the branches by their section areas (the machine flow for the whole system)
   for (let i = order.length - 1; i >= 0; i--) {
     const pc = order[i];
     const kids = order.filter(c => c.up === pc.down);
@@ -66017,39 +66069,162 @@ function avNet(sysId) {
     pc.flow = (tAt.get(pc.down) || []).reduce((s, t) => s + (+t.flow || 0), 0) + kids.reduce((s, c) => s + c.flow, 0);
     pc.leaf = !kids.length;
   }
-  // pressure along the tree
-  const bedRooms = avRooms().filter(z => avKind(z) === 'bed');
+  const roots = order.filter(c => c.up === src);
+  const share = (list, flow) => {
+    const zero = list.filter(c => !c.flow);
+    const A = zero.reduce((s, c) => s + c.F, 0);
+    if (flow > 0 && A > 0)
+      for (const c of zero) {
+        c.flow = (flow * c.F) / A;
+        c.assumed = true;
+      }
+  };
+  const rootSum = roots.reduce((s, c) => s + c.flow, 0);
+  if (!rootSum && mach) share(roots, mach.setQ);
   for (const pc of order) {
-    // a part in the run counts as a short duct of its own Ø plus the local loss of the part
-    const pd_ = pc.part ? +pc.part.d || 200 : 250;
-    const e = pc.d || { shape: 'round', d: pd_, w: pd_, hh: pd_, ins: 0 };
-    const f = avFric(e, pc.flow);
+    const ts = res.terms.filter(r => r.node === pc.down);
+    const own = ts.reduce((s, r) => s + (+r.t.flow || 0), 0);
+    share(pc.kids, pc.flow - own - pc.kids.reduce((s, c) => s + c.flow, 0));
+    const zt = ts.filter(r => !(+r.t.flow > 0));
+    if (zt.length && pc.leaf) for (const r of zt) r.flow = pc.flow / ts.length;
+  }
+  for (const r of res.terms) r.flowD = +r.t.flow > 0 ? +r.t.flow : r.flow || 0;
+  const bedRooms = avRooms().filter(z => avKind(z) === 'bed');
+  const totalD = roots.reduce((s, c) => s + c.flow, 0);
+  // static data of the pieces: bends, the part, the tee at the start, the transition from the parent
+  for (const pc of order) {
+    const e = pc.e;
+    pc.parent = order.find(c => c.down === pc.up) || null;
+    pc.sibs = order.filter(c => c.up === pc.up);
+    const main = pc.sibs.reduce((a, c) => (c.flow > a.flow ? c : a), pc.sibs[0]);
+    pc.isMain = pc === main;
+    let zb = 0;
+    for (const a of ductBends({ pts: pc.pts })) zb += afZetaBend(e, a);
+    if (pc.part) zb += afZetaPart(pc.part.kind);
+    pc.zFix = pc.chamber ? 0 : zb;
+    pc.zTrans = 0;
+    if (pc.sibs.length === 1 && pc.parent && !pc.chamber) {
+      const z0 = afZetaReducer(pc.parent.F, pc.F, 0.3);
+      pc.zTrans = pc.F > pc.parent.F ? z0 * Math.pow(pc.F / pc.parent.F, 2) : z0;
+    }
+    const toBed = pc.leaf && (tAt.get(pc.down) || []).some(t => bedRooms.some(z => inPoly(t.p, z.pts)));
+    pc.toBed = toBed;
+    pc.main = !pc.leaf && (pc.up === src || pc.flow >= 0.5 * totalD);
+    pc.vmax = pc.leaf ? (toBed ? N.vBed : N.vLeaf) : pc.main ? N.vMain : Math.min(AF_VREC.branch, N.vMain);
+  }
+  for (const r of res.terms) {
+    const t = r.t;
+    const s = t.type === 'hvu' ? null : sizeWH(t.size || (DEVK[t.kind] || {}).size);
+    r.F = s
+      ? s.round
+        ? (Math.PI * s.d * s.d) / 4e6
+        : (s.w * s.h) / 1e6
+      : Math.max(1e-4, (Math.max(1, +t.n || 2) * Math.PI * (+t.d || 125) ** 2) / 4e6);
+    r.zeta = afZetaTerm(t);
+  }
+  /** Loss of a piece at a flow q, Pa; stores its ζ. */
+  const pcDp = (pc, q) => {
+    const f = afSeg(pc.e, q);
+    let z = pc.zFix + pc.zTrans;
+    if (pc.sibs.length > 1) {
+      const pq = pc.parent ? Math.max(1, pc.parent.flowF != null ? pc.parent.flowF : pc.parent.flow) : q;
+      z += afZetaTee(pc.isMain ? 'pass' : 'branch', q, pq);
+    }
+    pc.zeta = z;
+    return pc.chamber ? 0 : f.R * pc.L + z * f.pd;
+  };
+  /** Loss of a terminal with its plenum at a flow q, Pa: ζ at the spigot velocity, not below the norm drop (scaled ∝ q²). */
+  const termDp = (r, q) => Math.max(r.zeta * afDyn(afVel(q, r.F)), N.dpTerm * Math.pow(q / Math.max(1, r.flowD), 2));
+  const legDp = Q => {
+    let s = 0;
+    for (const pc of legs) {
+      const f = afSeg(pc.e, Q);
+      let z = pc.part ? afZetaPart(pc.part.kind) : 0;
+      for (const a of ductBends({ pts: pc.pts })) z += afZetaBend(pc.e, a);
+      s += f.R * pc.L + z * f.pd;
+    }
+    return s;
+  };
+  // the machine and the balancing of the branches (no dampers): the working point against the network
+  const target = totalD || (mach ? mach.setQ : 0);
+  res.Qt = target;
+  if (order.length && target > 0) {
+    const curve = mach ? afFanCurve(mach) : null;
+    res.curve = curve;
+    const bal = afBalance({
+      order,
+      terms: res.terms,
+      src,
+      pieceDp: pcDp,
+      termDp,
+      intakeDp: legs.length ? legDp : null,
+      curve,
+      target
+    });
+    res.Q = bal.Q;
+    res.Qw = bal.Qw;
+    res.iters = bal.iters;
+    for (const pc of order) pc.flowAct = pc.flowF;
+    for (const r of res.terms) r.flowAct = r.flowF;
+  } else {
+    for (const pc of order) pc.flowAct = pc.flow;
+    for (const r of res.terms) r.flowAct = r.flowD;
+    res.Q = target;
+  }
+  // design pass: losses and the pressure along the tree at the design flows (what the machine must develop, the
+  // branches throttled by dampers to their design flow)
+  for (const pc of order) pc.flowF = pc.flow;
+  for (const pc of order) {
+    const f = afSeg(pc.e, pc.flow);
     pc.v = f.v;
     pc.R = f.R;
-    const sib = order.filter(c => c.up === pc.up);
-    const main = sib.reduce((a, c) => (c.flow > a.flow ? c : a), sib[0]);
-    let zeta = 0;
-    for (const a of ductBends({ pts: pc.pts })) zeta += (e.shape === 'rect' ? 0.4 : 0.25) * (a / 90);
-    if (sib.length > 1) zeta += pc === main ? 0.25 : 0.9;
-    if (pc.part) zeta += AV_PART_ZETA[pc.part.kind] || 0;
-    if (pc.chamber) zeta = 0; // inside the unit
-    pc.zeta = zeta;
-    pc.dp = pc.chamber ? 0 : f.R * pc.L + zeta * f.pd;
-    const parent = order.find(c => c.down === pc.up);
-    pc.P = (parent ? parent.P : 0) + pc.dp;
-    const toBed = pc.leaf && (tAt.get(pc.down) || []).some(t => bedRooms.some(z => inPoly(t.p, z.pts)));
-    pc.vmax = pc.leaf ? (toBed ? N.vBed : N.vLeaf) : N.vMain;
+    pc.pd = f.pd;
+    pc.dp = pcDp(pc, pc.flow);
+    pc.P = (pc.parent ? pc.parent.P : 0) + pc.dp;
+    pc.cap = afCapacity(pc.e, pc.vmax);
   }
   for (const r of res.terms) {
     const pc = order.find(c => c.down === r.node);
-    r.P = (pc ? pc.P : 0) + N.dpTerm;
+    r.dpT = termDp(r, Math.max(1, r.flowD));
+    r.P = (pc ? pc.P : 0) + r.dpT;
+    r.dev = r.flowD > 0 ? (r.flowAct - r.flowD) / r.flowD : 0;
   }
   res.crit = res.terms.reduce((m, r) => Math.max(m, r.P), 0);
   for (const r of res.terms) r.damper = res.crit - r.P > Math.max(10, 0.15 * res.crit);
+  res.intake = legs.length ? legDp(Math.max(1, target)) : 0;
+  res.need = res.crit + res.intake;
+  res.avail = res.curve ? res.curve.P(target) : null;
+  res.short = !!(res.curve && res.need > res.avail * 1.02);
   res.order = order;
   res.ok = true;
   return res;
 }
+let avDcCache = null,
+  avDcVer = -1;
+/** Calculated state of a duct for the plan and the properties: { flow, v, vmax, ratio, sys } of its busiest piece (cached by document version), or null outside a network. */
+function avDuctCalc(e) {
+  if (!avDcCache || avDcVer !== documentState.docVer) {
+    avDcCache = new Map();
+    avDcVer = documentState.docVer;
+    try {
+      for (const net of avSystems())
+        if (net.ok)
+          for (const pc of net.order)
+            if (pc.d && (!avDcCache.has(pc.d.id) || pc.flow > avDcCache.get(pc.d.id).flow))
+              avDcCache.set(pc.d.id, {
+                flow: pc.flow,
+                v: pc.v,
+                vmax: pc.vmax,
+                ratio: pc.vmax ? pc.v / pc.vmax : 0,
+                sys: net.sys
+              });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  return avDcCache.get(e.id) || null;
+}
+flowHooks.duct = avDuctCalc;
 /** All systems that have ducts or terminals. */
 function avSystems() {
   const ids = new Set();
@@ -66063,16 +66238,6 @@ function avVoid(p) {
   const N = avNorm();
   if (N.hVoid) return +N.hVoid;
   return Math.max(100, avSlabU() - avFc(p) - 50);
-}
-/** Section for a flow at a velocity limit within a height limit. */
-function avSize(flow, vmax, hmax, shape) {
-  const A = flow / 3600 / vmax;
-  const d = AV_RND.find(x => (Math.PI * x * x) / 4e6 >= A) || AV_RND[AV_RND.length - 1];
-  if (shape !== 'rect' && (shape === 'round' || d <= hmax)) return { shape: 'round', d };
-  const hs = AV_REC.filter(x => x <= Math.max(100, hmax));
-  for (const hh of hs.slice().reverse())
-    for (const w of AV_REC) if (w >= hh && w <= 4 * hh && (w * hh) / 1e6 >= A) return { shape: 'rect', w, hh };
-  return { shape: 'rect', w: AV_REC[AV_REC.length - 1], hh: hs[hs.length - 1] || 100 };
 }
 /**
  * Writes the network flows to the ducts and (sizes=true) selects sections: a duct whose pieces carry different
@@ -66118,13 +66283,12 @@ function avApplyNet(sizes, noUndo) {
     for (const pc of net.order) {
       const e = pc.d;
       if (!e) continue; // a silencer, a reducer or a tee: the ducts on both sides carry the flow
-      if (Math.round(+e.flow || 0) !== Math.round(pc.flow)) {
-        e.flow = Math.round(pc.flow);
-        rep.ducts++;
-      }
       if (sizes && pc.flow > 0) {
         const hm = Math.min(...pc.pts.map(avVoid)) - 2 * (e.ins || 0);
-        const s = avSize(pc.flow, pc.vmax, hm, N.shape === 'auto' ? (e.shape === 'rect' ? 'auto' : 'auto') : N.shape);
+        const shape = N.shape === 'auto' ? 'auto' : N.shape;
+        let s = afRecSection(pc.flow, pc.vmax, hm, shape);
+        // a rectangular main may run faster than a round one (ABOK: ≤ 5 against 3–4 m/s)
+        if (s.shape === 'rect' && pc.main) s = afRecSection(pc.flow, pc.vmax * 1.25, hm, 'rect');
         const same = s.shape === e.shape && (s.shape === 'round' ? s.d === e.d : s.w === e.w && s.hh === e.hh);
         if (!same) {
           e.shape = s.shape;
@@ -66236,20 +66400,43 @@ function avIssues() {
         if (!net.ok) continue;
         for (const pc of net.order) {
           if (!pc.d) continue;
-          if (pc.v > pc.vmax * 1.1)
+          if (pc.v > pc.vmax * 1.1) {
+            const hm = Math.min(...pc.pts.map(avVoid)) - 2 * (pc.d.ins || 0);
+            const sg = afRecSection(pc.flow, pc.vmax, hm, N.shape === 'auto' ? 'auto' : N.shape);
+            const sgT = sg.shape === 'round' ? `Ø${sg.d}` : `${sg.w}×${sg.hh}`;
             out.push({
               id: pc.d.id,
               lvl: 'warn',
-              msg: `${net.sys}: скорость ${pc.v.toFixed(1)} м/с > ${pc.vmax} на участке ${Math.round(pc.flow)} м³/ч — увеличьте сечение (Подобрать сечения).`,
+              msg: `${net.sys}: скорость ${pc.v.toFixed(1)} м/с > ${pc.vmax} на участке ${Math.round(pc.flow)} м³/ч — увеличьте сечение до ${sgT} (Подобрать сечения).`,
               p: pc.pts[0]
             });
-          if (pc.flow && Math.abs((+pc.d.flow || 0) - pc.flow) > Math.max(10, 0.1 * pc.flow) && pc.d.flow)
-            out.push({
-              id: pc.d.id,
-              lvl: 'info',
-              msg: `${net.sys}: по сети на участке ${Math.round(pc.flow)} м³/ч, в свойствах ${Math.round(pc.d.flow)} — Пересчитать сеть.`,
-              p: pc.pts[0]
-            });
+          }
+        }
+        if (net.short)
+          out.push({
+            id: (net.unit || net.order[0].d || {}).id,
+            lvl: 'warn',
+            msg: `${net.sys}: машина не вытягивает — нужно ${Math.round(net.need)} Па при ${Math.round(net.Qt)} м³/ч, располагаемое ${Math.round(net.avail)} Па (фактически ${Math.round(net.Q)} м³/ч). Увеличьте сечения или выберите машину мощнее.`,
+            p: net.order[0].pts[0]
+          });
+        for (const r of net.terms) {
+          if (!(r.flowD > 0) || (r.dev > -0.15 && r.dev < 0.15)) continue;
+          const pc = net.order.find(c => c.down === r.node);
+          let how = 'поставьте дроссель-клапан на этой ветке';
+          if (r.dev < 0) {
+            if (net.short) how = 'машине не хватает давления';
+            else if (pc && pc.v > pc.vmax) {
+              const sg = afRecSection(pc.flow, pc.vmax, 1e5, pc.e.shape);
+              how = `увеличьте участок до ${sg.shape === 'round' ? 'Ø' + sg.d : sg.w + '×' + sg.hh}`;
+            } else how = 'прикройте дросселями соседние ветки';
+          }
+          out.push({
+            id: r.t.id,
+            // a throttling damper or a bigger section fixes it: a note; a machine that falls short is a warning on its own
+            lvl: net.short && r.dev < 0 ? 'warn' : 'info',
+            msg: `${net.sys}: решётка получает ${Math.round(r.flowAct)} из ${Math.round(r.flowD)} м³/ч (${r.dev > 0 ? '+' : ''}${Math.round(r.dev * 100)} %) — ${how}.`,
+            p: r.t.p
+          });
         }
         for (const r of net.terms)
           if (r.damper)
@@ -66713,6 +66900,11 @@ const HV_KIND = {
 
 /* ---------- geometry ---------- */
 const ahuOf = e => AHU_CAT[e.model] || AHU_CAT['komf-r700f'];
+/** Characteristic of an air handling unit from its model: { q, pa, qmax, curve, setQ } — nominal flow and pressure, max flow, catalogue curve if any, the set flow. */
+function hvMachine(e) {
+  const a = ahuOf(e);
+  return { q: a.q, pa: a.pa, qmax: a.qmax, curve: a.curve, setQ: +e.flow || a.q };
+}
 /** A unit set vertically (on a wall or on the floor): by its own setting, else as the model is made. */
 const ahuVert = e =>
   e.vert != null && e.vert !== '' ? e.vert === true || e.vert === 1 || e.vert === '1' : ahuOf(e).mount === 'floor';
@@ -69137,6 +69329,12 @@ const acCap = e => {
   const c = m ? m.cap : e.cap;
   return [2.5, 3.5, 5, 7].reduce((a, x) => (Math.abs(x - c) < Math.abs(a - c) ? x : a), 3.5);
 };
+/** Characteristic of a ducted unit: { q, pa, qmax, curve, setQ } — flow and external static pressure of the model (at least 20 Pa: a unit with 0 still pushes through its grille). */
+function acMachine(e) {
+  const m = acModel(e);
+  const q = m ? m.q : Math.round(((+e.cap || 3.5) * 160) / 10) * 10;
+  return { q, pa: Math.max(20, m ? m.esp : 50), qmax: 0, curve: m && m.curve, setQ: +e.flow || q };
+}
 const acDim = e => (acModel(e) ? acModel(e).dim : ACD[e.kind][acCap(e)] || ACD.split[3.5]);
 /**
  * Chambers of a ducted unit with round spigots (supply in front, return behind), in the local frame of the unit:
@@ -110062,6 +110260,7 @@ function initLayoutView() {
 
 
 
+
 let avTab = 'air';
 let avMsg = '';
 const avN = (v, d = 0) => (v == null || !isFinite(v) ? '—' : (+v).toFixed(d).replace('.', ','));
@@ -110069,6 +110268,7 @@ const avKw = W => avN(W / 1000, 1);
 
 const AV_CSS = `#avdlg .dlg{width:min(980px,96vw);max-height:92vh;display:flex;flex-direction:column}
 #avdlg .avb{overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
+#avdlg .avb>*{flex-shrink:0}
 #avdlg .avsum{display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:var(--muted)}#avdlg .avsum b{color:var(--fg);font-size:15px;display:block}
 #avdlg .mtbl td{font-size:12px}#avdlg td.n,#avdlg th.n{text-align:right;font-variant-numeric:tabular-nums}
 #avdlg tr[data-sel]{cursor:pointer}#avdlg tr[data-sel]:hover td{background:var(--panel2)}
@@ -110162,18 +110362,29 @@ function avNetTab() {
         const sy = sysOf(net.sys);
         if (!net.ok)
           return `<div class="sech">${esc(net.sys)} · ${esc(sy.name || '')}</div><div class="avmsg bad">${esc(net.msg)}</div>`;
-        const rows = net.order.map(
-          pc =>
-            `<tr data-sel="${pc.d.id}"><td>${secTxt(pc.d)}</td><td class="n">${avN(pc.L, 1)}</td><td class="n">${avN(pc.flow)}</td><td class="n">${avLv(pc.v <= pc.vmax * 1.1 || false, avN(pc.v, 1))} / ${avN(pc.vmax, 1)}</td><td class="n">${avN(pc.R, 2)}</td><td class="n">${avN(pc.zeta, 2)}</td><td class="n">${avN(pc.dp, 1)}</td><td class="n">${avN(pc.P, 0)}</td></tr>`
-        );
+        const rows = net.order.map(pc => {
+          const e = pc.d;
+          const sec = e ? secTxt(e) : `${pc.part ? esc(pc.part.kind) : 'камера'} Ø${avN(pc.e.d)}`;
+          const room = pc.cap ? (pc.cap - pc.flow) / pc.cap : 0;
+          return `<tr${e ? ` data-sel="${e.id}"` : ''}><td>${sec}${pc.leg ? ' · забор' : ''}</td><td class="n">${avN(pc.L, 1)}</td><td class="n">${avN(pc.flow)}${pc.assumed ? '*' : ''}</td><td class="n">${avN(pc.F * 1e4, 0)}</td><td class="n">${avLv(pc.v <= pc.vmax * 1.1 || false, avN(pc.v, 1))} / ${avN(pc.vmax, 1)}</td><td class="n">${avN(pc.R, 2)}</td><td class="n">${avN(pc.zeta * pc.pd, 1)}</td><td class="n">${avN(pc.dp, 1)}</td><td class="n">${avLv(room >= 0 ? true : 'warn', avN(room * 100, 0) + ' %')}</td></tr>`;
+        });
+        const trows = net.terms.map(r => {
+          const bad = r.flowD > 0 && Math.abs(r.dev) >= 0.15;
+          return `<tr data-sel="${r.t.id}"><td>${esc(DEVK[r.t.kind] ? DEVK[r.t.kind].n : r.t.kind === 'plen' ? 'Адаптер решётки' : r.t.kind)}</td><td class="n">${avN(r.flowD)}</td><td class="n">${avN(r.flowAct)}</td><td class="n">${avLv(!bad, (r.dev > 0 ? '+' : '') + avN(r.dev * 100, 0) + ' %')}</td><td class="n">${avN(r.P, 0)}</td><td>${r.damper ? 'дроссель-клапан' : ''}</td></tr>`;
+        });
         const damp = net.terms.filter(t => t.damper).length;
-        return `<div class="sech">${esc(net.sys)} · ${esc(sy.name || '')} — ${esc(net.srcName)}</div>
-<div class="avsum"><div><b>${avN(net.order[0] ? net.order.filter(p => p.up === net.src).reduce((s, p) => s + p.flow, 0) : 0)} м³/ч</b>расход системы</div><div><b>${avN(net.crit)} Па</b>потери по главной ветке (напор установки в сеть)</div><div><b>${net.terms.length}</b>решёток</div><div><b>${damp ? avLv('warn', damp) : 0}</b>нужны регулирующие клапаны</div>${net.loose ? `<div><b class="bad">${net.loose}</b>участков вне сети</div>` : ''}</div>
-${avTbl(['Сечение', '#L, м', '#м³/ч', '#v / предел, м/с', '#R, Па/м', '#Σζ', '#Δp, Па', '#P от начала'], rows)}`;
+        const mach = net.machine
+          ? `<div><b>${avN(net.need)} / ${net.avail != null ? avN(net.avail) : '—'} Па</b>нужно / машина даёт при ${avN(net.Qt)} м³/ч</div><div><b>${avLv(!net.short, avN(net.Q) + ' м³/ч')}</b>рабочая точка (факт)</div>`
+          : '';
+        return `<div class="sech">${esc(net.sys)} · ${esc(sy.name || '')} — ${esc(net.srcName)} · ${net.dir < 0 ? 'вытяжка / забор' : 'приток'}</div>
+<div class="avsum"><div><b>${avN(net.Qt)} м³/ч</b>расход системы (по решёткам)</div><div><b>${avN(net.crit)} Па</b>потери по главной ветке${net.intake ? ' (+ забор ' + avN(net.intake) + ')' : ''}</div>${mach}<div><b>${net.terms.length}</b>решёток</div><div><b>${damp ? avLv('warn', damp) : 0}</b>нужны регулирующие клапаны</div></div>
+${net.short ? `<div class="avmsg bad">Машина не вытягивает: нужно ${avN(net.need)} Па при ${avN(net.Qt)} м³/ч, располагаемое ${avN(net.avail)} Па — расход упадёт до ${avN(net.Q)} м³/ч. Увеличьте сечения (Подобрать сечения) или возьмите машину мощнее.</div>` : ''}
+${avTbl(['Участок', '#L, м', '#м³/ч', '#F, см²', '#v / рек., м/с', '#R, Па/м', '#Z, Па', '#ΔP, Па', '#Запас'], rows)}
+${avTbl(['Решётка', '#Проект, м³/ч', '#Факт, м³/ч', '#±', '#P, Па', 'Коррекция'], trows)}`;
       })
       .join('') +
-    `<div class="btnrow"><button class="btn" data-av="flows" title="Записать в воздуховоды расходы, просуммированные по сети от решёток">Пересчитать сеть</button><button class="btn pri" data-av="sizes" title="Разрезать воздуховоды в тройниках и подобрать сечения по скоростям и высоте запотолочного пространства">Подобрать сечения</button></div>
-<div class="avmsg">Трение — по Альтшулю (оцинковка 0,1 мм), отводы 0,25–0,4, тройник проход 0,25 / ответвление 0,9, решётка с камерой ${avNorm().dpTerm} Па. Скорости: магистраль ${avNorm().vMain}, ответвления ${avN(avNorm().vLeaf, 1)}, в спальни ${avN(avNorm().vBed, 1)} м/с. Высота сечения — не больше запотолочного пространства.</div>`
+    `<div class="btnrow"><button class="btn" data-av="velcol" title="Окрасить воздуховоды на плане по скорости: зелёный — в норме, жёлтый — около рекомендуемой, красный — выше">${S.vent.velColor ? 'Скорости на плане: вкл' : 'Скорости на плане: выкл'}</button><button class="btn pri" data-av="sizes" title="Разрезать воздуховоды в тройниках и по расчёту выставить сечения участков по рекомендуемым скоростям (с подтверждением, один шаг отмены)">Подобрать сечения</button></div>
+<div class="avmsg">Расход участков не вводится: он считается от проектных расходов решёток (* — поровну по сечениям). Трение — по Альтшулю (оцинковка 0,1; ПВХ 0,05; гибкий 2 мм), потери Z = Σζ·ρv²/2, отводы, переходы, тройники по долям расхода, решётка с камерой не менее ${avNorm().dpTerm} Па; факт — рабочая точка машины и распределение по сопротивлениям ветвей. Скорости: магистраль ${avNorm().vMain}, ответвления ${avN(avNorm().vLeaf, 1)}, в спальни ${avN(avNorm().vBed, 1)} м/с. Высота сечения — не больше запотолочного пространства.</div>`
   );
 }
 function avClashTab() {
@@ -110282,9 +110493,20 @@ function avClick(ev) {
     const a = b.dataset.av;
     if (a === 'close') document.getElementById('avdlg').hidden = true;
     else if (a === 'rooms') avMsg = `Расходы по нормам: изменено решёток ${avApplyRoomFlows()}.`;
-    else if (a === 'flows' || a === 'sizes') {
-      const r = avApplyNet(a === 'sizes');
-      avMsg = `Систем ${r.systems}: расходы обновлены у ${r.ducts} участков${a === 'sizes' ? `, сечения подобраны у ${r.resized}, разрезано в тройниках ${r.split}` : ''}.${r.msgs.length ? ' ' + r.msgs.join('; ') : ''}`;
+    else if (a === 'velcol') {
+      pushUndo();
+      ventVelColorSet(!S.vent.velColor);
+      changed();
+    } else if (a === 'sizes') {
+      if (
+        typeof confirm !== 'function' ||
+        confirm(
+          'Подобрать сечения воздуховодов по расчёту? Воздуховоды будут разрезаны в тройниках, сечения изменятся (одним шагом отмены).'
+        )
+      ) {
+        const r = avApplyNet(true);
+        avMsg = `Систем ${r.systems}: сечения подобраны у ${r.resized}, разрезано в тройниках ${r.split}.${r.msgs.length ? ' ' + r.msgs.join('; ') : ''}`;
+      }
     } else if (a === 'sep') {
       const r = avSeparate();
       avMsg = `Разведено по высоте: ${r.moved}.${r.left ? ` Не удалось: ${r.left} — не хватает запотолочного пространства, нужна другая трасса или больше опуск потолка.` : ''}`;
@@ -132798,6 +133020,238 @@ function hiddenDoorFor(o, side = 1) {
   return { e, zone };
 }
 
+// ===== blocks/hvac/air-flow.js =====
+/**
+ * blocks/hvac/air-flow
+ *
+ * Aerodynamic formulas of the duct networks: section area, equivalent diameter, velocity, friction by Altshul, local
+ * loss coefficients, recommended velocities and the capacity of a section, the standard rows of sections, the fan curve
+ * of a machine and its working point against the network, and the balancing of the branches of a tree. Pure
+ * functions without the document, so the numbers can be checked alone; air-calc.js feeds them with the network.
+ * Units: flow m³/h, size mm, length m, velocity m/s, pressure Pa; the resistance k of a branch is Pa/(m³/h)².
+ */
+/** Air density, kg/m³, and kinematic viscosity, m²/s (20 °C). */
+const AF_RHO = 1.2;
+const AF_NU = 15.1e-6;
+/**
+ * Equivalent roughness kэ, mm: galvanized steel 0.1, plastic 0.05, flexible hose 1–3 (2 taken: the corrugation).
+ * Source: Altshul formula as given in the ABOK handbook (Е. В. Сотников / Богословский, «Справочник проектировщика»).
+ */
+const AF_KE = { galv: 0.1, pvc: 0.05, flex: 2 };
+/**
+ * Recommended velocities, m/s, by purpose (residential, ABOK / СП 60.13330 practice): a rectangular main above the
+ * ceiling ≤ 5, a round main 3–4, branches ≤ 3, feeds to grilles 2–2.5 (bedrooms 2), the face of a grille in the room
+ * 1.5–2 (bedrooms 1.5). The project norms (vMain, vLeaf, vBed) override the round main and the feeds.
+ */
+const AF_VREC = { mainRect: 5, mainRound: 4, branch: 3, feed: 2.5, feedBed: 2, grille: 2, grilleBed: 1.5 };
+/** Standard round sections Ø, mm. */
+const AF_RND = [100, 125, 160, 200, 250, 315, 355, 400, 450, 500, 560, 630, 710, 800];
+/** Standard rectangular sections [W, H], mm (by growing area). */
+const AF_RECT = [
+  [100, 50],
+  [150, 100],
+  [200, 100],
+  [250, 100],
+  [300, 100],
+  [300, 150],
+  [400, 150],
+  [400, 200],
+  [500, 200],
+  [500, 250],
+  [600, 250],
+  [600, 300],
+  [800, 300],
+  [800, 400],
+  [1000, 400]
+];
+
+/** Area of a round or rectangular section, m² (shape 'rect' — w × hh, else Ø d). */
+const afArea = e => (e.shape === 'rect' ? (e.w * e.hh) / 1e6 : (Math.PI * e.d * e.d) / 4e6);
+/** Equivalent (hydraulic) diameter, m: 2AB/(A+B) for a rectangle, Ø for a circle. */
+const afDeq = e => (e.shape === 'rect' ? (2 * e.w * e.hh) / (e.w + e.hh) : e.d) / 1000;
+/** Velocity, m/s, of a flow L (m³/h) in the area F (m²): v = L/(3600·F). */
+const afVel = (L, F) => (F > 0 ? L / (3600 * F) : 0);
+/** Dynamic pressure, Pa: ρv²/2. */
+const afDyn = v => (AF_RHO * v * v) / 2;
+/** Equivalent roughness of a duct, mm, by its material and kind. */
+function afKe(e) {
+  const m = String(e.mat || '');
+  if (e.flex || /Гибк|Полужёстк/.test(m)) return AF_KE.flex;
+  if (/ПВХ/.test(m)) return AF_KE.pvc;
+  return AF_KE.galv;
+}
+/** Altshul friction factor λ = 0.11·(kэ/d + 68/Re)^0.25, kэ in mm, d in m. */
+const afLambda = (keMm, dM, Re) => 0.11 * Math.pow(keMm / 1000 / dM + 68 / Math.max(1, Re), 0.25);
+/** Section state at a flow: { F, de, v, pd, Re, lam, R } — area, equivalent Ø, velocity, dynamic pressure, Reynolds, λ, friction Pa/m. */
+function afSeg(e, flow) {
+  const F = afArea(e),
+    de = afDeq(e),
+    v = afVel(flow, F);
+  if (!v || !de) return { F, de, v: 0, pd: 0, Re: 0, lam: 0, R: 0 };
+  const Re = (v * de) / AF_NU;
+  const lam = afLambda(afKe(e), de, Re);
+  const pd = afDyn(v);
+  return { F, de, v, pd, Re, lam, R: (lam / de) * pd };
+}
+/** Capacity of a section, m³/h, at the recommended velocity: 3600·v_rec·F. */
+const afCapacity = (e, vrec) => 3600 * vrec * afArea(e);
+
+/** ζ of a bend by the section and the angle (round 90° 0.25, rectangular 90° 0.4, flexible by the radius r/d; scales with the angle). */
+function afZetaBend(e, deg, rOverD) {
+  const k = deg / 90;
+  if (e.flex) {
+    const r = rOverD || 1.5;
+    const z90 = r >= 2 ? 0.35 : r >= 1.5 ? 0.5 : r >= 1 ? 0.9 : 1.3;
+    return z90 * k;
+  }
+  return (e.shape === 'rect' ? 0.4 : 0.25) * k;
+}
+/** ζ of a reducer/expander by the areas (F1 → F2, m²) and its length (m); referred to the smaller section (cone angle softens it). */
+function afZetaReducer(F1, F2, len) {
+  if (!(F1 > 0 && F2 > 0) || Math.abs(F1 - F2) / Math.max(F1, F2) < 0.05) return 0;
+  const d1 = Math.sqrt((4 * F1) / Math.PI),
+    d2 = Math.sqrt((4 * F2) / Math.PI);
+  const al = (2 * Math.atan(Math.abs(d1 - d2) / (2 * Math.max(0.05, len || 0.3))) * 180) / Math.PI;
+  if (F2 > F1) return Math.pow(1 - F1 / F2, 2) * Math.min(1, 0.3 + al / 60);
+  return 0.5 * Math.pow(1 - F2 / F1, 0.75) * Math.min(1, 0.2 + al / 90);
+}
+/** ζ of a tee for the pass (role 'pass') or the 90° branch ('branch'), by the ratio of the branch flow to the common flow. */
+function afZetaTee(role, qb, qc) {
+  const r = qc > 0 ? Math.min(1, Math.max(0, qb / qc)) : 0.5;
+  return role === 'branch' ? 0.9 + 0.2 * r : 0.1 + 0.35 * r;
+}
+/** Typical ζ of a terminal by its kind, referred to the velocity in its spigot (grille with a plenum); a catalogue ζ (zeta) wins. */
+function afZetaTerm(t) {
+  if (t && +t.zeta > 0) return +t.zeta;
+  const k = (t && t.kind) || '';
+  return { vdiff: 3, vgrille: 3, vwall: 3.5, vvalve: 5, plen: 3 }[k] || 3;
+}
+/** ζ of an inline part: silencer 2, adapter 0.3, a reducer / tee are counted by their sections (0 here). */
+const afZetaPart = kind => ({ sil: 2, adp: 0.3 })[kind] || 0;
+
+/** Section for a flow at a velocity limit within a height limit, from the standard rows: { shape:'round', d } | { shape:'rect', w, hh }. */
+function afRecSection(flow, vmax, hmax, shape) {
+  const A = flow / 3600 / Math.max(0.1, vmax);
+  const d = AF_RND.find(x => (Math.PI * x * x) / 4e6 >= A) || AF_RND[AF_RND.length - 1];
+  if (shape !== 'rect' && (shape === 'round' || d <= hmax)) return { shape: 'round', d };
+  const hs = [...new Set(AF_RECT.map(r => r[1]))].filter(x => x <= Math.max(100, hmax)).sort((a, b) => b - a);
+  for (const hh of hs)
+    for (const [w, h] of AF_RECT) if (h === hh && (w * h) / 1e6 >= A) return { shape: 'rect', w, hh };
+  const big = AF_RECT[AF_RECT.length - 1];
+  return { shape: 'rect', w: big[0], hh: hs.length ? hs[hs.length - 1] : big[1] };
+}
+/** Value of the section select of a duct: «160» or «400x200» when it is in the standard rows, else '' (own size). */
+function afSecStd(e) {
+  if (e.shape === 'rect') return AF_RECT.some(r => r[0] === +e.w && r[1] === +e.hh) ? `${e.w}x${e.hh}` : '';
+  return AF_RND.includes(+e.d) ? String(e.d) : '';
+}
+
+/**
+ * Fan curve of a machine: P(Q) in Pa, Q in m³/h. A catalogue curve (m.curve = [[Q, P], …]) is interpolated; else the
+ * parabola P = Pmax·(1 − (Q/Qmax)²) through the nominal point (m.q, m.pa) and Qmax (m.qmax, else 1.4·q), whose Pmax
+ * follows from the two. Returns { P(Q), q, pa, qmax, pmax }.
+ */
+function afFanCurve(m) {
+  const q = +m.q || 0,
+    pa = +m.pa || 0;
+  if (Array.isArray(m.curve) && m.curve.length >= 2) {
+    const pts = m.curve.map(([a, b]) => [+a, +b]).sort((a, b) => a[0] - b[0]);
+    const P = Q => {
+      if (Q <= pts[0][0]) return pts[0][1];
+      for (let i = 1; i < pts.length; i++)
+        if (Q <= pts[i][0]) {
+          const [x0, y0] = pts[i - 1],
+            [x1, y1] = pts[i];
+          return y0 + ((y1 - y0) * (Q - x0)) / (x1 - x0 || 1);
+        }
+      return 0;
+    };
+    const last = pts[pts.length - 1];
+    return { P, q, pa: pa || P(q), qmax: last[0], pmax: pts[0][1] };
+  }
+  const qmax = +m.qmax > q ? +m.qmax : q * 1.4;
+  const pmax = q > 0 ? pa / (1 - (q / qmax) ** 2) : pa;
+  return { P: Q => Math.max(0, pmax * (1 - (Q / qmax) ** 2)), q, pa, qmax, pmax };
+}
+/** Working point: the flow Q where the curve P(Q) meets the network ΔP = k·Q² (bisection); qmax when the network has no resistance. */
+function afWorkPoint(curve, k) {
+  if (!(k > 0)) return curve.qmax;
+  let lo = 0,
+    hi = curve.qmax;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (curve.P(mid) > k * mid * mid) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+/** Resistance of branches in parallel: 1 / (Σ 1/√k)². */
+function afParallel(ks) {
+  const s = ks.reduce((a, k) => a + 1 / Math.sqrt(Math.max(k, 1e-12)), 0);
+  return s > 0 ? 1 / (s * s) : 0;
+}
+
+/**
+ * Balancing of a tree of pieces without dampers: the flow splits at every node ∝ 1/√k of the branches (equal
+ * pressure at the node), the machine gives min(target, working point). Iterates (≤ 20, until the flows change by < 1 %)
+ * because the resistances depend on the flows (λ(Re), the ζ of tees).
+ * - order: pieces from the source, each { up, down, flow (design) }; the roots have up === src;
+ * - terms: [{ node, flowD }] terminals standing at the node `down` of a piece (or at src);
+ * - pieceDp(pc, q): loss of the piece at a flow, Pa; termDp(r, q): loss of a terminal, Pa;
+ * - intakeDp(Q): series loss before the machine (outdoor-air leg), Pa; curve: afFanCurve(...) or null; target: m³/h.
+ * Sets pc.flowF, r.flowF, returns { Q, Qw, K, iters }.
+ */
+function afBalance({ order, terms, src, pieceDp, termDp, intakeDp, curve, target }) {
+  const kids = new Map();
+  for (const pc of order) (kids.get(pc.up) || kids.set(pc.up, []).get(pc.up)).push(pc);
+  const tOf = new Map();
+  for (const r of terms) (tOf.get(r.node) || tOf.set(r.node, []).get(r.node)).push(r);
+  const kk = (dp, q) => dp / Math.max(1e-6, q * q);
+  for (const pc of order) pc.flowF = pc.flow;
+  for (const r of terms) r.flowF = r.flowD;
+  const branches = n => [...(tOf.get(n) || []).map(r => ({ r })), ...(kids.get(n) || []).map(pc => ({ pc }))];
+  let Q = target,
+    Qw = Infinity,
+    K = 0,
+    it = 0;
+  for (; it < 20; it++) {
+    for (const pc of order) pc.k = kk(pieceDp(pc, Math.max(pc.flowF, 1)), Math.max(pc.flowF, 1));
+    for (const r of terms) r.k = kk(termDp(r, Math.max(r.flowF, 1)), Math.max(r.flowF, 1));
+    for (let i = order.length - 1; i >= 0; i--) {
+      const pc = order[i];
+      pc.kd = afParallel(branches(pc.down).map(b => (b.r ? b.r.k : b.pc.kb)));
+      pc.kb = pc.k + pc.kd;
+    }
+    const kr = afParallel(branches(src).map(b => (b.r ? b.r.k : b.pc.kb)));
+    K = kr + (intakeDp ? kk(intakeDp(Math.max(1, target)), Math.max(1, target)) : 0);
+    Qw = curve ? afWorkPoint(curve, K) : Infinity;
+    Q = Math.min(target, Qw);
+    let dev = 0;
+    const split = (n, q) => {
+      const bs = branches(n);
+      const w = bs.map(b => 1 / Math.sqrt(Math.max(b.r ? b.r.k : b.pc.kb, 1e-12)));
+      const s = w.reduce((a, x) => a + x, 0) || 1;
+      bs.forEach((b, j) => {
+        const f = (q * w[j]) / s;
+        if (b.r) {
+          dev = Math.max(dev, Math.abs(f - b.r.flowF) / Math.max(1, b.r.flowF));
+          b.r.flowF = f;
+        } else {
+          dev = Math.max(dev, Math.abs(f - b.pc.flowF) / Math.max(1, b.pc.flowF));
+          b.pc.flowF = f;
+          split(b.pc.down, f);
+        }
+      });
+    };
+    split(src, Q);
+    if (dev < 0.01) {
+      it++;
+      break;
+    }
+  }
+  return { Q, Qw, K, iters: it };
+}
+
 // ===== blocks/hvac/checks-hvac.js =====
 /**
  * blocks/hvac/checks-hvac
@@ -133704,6 +134158,8 @@ function penetrationMesh(mb, e) {
 
 
 
+
+
 /**
  * The outline of a duct in plan: the left and the right side (offset by half the width plus insulation) and the two
  * end faces. Shared by the snaps and the cutting edges.
@@ -133895,16 +134351,19 @@ XT.duct = {
 
 /** Properties panel of a duct (XT.duct.panel): the air velocity and the calculated sizes. */
 function ductPanel(e) {
-  const v = ductVel(e),
-    bad = v > (S.vent.vmax || 4),
+  const c = avDuctCalc(e),
+    v = ductVel(e),
+    lim = c ? c.vmax : S.vent.vmax || 4,
+    bad = v > lim * 1.1,
     L = ductLen(e);
   const ro = (k, x) => `<dt>${k}</dt><dd>${x}</dd>`;
   return (
     `<div class="hd">Расчёт</div>` +
     ro(
       'Скорость воздуха',
-      `<span class="${bad ? 'bad' : 'ok'}">${v.toFixed(2)} м/с${bad ? ' — выше ' + S.vent.vmax : ''}</span>`
+      `<span class="${bad ? 'bad' : 'ok'}">${v.toFixed(2)} м/с${bad ? ' — выше ' + lim : ' (рекомендуется до ' + lim + ')'}</span>`
     ) +
+    ro('Пропускная способность', c ? Math.round(3600 * lim * ductArea(e)) + ' м³/ч при ' + lim + ' м/с' : '—') +
     ro('Площадь сечения', (ductArea(e) * 1e4).toFixed(1) + ' см²') +
     ro('Длина', (L / 1000).toFixed(2) + ' м') +
     ro('Площадь поверхности', ((ductPerim(e) * L) / 1000).toFixed(2) + ' м²') +
@@ -133913,17 +134372,35 @@ function ductPanel(e) {
 }
 /** Button row of a duct under the properties table (XT.duct.panelAfter). */
 function ductPanelAfter() {
-  return `<div class="btnrow"><button class="btn" id="bMEPopen">Системы вентиляции…</button></div>`;
+  return `<div class="btnrow"><button class="btn" id="bMEPopen">Системы вентиляции…</button><button class="btn" data-avopen="net" title="Расчёт сети: расходы, скорости, подбор сечений">Подобрать сечения…</button></div>`;
+}
+/** Options of the standard section row for a duct, with its own section in front when it is not in the row: [[value, label]]. */
+function secOptions(e) {
+  const cur = e.shape === 'rect' ? `${e.w}x${e.hh}` : String(e.d);
+  const std = [...AF_RND.map(d => [String(d), `Ø${d}`]), ...AF_RECT.map(([w, h]) => [`${w}x${h}`, `${w}×${h}`])];
+  return std.some(([v]) => v === cur) ? std : [[cur, `своё: ${secTxt(e)}`], ...std];
+}
+/** The calculated flow of a duct as text for the properties: «120 · рассчитан». */
+function ductFlowTxt(e) {
+  const c = avDuctCalc(e);
+  return c
+    ? `${Math.round(c.flow)} <span class="mut">· рассчитан</span>`
+    : '— <span class="mut">· вне расчётной сети</span>';
 }
 /** Simple fields of a duct for the properties table (XT.duct.fields). */
 function ductFields(e) {
   return [
     { l: 'Система', k: 'sys', sel: sysOpts() },
-    { l: 'Сечение (Ø или Ш×В)', k: 'sec', txt: true },
+    { l: 'Сечение из ряда', k: 'secStd', sel: secOptions(e) },
+    { l: 'Сечение своё (Ø или Ш×В)', k: 'sec', txt: true },
     { l: 'Отметка оси', k: 'z', num: true },
     { l: 'Отметка начала', k: 'dza', num: true },
     { l: 'Отметка конца', k: 'dzb', num: true },
-    { l: 'Расход, м³/ч', k: 'flow', num: true },
+    {
+      l: 'Расход, м³/ч',
+      ro: ductFlowTxt(e),
+      tip: 'Рассчитан по сети: сумма расходов решёток ниже по потоку (не вводится)'
+    },
     { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
     ...(e.mat === PVC_MAT
       ? [
