@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.57';
+const APP_VER = '59.58';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12641,8 +12641,6 @@ function prims(e) {
     }
     case 'text':
       return closedSegs(textBox(e));
-    case 'wall':
-      return closedSegs(wallInfo(e).poly);
     case 'door':
     case 'window': {
       const I = opInfo(e);
@@ -12716,7 +12714,6 @@ function entDist(e, p) {
     }
   }
   if (e.type === 'text' && inPoly(p, textBox(e))) return 0;
-  if (e.type === 'wall' && inPoly(p, wallInfo(e).poly)) return 0;
   if (e.type === 'door' || e.type === 'window') {
     const I = opInfo(e);
     if (I && inPoly(p, I.rect)) return -1;
@@ -12794,13 +12791,6 @@ function keyPts(e) {
     case 'text':
       r.push({ p: e.p, k: 'ins' });
       break;
-    case 'wall': {
-      const wi = wallInfo(e);
-      r.push({ p: e.a, k: 'end' }, { p: e.b, k: 'end' }, { p: mid(e.a, e.b), k: 'mid' });
-      wi.poly.forEach(p => r.push({ p, k: 'end' }));
-      closedSegs(wi.poly).forEach(s => r.push({ p: mid(s.a, s.b), k: 'mid' }));
-      break;
-    }
     case 'door':
     case 'window': {
       const I = opInfo(e);
@@ -12907,8 +12897,6 @@ function samplePts(e) {
     }
     case 'text':
       return textBox(e);
-    case 'wall':
-      return wallInfo(e).poly;
     case 'door':
     case 'window': {
       const I = opInfo(e);
@@ -12935,7 +12923,6 @@ function mapEnt(e, f, dA = 0) {
   const n = JSON.parse(JSON.stringify(e));
   switch (n.type) {
     case 'line':
-    case 'wall':
       n.a = f(e.a);
       n.b = f(e.b);
       break;
@@ -15956,7 +15943,6 @@ function acquire(r, w) {
 
 
 
-
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -16048,20 +16034,6 @@ function gripsOf0(e) {
   };
   const mv = ref => (o, p) => mapEnt(o, q => add(q, sub(p, ref)));
   switch (e.type) {
-    case 'wall': {
-      // the middle of a wall: a curved one bends through the dragged point (Shift — moves the whole wall);
-      // a straight wall gets a second grip at a quarter for bending it
-      const A = arcOf(e);
-      const bend = { apply: set((n, p) => (n.arc = Math.round((sagittaThrough(n.a, n.b, p) || 0) * 10) / 10)) };
-      if (e.id != null && hosted(e.id).length) bend.apply = null;
-      const g = [
-        { p: e.a, apply: set((n, p) => (n.a = p)) },
-        { p: e.b, apply: set((n, p) => (n.b = p)) },
-        { p: A ? arcPt(A, A.L / 2) : mid(e.a, e.b), apply: mv(A ? arcPt(A, A.L / 2) : mid(e.a, e.b)) }
-      ];
-      if (A && bend.apply) g.push({ p: arcPt(A, A.L * 0.3), apply: bend.apply, tip: 'Изгиб дуги' });
-      return g;
-    }
     case 'line':
       return [
         { p: e.a, apply: set((n, p) => (n.a = p)) },
@@ -17294,25 +17266,6 @@ function drawEnt(e, color, o = {}) {
             strokePrims(prims(e));
           }
           break;
-        case 'wall': {
-          const wi = wallInfo(e, ghost || e.id === -1);
-          for (const f of wi.fillsW || []) {
-            pathPoly(f);
-            ctx.stroke();
-          }
-          pathPoly(wi.poly);
-          if (ghost) {
-            ctx.fillStyle = 'rgba(225,232,242,0.08)';
-            ctx.fill();
-          }
-          ctx.stroke();
-          if (ghost) {
-            ctx.setLineDash([6, 4]);
-            ctx.lineWidth = 1;
-            seg(e.a, e.b);
-          }
-          break;
-        }
         case 'slab':
           pathPoly(e.pts);
           ctx.lineWidth = o.hover ? 2 : 1;
@@ -19372,12 +19325,6 @@ function cutLabels() {
 
 
 
-
-
-
-
-
-
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19493,48 +19440,6 @@ function pick3(ev) {
 function key3Base(e) {
   const L = layerOf(e);
   switch (e.type) {
-    case 'wall': {
-      const wi = wallInfo(e);
-      let nk = [];
-      try {
-        nk = wallNiches(e).map(n => [
-          Math.round(n.x0),
-          Math.round(n.x1),
-          Math.round(n.z0),
-          Math.round(n.z1),
-          n.side,
-          Math.round(n.depth),
-          n.skip || 0
-        ]);
-      } catch (err) {}
-      return JSON.stringify([
-        typeof stairSig === 'function' ? stairSig(e) : 0,
-        wallTie(e),
-        nk,
-        e.zones || 0,
-        e.fa,
-        e.fb,
-        computeType(typeOf(e)).layers.map(l => l.m),
-        e.a,
-        e.b,
-        e.arc || 0,
-        e.th,
-        e.h,
-        e.z,
-        wi.lp,
-        wi.ops.map(x => [
-          x.s0,
-          x.s1,
-          x.o.h,
-          x.o.sill,
-          x.o.type === 'opening' ? opOutline(x.o, 6) : 0,
-          x.o.cfg && x.o.cfg.door && x.o.cfg.door.on
-            ? [x.o.cfg.door.side, x.o.cfg.door.w, x.o.cfg.door.ws, x.o.flip]
-            : 0
-        ]),
-        wi.fills || 0
-      ]);
-    }
     case 'door':
     case 'window': {
       const w = byId(e.host);
@@ -19609,7 +19514,7 @@ function key3Base(e) {
       const X = XT[e.type];
       if (X && X.build3) {
         const k = X.k3 ? X.k3(e) : 0;
-        return k === null ? null : JSON.stringify([e, k]);
+        return k === null ? null : X.k3own ? JSON.stringify(k) : JSON.stringify([e, k]);
       }
     }
   }
@@ -19622,89 +19527,6 @@ function boxesGroup(xf, build, opts) {
 }
 function build3(e) {
   switch (e.type) {
-    case 'wall': {
-      const wi = wallInfo(e),
-        u = wi.u,
-        n = wi.n,
-        o = e.a,
-        z0 = e.z || 0;
-      const xf = (x, y, z) => [o.x + u.x * x + n.x * y, o.y + u.y * x + n.y * y, z + z0];
-      const ct = computeType(typeOf(e));
-      const core = ct.layers.reduce((a, l) => (l.th > a.th ? l : a), ct.layers[0] || { m: '', th: 0, cls: 'block' });
-      const coreCol =
-        core.cls === 'gkl'
-          ? (SHEETS[core.sheet] || SHEETS['ГКЛ']).col
-          : core.cls === 'ins' || core.cls === 'air'
-            ? '#d6d3cc'
-            : (MATS[core.m] || { col: '#d9d5cd' }).col;
-      const fc = f => (f && f.k !== 'none' ? f.col : coreCol);
-      const C6 = {
-        xn: '#ebe8e1',
-        xp: '#ebe8e1',
-        yp: fc(e.fa),
-        yn: ct.info.lin ? coreCol : fc(e.fb),
-        zn: coreCol,
-        zp: coreCol
-      };
-      const tie = wallTie(e);
-      // a curved wall: the outline bent onto its arc (no openings, niches or stair cuts on it)
-      if (wi.arc)
-        return withZones(
-          e,
-          boxesGroup(
-            null,
-            mb => {
-              if (tie.below > 0.5) arcPrism(mb, wi.arc, wi.lp, -tie.below, 0, C6, z0);
-              if (tie.above > 0.5) arcPrism(mb, wi.arc, wi.lp, e.h, e.h + tie.above, C6, z0);
-              arcPrism(mb, wi.arc, wi.lp, 0, e.h, C6, z0);
-            },
-            { edges: true }
-          )
-        );
-      const nich = wallNiches(e);
-      return withZones(
-        e,
-        boxesGroup(
-          typeof stairClampXF === 'function' ? stairClampXF(e, xf) : xf,
-          mb => {
-            // an outer wall down to its slab and up to the slab above (the band of the floor build-up)
-            if (tie.below > 0.5) prismL(mb, wi.lp, -tie.below, 0, C6);
-            if (tie.above > 0.5) prismL(mb, wi.lp, e.h, e.h + tie.above, C6);
-            // parts of opening bounding boxes that are wall again (arches, rounded corners, sloped tops)
-            for (const op of wi.ops)
-              for (const poly of openingFills(op.o, op.s0 + (op.s1 - op.s0) / 2))
-                prismXZ(mb, poly, -e.th / 2, e.th / 2, C6.yn, C6.yp, C6.xn);
-            // fillets of inner wall corners (material added in the corner)
-            for (const f of wi.fills || []) prismL(mb, f, 0, e.h, C6);
-            if (!nich.length) {
-              for (const pc of stairSplit(e, wi, wallPieces(wi, e.h)))
-                prismL(mb, clipX(wi.lp, pc.x0, pc.x1), pc.z0, pc.z1, C6);
-              return;
-            }
-            const h2 = e.th / 2,
-              cuts = [-h2, h2];
-            for (const n of nich) {
-              const sk = n.skip || 0;
-              cuts.push(n.side > 0 ? h2 - n.depth : -h2 + sk, n.side > 0 ? h2 - sk : -h2 + n.depth);
-            }
-            const ys = [...new Set(cuts.map(v => Math.round(clamp(v, -h2, h2) * 10) / 10))].sort((a, b) => a - b);
-            for (let k = 0; k + 1 < ys.length; k++) {
-              const y0 = ys[k],
-                y1 = ys[k + 1];
-              if (y1 - y0 < 0.3) continue;
-              const lyr = clipY(wi.lp, y0, y1);
-              const hs = nicheHoles(e, nich, y0, y1);
-              for (const pc0 of stairSplit(e, wi, wallPieces(wi, e.h)))
-                for (const pc of rectSub(pc0, hs)) {
-                  const q = clipX(lyr, pc.x0, pc.x1);
-                  if (q.length >= 3) prismL(mb, q, pc.z0, pc.z1, C6);
-                }
-            }
-          },
-          { edges: true }
-        )
-      );
-    }
     case 'door':
       return buildDoor3(e);
     case 'window':
@@ -23254,14 +23076,9 @@ function initLayersPanel() {
 
 
 
-
 /* UI: project browser */
 function groupName(e) {
   switch (e.type) {
-    case 'wall': {
-      const t = typeOf(e);
-      return (t ? t.name : `Стена ${fmt(e.th)} мм`) + `, h ${fmt(e.h)}`;
-    }
     case 'dev':
       return (DEVK[e.kind] || {}).n || 'Устройство';
     case 'wire':
@@ -23443,52 +23260,6 @@ function fieldsFor(e) {
       { l: 'Маскировка фона', k: 'bg', bool: true }
     ];
   if (XT[e.type]) return XT[e.type].fields ? XT[e.type].fields(e) : [];
-  if (e.type === 'wall') {
-    const ty = typeOf(e);
-    const F = [{ l: 'Тип стены', k: 'wt', sel: S.wtypes.map(x => [x.id, x.name]) }];
-    if (ty && ty.kind === 'knauf') {
-      const s = KN[ty.sys];
-      F.push({ l: 'Система Кнауф', k: 'kn_sys', sel: Object.keys(KN).map(k => [k, KN[k].n]) });
-      if (s.profs.length > 1) F.push({ l: 'Профиль', k: 'kn_prof', sel: s.profs.map(p => [p, `ПС ${p}/50`]) });
-      F.push({
-        l: 'Лист, сторона А',
-        k: 'kn_sa',
-        sel: Object.keys(SHEETS)
-          .filter(x => !x.startsWith('b:'))
-          .map(x => [x, SHEETS[x].n])
-      });
-      if (s.kind === 'part')
-        F.push({
-          l: 'Лист, сторона Б',
-          k: 'kn_sb',
-          sel: Object.keys(SHEETS)
-            .filter(x => !x.startsWith('b:'))
-            .map(x => [x, SHEETS[x].n])
-        });
-      if (ty.sys !== 'С631') F.push({ l: 'Минвата в каркасе', k: 'kn_ins', bool: true });
-    } else F.push({ l: 'Толщина', k: 'thk', num: true });
-    F.push(
-      { l: 'Высота', k: 'h', num: true },
-      { l: 'Отметка низа', k: 'z', num: true },
-      { l: 'Длина', k: 'len', num: true },
-      { l: 'Дуга: стрела прогиба (0 — прямая)', k: 'arc', num: true },
-      ...(arcOf(e) ? [{ l: 'Радиус оси', k: 'arcR', num: true }] : []),
-      { l: 'Несущая', k: 'bearing', bool: true },
-      {
-        l: 'Опирание',
-        k: 'base',
-        sel: [
-          ['auto', 'Авто: наружная — на плиту, перегородка — на пол'],
-          ['slab', 'На плиту, до плиты сверху'],
-          ['screed', 'На чистый пол (стяжку)']
-        ]
-      },
-      { l: 'Линия привязки', k: 'loc', sel: Object.entries(WLOC) },
-      { l: 'Стык в начале', k: 'ja', sel: Object.entries(JMODES) },
-      { l: 'Стык в конце', k: 'jb', sel: Object.entries(JMODES) }
-    );
-    return F;
-  }
   if (e.type === 'dev') {
     const d = DEVK[e.kind] || {};
     const F = [
@@ -25662,89 +25433,6 @@ function xSpec() {
         r.q++;
         r.ids.push(e.id);
       });
-    }
-    if (e.type === 'wall') {
-      const G = gklWall(e);
-      if (G) {
-        const S_ = 'ГКЛ: раскрой и каркас (шт)';
-        for (const sd of G.sides)
-          for (const l of sd.layers)
-            put(
-              S_,
-              's' + l.sheet + G.Ls,
-              {
-                name: `Лист ${(SHEETS[l.sheet] || SHEETS['ГКЛ']).n} 1200×${G.Ls}×${String(Math.round((l.y1 - l.y0) * 10) / 10).replace('.', ',')} — по раскладке`,
-                u: 'шт'
-              },
-              r => {
-                r.q += l.count;
-                r.ids.push(e.id);
-              }
-            );
-        if (G.hasFrame) {
-          put(S_, 'ps' + G.studName + G.psStock, { name: `Профиль ${G.studName}, L=${G.psStock}`, u: 'шт' }, r => {
-            r.q += G.psCount;
-            r.ids.push(e.id);
-          });
-          put(S_, 'pn' + G.trackName, { name: `Профиль ${G.trackName}, L=3000`, u: 'шт' }, r => {
-            r.q += G.pnCount;
-            r.ids.push(e.id);
-          });
-          if (G.bentL)
-            put(
-              S_,
-              'bent' + G.prof,
-              { name: `в т. ч. ${G.trackName} с надрезами — гнутый по радиусам и аркам (входит в ПН выше)`, u: 'м' },
-              r => {
-                r.q = Math.round((r.q + G.bentL / 1000) * 10) / 10;
-                r.ids.push(e.id);
-              }
-            );
-          if (G.brusM)
-            put(
-              S_,
-              'br' + G.brusSec,
-              { name: `Брус сухой строганый ${G.brusSec} мм — усиление стоек дверных проёмов, м`, u: 'м' },
-              r => {
-                r.q = Math.round((r.q + G.brusM) * 100) / 100;
-                r.ids.push(e.id);
-              }
-            );
-          if (G.uaN) {
-            put(
-              S_,
-              'ua' + G.prof + G.psStock,
-              { name: `Профиль ПУ ${G.prof}/40/2, L=${G.psStock} — стойки дверных проёмов`, u: 'шт' },
-              r => {
-                r.q += G.uaN;
-                r.ids.push(e.id);
-              }
-            );
-            put(S_, 'uaa', { name: 'Уголок крепёжный для ПУ', u: 'шт' }, r => {
-              r.q += G.uaAngles;
-              r.ids.push(e.id);
-            });
-            put(S_, 'uan', { name: 'Анкер для уголков ПУ', u: 'шт' }, r => {
-              r.q += G.uaAnchors;
-              r.ids.push(e.id);
-            });
-          }
-          if (G.joinN)
-            put(S_, 'jn', { name: 'в т.ч. стойки примыкания (Т/Х-узлы), шт — учтены в ПС', u: 'шт' }, r => {
-              r.q += G.joinN;
-              r.ids.push(e.id);
-            });
-          if (G.ps2N)
-            put(S_, 'p2', { name: 'в т.ч. вторые стойки ПС у проёмов (короб), шт — учтены в ПС', u: 'шт' }, r => {
-              r.q += G.ps2N;
-              r.ids.push(e.id);
-            });
-          put(S_, 'dw', { name: 'Дюбель-гвоздь для ПН (шаг ≤1000)', u: 'шт' }, r => {
-            r.q += G.dowels;
-            r.ids.push(e.id);
-          });
-        }
-      }
     }
   }
   wireJointsSpec(put);
@@ -29722,10 +29410,12 @@ async function openJson(f) {
  * @property {(e)=>{p,k}[]} keys          snap key points (k: 'end' | 'mid' | 'ins' | …)
  * @property {(e)=>Point[]} sample        points that represent the element (zoom extents, box selection)
  * @property {(n,e,f,dA)=>void} map       copy geometry of e into n mapped by f (move/rotate/mirror/scale), dA = rotation
+ * @property {(n,e,f,th)=>void} mirror    called after map when the element is mirrored (f = reflection, th = mirror angle): fixes what a plain map cannot (a wall swaps its ends)
  * @property {(e,set)=>Grip[]} grips      editable grips: [{p, apply: set((n, p) => …)}]
  * @property {(e,color,o,ghost,col)=>void} draw  draw on the plan (ctx, w2s, view.k); o = {sel, hover}
  * 3D
  * @property {(e)=>any} k3                cache key: the 3D model is rebuilt only when JSON(k3) changes; null = no 3D
+ * @property {boolean} k3own              k3 returns the whole key (the key is JSON(k3)); otherwise the key is JSON([e, k3(e)])
  * @property {(e)=>THREE.Object3D} build3 3D model (usually MB → meshGroup)
  * @property {(e)=>THREE.Object3D} parts3 exploded / "parts" model for the object dialog and views
  * Properties and data
@@ -29735,6 +29425,7 @@ async function openJson(f) {
  * @property {(e,path,value)=>void} onSet called after a form field changed (derived values, normalisation)
  * @property {(e,action,el,button)=>void} action  buttons with data-xa="action" in the panel
  * @property {(e,put)=>void} spec         specification rows: put(section, key, {name, u}, row => {row.q += …})
+ * @property {(e,cat)=>[string,string,string|null]} ifc  IFC export: [class, predefined type, property set]
  * Behaviour flags and hooks
  * @property {boolean} hosted             lives on a host element (e.host): moved/copied/deleted with it
  * @property {string|((e)=>string)} net   engineering network for the network view ('el', 'water', …)
@@ -55982,10 +55673,6 @@ function mirrorEnt(e, f, th) {
       n.a = f(e.a);
       n.b = f(e.b);
       break;
-    case 'wall':
-      n.a = f(e.b);
-      n.b = f(e.a);
-      break;
     case 'pline':
     case 'slab':
       n.pts = e.pts.map(f);
@@ -56018,6 +55705,8 @@ function mirrorEnt(e, f, th) {
       const dA = e.rot != null ? 2 * th - 2 * (e.rot || 0) : 0;
       const m = mapEnt(e, f, dA);
       Object.assign(n, m);
+      const X = XT[e.type];
+      if (X && X.mirror) X.mirror(n, e, f, th);
       if (e.type === 'adim') {
         const t = n.a;
         n.a = n.b;
@@ -125926,6 +125615,346 @@ function wallTie(e) {
   }
 }
 
+// ===== elements/wall-xt.js =====
+/**
+ * elements/wall-xt.js
+ *
+ * XT.wall — the element type «wall» in the registry of element types: plan primitives, picking, snap points,
+ * grips, mapping (move / rotate / mirror), plan drawing, 3D (cache key and model), project browser group, simple
+ * fields of the properties table, specification rows and the IFC class. The bodies are the wall functions
+ * (walls.js, wall-types.js, wall-arc.js …); the generic code reaches them only through XT.wall.
+ * Entity: { type:'wall', a, b, th, h, z, wt (wall type id), arc, fa, fb, … } — see walls.js.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+XT.wall = {
+  layer: 'Стены',
+  prims: e => closedSegs(wallInfo(e).poly),
+  /** Inside the outline of the wall: distance 0 (outside — the generic distance to the outline). */
+  dist: (e, p) => (inPoly(p, wallInfo(e).poly) ? 0 : null),
+  keys: e => {
+    const r = [];
+    const wi = wallInfo(e);
+    r.push({ p: e.a, k: 'end' }, { p: e.b, k: 'end' }, { p: mid(e.a, e.b), k: 'mid' });
+    wi.poly.forEach(p => r.push({ p, k: 'end' }));
+    closedSegs(wi.poly).forEach(s => r.push({ p: mid(s.a, s.b), k: 'mid' }));
+    return r;
+  },
+  sample: e => wallInfo(e).poly,
+  map: (n, e, f) => {
+    n.a = f(e.a);
+    n.b = f(e.b);
+  },
+  /** Mirror: the wall keeps its handedness — the ends swap places. */
+  mirror: (n, e, f) => {
+    n.a = f(e.b);
+    n.b = f(e.a);
+  },
+  grips: (e, set, mv) => {
+    // the middle of a wall: a curved one bends through the dragged point (Shift — moves the whole wall);
+    // a straight wall gets a second grip at a quarter for bending it
+    const A = arcOf(e);
+    const bend = { apply: set((n, p) => (n.arc = Math.round((sagittaThrough(n.a, n.b, p) || 0) * 10) / 10)) };
+    if (e.id != null && hosted(e.id).length) bend.apply = null;
+    const g = [
+      { p: e.a, apply: set((n, p) => (n.a = p)) },
+      { p: e.b, apply: set((n, p) => (n.b = p)) },
+      { p: A ? arcPt(A, A.L / 2) : mid(e.a, e.b), apply: mv(A ? arcPt(A, A.L / 2) : mid(e.a, e.b)) }
+    ];
+    if (A && bend.apply) g.push({ p: arcPt(A, A.L * 0.3), apply: bend.apply, tip: 'Изгиб дуги' });
+    return g;
+  },
+  draw: (e, color, o, ghost, col) => {
+    const wi = wallInfo(e, ghost || e.id === -1);
+    for (const f of wi.fillsW || []) {
+      pathPoly(f);
+      ctx.stroke();
+    }
+    pathPoly(wi.poly);
+    if (ghost) {
+      ctx.fillStyle = 'rgba(225,232,242,0.08)';
+      ctx.fill();
+    }
+    ctx.stroke();
+    if (ghost) {
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1;
+      seg(e.a, e.b);
+    }
+  },
+  k3own: true,
+  k3: e => {
+    const wi = wallInfo(e);
+    let nk = [];
+    try {
+      nk = wallNiches(e).map(n => [
+        Math.round(n.x0),
+        Math.round(n.x1),
+        Math.round(n.z0),
+        Math.round(n.z1),
+        n.side,
+        Math.round(n.depth),
+        n.skip || 0
+      ]);
+    } catch (err) {}
+    return [
+      typeof stairSig === 'function' ? stairSig(e) : 0,
+      wallTie(e),
+      nk,
+      e.zones || 0,
+      e.fa,
+      e.fb,
+      computeType(typeOf(e)).layers.map(l => l.m),
+      e.a,
+      e.b,
+      e.arc || 0,
+      e.th,
+      e.h,
+      e.z,
+      wi.lp,
+      wi.ops.map(x => [
+        x.s0,
+        x.s1,
+        x.o.h,
+        x.o.sill,
+        x.o.type === 'opening' ? opOutline(x.o, 6) : 0,
+        x.o.cfg && x.o.cfg.door && x.o.cfg.door.on ? [x.o.cfg.door.side, x.o.cfg.door.w, x.o.cfg.door.ws, x.o.flip] : 0
+      ]),
+      wi.fills || 0
+    ];
+  },
+  build3: e => {
+    const wi = wallInfo(e),
+      u = wi.u,
+      n = wi.n,
+      o = e.a,
+      z0 = e.z || 0;
+    const xf = (x, y, z) => [o.x + u.x * x + n.x * y, o.y + u.y * x + n.y * y, z + z0];
+    const ct = computeType(typeOf(e));
+    const core = ct.layers.reduce((a, l) => (l.th > a.th ? l : a), ct.layers[0] || { m: '', th: 0, cls: 'block' });
+    const coreCol =
+      core.cls === 'gkl'
+        ? (SHEETS[core.sheet] || SHEETS['ГКЛ']).col
+        : core.cls === 'ins' || core.cls === 'air'
+          ? '#d6d3cc'
+          : (MATS[core.m] || { col: '#d9d5cd' }).col;
+    const fc = f => (f && f.k !== 'none' ? f.col : coreCol);
+    const C6 = {
+      xn: '#ebe8e1',
+      xp: '#ebe8e1',
+      yp: fc(e.fa),
+      yn: ct.info.lin ? coreCol : fc(e.fb),
+      zn: coreCol,
+      zp: coreCol
+    };
+    const tie = wallTie(e);
+    // a curved wall: the outline bent onto its arc (no openings, niches or stair cuts on it)
+    if (wi.arc)
+      return withZones(
+        e,
+        boxesGroup(
+          null,
+          mb => {
+            if (tie.below > 0.5) arcPrism(mb, wi.arc, wi.lp, -tie.below, 0, C6, z0);
+            if (tie.above > 0.5) arcPrism(mb, wi.arc, wi.lp, e.h, e.h + tie.above, C6, z0);
+            arcPrism(mb, wi.arc, wi.lp, 0, e.h, C6, z0);
+          },
+          { edges: true }
+        )
+      );
+    const nich = wallNiches(e);
+    return withZones(
+      e,
+      boxesGroup(
+        typeof stairClampXF === 'function' ? stairClampXF(e, xf) : xf,
+        mb => {
+          // an outer wall down to its slab and up to the slab above (the band of the floor build-up)
+          if (tie.below > 0.5) prismL(mb, wi.lp, -tie.below, 0, C6);
+          if (tie.above > 0.5) prismL(mb, wi.lp, e.h, e.h + tie.above, C6);
+          // parts of opening bounding boxes that are wall again (arches, rounded corners, sloped tops)
+          for (const op of wi.ops)
+            for (const poly of openingFills(op.o, op.s0 + (op.s1 - op.s0) / 2))
+              prismXZ(mb, poly, -e.th / 2, e.th / 2, C6.yn, C6.yp, C6.xn);
+          // fillets of inner wall corners (material added in the corner)
+          for (const f of wi.fills || []) prismL(mb, f, 0, e.h, C6);
+          if (!nich.length) {
+            for (const pc of stairSplit(e, wi, wallPieces(wi, e.h)))
+              prismL(mb, clipX(wi.lp, pc.x0, pc.x1), pc.z0, pc.z1, C6);
+            return;
+          }
+          const h2 = e.th / 2,
+            cuts = [-h2, h2];
+          for (const n of nich) {
+            const sk = n.skip || 0;
+            cuts.push(n.side > 0 ? h2 - n.depth : -h2 + sk, n.side > 0 ? h2 - sk : -h2 + n.depth);
+          }
+          const ys = [...new Set(cuts.map(v => Math.round(clamp(v, -h2, h2) * 10) / 10))].sort((a, b) => a - b);
+          for (let k = 0; k + 1 < ys.length; k++) {
+            const y0 = ys[k],
+              y1 = ys[k + 1];
+            if (y1 - y0 < 0.3) continue;
+            const lyr = clipY(wi.lp, y0, y1);
+            const hs = nicheHoles(e, nich, y0, y1);
+            for (const pc0 of stairSplit(e, wi, wallPieces(wi, e.h)))
+              for (const pc of rectSub(pc0, hs)) {
+                const q = clipX(lyr, pc.x0, pc.x1);
+                if (q.length >= 3) prismL(mb, q, pc.z0, pc.z1, C6);
+              }
+          }
+        },
+        { edges: true }
+      )
+    );
+  },
+  group: e => {
+    const t = typeOf(e);
+    return (t ? t.name : `Стена ${fmt(e.th)} мм`) + `, h ${fmt(e.h)}`;
+  },
+  fields: e => {
+    const ty = typeOf(e);
+    const F = [{ l: 'Тип стены', k: 'wt', sel: S.wtypes.map(x => [x.id, x.name]) }];
+    if (ty && ty.kind === 'knauf') {
+      const s = KN[ty.sys];
+      F.push({ l: 'Система Кнауф', k: 'kn_sys', sel: Object.keys(KN).map(k => [k, KN[k].n]) });
+      if (s.profs.length > 1) F.push({ l: 'Профиль', k: 'kn_prof', sel: s.profs.map(p => [p, `ПС ${p}/50`]) });
+      F.push({
+        l: 'Лист, сторона А',
+        k: 'kn_sa',
+        sel: Object.keys(SHEETS)
+          .filter(x => !x.startsWith('b:'))
+          .map(x => [x, SHEETS[x].n])
+      });
+      if (s.kind === 'part')
+        F.push({
+          l: 'Лист, сторона Б',
+          k: 'kn_sb',
+          sel: Object.keys(SHEETS)
+            .filter(x => !x.startsWith('b:'))
+            .map(x => [x, SHEETS[x].n])
+        });
+      if (ty.sys !== 'С631') F.push({ l: 'Минвата в каркасе', k: 'kn_ins', bool: true });
+    } else F.push({ l: 'Толщина', k: 'thk', num: true });
+    F.push(
+      { l: 'Высота', k: 'h', num: true },
+      { l: 'Отметка низа', k: 'z', num: true },
+      { l: 'Длина', k: 'len', num: true },
+      { l: 'Дуга: стрела прогиба (0 — прямая)', k: 'arc', num: true },
+      ...(arcOf(e) ? [{ l: 'Радиус оси', k: 'arcR', num: true }] : []),
+      { l: 'Несущая', k: 'bearing', bool: true },
+      {
+        l: 'Опирание',
+        k: 'base',
+        sel: [
+          ['auto', 'Авто: наружная — на плиту, перегородка — на пол'],
+          ['slab', 'На плиту, до плиты сверху'],
+          ['screed', 'На чистый пол (стяжку)']
+        ]
+      },
+      { l: 'Линия привязки', k: 'loc', sel: Object.entries(WLOC) },
+      { l: 'Стык в начале', k: 'ja', sel: Object.entries(JMODES) },
+      { l: 'Стык в конце', k: 'jb', sel: Object.entries(JMODES) }
+    );
+    return F;
+  },
+  spec: (e, put) => {
+    const G = gklWall(e);
+    if (G) {
+      const S_ = 'ГКЛ: раскрой и каркас (шт)';
+      for (const sd of G.sides)
+        for (const l of sd.layers)
+          put(
+            S_,
+            's' + l.sheet + G.Ls,
+            {
+              name: `Лист ${(SHEETS[l.sheet] || SHEETS['ГКЛ']).n} 1200×${G.Ls}×${String(Math.round((l.y1 - l.y0) * 10) / 10).replace('.', ',')} — по раскладке`,
+              u: 'шт'
+            },
+            r => {
+              r.q += l.count;
+              r.ids.push(e.id);
+            }
+          );
+      if (G.hasFrame) {
+        put(S_, 'ps' + G.studName + G.psStock, { name: `Профиль ${G.studName}, L=${G.psStock}`, u: 'шт' }, r => {
+          r.q += G.psCount;
+          r.ids.push(e.id);
+        });
+        put(S_, 'pn' + G.trackName, { name: `Профиль ${G.trackName}, L=3000`, u: 'шт' }, r => {
+          r.q += G.pnCount;
+          r.ids.push(e.id);
+        });
+        if (G.bentL)
+          put(
+            S_,
+            'bent' + G.prof,
+            { name: `в т. ч. ${G.trackName} с надрезами — гнутый по радиусам и аркам (входит в ПН выше)`, u: 'м' },
+            r => {
+              r.q = Math.round((r.q + G.bentL / 1000) * 10) / 10;
+              r.ids.push(e.id);
+            }
+          );
+        if (G.brusM)
+          put(
+            S_,
+            'br' + G.brusSec,
+            { name: `Брус сухой строганый ${G.brusSec} мм — усиление стоек дверных проёмов, м`, u: 'м' },
+            r => {
+              r.q = Math.round((r.q + G.brusM) * 100) / 100;
+              r.ids.push(e.id);
+            }
+          );
+        if (G.uaN) {
+          put(
+            S_,
+            'ua' + G.prof + G.psStock,
+            { name: `Профиль ПУ ${G.prof}/40/2, L=${G.psStock} — стойки дверных проёмов`, u: 'шт' },
+            r => {
+              r.q += G.uaN;
+              r.ids.push(e.id);
+            }
+          );
+          put(S_, 'uaa', { name: 'Уголок крепёжный для ПУ', u: 'шт' }, r => {
+            r.q += G.uaAngles;
+            r.ids.push(e.id);
+          });
+          put(S_, 'uan', { name: 'Анкер для уголков ПУ', u: 'шт' }, r => {
+            r.q += G.uaAnchors;
+            r.ids.push(e.id);
+          });
+        }
+        if (G.joinN)
+          put(S_, 'jn', { name: 'в т.ч. стойки примыкания (Т/Х-узлы), шт — учтены в ПС', u: 'шт' }, r => {
+            r.q += G.joinN;
+            r.ids.push(e.id);
+          });
+        if (G.ps2N)
+          put(S_, 'p2', { name: 'в т.ч. вторые стойки ПС у проёмов (короб), шт — учтены в ПС', u: 'шт' }, r => {
+            r.q += G.ps2N;
+            r.ids.push(e.id);
+          });
+        put(S_, 'dw', { name: 'Дюбель-гвоздь для ПН (шаг ≤1000)', u: 'шт' }, r => {
+          r.q += G.dowels;
+          r.ids.push(e.id);
+        });
+      }
+    }
+  },
+  ifc: () => ['IFCWALL', 'STANDARD', 'Pset_WallCommon']
+};
+
 // ===== elements/window-parts.js =====
 /**
  * elements/window-parts.js
@@ -134730,6 +134759,7 @@ function ifcToProject(els, opts, shift, mkInst) {
 
 
 
+
 const IFC64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
 /** 128-bit hash of a string (cyrb128) → the 22-character compressed IFC GlobalId; the same key gives the same id. */
 function ifcGuid(key) {
@@ -134791,8 +134821,6 @@ const R_ = (v, d = 3) => {
 /** IFC class, predefined type and property set of a Kontur element. */
 function ifcClassOf(e, cat) {
   switch (e.type) {
-    case 'wall':
-      return ['IFCWALL', 'STANDARD', 'Pset_WallCommon'];
     case 'door':
       return ['IFCDOOR', 'DOOR', 'Pset_DoorCommon'];
     case 'window':
@@ -134837,6 +134865,8 @@ function ifcClassOf(e, cat) {
       if (isSwitch(e)) return ['IFCSWITCHINGDEVICE', 'SWITCH', null];
       return ['IFCOUTLET', /tv|lan|data|rj|тв|интернет/i.test(e.kind || '') ? 'DATAOUTLET' : 'POWEROUTLET', null];
   }
+  const X = XT[e.type];
+  if (X && X.ifc) return X.ifc(e, cat);
   const c = String(cat || '');
   if (/Освещ/.test(c)) return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
   if (/Сантех/.test(c)) return ['IFCSANITARYTERMINAL', 'NOTDEFINED', null];
