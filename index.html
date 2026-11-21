@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.62';
+const APP_VER = '59.63';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -13438,6 +13438,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -15091,17 +15092,12 @@ function deliverPoint(p) {
   return finishIf(commandsState.cmd.onPoint(p));
 }
 
-// ===== ui/command-line.js =====
+// ===== uikit/messages.js =====
 /**
- * ui/command-line.js
+ * uikit/messages.js
  *
- * Command line: log, prompt, input parsing, history.
+ * Messages to the user: the command-line log (last three lines).
  */
-
-
-
-
-
 
 
 
@@ -15116,8 +15112,23 @@ function log(t, err) {
     .map(h => `<div class="${h.err ? 'err' : ''}">${esc(h.t)}</div>`)
     .join('');
 }
-const esc = s =>
-  String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// ===== ui/command-line.js =====
+/**
+ * ui/command-line.js
+ *
+ * Command line: log, prompt, input parsing, history.
+ */
+
+
+
+
+
+
+
+
+
+
 /* A colour read from a project file: only #hex is allowed, anything else gets the fallback. */
 const safeCol = (c, fb = '#d9dde3') => (/^#[0-9a-fA-F]{3,8}$/.test(String(c ?? '')) ? String(c) : fb);
 /* A thumbnail read from a catalogue file: only a PNG/JPEG/WebP data URL is allowed. */
@@ -18912,6 +18923,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -20474,6 +20486,8 @@ function initPointerRest() {
 
 
 
+
+
 /* ---------- context menu (right mouse button), clipboard ---------- */
 let CLIPB = null;
 const isHostedT = e => e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted);
@@ -20691,6 +20705,7 @@ function initContextMenu() {
 
 
 
+
 /* menu bar (Файл / Правка / Вид / Вставка / Сервис / Настройки / Справка)
          interface settings (theme, drawing background, grid, accent, icons, font, crosshair) */
 const UI_DEF = {
@@ -20789,9 +20804,6 @@ function paperColors() {
     Object.assign(C, keep);
     CANV_LIGHT = kl;
   };
-}
-function hexOk(h) {
-  return /^#[0-9a-f]{6}$/i.test(h || '');
 }
 function applyUI() {
   const th = THEMES[themeState.UI.theme] || THEMES.mac;
@@ -21236,6 +21248,7 @@ function wheelModeMenu() {
  *
  * Menu bar and small dialogs.
  */
+
 
 
 
@@ -21878,6 +21891,7 @@ function initMenubar() {
 
 
 
+
 /* keyboard */
 const FKEYS = { F3: 'osnap', F7: 'grid', F8: 'ortho', F9: 'snap', F10: 'polar', F11: 'otrack' };
 const MODE_N = {
@@ -22073,6 +22087,7 @@ function initKeyboard() {
  *
  * Toolbar: icons, buttons, snap popup.
  */
+
 
 
 
@@ -22433,6 +22448,8 @@ function initToolbar() {
 
 
 
+
+
 /* UI: layers */
 const ICON = {
   eye: '<svg viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
@@ -22540,6 +22557,8 @@ function initLayersPanel() {
  *
  * Project browser panel.
  */
+
+
 
 
 
@@ -22656,12 +22675,6 @@ function initBrowserPanel() {
 
 
 
-
-
-
-
-
-
 /* UI: properties */
 const OLDF = {
   door: [
@@ -22684,173 +22697,6 @@ const OLDF = {
     ['Поворот, °', 'rotd']
   ]
 };
-const grpOpts = () => S.elec.groups.map(g => [g.n, `${g.n} · ${g.name}`]);
-const sysOpts = () => S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`]);
-/** Properties panel of a slab (XT.slab.panel): the area and the button that takes the outline from a polyline. */
-function slabPanel(e) {
-  return `<dt>Площадь</dt><dd>${(Math.abs(polyArea(e.pts)) / 1e6).toFixed(2)} м²</dd>`;
-}
-/** Button row of a slab under the properties table (XT.slab.panelAfter). */
-function slabPanelAfter() {
-  return `<div class="btnrow"><button class="btn" id="bSlabLine">Контур из полилинии…</button></div>`;
-}
-/** Binds the slab panel (XT.slab.bind): «outline from a polyline». */
-function bindSlabLine(el, e, changed) {
-  const bsl = $('#bSlabLine');
-  if (bsl)
-    bsl.onclick = () => {
-      const sl = e;
-      startCmd('slabfrom', {
-        name: 'slabfrom',
-        noSnap: true,
-        prompt: () => 'Замкнутая полилиния для контура:',
-        onPoint(p) {
-          const x = pickAt(p, y => y.type === 'pline' && y.closed);
-          if (!x) {
-            log('Нужна замкнутая полилиния', true);
-            return;
-          }
-          pushUndo();
-          sl.pts = x.pts.slice();
-          changed();
-          return 'end';
-        },
-        onEnter: () => 'end'
-      });
-    };
-}
-/** Properties panel of a duct (XT.duct.panel): the air velocity and the calculated sizes. */
-function ductPanel(e) {
-  const v = ductVel(e),
-    bad = v > (S.vent.vmax || 4),
-    L = ductLen(e);
-  const ro = (k, x) => `<dt>${k}</dt><dd>${x}</dd>`;
-  return (
-    `<div class="hd">Расчёт</div>` +
-    ro(
-      'Скорость воздуха',
-      `<span class="${bad ? 'bad' : 'ok'}">${v.toFixed(2)} м/с${bad ? ' — выше ' + S.vent.vmax : ''}</span>`
-    ) +
-    ro('Площадь сечения', (ductArea(e) * 1e4).toFixed(1) + ' см²') +
-    ro('Длина', (L / 1000).toFixed(2) + ' м') +
-    ro('Площадь поверхности', ((ductPerim(e) * L) / 1000).toFixed(2) + ' м²') +
-    ro('Отводов', ductBends(e).length)
-  );
-}
-/** Button row of a duct under the properties table (XT.duct.panelAfter). */
-function ductPanelAfter() {
-  return `<div class="btnrow"><button class="btn" id="bMEPopen">Системы вентиляции…</button></div>`;
-}
-/** Simple fields of a duct for the properties table (XT.duct.fields). */
-function ductFields(e) {
-  return [
-    { l: 'Система', k: 'sys', sel: sysOpts() },
-    { l: 'Сечение (Ø или Ш×В)', k: 'sec', txt: true },
-    { l: 'Отметка оси', k: 'z', num: true },
-    { l: 'Отметка начала', k: 'dza', num: true },
-    { l: 'Отметка конца', k: 'dzb', num: true },
-    { l: 'Расход, м³/ч', k: 'flow', num: true },
-    { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
-    ...(e.mat === PVC_MAT
-      ? [
-          { l: 'Канал ПВХ', k: 'pvcsz', sel: PVC_SIZES.map(([a, b]) => [a + '×' + b, a + '×' + b + ' мм']) },
-          { l: 'Обратных клапанов', k: 'cv', num: true }
-        ]
-      : []),
-    { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
-  ];
-}
-/** Simple fields of a device for the properties table (XT.dev.fields). */
-function devFields(e) {
-  const d = DEVK[e.kind] || {};
-  const F = [
-    {
-      l: 'Тип',
-      k: 'kind',
-      sel: Object.keys(DEVK)
-        .filter(k => DEVK[k].f === d.f)
-        .map(k => [k, DEVK[k].n])
-    },
-    { l: d.mount === 'ceil' ? 'Отметка потолка' : 'Высота установки', k: 'z', num: true }
-  ];
-  if (d.f === 'vterm')
-    F.push(
-      { l: 'Система', k: 'sys', sel: sysOpts() },
-      { l: 'Расход, м³/ч', k: 'flow', num: true },
-      { l: 'Размер (Ø или Ш×В)', k: 'size', txt: true }
-    );
-  else if (e.kind !== 'panel')
-    F.push({ l: 'Группа', k: 'group', sel: grpOpts() }, { l: 'Мощность, Вт', k: 'pw', num: true });
-  if (d.f === 'socket' && !d.weak) F.push({ l: 'Назначение', k: 'ded', sel: Object.entries(DEDICATED) });
-  if (d.f === 'light')
-    F.push({
-      l: 'Выключатель (клавиша)',
-      k: 'swk',
-      sel: [
-        ['', '— не назначен'],
-        ...allKeys().map(k => [
-          k.dev + '|' + k.key,
-          `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
-        ])
-      ]
-    });
-  F.push({ l: 'Поворот, °', k: 'rotd', num: true });
-  return F;
-}
-/** Simple fields of a cable route for the properties table (XT.wire.fields). */
-function wireFields() {
-  return [
-    {
-      l: 'Клавиша выключателя',
-      k: 'swkey',
-      sel: [
-        ['', '— (питание / розетки)'],
-        ...allKeys().map(k => [
-          k.dev + '|' + k.key,
-          `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
-        ])
-      ]
-    },
-    { l: 'Группа', k: 'group', sel: grpOpts() },
-    { l: 'Кабель', k: 'cable', sel: CABLES.map(c => [c, c]) },
-    { l: 'Прокладка', k: 'method', sel: Object.entries(METHODS).map(([k, m]) => [k, m.n]) },
-    { l: 'Отметка трассы', k: 'z', num: true },
-    {
-      l: 'Монтажная трасса',
-      k: 'manual',
-      sel: [
-        ['', 'авто (кратчайшая, пакетами)'],
-        ['1', 'вручную — по линии провода']
-      ]
-    }
-  ];
-}
-/**
- * Properties panel of a device (XT.dev.panel): the system or the group data, the light options (devCfgPanel), the panel
- * of its kind (DEVK[kind].panel) and the block of mechanisms (blkPanel).
- */
-function devPanel(e) {
-  let h = '';
-  const ro = (k, v) => (h += `<dt>${k}</dt><dd>${v}</dd>`);
-  const d = DEVK[e.kind] || {};
-  if (d.f === 'vterm') {
-    const sy = sysOf(e.sys);
-    ro('Система', `${esc(sy.id)} · ${esc(sy.kind)}`);
-  } else if (e.group != null) {
-    const g = groupOf(e.group);
-    ro('Автомат группы', esc(g.brk));
-    ro('Кабель группы', esc(g.cable));
-  }
-  if (typeof devCfgPanel === 'function') h += devCfgPanel(e);
-  if (DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
-  if (e.blk) h += blkPanel(e);
-  return h;
-}
-/** Button row of a device under the properties table (XT.dev.panelAfter). */
-function devPanelAfter(e) {
-  const d = DEVK[e.kind] || {};
-  return `<div class="btnrow"><button class="btn" id="bMEPopen">${d.f === 'vterm' ? 'Системы вентиляции…' : 'Группы электрики…'}</button></div>`;
-}
 /** Form of a device in the object dialog (XT.dev.dialogPanel): the fields, the block of mechanisms, the light options, the panel of its kind. */
 function devDialogPanel(e) {
   let h = '';
@@ -22859,30 +22705,6 @@ function devDialogPanel(e) {
   h += devCfgPanel(e);
   if (DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
   return h;
-}
-/** Properties panel of a cable route (XT.wire.panel): the cable length and its ends. */
-function wirePanel(e) {
-  let h = '';
-  const ro = (k, v) => (h += `<dt>${k}</dt><dd>${v}</dd>`);
-  const L = wireLen(e);
-  h += `<div class="hd">Длина кабеля</div>`;
-  ro('В плане', (L.plan / 1000).toFixed(2) + ' м');
-  ro('Опуски к устройствам', (L.drops / 1000).toFixed(2) + ' м');
-  ro('Запас на подключение', (L.reserve / 1000).toFixed(2) + ' м');
-  if (L.extra) ro('Возврат до светильника', (L.extra / 1000).toFixed(2) + ' м');
-  ro('Итого', `<b>${(L.total / 1000).toFixed(2)} м</b>`);
-  const a = e.from != null ? byId(e.from) : null,
-    b = e.to != null ? byId(e.to) : null;
-  ro('Откуда', a ? esc(DEVK[a.kind].n) : '—');
-  ro('Куда', b ? esc(DEVK[b.kind].n) : '—');
-  return h;
-}
-/** Button rows of a cable route under the properties table (XT.wire.panelAfter). */
-function wirePanelAfter() {
-  return (
-    `<div class="btnrow"><button class="btn" id="bReroute" title="Трасса зафиксирована и не меняется при правке стен или скрытии слоёв. Нажмите, чтобы проложить заново.">Перетрассировать</button></div>` +
-    `<div class="btnrow"><button class="btn" id="bMEPopen">Группы электрики…</button></div>`
-  );
 }
 function fieldsFor(e) {
   if (XT[e.type]) return XT[e.type].fields ? XT[e.type].fields(e) : [];
@@ -23198,529 +23020,6 @@ function fieldSet(e, k, raw) {
   if (!isFinite(v)) return;
   if (['th', 'h', 'w', 'r', 'flow'].includes(k) && v <= 0) return;
   e[k] = v;
-}
-const openGroups = new Set(['Общее', 'Высоты', 'Корпус', 'Профиль и стеклопакет', 'Створки']);
-const cS = (path, opts, v) =>
-  `<select data-c="${path}">${opts.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-const cN = (path, v, step = 'any') =>
-  `<input type="number" step="${step}" data-c="${path}" data-ct="n" value="${fmt(+v || 0)}">`;
-const cB = (path, v) => `<input type="checkbox" data-c="${path}" data-ct="b" ${v ? 'checked' : ''}>`;
-const cC = (path, v, opts) =>
-  `<select data-c="${path}">${opts.map(([h, n]) => `<option value="${h}" ${h === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}${opts.some(o => o[0] === v) ? '' : `<option value="${v}" selected>Свой цвет</option>`}</select>`;
-const cGrp = (t, tag, body) =>
-  `<details class="cfg" data-g="${esc(t)}" ${openGroups.has(t) ? 'open' : ''}><summary>${esc(t)}${tag ? `<span class="tg">${esc(tag)}</span>` : ''}</summary><dl class="props">${body}</dl></details>`;
-const cR = (l, ctl) => `<dt>${l}</dt><dd>${ctl}</dd>`;
-function doorPanel(e) {
-  const c = e.cfg,
-    M = doorModel(e);
-  if (!M) return '';
-  const ls = leafSize(e);
-  const H = c.mode === 'hidden';
-  let h = `<div class="mode2 m3" role="group" aria-label="Тип двери"><button data-dmode="normal" class="${c.mode === 'normal' ? 'on' : ''}">Обычная</button><button data-dmode="hidden" class="${H ? 'on' : ''}">Скрытая</button><button data-dmode="entry" class="${c.mode === 'entry' ? 'on' : ''}">Входная</button></div>`;
-  h += cGrp(
-    'Общее',
-    '',
-    cR('Полотно, ширина', `<input type="number" data-lw value="${fmt(ls.w)}">`) +
-      cR('Полотно, высота', `<input type="number" data-lh value="${fmt(ls.h)}">`) +
-      cR('Открывание на другую сторону', `<input type="checkbox" data-f2="flip" ${e.flip ? 'checked' : ''}>`) +
-      cR('Петли с другой стороны', `<input type="checkbox" data-f2="hand" ${e.hand ? 'checked' : ''}>`) +
-      (H
-        ? cR(
-            'Заподлицо со стеной',
-            cS(
-              'flushSide',
-              [
-                ['swing', 'со стороны открывания (на себя)'],
-                ['opposite', 'с обратной стороны (от себя)']
-              ],
-              c.flushSide
-            )
-          )
-        : '') +
-      cR('Открыть в 3D, °', cN('open', c.open, 5))
-  );
-  h += cGrp(
-    'Полотно',
-    c.leaf.count === 2 ? '2 створки' : GLASS_T[c.leaf.glass],
-    cR(
-      'Створок',
-      cS(
-        'leaf.count',
-        [
-          [1, 'Одна'],
-          [2, 'Две (распашная / полуторная)']
-        ],
-        c.leaf.count
-      )
-    ) +
-      (c.leaf.count === 2
-        ? cR(
-            'Доля активной створки',
-            cS(
-              'leaf.split',
-              [
-                [0.5, '50 / 50'],
-                [0.6, '60 / 40'],
-                [0.67, '2/3 (полуторная)']
-              ],
-              c.leaf.split
-            )
-          )
-        : '') +
-      cR('Толщина', cN('leaf.th', c.leaf.th)) +
-      cR('Исполнение', cS('leaf.glass', Object.entries(GLASS_T), c.leaf.glass)) +
-      (c.leaf.glass === 'none' || !c.leaf.glass
-        ? cR('Поверхность', cS('leaf.style', Object.entries(LEAF_ST), c.leaf.style || 'flat')) +
-          (c.leaf.style === 'panel'
-            ? cR(
-                'Филёнок',
-                cS(
-                  'leaf.panels',
-                  [1, 2, 3, 4, 5].map(v => [v, String(v)]),
-                  c.leaf.panels || 2
-                )
-              )
-            : '') +
-          (c.leaf.style === 'lines'
-            ? cR(
-                'Пазов',
-                cS(
-                  'leaf.lines',
-                  [1, 2, 3, 4, 5, 6, 8, 10].map(v => [v, String(v)]),
-                  c.leaf.lines || 4
-                )
-              )
-            : '')
-        : cR('Стекло', cS('leaf.glassK', Object.entries(GLASS_K), c.leaf.glassK || 'matte')) +
-          cR('Раскладка', cS('leaf.grid', Object.entries(GLASS_GRID), c.leaf.grid || '1x1'))) +
-      cR(
-        'Кромка',
-        cS(
-          'leaf.edge',
-          [
-            ['none', 'в цвет полотна'],
-            ['alu', 'алюминиевая']
-          ],
-          c.leaf.edge || 'none'
-        )
-      ) +
-      cR('Под покраску в цвет стены', cB('leaf.paint', c.leaf.paint)) +
-      (c.leaf.paint ? '' : cR('Цвет', cC('leaf.color', c.leaf.color, DCOL))) +
-      cR('Зазор под полотном', cN('leaf.gapFloor', c.leaf.gapFloor))
-  );
-  h += cGrp(
-    'Коробка',
-    M.fr.name,
-    cR('Профиль', cS('frame.prof', profOpts('frame'), c.frame.prof)) +
-      cR('Монтажный зазор', cN('frame.gap', c.frame.gap)) +
-      cR('Цвет', cC('frame.color', c.frame.color, [...DCOL, ['#c3c8ce', 'Алюминий']]))
-  );
-  h += cGrp(
-    'Доборы',
-    c.ext.on ? (M.ext ? `${fmt(M.ext.width)} мм` : 'не нужны') : 'нет',
-    cR('Доборы', cB('ext.on', c.ext.on)) +
-      (c.ext.on
-        ? cR('Профиль', cS('ext.prof', profOpts('ext'), c.ext.prof)) +
-          cR('Ширина по стене', M.ext ? fmt(M.ext.width) + ' мм' : 'коробка закрывает стену') +
-          cR('Цвет', cC('ext.color', c.ext.color, DCOL))
-        : '')
-  );
-  h += cGrp(
-    'Наличники',
-    c.casing.a || c.casing.b ? [c.casing.a ? 'А' : '', c.casing.b ? 'Б' : ''].filter(Boolean).join(' + ') : 'нет',
-    cR('Со стороны открывания (А)', cB('casing.a', c.casing.a)) +
-      cR('С обратной стороны (Б)', cB('casing.b', c.casing.b)) +
-      cR('Профиль', cS('casing.prof', profOpts('casing'), c.casing.prof)) +
-      cR(
-        'Стык в углах',
-        cS(
-          'casing.join',
-          [
-            ['45', 'под 45°'],
-            ['90', 'под 90°']
-          ],
-          c.casing.join
-        )
-      ) +
-      cR('Цвет', cC('casing.color', c.casing.color, DCOL))
-  );
-  h += cGrp(
-    'Петли',
-    `${HINGE_T[c.hinges.type]} × ${c.hinges.count * M.leaves.length}`,
-    cR('Тип', cS('hinges.type', Object.entries(HINGE_T), c.hinges.type)) +
-      cR(
-        'На створку',
-        cS(
-          'hinges.count',
-          [
-            [2, '2'],
-            [3, '3'],
-            [4, '4']
-          ],
-          c.hinges.count
-        )
-      ) +
-      cR('От верха полотна', cN('hinges.top', c.hinges.top)) +
-      cR('От низа полотна', cN('hinges.bottom', c.hinges.bottom)) +
-      cR('Цвет', cC('hinges.color', c.hinges.color, MCOL))
-  );
-  h += cGrp(
-    'Ручка',
-    HANDLE_T[c.handle.type] +
-      (c.handle.type !== 'none' && c.handle.type !== 'flush'
-        ? ' · ' + (HANDLE_SER[c.handle.series || 'round'] || '')
-        : ''),
-    cR('Тип', cS('handle.type', Object.entries(HANDLE_T), c.handle.type)) +
-      (c.handle.type !== 'none' && c.handle.type !== 'flush'
-        ? cR('Серия', cS('handle.series', Object.entries(HANDLE_SER), c.handle.series || 'round'))
-        : '') +
-      cR('Высота', cN('handle.h', c.handle.h)) +
-      cR('Цвет', cC('handle.color', c.handle.color, MCOL))
-  );
-  h += cGrp('Замок', LOCK_T[c.lock.type], cR('Тип', cS('lock.type', Object.entries(LOCK_T), c.lock.type)));
-  const cl = c.closer || (c.closer = { type: 'none', color: '#a9adb0' });
-  h += cGrp(
-    'Доводчик',
-    CLOSER_T[cl.type],
-    cR('Тип', cS('closer.type', Object.entries(CLOSER_T), cl.type)) +
-      (cl.type === 'arm' ? cR('Цвет', cC('closer.color', cl.color, MCOL)) : '')
-  );
-  h += cGrp(
-    'Стопор',
-    STOP_T[c.stop.type],
-    cR('Тип', cS('stop.type', Object.entries(STOP_T), c.stop.type)) + cR('Цвет', cC('stop.color', c.stop.color, MCOL))
-  );
-  const thr = (c.thr && c.thr.type) || 'none';
-  const sl = sealCalc(e, M);
-  h += cGrp(
-    'Порог и уплотнитель',
-    (thr !== 'none' ? 'порог · ' : '') + (sl.len ? sl.buy.toFixed(1).replace('.', ',') + ' м' : 'без уплотнителя'),
-    cR('Порог', cS('thr.type', Object.entries(THR_T), thr)) +
-      cR('Уплотнитель', cS('seal.type', Object.entries(SEAL_T), sl.type || 'none')) +
-      cR(
-        'Длина',
-        `<span class="hint" title="Контур притвора: 2 × высота полотна + ширина${M.leaves.length > 1 ? ' + притвор пассивной створки' : ''}, запас 5 %">${sl.len ? sl.len.toFixed(2).replace('.', ',') + ' м, к закупке ' + sl.buy.toFixed(1).replace('.', ',') + ' м' : '—'}</span>`
-      )
-  );
-  if (c.mode === 'entry') {
-    const en = c.entry || (c.entry = defEntry());
-    const o_ = a => a.map(x => [x, x]);
-    h += cGrp(
-      'Входная дверь',
-      en.locks + ' замка',
-      cR(
-        'Отделка снаружи',
-        cS('entry.outFin', o_(['Порошковое напыление', 'МДФ-панель 16 мм', 'Терморазрыв + МДФ']), en.outFin)
-      ) +
-        cR('Цвет снаружи', cC('entry.outCol', en.outCol, DCOL)) +
-        cR('Отделка изнутри', cS('entry.inFin', o_(['МДФ-панель 10 мм', 'МДФ-панель 16 мм', 'Зеркало']), en.inFin)) +
-        cR('Цвет изнутри', cC('entry.inCol', en.inCol, DCOL)) +
-        cR('Утеплитель', cS('entry.insul', o_(['минвата', 'пенополиуретан', 'без утеплителя']), en.insul)) +
-        cR(
-          'Контуров уплотнения',
-          cS(
-            'entry.seal',
-            [
-              [1, '1'],
-              [2, '2'],
-              [3, '3']
-            ],
-            en.seal
-          )
-        ) +
-        cR(
-          'Замков',
-          cS(
-            'entry.locks',
-            [
-              [1, '1'],
-              [2, '2']
-            ],
-            en.locks
-          )
-        ) +
-        cR('Глазок', cB('entry.peep', en.peep)) +
-        cR('Порог', cB('entry.thr', en.thr))
-    );
-  }
-  return (
-    h +
-    `<div class="btnrow"><button class="btn" id="bDoorDraw" title="Чертежи двери: полотно с наполнением, коробка, доборы и наличники, фрезеровки под фурнитуру, уплотнитель, схема сборки">Чертежи…</button><button class="btn" id="bProf">Профили сечений…</button></div>`
-  );
-}
-function winPanel(e) {
-  const c = e.cfg;
-  const kindRow = cGrp(
-    'Вид изделия',
-    c.kind === 'alu' ? 'Витраж алюминиевый' : 'Окно ПВХ',
-    cR(
-      'Изделие',
-      cS(
-        'kind',
-        [
-          ['pvc', 'Окно / балконный блок ПВХ'],
-          ['alu', 'Витраж алюминиевый (стоечно-ригельный / рамный)']
-        ],
-        c.kind || 'pvc'
-      )
-    )
-  );
-  if (c.kind === 'alu') return kindRow + aluPanel(e);
-  if (!c.door) c.door = winDoorDefaults();
-  const M = winModel(e);
-  if (!M) return '';
-  const sy = M.sy,
-    gl = M.gl,
-    over = gl.t > sy.gmax;
-  const D = c.door;
-  let h =
-    kindRow +
-    cGrp(
-      'Балконная дверь',
-      D.on ? `${D.side === 'L' ? 'слева' : 'справа'}, ${D.w} мм` : 'нет',
-      cR('Дверь в окне (балконный блок)', cB('door.on', !!D.on)) +
-        (D.on
-          ? cR(
-              'Сторона (вид изнутри)',
-              cS(
-                'door.side',
-                [
-                  ['L', 'слева'],
-                  ['R', 'справа']
-                ],
-                D.side
-              )
-            ) +
-            cR('Ширина двери по раме', cN('door.w', D.w)) +
-            cR('Низ оконной части от пола', cN('door.ws', D.ws)) +
-            cR(
-              'Открывание двери',
-              cS(
-                'door.t',
-                [
-                  ['tt', 'поворотно-откидная'],
-                  ['turn', 'поворотная']
-                ],
-                D.t
-              )
-            ) +
-            cR('Заполнение', cS('door.panel', Object.entries(WDOOR_PANEL), D.panel)) +
-            cR('Балконная защёлка', cB('door.latch', !!D.latch)) +
-            cR('Москитная сетка', cB('door.net', !!D.net)) +
-            `<dt></dt><dd class="hint" style="text-align:left">Проём доходит до пола; под оконной частью остаётся стена, подоконник и отлив — только под окном.</dd>`
-          : '')
-    ) +
-    cGrp(
-      'Профиль и стеклопакет',
-      sy.n,
-      cR(
-        'Профильная система',
-        cS(
-          'sys',
-          WSYS.map(s => [s.id, `${s.n} · ${s.d} мм, ${s.ch} кам.`]),
-          c.sys
-        )
-      ) +
-        cR(
-          'Стеклопакет',
-          cS(
-            'glass',
-            WGLASS.map(g => [g.id, `${g.n}, ${g.t} мм`]),
-            c.glass
-          )
-        ) +
-        (over
-          ? `<dt></dt><dd class="bad" style="text-align:left">толще допустимого для профиля (до ${sy.gmax} мм)</dd>`
-          : '') +
-        cR('Монтажная глубина от улицы', `<input type="number" data-c="inset" data-ct="n" value="${fmt(M.inset)}">`) +
-        cR('Монтажный шов', cN('gap', c.gap)) +
-        cR('Улица с другой стороны', `<input type="checkbox" data-f2="flip" ${e.flip ? 'checked' : ''}>`)
-    );
-  let cols = `<div class="colrow" style="color:var(--muted)"><span>№</span><span>Тип открывания</span><span>Петли</span><span>Доля</span><span title="Москитная сетка">Сетка</span><span></span></div>`;
-  c.cols.forEach((k, i) => {
-    cols += `<div class="colrow"><b>${i + 1}</b>${cS('cols.' + i + '.t', Object.entries(SASH_T), k.t)}${cS(
-      'cols.' + i + '.hg',
-      [
-        ['L', 'слева'],
-        ['R', 'справа']
-      ],
-      k.hg
-    )}<input type="number" step="0.1" data-c="cols.${i}.r" data-ct="n" value="${k.r}" aria-label="Доля ширины">${k.t === 'fixed' ? '<span></span>' : `<input type="checkbox" data-c="cols.${i}.net" data-ct="b" ${k.net ? 'checked' : ''} aria-label="Москитная сетка">`}<button class="btn" data-delcol="${i}" ${c.cols.length < 2 ? 'disabled' : ''} aria-label="Удалить створку" style="padding:1px 6px">×</button></div>`;
-  });
-  h += cGrp(
-    'Створки',
-    WPRE[c.preset] ? WPRE[c.preset].n.split(':')[0] : `${c.cols.length} шт`,
-    cR(
-      'Схема',
-      cS(
-        'preset',
-        [...Object.entries(WPRE).map(([k, v]) => [k, v.n]), ['custom', 'Своя схема']],
-        WPRE[c.preset] ? c.preset : 'custom'
-      )
-    ) +
-      cols +
-      `<div class="btnrow" style="grid-column:1/-1"><button class="btn" id="bAddCol">+ Створка</button></div>` +
-      cR('Фрамуга сверху, мм', cN('transom', c.transom)) +
-      (c.transom > 0
-        ? cR(
-            'Фрамуга',
-            cS(
-              'transomT',
-              [
-                ['fixed', 'Глухая'],
-                ['tilt', 'Откидная']
-              ],
-              c.transomT
-            )
-          )
-        : '')
-  );
-  h += cGrp(
-    'Цвет и фурнитура',
-    '',
-    cR('Профиль снаружи', cC('colOut', c.colOut, WCOL)) +
-      cR('Профиль внутри', cC('colIn', c.colIn, WCOL)) +
-      cR('Ручки', cC('handleCol', c.handleCol, [['#f4f5f3', 'Белые'], ...MCOL]))
-  );
-  h += cGrp(
-    'Подоконник',
-    c.sill.on ? SILL_M[c.sill.mat][0] : 'нет',
-    cR('Подоконник', cB('sill.on', c.sill.on)) +
-      (c.sill.on
-        ? cR(
-            'Материал',
-            cS(
-              'sill.mat',
-              Object.entries(SILL_M).map(([k, v]) => [k, v[0]]),
-              c.sill.mat
-            )
-          ) +
-          cR('Свес в помещение', cN('sill.over', c.sill.over)) +
-          cR('Заход в стену с каждой стороны', cN('sill.side', c.sill.side)) +
-          cR('Толщина', cN('sill.th', c.sill.th)) +
-          cR('Глубина', fmt(c.sill.over - M.dIn) + ' мм')
-        : '')
-  );
-  h += cGrp(
-    'Отлив и откосы',
-    SLOPE_T[c.slopes],
-    cR('Отлив', cB('drip.on', c.drip.on)) +
-      (c.drip.on ? cR('Вынос отлива', cN('drip.over', c.drip.over)) : '') +
-      cR('Откосы', cS('slopes', Object.entries(SLOPE_T), c.slopes))
-  );
-  return h;
-}
-function setPath(o, path, v) {
-  const ks = path.split('.');
-  if (ks[0] === 'thr' && !o.thr) o.thr = { type: 'none' };
-  if (ks[0] === 'seal' && !o.seal) o.seal = {};
-  let t = o;
-  for (let i = 0; i < ks.length - 1; i++) t = t[ks[i]];
-  t[ks[ks.length - 1]] = v;
-}
-function bindCfg(el, e) {
-  el.querySelectorAll('details.cfg').forEach(d =>
-    d.addEventListener('toggle', () => {
-      d.open ? openGroups.add(d.dataset.g) : openGroups.delete(d.dataset.g);
-    })
-  );
-  el.querySelectorAll('[data-c]').forEach(
-    inp =>
-      (inp.onchange = () => {
-        const p = inp.dataset.c;
-        let v = inp.dataset.ct === 'b' ? inp.checked : inp.dataset.ct === 'n' ? parseFloat(inp.value) : inp.value;
-        if (inp.dataset.ct === 'n' && !isFinite(v)) return;
-        if (/^(leaf\.count|hinges\.count|entry\.seal|entry\.locks)$/.test(p)) v = +v;
-        if (p === 'leaf.split') v = +v;
-        pushUndo();
-        if (e.type === 'window' && p === 'door.on') {
-          winDoorToggle(e, v);
-          changed();
-          return;
-        }
-        if (e.type === 'window' && p === 'kind') {
-          e.cfg.kind = v;
-          if (v === 'alu' && !e.cfg.alu) e.cfg.alu = aluDefaults(e.w, e.h);
-          changed();
-          return;
-        }
-        if (e.type === 'window' && p === 'preset') {
-          if (WPRE[v]) {
-            e.cfg.cols = JSON.parse(JSON.stringify(WPRE[v].cols));
-          }
-          e.cfg.preset = v;
-        } else {
-          setPath(e.cfg, p, v);
-          if (e.type === 'window' && p.startsWith('cols.')) e.cfg.preset = 'custom';
-        }
-        changed();
-      })
-  );
-  el.querySelectorAll('[data-dmode]').forEach(
-    b =>
-      (b.onclick = () => {
-        if (e.cfg.mode === b.dataset.dmode) return;
-        pushUndo();
-        applyDoorMode(e.cfg, b.dataset.dmode);
-        changed();
-        log(
-          b.dataset.dmode === 'hidden'
-            ? 'Дверь переключена на скрытую: короб в плоскости стены, без наличников и доборов, скрытые петли'
-            : b.dataset.dmode === 'entry'
-              ? 'Дверь переключена на входную: стальная коробка, полотно 80 мм, 2 замка, порог'
-              : 'Дверь переключена на обычную'
-        );
-      })
-  );
-  el.querySelectorAll('[data-f2]').forEach(
-    inp =>
-      (inp.onchange = () => {
-        pushUndo();
-        e[inp.dataset.f2] = inp.checked;
-        changed();
-      })
-  );
-  const lw = el.querySelector('[data-lw]'),
-    lh = el.querySelector('[data-lh]');
-  if (lw)
-    lw.onchange = () => {
-      const v = parseFloat(lw.value);
-      if (v > 200) {
-        pushUndo();
-        setLeafSize(e, v, 0);
-        changed();
-      }
-    };
-  if (lh)
-    lh.onchange = () => {
-      const v = parseFloat(lh.value);
-      if (v > 500) {
-        pushUndo();
-        setLeafSize(e, 0, v);
-        changed();
-      }
-    };
-  el.querySelectorAll('[data-delcol]').forEach(
-    b =>
-      (b.onclick = () => {
-        pushUndo();
-        e.cfg.cols.splice(+b.dataset.delcol, 1);
-        e.cfg.preset = 'custom';
-        changed();
-      })
-  );
-  const ac = el.querySelector('#bAddCol');
-  if (ac)
-    ac.onclick = () => {
-      pushUndo();
-      e.cfg.cols.push({ r: 1, t: 'tt', hg: 'R', net: true });
-      e.cfg.preset = 'custom';
-      changed();
-    };
-  const bdd = el.querySelector('#bDoorDraw');
-  if (bdd) bdd.onclick = () => openFurnDraw('door', e.id);
-  const bp = el.querySelector('#bProf');
-  if (bp) bp.onclick = () => openProfiles(e.cfg.frame.prof);
 }
 function propRow(f, es) {
   const e = es[0],
@@ -24052,6 +23351,8 @@ async function toCatalog(insts) {
 
 
 
+
+
 /* catalog */
 let catFilter = 'Все',
   catSel = null;
@@ -24311,6 +23612,7 @@ function initCatalog() {
  *
  * Specification (bill of quantities) of the whole project, across levels; the Specification tab.
  */
+
 
 
 
@@ -24935,6 +24237,8 @@ function customSpec(e, ty, ct, A, put, kn, mas) {
  *
  * Wall types dialog.
  */
+
+
 
 
 
@@ -25689,6 +24993,7 @@ function ctBind(el, t, commit, rer) {
 
 
 
+
 /* profiles dialog */
 let prSel = null,
   prPick = null,
@@ -26198,6 +25503,8 @@ function initProfilesDialog() {
     }
   });
 }
+/* the door and window panels (building) open this dialog through the hook, not through an import of the shell */
+uiHooks.openProfiles = openProfiles;
 
 // ===== commands/tools.js =====
 /**
@@ -26712,6 +26019,7 @@ defineTools({
  *
  * Engineering dialog (groups, panel, collector).
  */
+
 
 
 
@@ -28056,6 +27364,7 @@ async function parseIFC(text, progress) {
 
 
 
+
 /* importers */
 let pendingFile = null,
   impTarget = null;
@@ -28824,16 +28133,25 @@ const NVN = {
   str: ['Усиления', '#e07a5f']
 };
 
-// ===== ui/forms.js =====
+// ===== uikit/dom.js =====
 /**
- * ui/forms.js
+ * uikit/dom.js
  *
- * Generic property forms bound to paths in an element; notes and attached data.
+ * Generic DOM and text helpers for property forms: HTML escaping, colour check.
  */
+const esc = s =>
+  String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+function hexOk(h) {
+  return /^#[0-9a-f]{6}$/i.test(h || '');
+}
 
-
-
+// ===== uikit/forms.js =====
+/**
+ * uikit/forms.js
+ *
+ * Building blocks of property panels: rows and groups, forms bound to paths in an element, option lists.
+ */
 
 
 
@@ -28908,7 +28226,6 @@ function setPathX(o, path, v) {
   }
   t[ks[ks.length - 1]] = v;
 }
-
 /* ---------- notes & attached data: every element ---------- */
 function metaOf(e) {
   if (!e.meta) e.meta = { note: '', data: [], files: [] };
@@ -28916,6 +28233,37 @@ function metaOf(e) {
   if (!e.meta.files) e.meta.files = [];
   return e.meta;
 }
+
+const grpOpts = () => S.elec.groups.map(g => [g.n, `${g.n} · ${g.name}`]);
+const sysOpts = () => S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`]);
+const openGroups = new Set(['Общее', 'Высоты', 'Корпус', 'Профиль и стеклопакет', 'Створки']);
+const cS = (path, opts, v) =>
+  `<select data-c="${path}">${opts.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+const cN = (path, v, step = 'any') =>
+  `<input type="number" step="${step}" data-c="${path}" data-ct="n" value="${fmt(+v || 0)}">`;
+const cB = (path, v) => `<input type="checkbox" data-c="${path}" data-ct="b" ${v ? 'checked' : ''}>`;
+const cC = (path, v, opts) =>
+  `<select data-c="${path}">${opts.map(([h, n]) => `<option value="${h}" ${h === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}${opts.some(o => o[0] === v) ? '' : `<option value="${v}" selected>Свой цвет</option>`}</select>`;
+const cGrp = (t, tag, body) =>
+  `<details class="cfg" data-g="${esc(t)}" ${openGroups.has(t) ? 'open' : ''}><summary>${esc(t)}${tag ? `<span class="tg">${esc(tag)}</span>` : ''}</summary><dl class="props">${body}</dl></details>`;
+const cR = (l, ctl) => `<dt>${l}</dt><dd>${ctl}</dd>`;
+
+// ===== ui/forms.js =====
+/**
+ * ui/forms.js
+ *
+ * Generic property forms bound to paths in an element; notes and attached data.
+ */
+
+
+
+
+
+
+
+
+
+
 function metaPanel(e) {
   const m = e.meta || { note: '', data: [], files: [] };
   const n = (m.data || []).length + (m.files || []).length + (m.note ? 1 : 0);
@@ -29842,7 +29190,6 @@ const gklSheetsState = {
  *
  * Ceilings: slab finish, Knauf frame ceilings (profile layout), stretch ceilings.
  */
-
 
 
 
@@ -31261,7 +30608,6 @@ XT.trim = {
 
 
 
-
 /* ---------- modelled GKL bodies (boxes, suspended fireplace, niches) ---------- */
 const GB_MOUNT = {
   floor: 'Стоит на полу',
@@ -31658,6 +31004,7 @@ function gbodyLoad(e) {
  *
  * Reinforcement inside walls (steel tubes, OSB/plywood) and point loads with a simple verdict.
  */
+
 
 
 
@@ -32631,7 +31978,6 @@ XT.load = {
  *
  * Pipes: systems, materials, catalogue fittings, the pipe element type.
  */
-
 
 
 
@@ -33731,7 +33077,6 @@ defineTools({
  *
  * Plumbing fixtures registry FIXK and the fixture element type.
  */
-
 
 
 
@@ -36737,7 +36082,6 @@ const sanShade = (c, k) => rgbHex(hex2rgb(c).map(v => v * k));
 
 
 
-
 /* GROHE mixers, shower systems and hygienic showers
    Only real catalogue items: every selectable variant is an existing
    article with its price (KZT, shop.grohe.kz unless noted).
@@ -38157,6 +37501,7 @@ function initMixers() {
 
 
 
+
 /* wall finishing tool: whole side or zones; panels surface / flush with the build-up;
    substrate made up from sheet materials; joint profiles on zone borders */
 const FINM = {
@@ -39172,7 +38517,6 @@ function initFinishing() {
 
 
 
-
 /* tile / porcelain generator: formats, joints, patterns, alignment,
    cutting with kerf, factory-edge-only vs offcut reuse, consumption */
 const TILEF = [
@@ -39593,6 +38937,7 @@ function tilePanel(w, z, i) {
  *
  * Manifold node constructor (water / heating / underfloor): components, layout, ports, checks.
  */
+
 
 
 
@@ -43323,6 +42668,7 @@ function initPipeNetwork() {
 
 
 
+
 /* ---- 3D editor of the manifold node (own WebGL view, snaps, offsets) ---- */
 let MFMODE = 'scheme';
 const MF3 = {
@@ -45200,7 +44546,6 @@ function renderCollTab(el) {
  *
  * Modular wiring devices: mechanisms, back boxes, the block panel, keys of switches.
  */
-
 
 
 
@@ -52928,6 +52273,7 @@ XT.node = {
 
 
 
+
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
@@ -56225,6 +55571,7 @@ function initQuality() {
 
 
 
+
 /* levels (этажи). The model of the current level lives in S.ents (all tools work as before);
    other levels are kept in S.x.lv.ents[id] and are swapped in on switch. 3D shows all levels stacked by elevation.
    level: {id, n, z: отметка ±0.000 этажа (чистый пол) в проекте, h: высота этажа (пол–пол), top: отметка верха плиты от ±0.000, slab: толщина плиты} */
@@ -56726,7 +56073,6 @@ afterRestore(() => {
  *
  * Stairs: geometry, solids, treads/finishes, railings on stairs, plan, checks, walls under stairs.
  */
-
 
 
 
@@ -60572,7 +59918,6 @@ defineTools({
 
 
 
-
 /* ---------- catalogue ---------- */
 const COVER_MAT = {
   parquet: {
@@ -62783,7 +62128,6 @@ CUTK['fix:fdrain'] = (e, where) => {
  *
  * Baths: built-in (screen/podium) and freestanding.
  */
-
 
 
 
@@ -73358,7 +72702,6 @@ function blkSpec(e, put) {
 
 
 
-
 /** inserts of floor boxes; m — modules (a post = 2 modules 22,5×45) */
 const FLM = {
   sock: { n: 'Розетка 2К+З 230 В', m: 2, pw: 500, col: '#e9e9e6' },
@@ -78243,7 +77586,6 @@ migrate.step(() => {
 
 
 
-
 /* телевизор: на стене (кронштейн стационарный / наклонный / телескопический поворотный), на тумбе (ножки/подставка), на напольной стойке */
 var TVB = {
   fixed: 'стационарный (плоский, 25 мм)',
@@ -78939,7 +78281,6 @@ function mini3D(A) {
  *
  * Kitchen: runs along walls, modules (Blum/Häfele), fronts, hardware, checks, the constructor dialog.
  */
-
 
 
 
@@ -87979,6 +87320,7 @@ function drCSV(M) {
 
 
 
+
 /* корпусная мебель и кухня: комплект чертежей (A3) — общий вид с размерами, деталировка с кромкой и присадкой,
    карты раскроя ЛДСП / ХДФ / МДФ, схема сборки (аксонометрия с разнесением), спецификация материалов и фурнитуры */
 var FD_SHEET = {
@@ -89351,6 +88693,8 @@ function openFurnDraw(kind, id) {
   d.hidden = false;
   renderFurnDraw();
 }
+/* the door panel (building) opens the drawings through the hook, not through an import of furniture */
+uiHooks.openFurnDraw = openFurnDraw;
 function fdCur() {
   if (FDD.kind === 'door') {
     const e = byId(FDD.id);
@@ -90568,6 +89912,7 @@ function cwGeneralInside(M) {
 
 
 
+
 function renderTools() {
   tb.innerHTML = '';
   const ws = WS.find(w => w.id === curWS) || WS[0];
@@ -90980,6 +90325,7 @@ afterChange(() => {
  * selection, back to the previous state. Dimmed layers stay visible but faded (plan: transparent, 3D: x-ray), so the
  * general plan can be read by one system at a time without losing the context.
  */
+
 
 
 
@@ -94086,6 +93432,7 @@ function drawSheet(sh, o = {}) {
 
 
 
+
 const MS = { keepLayers: null, keepAs: null, keepLv: null, keepSel: null };
 
 /* ---------- mode ---------- */
@@ -96277,6 +95624,7 @@ uiHooks.sheetCube = { draw: sheetCubeDraw, click: sheetCubeClick, hover: sheetCu
 
 
 
+
 function stg() {
   const x = S.x;
   if (!x) return { list: [], cur: null, nid: 1, model: null, modelAs: null };
@@ -96919,6 +96267,8 @@ uiHooks.phaseCol3 = e => {
  *
  * Object settings dialog: form + 3D / exploded preview.
  */
+
+
 
 
 
@@ -102153,6 +101503,7 @@ function clearMarks3() {
 
 
 
+
 /* ---------- settings and anchors ---------- */
 function arCfg() {
   if (!S.x.ar) S.x.ar = { eye: 1.45, fov: 63, stride: 0.7, steps: true, layerOp: {}, geo: null };
@@ -105606,6 +104957,7 @@ const CTPL = {
 
 
 
+
 const LYV = { kind: null, id: null, i: 0, hl: null, pick: false };
 const lvPct = v => (v * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
 const lvN2 = v => (Math.round(v * 100) / 100).toLocaleString('ru-RU');
@@ -107180,6 +106532,8 @@ function ceilSlabTop(pts) {
 
 
 
+
+
 const WT_KEY = 'kontur.curWt';
 /** Makes type id the type for drawing (and remembers it). */
 function setCurWt(id, quiet) {
@@ -108214,6 +107568,7 @@ function initJunctionBoxes() {
  * component), applies the maintenance factor and compares the average with the norm of the room type
  * (СП 52.13330.2016 / СанПиН 1.2.3685-21). The plan shows a false-colour heat map.
  */
+
 
 
 
@@ -112445,6 +111800,8 @@ function initShortLabels() {
 
 
 
+
+
 const SK_ANCH = {
   el: '230 В',
   el3: '380 В',
@@ -112828,6 +112185,8 @@ defineTools({
  *     sheet / tile layout; dimensions can be placed in every view and on the unfold; export of the view to SVG.
  * Renderer: own WebGL (shader of mep/plumbing/manifold-3d.js), CPU picking against the CSG polygons.
  */
+
+
 
 
 
@@ -114934,6 +114293,9 @@ defineTools({
  * Start-up: wires all UI modules to the page (init* functions in load order), restores the autosaved project,
  * exposes the debug handle.
  */
+
+
+
 
 
 
@@ -120169,7 +119531,6 @@ function panelPlan(F, sa, sb, da, db, seg) {
 
 
 
-
 const ceilOf = () => S.ceil || 2700;
 /** The wall at a plan point (the end of a glass run against a wall): { framed } or null. */
 function glassWallAt(p) {
@@ -121896,6 +121257,7 @@ function glassCalc(e, ceil, wallAt) {
 
 
 
+
 const GVS = { id: null };
 const gvRu = (v, d) => (+v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
 const gvMm = v => Math.round(v).toLocaleString('ru-RU');
@@ -122329,6 +121691,537 @@ function cutLayout(pieces, opt) {
     wasteP: usedA > 0 ? wasteA / usedA : 0,
     mode: opt.mode === 'reuse' && !opt.shaped ? 'reuse' : 'factory'
   };
+}
+
+// ===== elements/opening-panels.js =====
+/**
+ * elements/opening-panels.js
+ *
+ * Properties panels of doors and windows (XT.door / XT.window panel and bind).
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+function doorPanel(e) {
+  const c = e.cfg,
+    M = doorModel(e);
+  if (!M) return '';
+  const ls = leafSize(e);
+  const H = c.mode === 'hidden';
+  let h = `<div class="mode2 m3" role="group" aria-label="Тип двери"><button data-dmode="normal" class="${c.mode === 'normal' ? 'on' : ''}">Обычная</button><button data-dmode="hidden" class="${H ? 'on' : ''}">Скрытая</button><button data-dmode="entry" class="${c.mode === 'entry' ? 'on' : ''}">Входная</button></div>`;
+  h += cGrp(
+    'Общее',
+    '',
+    cR('Полотно, ширина', `<input type="number" data-lw value="${fmt(ls.w)}">`) +
+      cR('Полотно, высота', `<input type="number" data-lh value="${fmt(ls.h)}">`) +
+      cR('Открывание на другую сторону', `<input type="checkbox" data-f2="flip" ${e.flip ? 'checked' : ''}>`) +
+      cR('Петли с другой стороны', `<input type="checkbox" data-f2="hand" ${e.hand ? 'checked' : ''}>`) +
+      (H
+        ? cR(
+            'Заподлицо со стеной',
+            cS(
+              'flushSide',
+              [
+                ['swing', 'со стороны открывания (на себя)'],
+                ['opposite', 'с обратной стороны (от себя)']
+              ],
+              c.flushSide
+            )
+          )
+        : '') +
+      cR('Открыть в 3D, °', cN('open', c.open, 5))
+  );
+  h += cGrp(
+    'Полотно',
+    c.leaf.count === 2 ? '2 створки' : GLASS_T[c.leaf.glass],
+    cR(
+      'Створок',
+      cS(
+        'leaf.count',
+        [
+          [1, 'Одна'],
+          [2, 'Две (распашная / полуторная)']
+        ],
+        c.leaf.count
+      )
+    ) +
+      (c.leaf.count === 2
+        ? cR(
+            'Доля активной створки',
+            cS(
+              'leaf.split',
+              [
+                [0.5, '50 / 50'],
+                [0.6, '60 / 40'],
+                [0.67, '2/3 (полуторная)']
+              ],
+              c.leaf.split
+            )
+          )
+        : '') +
+      cR('Толщина', cN('leaf.th', c.leaf.th)) +
+      cR('Исполнение', cS('leaf.glass', Object.entries(GLASS_T), c.leaf.glass)) +
+      (c.leaf.glass === 'none' || !c.leaf.glass
+        ? cR('Поверхность', cS('leaf.style', Object.entries(LEAF_ST), c.leaf.style || 'flat')) +
+          (c.leaf.style === 'panel'
+            ? cR(
+                'Филёнок',
+                cS(
+                  'leaf.panels',
+                  [1, 2, 3, 4, 5].map(v => [v, String(v)]),
+                  c.leaf.panels || 2
+                )
+              )
+            : '') +
+          (c.leaf.style === 'lines'
+            ? cR(
+                'Пазов',
+                cS(
+                  'leaf.lines',
+                  [1, 2, 3, 4, 5, 6, 8, 10].map(v => [v, String(v)]),
+                  c.leaf.lines || 4
+                )
+              )
+            : '')
+        : cR('Стекло', cS('leaf.glassK', Object.entries(GLASS_K), c.leaf.glassK || 'matte')) +
+          cR('Раскладка', cS('leaf.grid', Object.entries(GLASS_GRID), c.leaf.grid || '1x1'))) +
+      cR(
+        'Кромка',
+        cS(
+          'leaf.edge',
+          [
+            ['none', 'в цвет полотна'],
+            ['alu', 'алюминиевая']
+          ],
+          c.leaf.edge || 'none'
+        )
+      ) +
+      cR('Под покраску в цвет стены', cB('leaf.paint', c.leaf.paint)) +
+      (c.leaf.paint ? '' : cR('Цвет', cC('leaf.color', c.leaf.color, DCOL))) +
+      cR('Зазор под полотном', cN('leaf.gapFloor', c.leaf.gapFloor))
+  );
+  h += cGrp(
+    'Коробка',
+    M.fr.name,
+    cR('Профиль', cS('frame.prof', profOpts('frame'), c.frame.prof)) +
+      cR('Монтажный зазор', cN('frame.gap', c.frame.gap)) +
+      cR('Цвет', cC('frame.color', c.frame.color, [...DCOL, ['#c3c8ce', 'Алюминий']]))
+  );
+  h += cGrp(
+    'Доборы',
+    c.ext.on ? (M.ext ? `${fmt(M.ext.width)} мм` : 'не нужны') : 'нет',
+    cR('Доборы', cB('ext.on', c.ext.on)) +
+      (c.ext.on
+        ? cR('Профиль', cS('ext.prof', profOpts('ext'), c.ext.prof)) +
+          cR('Ширина по стене', M.ext ? fmt(M.ext.width) + ' мм' : 'коробка закрывает стену') +
+          cR('Цвет', cC('ext.color', c.ext.color, DCOL))
+        : '')
+  );
+  h += cGrp(
+    'Наличники',
+    c.casing.a || c.casing.b ? [c.casing.a ? 'А' : '', c.casing.b ? 'Б' : ''].filter(Boolean).join(' + ') : 'нет',
+    cR('Со стороны открывания (А)', cB('casing.a', c.casing.a)) +
+      cR('С обратной стороны (Б)', cB('casing.b', c.casing.b)) +
+      cR('Профиль', cS('casing.prof', profOpts('casing'), c.casing.prof)) +
+      cR(
+        'Стык в углах',
+        cS(
+          'casing.join',
+          [
+            ['45', 'под 45°'],
+            ['90', 'под 90°']
+          ],
+          c.casing.join
+        )
+      ) +
+      cR('Цвет', cC('casing.color', c.casing.color, DCOL))
+  );
+  h += cGrp(
+    'Петли',
+    `${HINGE_T[c.hinges.type]} × ${c.hinges.count * M.leaves.length}`,
+    cR('Тип', cS('hinges.type', Object.entries(HINGE_T), c.hinges.type)) +
+      cR(
+        'На створку',
+        cS(
+          'hinges.count',
+          [
+            [2, '2'],
+            [3, '3'],
+            [4, '4']
+          ],
+          c.hinges.count
+        )
+      ) +
+      cR('От верха полотна', cN('hinges.top', c.hinges.top)) +
+      cR('От низа полотна', cN('hinges.bottom', c.hinges.bottom)) +
+      cR('Цвет', cC('hinges.color', c.hinges.color, MCOL))
+  );
+  h += cGrp(
+    'Ручка',
+    HANDLE_T[c.handle.type] +
+      (c.handle.type !== 'none' && c.handle.type !== 'flush'
+        ? ' · ' + (HANDLE_SER[c.handle.series || 'round'] || '')
+        : ''),
+    cR('Тип', cS('handle.type', Object.entries(HANDLE_T), c.handle.type)) +
+      (c.handle.type !== 'none' && c.handle.type !== 'flush'
+        ? cR('Серия', cS('handle.series', Object.entries(HANDLE_SER), c.handle.series || 'round'))
+        : '') +
+      cR('Высота', cN('handle.h', c.handle.h)) +
+      cR('Цвет', cC('handle.color', c.handle.color, MCOL))
+  );
+  h += cGrp('Замок', LOCK_T[c.lock.type], cR('Тип', cS('lock.type', Object.entries(LOCK_T), c.lock.type)));
+  const cl = c.closer || (c.closer = { type: 'none', color: '#a9adb0' });
+  h += cGrp(
+    'Доводчик',
+    CLOSER_T[cl.type],
+    cR('Тип', cS('closer.type', Object.entries(CLOSER_T), cl.type)) +
+      (cl.type === 'arm' ? cR('Цвет', cC('closer.color', cl.color, MCOL)) : '')
+  );
+  h += cGrp(
+    'Стопор',
+    STOP_T[c.stop.type],
+    cR('Тип', cS('stop.type', Object.entries(STOP_T), c.stop.type)) + cR('Цвет', cC('stop.color', c.stop.color, MCOL))
+  );
+  const thr = (c.thr && c.thr.type) || 'none';
+  const sl = sealCalc(e, M);
+  h += cGrp(
+    'Порог и уплотнитель',
+    (thr !== 'none' ? 'порог · ' : '') + (sl.len ? sl.buy.toFixed(1).replace('.', ',') + ' м' : 'без уплотнителя'),
+    cR('Порог', cS('thr.type', Object.entries(THR_T), thr)) +
+      cR('Уплотнитель', cS('seal.type', Object.entries(SEAL_T), sl.type || 'none')) +
+      cR(
+        'Длина',
+        `<span class="hint" title="Контур притвора: 2 × высота полотна + ширина${M.leaves.length > 1 ? ' + притвор пассивной створки' : ''}, запас 5 %">${sl.len ? sl.len.toFixed(2).replace('.', ',') + ' м, к закупке ' + sl.buy.toFixed(1).replace('.', ',') + ' м' : '—'}</span>`
+      )
+  );
+  if (c.mode === 'entry') {
+    const en = c.entry || (c.entry = defEntry());
+    const o_ = a => a.map(x => [x, x]);
+    h += cGrp(
+      'Входная дверь',
+      en.locks + ' замка',
+      cR(
+        'Отделка снаружи',
+        cS('entry.outFin', o_(['Порошковое напыление', 'МДФ-панель 16 мм', 'Терморазрыв + МДФ']), en.outFin)
+      ) +
+        cR('Цвет снаружи', cC('entry.outCol', en.outCol, DCOL)) +
+        cR('Отделка изнутри', cS('entry.inFin', o_(['МДФ-панель 10 мм', 'МДФ-панель 16 мм', 'Зеркало']), en.inFin)) +
+        cR('Цвет изнутри', cC('entry.inCol', en.inCol, DCOL)) +
+        cR('Утеплитель', cS('entry.insul', o_(['минвата', 'пенополиуретан', 'без утеплителя']), en.insul)) +
+        cR(
+          'Контуров уплотнения',
+          cS(
+            'entry.seal',
+            [
+              [1, '1'],
+              [2, '2'],
+              [3, '3']
+            ],
+            en.seal
+          )
+        ) +
+        cR(
+          'Замков',
+          cS(
+            'entry.locks',
+            [
+              [1, '1'],
+              [2, '2']
+            ],
+            en.locks
+          )
+        ) +
+        cR('Глазок', cB('entry.peep', en.peep)) +
+        cR('Порог', cB('entry.thr', en.thr))
+    );
+  }
+  return (
+    h +
+    `<div class="btnrow"><button class="btn" id="bDoorDraw" title="Чертежи двери: полотно с наполнением, коробка, доборы и наличники, фрезеровки под фурнитуру, уплотнитель, схема сборки">Чертежи…</button><button class="btn" id="bProf">Профили сечений…</button></div>`
+  );
+}
+function winPanel(e) {
+  const c = e.cfg;
+  const kindRow = cGrp(
+    'Вид изделия',
+    c.kind === 'alu' ? 'Витраж алюминиевый' : 'Окно ПВХ',
+    cR(
+      'Изделие',
+      cS(
+        'kind',
+        [
+          ['pvc', 'Окно / балконный блок ПВХ'],
+          ['alu', 'Витраж алюминиевый (стоечно-ригельный / рамный)']
+        ],
+        c.kind || 'pvc'
+      )
+    )
+  );
+  if (c.kind === 'alu') return kindRow + aluPanel(e);
+  if (!c.door) c.door = winDoorDefaults();
+  const M = winModel(e);
+  if (!M) return '';
+  const sy = M.sy,
+    gl = M.gl,
+    over = gl.t > sy.gmax;
+  const D = c.door;
+  let h =
+    kindRow +
+    cGrp(
+      'Балконная дверь',
+      D.on ? `${D.side === 'L' ? 'слева' : 'справа'}, ${D.w} мм` : 'нет',
+      cR('Дверь в окне (балконный блок)', cB('door.on', !!D.on)) +
+        (D.on
+          ? cR(
+              'Сторона (вид изнутри)',
+              cS(
+                'door.side',
+                [
+                  ['L', 'слева'],
+                  ['R', 'справа']
+                ],
+                D.side
+              )
+            ) +
+            cR('Ширина двери по раме', cN('door.w', D.w)) +
+            cR('Низ оконной части от пола', cN('door.ws', D.ws)) +
+            cR(
+              'Открывание двери',
+              cS(
+                'door.t',
+                [
+                  ['tt', 'поворотно-откидная'],
+                  ['turn', 'поворотная']
+                ],
+                D.t
+              )
+            ) +
+            cR('Заполнение', cS('door.panel', Object.entries(WDOOR_PANEL), D.panel)) +
+            cR('Балконная защёлка', cB('door.latch', !!D.latch)) +
+            cR('Москитная сетка', cB('door.net', !!D.net)) +
+            `<dt></dt><dd class="hint" style="text-align:left">Проём доходит до пола; под оконной частью остаётся стена, подоконник и отлив — только под окном.</dd>`
+          : '')
+    ) +
+    cGrp(
+      'Профиль и стеклопакет',
+      sy.n,
+      cR(
+        'Профильная система',
+        cS(
+          'sys',
+          WSYS.map(s => [s.id, `${s.n} · ${s.d} мм, ${s.ch} кам.`]),
+          c.sys
+        )
+      ) +
+        cR(
+          'Стеклопакет',
+          cS(
+            'glass',
+            WGLASS.map(g => [g.id, `${g.n}, ${g.t} мм`]),
+            c.glass
+          )
+        ) +
+        (over
+          ? `<dt></dt><dd class="bad" style="text-align:left">толще допустимого для профиля (до ${sy.gmax} мм)</dd>`
+          : '') +
+        cR('Монтажная глубина от улицы', `<input type="number" data-c="inset" data-ct="n" value="${fmt(M.inset)}">`) +
+        cR('Монтажный шов', cN('gap', c.gap)) +
+        cR('Улица с другой стороны', `<input type="checkbox" data-f2="flip" ${e.flip ? 'checked' : ''}>`)
+    );
+  let cols = `<div class="colrow" style="color:var(--muted)"><span>№</span><span>Тип открывания</span><span>Петли</span><span>Доля</span><span title="Москитная сетка">Сетка</span><span></span></div>`;
+  c.cols.forEach((k, i) => {
+    cols += `<div class="colrow"><b>${i + 1}</b>${cS('cols.' + i + '.t', Object.entries(SASH_T), k.t)}${cS(
+      'cols.' + i + '.hg',
+      [
+        ['L', 'слева'],
+        ['R', 'справа']
+      ],
+      k.hg
+    )}<input type="number" step="0.1" data-c="cols.${i}.r" data-ct="n" value="${k.r}" aria-label="Доля ширины">${k.t === 'fixed' ? '<span></span>' : `<input type="checkbox" data-c="cols.${i}.net" data-ct="b" ${k.net ? 'checked' : ''} aria-label="Москитная сетка">`}<button class="btn" data-delcol="${i}" ${c.cols.length < 2 ? 'disabled' : ''} aria-label="Удалить створку" style="padding:1px 6px">×</button></div>`;
+  });
+  h += cGrp(
+    'Створки',
+    WPRE[c.preset] ? WPRE[c.preset].n.split(':')[0] : `${c.cols.length} шт`,
+    cR(
+      'Схема',
+      cS(
+        'preset',
+        [...Object.entries(WPRE).map(([k, v]) => [k, v.n]), ['custom', 'Своя схема']],
+        WPRE[c.preset] ? c.preset : 'custom'
+      )
+    ) +
+      cols +
+      `<div class="btnrow" style="grid-column:1/-1"><button class="btn" id="bAddCol">+ Створка</button></div>` +
+      cR('Фрамуга сверху, мм', cN('transom', c.transom)) +
+      (c.transom > 0
+        ? cR(
+            'Фрамуга',
+            cS(
+              'transomT',
+              [
+                ['fixed', 'Глухая'],
+                ['tilt', 'Откидная']
+              ],
+              c.transomT
+            )
+          )
+        : '')
+  );
+  h += cGrp(
+    'Цвет и фурнитура',
+    '',
+    cR('Профиль снаружи', cC('colOut', c.colOut, WCOL)) +
+      cR('Профиль внутри', cC('colIn', c.colIn, WCOL)) +
+      cR('Ручки', cC('handleCol', c.handleCol, [['#f4f5f3', 'Белые'], ...MCOL]))
+  );
+  h += cGrp(
+    'Подоконник',
+    c.sill.on ? SILL_M[c.sill.mat][0] : 'нет',
+    cR('Подоконник', cB('sill.on', c.sill.on)) +
+      (c.sill.on
+        ? cR(
+            'Материал',
+            cS(
+              'sill.mat',
+              Object.entries(SILL_M).map(([k, v]) => [k, v[0]]),
+              c.sill.mat
+            )
+          ) +
+          cR('Свес в помещение', cN('sill.over', c.sill.over)) +
+          cR('Заход в стену с каждой стороны', cN('sill.side', c.sill.side)) +
+          cR('Толщина', cN('sill.th', c.sill.th)) +
+          cR('Глубина', fmt(c.sill.over - M.dIn) + ' мм')
+        : '')
+  );
+  h += cGrp(
+    'Отлив и откосы',
+    SLOPE_T[c.slopes],
+    cR('Отлив', cB('drip.on', c.drip.on)) +
+      (c.drip.on ? cR('Вынос отлива', cN('drip.over', c.drip.over)) : '') +
+      cR('Откосы', cS('slopes', Object.entries(SLOPE_T), c.slopes))
+  );
+  return h;
+}
+function setPath(o, path, v) {
+  const ks = path.split('.');
+  if (ks[0] === 'thr' && !o.thr) o.thr = { type: 'none' };
+  if (ks[0] === 'seal' && !o.seal) o.seal = {};
+  let t = o;
+  for (let i = 0; i < ks.length - 1; i++) t = t[ks[i]];
+  t[ks[ks.length - 1]] = v;
+}
+function bindCfg(el, e) {
+  el.querySelectorAll('details.cfg').forEach(d =>
+    d.addEventListener('toggle', () => {
+      d.open ? openGroups.add(d.dataset.g) : openGroups.delete(d.dataset.g);
+    })
+  );
+  el.querySelectorAll('[data-c]').forEach(
+    inp =>
+      (inp.onchange = () => {
+        const p = inp.dataset.c;
+        let v = inp.dataset.ct === 'b' ? inp.checked : inp.dataset.ct === 'n' ? parseFloat(inp.value) : inp.value;
+        if (inp.dataset.ct === 'n' && !isFinite(v)) return;
+        if (/^(leaf\.count|hinges\.count|entry\.seal|entry\.locks)$/.test(p)) v = +v;
+        if (p === 'leaf.split') v = +v;
+        pushUndo();
+        if (e.type === 'window' && p === 'door.on') {
+          winDoorToggle(e, v);
+          changed();
+          return;
+        }
+        if (e.type === 'window' && p === 'kind') {
+          e.cfg.kind = v;
+          if (v === 'alu' && !e.cfg.alu) e.cfg.alu = aluDefaults(e.w, e.h);
+          changed();
+          return;
+        }
+        if (e.type === 'window' && p === 'preset') {
+          if (WPRE[v]) {
+            e.cfg.cols = JSON.parse(JSON.stringify(WPRE[v].cols));
+          }
+          e.cfg.preset = v;
+        } else {
+          setPath(e.cfg, p, v);
+          if (e.type === 'window' && p.startsWith('cols.')) e.cfg.preset = 'custom';
+        }
+        changed();
+      })
+  );
+  el.querySelectorAll('[data-dmode]').forEach(
+    b =>
+      (b.onclick = () => {
+        if (e.cfg.mode === b.dataset.dmode) return;
+        pushUndo();
+        applyDoorMode(e.cfg, b.dataset.dmode);
+        changed();
+        log(
+          b.dataset.dmode === 'hidden'
+            ? 'Дверь переключена на скрытую: короб в плоскости стены, без наличников и доборов, скрытые петли'
+            : b.dataset.dmode === 'entry'
+              ? 'Дверь переключена на входную: стальная коробка, полотно 80 мм, 2 замка, порог'
+              : 'Дверь переключена на обычную'
+        );
+      })
+  );
+  el.querySelectorAll('[data-f2]').forEach(
+    inp =>
+      (inp.onchange = () => {
+        pushUndo();
+        e[inp.dataset.f2] = inp.checked;
+        changed();
+      })
+  );
+  const lw = el.querySelector('[data-lw]'),
+    lh = el.querySelector('[data-lh]');
+  if (lw)
+    lw.onchange = () => {
+      const v = parseFloat(lw.value);
+      if (v > 200) {
+        pushUndo();
+        setLeafSize(e, v, 0);
+        changed();
+      }
+    };
+  if (lh)
+    lh.onchange = () => {
+      const v = parseFloat(lh.value);
+      if (v > 500) {
+        pushUndo();
+        setLeafSize(e, 0, v);
+        changed();
+      }
+    };
+  el.querySelectorAll('[data-delcol]').forEach(
+    b =>
+      (b.onclick = () => {
+        pushUndo();
+        e.cfg.cols.splice(+b.dataset.delcol, 1);
+        e.cfg.preset = 'custom';
+        changed();
+      })
+  );
+  const ac = el.querySelector('#bAddCol');
+  if (ac)
+    ac.onclick = () => {
+      pushUndo();
+      e.cfg.cols.push({ r: 1, t: 'tt', hg: 'R', net: true });
+      e.cfg.preset = 'custom';
+      changed();
+    };
+  const bdd = el.querySelector('#bDoorDraw');
+  if (bdd) bdd.onclick = () => uiHooks.openFurnDraw('door', e.id);
+  const bp = el.querySelector('#bProf');
+  if (bp) bp.onclick = () => uiHooks.openProfiles(e.cfg.frame.prof);
 }
 
 // ===== elements/opening-xt.js =====
@@ -122909,6 +122802,9 @@ defineTools({
 
 
 
+
+
+
 XT.slab = {
   layer: 'Перекрытия',
   prims: e => closedSegs(e.pts),
@@ -122955,6 +122851,40 @@ XT.slab = {
   ifc: () => ['IFCSLAB', 'FLOOR', 'Pset_SlabCommon']
 };
 
+/** Properties panel of a slab (XT.slab.panel): the area and the button that takes the outline from a polyline. */
+function slabPanel(e) {
+  return `<dt>Площадь</dt><dd>${(Math.abs(polyArea(e.pts)) / 1e6).toFixed(2)} м²</dd>`;
+}
+/** Button row of a slab under the properties table (XT.slab.panelAfter). */
+function slabPanelAfter() {
+  return `<div class="btnrow"><button class="btn" id="bSlabLine">Контур из полилинии…</button></div>`;
+}
+/** Binds the slab panel (XT.slab.bind): «outline from a polyline». */
+function bindSlabLine(el, e, changed) {
+  const bsl = $('#bSlabLine');
+  if (bsl)
+    bsl.onclick = () => {
+      const sl = e;
+      startCmd('slabfrom', {
+        name: 'slabfrom',
+        noSnap: true,
+        prompt: () => 'Замкнутая полилиния для контура:',
+        onPoint(p) {
+          const x = pickAt(p, y => y.type === 'pline' && y.closed);
+          if (!x) {
+            log('Нужна замкнутая полилиния', true);
+            return;
+          }
+          pushUndo();
+          sl.pts = x.pts.slice();
+          changed();
+          return 'end';
+        },
+        onEnter: () => 'end'
+      });
+    };
+}
+
 // ===== elements/solid-body.js =====
 /**
  * elements/solid-body.js
@@ -122970,7 +122900,6 @@ XT.slab = {
  * Mass: solid materials by volume × density; framed materials (GKL, GVL, cement board, OSB on a frame) by the clad
  * area × sheet mass × layers + frame per m².
  */
-
 
 
 
@@ -124885,7 +124814,6 @@ function wallFaceRounds(w, B, J) {
 
 
 
-
 /** Materials of the niche inside: the finishes of walls, glass / GKL shelves. */
 const WN_FIN = ['paint', 'tile', 'stone', 'plaster', 'veneer', 'hpl'];
 const WN_SHELF = {
@@ -126464,6 +126392,7 @@ function kitApplianceShape(F, f, cd, hcol) {
  * zones at any heights, openings skipped, split around or framed. The result is the molding's own item list
  * (mode «custom»), still editable by hand afterwards.
  */
+
 
 
 
@@ -135691,6 +135620,10 @@ function svgToCad(cad, svgText, opt = {}) {
 
 
 
+
+
+
+
 XT.dev = {
   net: e => {
     const d = DEVK[e.kind] || {};
@@ -135784,6 +135717,70 @@ XT.dev = {
   }
 };
 
+/** Simple fields of a device for the properties table (XT.dev.fields). */
+function devFields(e) {
+  const d = DEVK[e.kind] || {};
+  const F = [
+    {
+      l: 'Тип',
+      k: 'kind',
+      sel: Object.keys(DEVK)
+        .filter(k => DEVK[k].f === d.f)
+        .map(k => [k, DEVK[k].n])
+    },
+    { l: d.mount === 'ceil' ? 'Отметка потолка' : 'Высота установки', k: 'z', num: true }
+  ];
+  if (d.f === 'vterm')
+    F.push(
+      { l: 'Система', k: 'sys', sel: sysOpts() },
+      { l: 'Расход, м³/ч', k: 'flow', num: true },
+      { l: 'Размер (Ø или Ш×В)', k: 'size', txt: true }
+    );
+  else if (e.kind !== 'panel')
+    F.push({ l: 'Группа', k: 'group', sel: grpOpts() }, { l: 'Мощность, Вт', k: 'pw', num: true });
+  if (d.f === 'socket' && !d.weak) F.push({ l: 'Назначение', k: 'ded', sel: Object.entries(DEDICATED) });
+  if (d.f === 'light')
+    F.push({
+      l: 'Выключатель (клавиша)',
+      k: 'swk',
+      sel: [
+        ['', '— не назначен'],
+        ...allKeys().map(k => [
+          k.dev + '|' + k.key,
+          `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
+        ])
+      ]
+    });
+  F.push({ l: 'Поворот, °', k: 'rotd', num: true });
+  return F;
+}
+/**
+ * Properties panel of a device (XT.dev.panel): the system or the group data, the light options (devCfgPanel), the panel
+ * of its kind (DEVK[kind].panel) and the block of mechanisms (blkPanel).
+ */
+function devPanel(e) {
+  let h = '';
+  const ro = (k, v) => (h += `<dt>${k}</dt><dd>${v}</dd>`);
+  const d = DEVK[e.kind] || {};
+  if (d.f === 'vterm') {
+    const sy = sysOf(e.sys);
+    ro('Система', `${esc(sy.id)} · ${esc(sy.kind)}`);
+  } else if (e.group != null) {
+    const g = groupOf(e.group);
+    ro('Автомат группы', esc(g.brk));
+    ro('Кабель группы', esc(g.cable));
+  }
+  if (typeof devCfgPanel === 'function') h += devCfgPanel(e);
+  if (DEVK[e.kind] && DEVK[e.kind].panel) h += DEVK[e.kind].panel(e);
+  if (e.blk) h += blkPanel(e);
+  return h;
+}
+/** Button row of a device under the properties table (XT.dev.panelAfter). */
+function devPanelAfter(e) {
+  const d = DEVK[e.kind] || {};
+  return `<div class="btnrow"><button class="btn" id="bMEPopen">${d.f === 'vterm' ? 'Системы вентиляции…' : 'Группы электрики…'}</button></div>`;
+}
+
 // ===== mep/electrical/device-series.js =====
 /**
  * mep/electrical/device-series.js
@@ -135791,7 +135788,6 @@ XT.dev = {
  * Wiring-device series (Schneider AtlasDesign / ArtGallery / flush): palettes, frame materials, block defaults
  * and panel rows.
  */
-
 
 
 
@@ -136449,7 +136445,6 @@ function moduleSvg(m, k, X, Y, w, hc, on, des) {
 
 
 
-
 const LED_W = [4.8, 9.6, 14.4, 19.2];
 const LED_PROF = { surf: 'накладной', rec: 'врезной (в паз)', corner: 'угловой 45°', none: 'без профиля' };
 const LED_CT = { 2700: '2700 K тёплый', 3000: '3000 K', 4000: '4000 K нейтральный' };
@@ -137031,7 +137026,6 @@ function wires3D(mb, L, z0, yM, yB) {
  * (DIN enclosure or open shelf with IP67 units) or locally next to the consumer. psuPlan() packs consumers into
  * power supplies (≤ 80 % load), chooses the models and the cable cross-sections by voltage drop.
  */
-
 
 
 
@@ -137818,6 +137812,9 @@ function buildLoads(out) {
 
 
 
+
+
+
 XT.wire = {
   net: e => (/UTP|RG/.test(e.cable) ? 'low' : 'el'),
   prims: e => {
@@ -137898,6 +137895,59 @@ XT.wire = {
       };
   }
 };
+
+/** Simple fields of a cable route for the properties table (XT.wire.fields). */
+function wireFields() {
+  return [
+    {
+      l: 'Клавиша выключателя',
+      k: 'swkey',
+      sel: [
+        ['', '— (питание / розетки)'],
+        ...allKeys().map(k => [
+          k.dev + '|' + k.key,
+          `№${k.dev} · ${k.name} (${(MODK[k.mod] || DEVK[k.mod] || { n: k.mod }).n})`
+        ])
+      ]
+    },
+    { l: 'Группа', k: 'group', sel: grpOpts() },
+    { l: 'Кабель', k: 'cable', sel: CABLES.map(c => [c, c]) },
+    { l: 'Прокладка', k: 'method', sel: Object.entries(METHODS).map(([k, m]) => [k, m.n]) },
+    { l: 'Отметка трассы', k: 'z', num: true },
+    {
+      l: 'Монтажная трасса',
+      k: 'manual',
+      sel: [
+        ['', 'авто (кратчайшая, пакетами)'],
+        ['1', 'вручную — по линии провода']
+      ]
+    }
+  ];
+}
+/** Properties panel of a cable route (XT.wire.panel): the cable length and its ends. */
+function wirePanel(e) {
+  let h = '';
+  const ro = (k, v) => (h += `<dt>${k}</dt><dd>${v}</dd>`);
+  const L = wireLen(e);
+  h += `<div class="hd">Длина кабеля</div>`;
+  ro('В плане', (L.plan / 1000).toFixed(2) + ' м');
+  ro('Опуски к устройствам', (L.drops / 1000).toFixed(2) + ' м');
+  ro('Запас на подключение', (L.reserve / 1000).toFixed(2) + ' м');
+  if (L.extra) ro('Возврат до светильника', (L.extra / 1000).toFixed(2) + ' м');
+  ro('Итого', `<b>${(L.total / 1000).toFixed(2)} м</b>`);
+  const a = e.from != null ? byId(e.from) : null,
+    b = e.to != null ? byId(e.to) : null;
+  ro('Откуда', a ? esc(DEVK[a.kind].n) : '—');
+  ro('Куда', b ? esc(DEVK[b.kind].n) : '—');
+  return h;
+}
+/** Button rows of a cable route under the properties table (XT.wire.panelAfter). */
+function wirePanelAfter() {
+  return (
+    `<div class="btnrow"><button class="btn" id="bReroute" title="Трасса зафиксирована и не меняется при правке стен или скрытии слоёв. Нажмите, чтобы проложить заново.">Перетрассировать</button></div>` +
+    `<div class="btnrow"><button class="btn" id="bMEPopen">Группы электрики…</button></div>`
+  );
+}
 
 // ===== mep/hvac/duct-fittings.js =====
 /**
@@ -138386,6 +138436,7 @@ function penetrationMesh(mb, e) {
 
 
 
+
 /**
  * The outline of a duct in plan: the left and the right side (offset by half the width plus insulation) and the two
  * end faces. Shared by the snaps and the cutting edges.
@@ -138556,6 +138607,48 @@ XT.duct = {
   },
   ifc: () => ['IFCDUCTSEGMENT', 'NOTDEFINED', null]
 };
+
+/** Properties panel of a duct (XT.duct.panel): the air velocity and the calculated sizes. */
+function ductPanel(e) {
+  const v = ductVel(e),
+    bad = v > (S.vent.vmax || 4),
+    L = ductLen(e);
+  const ro = (k, x) => `<dt>${k}</dt><dd>${x}</dd>`;
+  return (
+    `<div class="hd">Расчёт</div>` +
+    ro(
+      'Скорость воздуха',
+      `<span class="${bad ? 'bad' : 'ok'}">${v.toFixed(2)} м/с${bad ? ' — выше ' + S.vent.vmax : ''}</span>`
+    ) +
+    ro('Площадь сечения', (ductArea(e) * 1e4).toFixed(1) + ' см²') +
+    ro('Длина', (L / 1000).toFixed(2) + ' м') +
+    ro('Площадь поверхности', ((ductPerim(e) * L) / 1000).toFixed(2) + ' м²') +
+    ro('Отводов', ductBends(e).length)
+  );
+}
+/** Button row of a duct under the properties table (XT.duct.panelAfter). */
+function ductPanelAfter() {
+  return `<div class="btnrow"><button class="btn" id="bMEPopen">Системы вентиляции…</button></div>`;
+}
+/** Simple fields of a duct for the properties table (XT.duct.fields). */
+function ductFields(e) {
+  return [
+    { l: 'Система', k: 'sys', sel: sysOpts() },
+    { l: 'Сечение (Ø или Ш×В)', k: 'sec', txt: true },
+    { l: 'Отметка оси', k: 'z', num: true },
+    { l: 'Отметка начала', k: 'dza', num: true },
+    { l: 'Отметка конца', k: 'dzb', num: true },
+    { l: 'Расход, м³/ч', k: 'flow', num: true },
+    { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
+    ...(e.mat === PVC_MAT
+      ? [
+          { l: 'Канал ПВХ', k: 'pvcsz', sel: PVC_SIZES.map(([a, b]) => [a + '×' + b, a + '×' + b + ' мм']) },
+          { l: 'Обратных клапанов', k: 'cv', num: true }
+        ]
+      : []),
+    { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
+  ];
+}
 
 // ===== mep/hvac/hvac-clash.js =====
 /**
