@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.58';
+const APP_VER = '59.59';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12519,7 +12519,6 @@ migrate.step(syncWalls, 90);
 
 
 
-
 function instHull(e) {
   const a = ASSETS.get(e.asset);
   const r = e.rot || 0;
@@ -12641,11 +12640,6 @@ function prims(e) {
     }
     case 'text':
       return closedSegs(textBox(e));
-    case 'door':
-    case 'window': {
-      const I = opInfo(e);
-      return I ? closedSegs(I.rect) : [];
-    }
     case 'slab':
       return closedSegs(e.pts);
     case 'inst':
@@ -12714,10 +12708,6 @@ function entDist(e, p) {
     }
   }
   if (e.type === 'text' && inPoly(p, textBox(e))) return 0;
-  if (e.type === 'door' || e.type === 'window') {
-    const I = opInfo(e);
-    if (I && inPoly(p, I.rect)) return -1;
-  }
   if (e.type === 'inst' && !flatCat(e.layer) && inPoly(p, instHull(e))) return -0.5;
   if (e.type === 'dev') {
     const d = dist(devCenter(e), p);
@@ -12791,18 +12781,6 @@ function keyPts(e) {
     case 'text':
       r.push({ p: e.p, k: 'ins' });
       break;
-    case 'door':
-    case 'window': {
-      const I = opInfo(e);
-      if (I) {
-        r.push({ p: I.c, k: 'mid' });
-        I.rect.forEach(p => r.push({ p, k: 'end' }));
-        // axis ends and the middles of both faces: floor boundaries to the middle of an opening
-        r.push({ p: I.s0, k: 'mid' }, { p: I.s1, k: 'mid' });
-        r.push({ p: mid(I.rect[0], I.rect[1]), k: 'mid' }, { p: mid(I.rect[2], I.rect[3]), k: 'mid' });
-      }
-      break;
-    }
     case 'slab':
       e.pts.forEach(p => r.push({ p, k: 'end' }));
       closedSegs(e.pts).forEach(s => r.push({ p: mid(s.a, s.b), k: 'mid' }));
@@ -12897,11 +12875,6 @@ function samplePts(e) {
     }
     case 'text':
       return textBox(e);
-    case 'door':
-    case 'window': {
-      const I = opInfo(e);
-      return I ? I.rect : [];
-    }
     case 'inst':
       return instHull(e);
     case 'dev': {
@@ -12956,15 +12929,6 @@ function mapEnt(e, f, dA = 0) {
     case 'duct':
       n.pts = e.pts.map(f);
       break;
-    case 'door':
-    case 'window': {
-      const I = opInfo(e);
-      if (I) {
-        const c = f(I.c);
-        n.t = dot(sub(c, I.w.a), I.wi.u);
-      }
-      break;
-    }
     default: {
       const X = XT[n.type];
       if (X && X.map) X.map(n, e, f, dA);
@@ -15942,7 +15906,6 @@ function acquire(r, w) {
 
 
 
-
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -16095,20 +16058,6 @@ function gripsOf0(e) {
     case 'duct':
     case 'spline':
       return e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }));
-    case 'door':
-    case 'window': {
-      const I = opInfo(e);
-      return I
-        ? [
-            {
-              p: I.c,
-              apply: set((n, p) => {
-                n.t = dot(sub(p, I.w.a), I.wi.u);
-              })
-            }
-          ]
-        : [];
-    }
     default: {
       const X = XT[e.type];
       if (X && X.grips) return X.grips(e, set, mv);
@@ -17304,10 +17253,6 @@ function drawEnt(e, color, o = {}) {
           if (!ghost) drawInstPorts(e);
           break;
         }
-        case 'door':
-        case 'window':
-          drawOpening(e, color, o);
-          break;
         case 'dev':
           drawDev(e, color, o);
           break;
@@ -19324,7 +19269,6 @@ function cutLabels() {
 
 
 
-
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19440,21 +19384,6 @@ function pick3(ev) {
 function key3Base(e) {
   const L = layerOf(e);
   switch (e.type) {
-    case 'door':
-    case 'window': {
-      const w = byId(e.host);
-      if (!w) return null;
-      const c = e.cfg || {};
-      const pr =
-        e.type === 'door'
-          ? [
-              c.frame && getProf(c.frame.prof, 'frame'),
-              c.ext && getProf(c.ext.prof, 'ext'),
-              c.casing && getProf(c.casing.prof, 'casing')
-            ]
-          : 0;
-      return JSON.stringify([e.type, e.t, e.w, e.h, e.sill, e.flip, e.hand, w.a, w.b, w.th, w.z, c, pr, w.fa, w.fb]);
-    }
     case 'slab':
       return JSON.stringify([
         slabOutline(e),
@@ -19527,10 +19456,6 @@ function boxesGroup(xf, build, opts) {
 }
 function build3(e) {
   switch (e.type) {
-    case 'door':
-      return buildDoor3(e);
-    case 'window':
-      return buildWin3(e);
     case 'slab': {
       if (e.pts.length < 3) return null;
       // walls of the level below rising through the slab (second light): cut by CSG
@@ -23085,10 +23010,6 @@ function groupName(e) {
       return `Трасса гр.${e.group} · ${e.cable}`;
     case 'duct':
       return `Воздуховод ${e.sys} · ${secTxt(e)}`;
-    case 'door':
-      return `Дверь ${fmt(e.w)}×${fmt(e.h)}`;
-    case 'window':
-      return `${e.cfg && e.cfg.kind === 'alu' ? 'Витраж' : e.cfg && e.cfg.door && e.cfg.door.on ? 'Балконный блок' : 'Окно'} ${fmt(e.w)}×${fmt(e.h)}`;
     case 'slab':
       return `Перекрытие ${fmt(e.th)} мм`;
     case 'inst': {
@@ -23296,32 +23217,6 @@ function fieldsFor(e) {
     F.push({ l: 'Поворот, °', k: 'rotd', num: true });
     return F;
   }
-  if (e.type === 'door') {
-    const F = [
-      { l: 'Проём в стене, ширина', k: 'w', num: true },
-      { l: 'Проём, высота', k: 'h', num: true },
-      { l: 'Положение по стене', k: 't', num: true }
-    ];
-    const hw = byId(e.host);
-    const ht = hw && typeOf(hw);
-    if (isFramedType(ht) && ht.sys !== 'С631')
-      F.push(
-        {
-          l: 'Усиление стоек проёма',
-          k: 'rf',
-          sel: [['', 'по типу стены (' + RFK[ht.dr || 'wood'] + ')'], ...Object.entries(RFK)]
-        },
-        { l: 'Масса полотна, кг', k: 'mass', num: true }
-      );
-    return F;
-  }
-  if (e.type === 'window')
-    return [
-      { l: 'Проём, ширина', k: 'w', num: true },
-      { l: 'Проём, высота', k: 'h', num: true },
-      { l: 'Низ проёма от пола', k: 'sill', num: true },
-      { l: 'Положение по стене', k: 't', num: true }
-    ];
   if (e.type === 'wire')
     return [
       {
@@ -24358,10 +24253,6 @@ function updateProps() {
         }
         after += `<div class="btnrow"><button class="btn" id="bMEPopen">${d.f === 'vterm' ? 'Системы вентиляции…' : 'Группы электрики…'}</button></div>`;
       }
-      if (e.type === 'door' || e.type === 'window') {
-        if (!e.cfg) e.cfg = e.type === 'door' ? defDoorCfg() : defWinCfg(e.w);
-        h += e.type === 'door' ? doorPanel(e) : winPanel(e);
-      }
       if (e.type === 'wire') {
         after += `<div class="btnrow"><button class="btn" id="bReroute" title="Трасса зафиксирована и не меняется при правке стен или скрытии слоёв. Нажмите, чтобы проложить заново.">Перетрассировать</button></div>`;
         const L = wireLen(e);
@@ -24445,7 +24336,6 @@ function updateProps() {
     changed();
   };
   const targets = allWalls ? es : [e];
-  if (es.length === 1 && (e.type === 'door' || e.type === 'window')) bindCfg(el, e);
   if (es.length === 1 && e.type === 'dev' && DEVK[e.kind] && DEVK[e.kind].bind) DEVK[e.kind].bind(el, e, changed);
   if (es.length === 1 && XT[e.type] && XT[e.type].bind) XT[e.type].bind(el, e, changed);
   el.querySelectorAll('[data-f]').forEach(
@@ -25404,36 +25294,6 @@ function xSpec() {
     const X = XT[e.type];
     if (X && X.spec) X.spec(e, put);
     if (e.type === 'dev' && e.blk) blkSpec(e, put);
-    if (e.type === 'door' && e.cfg && e.cfg.mode === 'entry') {
-      const en = e.cfg.entry || defEntry();
-      const S_ = 'Входные двери';
-      put(S_, 'ed', { name: `Дверь входная металлическая, ${en.insul}, ${en.seal} контура уплотнения`, u: 'шт' }, r => {
-        r.q++;
-        r.ids.push(e.id);
-      });
-      put(S_, 'el' + en.locks, { name: 'Замок (основной + дополнительный)', u: 'шт' }, r => {
-        r.q += en.locks;
-        r.ids.push(e.id);
-      });
-      if (en.peep)
-        put(S_, 'ep', { name: 'Глазок / видеоглазок', u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(e.id);
-        });
-      if (en.thr)
-        put(S_, 'et', { name: 'Порог металлический', u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(e.id);
-        });
-      put(S_, 'eo' + en.outFin, { name: `Отделка снаружи: ${en.outFin}`, u: 'шт' }, r => {
-        r.q++;
-        r.ids.push(e.id);
-      });
-      put(S_, 'ei' + en.inFin, { name: `Отделка изнутри: ${en.inFin}`, u: 'шт' }, r => {
-        r.q++;
-        r.ids.push(e.id);
-      });
-    }
   }
   wireJointsSpec(put);
   psuSpec(put);
@@ -55697,9 +55557,6 @@ function mirrorEnt(e, f, th) {
       break;
     case 'text':
       n.p = f(e.p);
-      break;
-    case 'door':
-    case 'window':
       break;
     default: {
       const dA = e.rot != null ? 2 * th - 2 * (e.rot || 0) : 0;
@@ -97924,9 +97781,7 @@ function odRender() {
 }
 function odFormHtml(e) {
   let h = '<dl class="props">';
-  if (e.type === 'door') h += doorPanel(e);
-  else if (e.type === 'window') h += winPanel(e);
-  else if (e.type === 'wall') {
+  if (e.type === 'wall') {
     for (const f of fieldsFor(e)) h += propRow(f, [e]);
     const G = gklWall(e);
     if (G) {
@@ -122708,6 +122563,181 @@ function cutLayout(pieces, opt) {
   };
 }
 
+// ===== elements/opening-xt.js =====
+/**
+ * elements/opening-xt.js
+ *
+ * XT.door and XT.window — the element types «door» and «window» in the registry of element types. They are hosted
+ * in a wall and share the geometry of the opening in it (opInfo): plan primitives, picking, snap points, the grip,
+ * mapping, the plan drawing (drawOpening), the 3D cache key and model, the project browser group, the properties
+ * panel, simple fields, the IFC class and (a door) the specification rows of an entrance door. The bodies are the
+ * existing functions (walls.js, doors.js, windows.js, view2d/render.js, view3d/build.js, ui/properties.js); the
+ * generic code reaches them only through XT.door / XT.window.
+ * Entity: { type:'door'|'window', host (wall id), t, w, h, sill, flip, hand, cfg, … } — see doors.js, windows.js.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+/** Hooks shared by a door and a window: the opening in the wall. */
+const hostedOpening = {
+  hosted: true,
+  prims: e => {
+    const I = opInfo(e);
+    return I ? closedSegs(I.rect) : [];
+  },
+  /** Inside the opening: distance −1 (outside — the generic distance to the outline). */
+  dist: (e, p) => {
+    const I = opInfo(e);
+    return I && inPoly(p, I.rect) ? -1 : null;
+  },
+  keys: e => {
+    const r = [];
+    const I = opInfo(e);
+    if (I) {
+      r.push({ p: I.c, k: 'mid' });
+      I.rect.forEach(p => r.push({ p, k: 'end' }));
+      // axis ends and the middles of both faces: floor boundaries to the middle of an opening
+      r.push({ p: I.s0, k: 'mid' }, { p: I.s1, k: 'mid' });
+      r.push({ p: mid(I.rect[0], I.rect[1]), k: 'mid' }, { p: mid(I.rect[2], I.rect[3]), k: 'mid' });
+    }
+    return r;
+  },
+  sample: e => {
+    const I = opInfo(e);
+    return I ? I.rect : [];
+  },
+  map: (n, e, f) => {
+    const I = opInfo(e);
+    if (I) {
+      const c = f(I.c);
+      n.t = dot(sub(c, I.w.a), I.wi.u);
+    }
+  },
+  /** Mirror: the opening keeps its place in the wall (the mirrored wall is not touched here). */
+  mirror: (n, e) => {
+    n.t = e.t;
+  },
+  grips: (e, set) => {
+    const I = opInfo(e);
+    return I
+      ? [
+          {
+            p: I.c,
+            apply: set((n, p) => {
+              n.t = dot(sub(p, I.w.a), I.wi.u);
+            })
+          }
+        ]
+      : [];
+  },
+  draw: (e, color, o) => drawOpening(e, color, o),
+  k3own: true,
+  k3: e => {
+    const w = byId(e.host);
+    if (!w) return null;
+    const c = e.cfg || {};
+    const pr =
+      e.type === 'door'
+        ? [
+            c.frame && getProf(c.frame.prof, 'frame'),
+            c.ext && getProf(c.ext.prof, 'ext'),
+            c.casing && getProf(c.casing.prof, 'casing')
+          ]
+        : 0;
+    return [e.type, e.t, e.w, e.h, e.sill, e.flip, e.hand, w.a, w.b, w.th, w.z, c, pr, w.fa, w.fb];
+  },
+  bind: (el, e) => bindCfg(el, e)
+};
+
+XT.door = {
+  ...hostedOpening,
+  build3: e => buildDoor3(e),
+  group: e => `Дверь ${fmt(e.w)}×${fmt(e.h)}`,
+  panel: e => {
+    if (!e.cfg) e.cfg = defDoorCfg();
+    return doorPanel(e);
+  },
+  fields: e => {
+    const F = [
+      { l: 'Проём в стене, ширина', k: 'w', num: true },
+      { l: 'Проём, высота', k: 'h', num: true },
+      { l: 'Положение по стене', k: 't', num: true }
+    ];
+    const hw = byId(e.host);
+    const ht = hw && typeOf(hw);
+    if (isFramedType(ht) && ht.sys !== 'С631')
+      F.push(
+        {
+          l: 'Усиление стоек проёма',
+          k: 'rf',
+          sel: [['', 'по типу стены (' + RFK[ht.dr || 'wood'] + ')'], ...Object.entries(RFK)]
+        },
+        { l: 'Масса полотна, кг', k: 'mass', num: true }
+      );
+    return F;
+  },
+  spec: (e, put) => {
+    if (e.cfg && e.cfg.mode === 'entry') {
+      const en = e.cfg.entry || defEntry();
+      const S_ = 'Входные двери';
+      put(S_, 'ed', { name: `Дверь входная металлическая, ${en.insul}, ${en.seal} контура уплотнения`, u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+      put(S_, 'el' + en.locks, { name: 'Замок (основной + дополнительный)', u: 'шт' }, r => {
+        r.q += en.locks;
+        r.ids.push(e.id);
+      });
+      if (en.peep)
+        put(S_, 'ep', { name: 'Глазок / видеоглазок', u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+      if (en.thr)
+        put(S_, 'et', { name: 'Порог металлический', u: 'шт' }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+      put(S_, 'eo' + en.outFin, { name: `Отделка снаружи: ${en.outFin}`, u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+      put(S_, 'ei' + en.inFin, { name: `Отделка изнутри: ${en.inFin}`, u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+    }
+  },
+  ifc: () => ['IFCDOOR', 'DOOR', 'Pset_DoorCommon']
+};
+
+XT.window = {
+  ...hostedOpening,
+  build3: e => buildWin3(e),
+  group: e =>
+    `${e.cfg && e.cfg.kind === 'alu' ? 'Витраж' : e.cfg && e.cfg.door && e.cfg.door.on ? 'Балконный блок' : 'Окно'} ${fmt(e.w)}×${fmt(e.h)}`,
+  panel: e => {
+    if (!e.cfg) e.cfg = defWinCfg(e.w);
+    return winPanel(e);
+  },
+  fields: () => [
+    { l: 'Проём, ширина', k: 'w', num: true },
+    { l: 'Проём, высота', k: 'h', num: true },
+    { l: 'Низ проёма от пола', k: 'sill', num: true },
+    { l: 'Положение по стене', k: 't', num: true }
+  ],
+  ifc: () => ['IFCWINDOW', 'WINDOW', 'Pset_WindowCommon']
+};
+
 // ===== elements/roof.js =====
 /**
  * elements/roof.js
@@ -134821,10 +134851,6 @@ const R_ = (v, d = 3) => {
 /** IFC class, predefined type and property set of a Kontur element. */
 function ifcClassOf(e, cat) {
   switch (e.type) {
-    case 'door':
-      return ['IFCDOOR', 'DOOR', 'Pset_DoorCommon'];
-    case 'window':
-      return ['IFCWINDOW', 'WINDOW', 'Pset_WindowCommon'];
     case 'slab':
       return ['IFCSLAB', 'FLOOR', 'Pset_SlabCommon'];
     case 'floorz':
