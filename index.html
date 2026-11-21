@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.61';
+const APP_VER = '59.62';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12506,10 +12506,9 @@ migrate.step(syncWalls, 90);
  * core/entity-geometry.js
  *
  * Geometry protocol of entities: primitives for picking/snapping/trim, key points, distances, sampling, mapping
- * (move/rotate/mirror), text and dimension geometry.
+ * (move/rotate/mirror), dimension geometry. The geometry of each type comes from its XT record; here is the dispatch
+ * and the objects of the catalog (inst).
  */
-
-
 
 
 
@@ -12537,9 +12536,6 @@ let measureCtx = document.createElement('canvas').getContext('2d');
 function textW(s, h) {
   measureCtx.font = `100px ${TFONT}`;
   return (measureCtx.measureText(s).width * h) / 100;
-}
-function textBox(e) {
-  return textBoxE(e);
 }
 function dimGeom(e) {
   const { a, b, loc } = e;
@@ -12615,46 +12611,19 @@ function dimGeom(e) {
 }
 const closedSegs = pts => pts.map((p, i) => ({ t: 's', a: p, b: pts[(i + 1) % pts.length] }));
 function prims(e) {
-  switch (e.type) {
-    case 'line':
-      return [{ t: 's', a: e.a, b: e.b }];
-    case 'pline': {
-      if (hasB(e))
-        return plineSegs(e).map(q =>
-          q.t === 's' ? { t: 's', a: q.a, b: q.b } : { t: 'a', c: q.c, r: q.r, a0: q.a0, a1: q.a1 }
-        );
-      const r = [];
-      for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
-      if (e.closed && e.pts.length > 2) r.push({ t: 's', a: e.pts[e.pts.length - 1], b: e.pts[0] });
-      return r;
-    }
-    case 'circle':
-      return [{ t: 'c', c: e.c, r: e.r }];
-    case 'arc':
-      return [{ t: 'a', c: e.c, r: e.r, a0: e.a0, a1: e.a1 }];
-    case 'dim': {
-      const g = dimGeom(e);
-      return g.segs.concat(g.ticks).map(([a, b]) => ({ t: 's', a, b }));
-    }
-    case 'text':
-      return closedSegs(textBox(e));
-    case 'inst':
-      return closedSegs(instHull(e));
-    default: {
-      const X = XT[e.type];
-      if (X && X.prims) return X.prims(e);
-      // a pipe, a track, a profile…: its axis is a cutting edge for trim / extend
-      if (
-        Array.isArray(e.pts) &&
-        e.pts.length > 1 &&
-        typeof e.pts[0].x === 'number' &&
-        ['pipe', 'trim', 'rail', 'track', 'acl', 'ufh'].includes(e.type)
-      ) {
-        const r = [];
-        for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
-        return r;
-      }
-    }
+  if (e.type === 'inst') return closedSegs(instHull(e));
+  const X = XT[e.type];
+  if (X && X.prims) return X.prims(e);
+  // a pipe, a track, a profile…: its axis is a cutting edge for trim / extend
+  if (
+    Array.isArray(e.pts) &&
+    e.pts.length > 1 &&
+    typeof e.pts[0].x === 'number' &&
+    ['pipe', 'trim', 'rail', 'track', 'acl', 'ufh'].includes(e.type)
+  ) {
+    const r = [];
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
+    return r;
   }
   return [];
 }
@@ -12693,7 +12662,6 @@ function entDist(e, p) {
       if (d != null) return d;
     }
   }
-  if (e.type === 'text' && inPoly(p, textBox(e))) return 0;
   if (e.type === 'inst' && !flatCat(e.layer) && inPoly(p, instHull(e))) return -0.5;
   let m = Infinity;
   for (const q of prims(e)) m = Math.min(m, primDist(q, p));
@@ -12710,49 +12678,13 @@ function interPrims(p, q) {
 }
 function keyPts(e) {
   const r = [];
-  switch (e.type) {
-    case 'line':
-      r.push({ p: e.a, k: 'end' }, { p: e.b, k: 'end' }, { p: mid(e.a, e.b), k: 'mid' });
-      break;
-    case 'pline':
-      e.pts.forEach(p => r.push({ p, k: 'end' }));
-      prims(e).forEach(s => r.push({ p: s.t === 's' ? mid(s.a, s.b) : arcMid(s), k: 'mid' }));
-      prims(e).forEach(s => {
-        if (s.t === 'a') r.push({ p: s.c, k: 'cen' });
-      });
-      break;
-    case 'circle':
-      r.push({ p: e.c, k: 'cen' });
-      for (let i = 0; i < 4; i++) r.push({ p: polar(e.c, (i * Math.PI) / 2, e.r), k: 'quad' });
-      break;
-    case 'arc': {
-      r.push(
-        { p: polar(e.c, e.a0, e.r), k: 'end' },
-        { p: polar(e.c, e.a1, e.r), k: 'end' },
-        { p: polar(e.c, e.a0 + sweepOf(e.a0, e.a1) / 2, e.r), k: 'mid' },
-        { p: e.c, k: 'cen' }
-      );
-      for (let i = 0; i < 4; i++) {
-        const a = (i * Math.PI) / 2;
-        if (angIn(a, e.a0, e.a1)) r.push({ p: polar(e.c, a, e.r), k: 'quad' });
-      }
-      break;
-    }
-    case 'dim':
-      r.push({ p: e.a, k: 'end' }, { p: e.b, k: 'end' });
-      break;
-    case 'text':
-      r.push({ p: e.p, k: 'ins' });
-      break;
-    case 'inst':
-      r.push({ p: e.p, k: 'ins' });
-      instHull(e).forEach(p => r.push({ p, k: 'end' }));
-      break;
-    default: {
-      const X = XT[e.type];
-      if (X && X.keys) X.keys(e).forEach(x => r.push(x));
-    }
+  if (e.type === 'inst') {
+    r.push({ p: e.p, k: 'ins' });
+    instHull(e).forEach(p => r.push({ p, k: 'end' }));
+    return r;
   }
+  const X = XT[e.type];
+  if (X && X.keys) X.keys(e).forEach(x => r.push(x));
   return r;
 }
 function gcenOf(e) {
@@ -12761,81 +12693,27 @@ function gcenOf(e) {
   return null;
 }
 function samplePts(e) {
-  switch (e.type) {
-    case 'line':
-      return [e.a, e.b];
-    case 'pline':
-      if (hasB(e))
-        return e.pts.concat(
-          prims(e)
-            .filter(q => q.t === 'a')
-            .map(arcMid)
-        );
-      return e.pts;
-    case 'circle':
-      return Array.from({ length: 48 }, (_, i) => polar(e.c, (i / 48) * TAU, e.r));
-    case 'arc': {
-      const s = sweepOf(e.a0, e.a1);
-      return Array.from({ length: 33 }, (_, i) => polar(e.c, e.a0 + (s * i) / 32, e.r));
-    }
-    case 'dim': {
-      const g = dimGeom(e);
-      return g.segs.flat().concat([g.tp]);
-    }
-    case 'text':
-      return textBox(e);
-    case 'inst':
-      return instHull(e);
-    default: {
-      const X = XT[e.type];
-      if (X && X.sample) return X.sample(e);
-    }
-  }
+  if (e.type === 'inst') return instHull(e);
+  const X = XT[e.type];
+  if (X && X.sample) return X.sample(e);
   return [];
 }
 function mapEnt(e, f, dA = 0) {
   const n = JSON.parse(JSON.stringify(e));
-  switch (n.type) {
-    case 'line':
-      n.a = f(e.a);
-      n.b = f(e.b);
-      break;
-    case 'pline':
-      n.pts = e.pts.map(f);
-      break;
-    case 'circle':
-      n.c = f(e.c);
-      break;
-    case 'arc':
-      n.c = f(e.c);
-      n.a0 = e.a0 + dA;
-      n.a1 = e.a1 + dA;
-      break;
-    case 'dim':
-      n.a = f(e.a);
-      n.b = f(e.b);
-      n.loc = f(e.loc);
-      break;
-    case 'text':
-      n.p = f(e.p);
-      n.rot = (e.rot || 0) + dA;
-      break;
-    case 'inst':
-      n.p = f(e.p);
-      n.rot = (e.rot || 0) + dA;
-      break;
-    default: {
-      const X = XT[n.type];
-      if (X && X.map) X.map(n, e, f, dA);
-      else if (Array.isArray(e.pts) && e.pts.length && typeof e.pts[0].x === 'number')
-        // anything drawn through points: the points move, their heights stay
-        n.pts = e.pts.map(p => {
-          const q = f(p);
-          if (p.z != null) q.z = p.z;
-          return q;
-        });
-    }
+  if (e.type === 'inst') {
+    n.p = f(e.p);
+    n.rot = (e.rot || 0) + dA;
+    return n;
   }
+  const X = XT[n.type];
+  if (X && X.map) X.map(n, e, f, dA);
+  else if (Array.isArray(e.pts) && e.pts.length && typeof e.pts[0].x === 'number')
+    // anything drawn through points: the points move, their heights stay
+    n.pts = e.pts.map(p => {
+      const q = f(p);
+      if (p.z != null) q.z = p.z;
+      return q;
+    });
   return n;
 }
 
@@ -13302,6 +13180,10 @@ function tMeasure(e) {
   measureCtx.font = tFont(e, 100);
   const ws = tLines(e).map(l => ((measureCtx.measureText(l).width * h) / 100) * (e.wf || 1));
   return { h, ws, w: Math.max(1, ...ws), ls: (e.ls || 1.35) * h, n: ws.length };
+}
+/** Properties panel of a text (XT.text.panel): its string. */
+function textPanel(e) {
+  return `<dt>Текст</dt><dd style="text-align:left;white-space:pre-wrap;font-family:var(--f-ui)">${esc(e.s)}</dd>`;
 }
 function textBoxE(e) {
   const m = tMeasure(e),
@@ -15799,7 +15681,6 @@ function acquire(r, w) {
 
 
 
-
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -15890,55 +15771,9 @@ function gripsOf0(e) {
     return n;
   };
   const mv = ref => (o, p) => mapEnt(o, q => add(q, sub(p, ref)));
-  switch (e.type) {
-    case 'line':
-      return [
-        { p: e.a, apply: set((n, p) => (n.a = p)) },
-        { p: e.b, apply: set((n, p) => (n.b = p)) },
-        { p: mid(e.a, e.b), apply: mv(mid(e.a, e.b)) }
-      ];
-    case 'pline':
-      return e.pts
-        .map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }))
-        .concat(e.pts.length <= 200 ? edgeGrips(e, set) : []);
-    case 'circle':
-      return [{ p: e.c, apply: mv(e.c) }].concat(
-        [0, 1, 2, 3].map(i => ({
-          p: polar(e.c, (i * Math.PI) / 2, e.r),
-          apply: set((n, p) => (n.r = Math.max(1e-6, dist(p, n.c))))
-        }))
-      );
-    case 'arc':
-      return [
-        { p: e.c, apply: mv(e.c) },
-        { p: polar(e.c, e.a0, e.r), apply: set((n, p) => (n.a0 = ang(sub(p, n.c)))) },
-        { p: polar(e.c, e.a1, e.r), apply: set((n, p) => (n.a1 = ang(sub(p, n.c)))) },
-        {
-          p: polar(e.c, e.a0 + sweepOf(e.a0, e.a1) / 2, e.r),
-          apply: set((n, p) => (n.r = Math.max(1e-6, dist(p, n.c))))
-        }
-      ];
-    case 'dim':
-      return [
-        { p: e.a, apply: set((n, p) => (n.a = p)) },
-        { p: e.b, apply: set((n, p) => (n.b = p)) },
-        {
-          p: dimGeom(e).tp,
-          apply: set((n, p, o) => {
-            n.loc = add(o.loc, sub(p, dimGeom(o).tp));
-          })
-        }
-      ];
-    case 'text':
-    case 'inst':
-      return [{ p: e.p, apply: set((n, p) => (n.p = p)) }];
-    case 'spline':
-      return e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }));
-    default: {
-      const X = XT[e.type];
-      if (X && X.grips) return X.grips(e, set, mv);
-    }
-  }
+  if (e.type === 'inst') return [{ p: e.p, apply: set((n, p) => (n.p = p)) }];
+  const X = XT[e.type];
+  if (X && X.grips) return X.grips(e, set, mv);
   return [];
 }
 function gripList() {
@@ -16007,8 +15842,6 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
-
-
 
 
 
@@ -17019,6 +16852,39 @@ function drawDuct(e, color, o = {}) {
   }
   ctx.restore();
 }
+/** Plan drawing of a catalog object (inst): its hull, the model lines from above, the name, the ports. */
+function drawInst(e, color, o, ghost) {
+  const h = instHull(e);
+  const a = ASSETS.get(e.asset);
+  // a drawing of the model from above (its visible edges); the outline while the lines are being made
+  const ml = a && !flatCat(e.layer) ? assetLines(a) : null;
+  pathPoly(h);
+  if (!ghost && !o.sel) ctx.fillStyle = hexA(color, flatCat(e.layer) ? 0.05 : ml ? 0.06 : 0.13);
+  else ctx.fillStyle = 'rgba(225,232,242,0.1)';
+  ctx.fill();
+  if (ml && ml.seg.length) {
+    drawModelLines(e, ml, o.hover ? 1.6 : 0.9);
+  } else {
+    ctx.lineWidth = o.hover ? 2.2 : 1.1;
+    ctx.stroke();
+  }
+  if (a && a.source !== 'ifc' && !ghost) {
+    const g = polyCentroid(h);
+    const bb = a.bbox;
+    const sz = Math.min(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) * view.k;
+    if (sz > 46) {
+      const fs = clamp(sz / 9, 9, 12);
+      ctx.globalAlpha *= 0.75;
+      ctx.font = `${fs}px ${TFONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const s = w2s(g);
+      const nm = (e.name || a.name).split(/[«,]/)[0].trim();
+      ctx.fillText(nm, s.x, s.y);
+    }
+  }
+  if (!ghost) drawInstPorts(e);
+}
 function drawEnt(e, color, o = {}) {
   ctx.save();
   const ghost = color === 'ghost',
@@ -17042,93 +16908,11 @@ function drawEnt(e, color, o = {}) {
     // demolition / mounting plans: the elements of that phase drawn simplified in its colour, the rest faded
     const phx = !ghost && uiHooks.phaseDraw ? uiHooks.phaseDraw(e, o) : null;
     if (phx === 'dim') ctx.globalAlpha *= 0.3;
-    if (phx !== 'done')
-      switch (e.type) {
-        case 'line':
-        case 'circle':
-        case 'arc':
-          strokePrims(prims(e));
-          break;
-        case 'pline':
-          if (hasB(e)) {
-            strokePrims(prims(e));
-          } else {
-            pathPoly(e.pts, e.closed);
-            ctx.lineJoin = 'miter';
-            ctx.stroke();
-          }
-          break;
-        case 'dim': {
-          const g = dimGeom(e);
-          ctx.lineWidth = o.hover ? 1.8 : 0.9;
-          strokePrims(g.segs.map(([a, b]) => ({ t: 's', a, b })));
-          ctx.setLineDash([]);
-          ctx.lineWidth = o.hover ? 2.6 : 1.8;
-          if (dimStyle().arrow && g.p1 && g.p2) {
-            // filled arrows pointing out to the extension lines
-            const u = nrm(sub(g.p2, g.p1)),
-              n = P(-u.y, u.x),
-              L = DS.tick * 2.2,
-              hw = DS.tick * 0.45;
-            ctx.fillStyle = col;
-            for (const [p, d] of [
-              [g.p1, 1],
-              [g.p2, -1]
-            ]) {
-              const b = add(p, mul(u, L * d));
-              pathPoly([p, add(b, mul(n, hw)), sub(b, mul(n, hw))]);
-              ctx.fill();
-            }
-          } else strokePrims(g.ticks.map(([a, b]) => ({ t: 's', a, b })));
-          drawTextW(g.tp, g.txt, DS.th, g.rot, col, 'center');
-          break;
-        }
-        case 'text':
-          drawTextE(e, col, o);
-          if (o.sel || o.hover) {
-            ctx.lineWidth = 1;
-            ctx.setLineDash([3, 3]);
-            strokePrims(prims(e));
-          }
-          break;
-        case 'inst': {
-          const h = instHull(e);
-          const a = ASSETS.get(e.asset);
-          // a drawing of the model from above (its visible edges); the outline while the lines are being made
-          const ml = a && !flatCat(e.layer) ? assetLines(a) : null;
-          pathPoly(h);
-          if (!ghost && !o.sel) ctx.fillStyle = hexA(color, flatCat(e.layer) ? 0.05 : ml ? 0.06 : 0.13);
-          else ctx.fillStyle = 'rgba(225,232,242,0.1)';
-          ctx.fill();
-          if (ml && ml.seg.length) {
-            drawModelLines(e, ml, o.hover ? 1.6 : 0.9);
-          } else {
-            ctx.lineWidth = o.hover ? 2.2 : 1.1;
-            ctx.stroke();
-          }
-          if (a && a.source !== 'ifc' && !ghost) {
-            const g = polyCentroid(h);
-            const bb = a.bbox;
-            const sz = Math.min(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) * view.k;
-            if (sz > 46) {
-              const fs = clamp(sz / 9, 9, 12);
-              ctx.globalAlpha *= 0.75;
-              ctx.font = `${fs}px ${TFONT}`;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              const s = w2s(g);
-              const nm = (e.name || a.name).split(/[«,]/)[0].trim();
-              ctx.fillText(nm, s.x, s.y);
-            }
-          }
-          if (!ghost) drawInstPorts(e);
-          break;
-        }
-        default: {
-          const X = XT[e.type];
-          if (X && X.draw) X.draw(e, color, o, ghost, col);
-        }
-      }
+    if (phx !== 'done') {
+      const X = XT[e.type];
+      if (e.type === 'inst') drawInst(e, color, o, ghost);
+      else if (X && X.draw) X.draw(e, color, o, ghost, col);
+    }
   } finally {
     CAD.pen = pen0;
     CAD.ent = ent0;
@@ -19128,7 +18912,6 @@ function cutLabels() {
 
 
 
-
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -19242,22 +19025,11 @@ function pick3(ev) {
   selChanged();
 }
 function key3Base(e) {
-  const L = layerOf(e);
-  switch (e.type) {
-    case 'inst':
-      return JSON.stringify([e.asset, ASSETS.has(e.asset), e.p, e.rot, e.z]);
-    case 'line':
-    case 'pline':
-    case 'circle':
-    case 'arc':
-      return JSON.stringify([e.a, e.b, e.pts, e.b, e.closed, e.c, e.r, e.a0, e.a1, L && L.color]);
-    default: {
-      const X = XT[e.type];
-      if (X && X.build3) {
-        const k = X.k3 ? X.k3(e) : 0;
-        return k === null ? null : X.k3own ? JSON.stringify(k) : JSON.stringify([e, k]);
-      }
-    }
+  if (e.type === 'inst') return JSON.stringify([e.asset, ASSETS.has(e.asset), e.p, e.rot, e.z]);
+  const X = XT[e.type];
+  if (X && X.build3) {
+    const k = X.k3 ? X.k3(e) : 0;
+    return k === null ? null : X.k3own ? JSON.stringify(k) : JSON.stringify([e, k]);
   }
   return null;
 }
@@ -19405,59 +19177,21 @@ function buildWire3(e) {
   return meshGroup(mb.meshes(), {});
 }
 function build3(e) {
-  switch (e.type) {
-    case 'inst': {
-      const a = ASSETS.get(e.asset);
-      let g;
-      if (!a) {
-        g = boxesGroup(null, mb => mb.box(-150, -150, 0, 150, 150, 300, '#d06060'), {});
-      } else {
-        if (!V3.geo.has(a.id)) V3.geo.set(a.id, new Map());
-        g = meshGroup(a.meshes, { edges: a.tris < 20000, shared: V3.geo.get(a.id) });
-      }
-      g.position.set(e.p.x, e.p.y, e.z || 0);
-      g.rotation.z = e.rot || 0;
-      return g;
+  if (e.type === 'inst') {
+    const a = ASSETS.get(e.asset);
+    let g;
+    if (!a) {
+      g = boxesGroup(null, mb => mb.box(-150, -150, 0, 150, 150, 300, '#d06060'), {});
+    } else {
+      if (!V3.geo.has(a.id)) V3.geo.set(a.id, new Map());
+      g = meshGroup(a.meshes, { edges: a.tris < 20000, shared: V3.geo.get(a.id) });
     }
-    case 'line':
-    case 'pline':
-    case 'circle':
-    case 'arc': {
-      const pts = [];
-      for (const q of prims(e)) {
-        if (q.t === 's') {
-          pts.push(q.a.x, q.a.y, 2, q.b.x, q.b.y, 2);
-        } else {
-          const s = q.t === 'c' ? TAU : sweepOf(q.a0, q.a1),
-            a0 = q.t === 'c' ? 0 : q.a0,
-            N = 48;
-          for (let i = 0; i < N; i++) {
-            const p1 = polar(q.c, a0 + (s * i) / N, q.r),
-              p2 = polar(q.c, a0 + (s * (i + 1)) / N, q.r);
-            pts.push(p1.x, p1.y, 2, p2.x, p2.y, 2);
-          }
-        }
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      const L = layerOf(e);
-      const l = new THREE.LineSegments(
-        geo,
-        new THREE.LineBasicMaterial({
-          color: new THREE.Color(L ? L.color : '#ffffff').convertSRGBToLinear(),
-          transparent: true,
-          opacity: 0.7
-        })
-      );
-      const g = new THREE.Group();
-      g.add(l);
-      return g;
-    }
-    default: {
-      const X = XT[e.type];
-      if (X && X.build3) return X.build3(e);
-    }
+    g.position.set(e.p.x, e.p.y, e.z || 0);
+    g.rotation.z = e.rot || 0;
+    return g;
   }
+  const X = XT[e.type];
+  if (X && X.build3) return X.build3(e);
   return null;
 }
 function sweepProfile(mb, pts, col, path, depth) {
@@ -22816,18 +22550,14 @@ function initLayersPanel() {
 
 /* UI: project browser */
 function groupName(e) {
-  switch (e.type) {
-    case 'inst': {
-      const a = ASSETS.get(e.asset);
-      if (!a) return 'Объект без геометрии';
-      if (a.ifc) return a.ifc.type || a.ifc.cls.replace(/^IFC/, 'Ifc');
-      return e.name || a.name;
-    }
+  if (e.type === 'inst') {
+    const a = ASSETS.get(e.asset);
+    if (!a) return 'Объект без геометрии';
+    if (a.ifc) return a.ifc.type || a.ifc.cls.replace(/^IFC/, 'Ifc');
+    return e.name || a.name;
   }
-  {
-    const X = XT[e.type];
-    if (X && X.group) return X.group(e);
-  }
+  const X = XT[e.type];
+  if (X && X.group) return X.group(e);
   return TN[e.type] || e.type;
 }
 const openCats = new Set();
@@ -22932,8 +22662,6 @@ function initBrowserPanel() {
 
 
 
-
-
 /* UI: properties */
 const OLDF = {
   door: [
@@ -22954,8 +22682,7 @@ const OLDF = {
     ['Y', 'py'],
     ['Отметка', 'z'],
     ['Поворот, °', 'rotd']
-  ],
-  circle: [['Радиус', 'r']]
+  ]
 };
 const grpOpts = () => S.elec.groups.map(g => [g.n, `${g.n} · ${g.name}`]);
 const sysOpts = () => S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`]);
@@ -23158,36 +22885,15 @@ function wirePanelAfter() {
   );
 }
 function fieldsFor(e) {
-  if (e.type === 'text')
-    return [
-      { l: 'Шрифт', k: 'font', sel: FONTS.map(f => [f, f]) },
-      { l: 'Аннотативный (мм на листе)', k: 'anno', bool: true },
-      e.anno ? { l: 'Высота на листе, мм', k: 'ph', num: true } : { l: 'Высота в модели, мм', k: 'h', num: true },
-      { l: 'Жирный', k: 'bold', bool: true },
-      { l: 'Курсив', k: 'ital', bool: true },
-      {
-        l: 'Выравнивание',
-        k: 'align',
-        sel: [
-          ['left', 'влево'],
-          ['center', 'по центру'],
-          ['right', 'вправо']
-        ]
-      },
-      { l: 'Поворот, °', k: 'rotd', num: true },
-      { l: 'Сжатие по ширине', k: 'wf', num: true },
-      { l: 'Межстрочный', k: 'ls', num: true },
-      { l: 'Маскировка фона', k: 'bg', bool: true }
-    ];
   if (XT[e.type]) return XT[e.type].fields ? XT[e.type].fields(e) : [];
   return (OLDF[e.type] || []).map(([l, k, kind]) => (kind === 'bool' ? { l, k, bool: true } : { l, k, num: true }));
 }
 function fieldGet(e, k) {
-  if (e.type === 'text' && k === 'wf') return e.wf || 1;
-  if (e.type === 'text' && k === 'ls') return e.ls || 1.35;
-  if (e.type === 'text' && k === 'font') return e.font || 'IBM Plex Sans';
-  if (e.type === 'text' && k === 'align') return e.align || 'left';
-  if (e.type === 'text' && k === 'ph') return e.ph || 3.5;
+  const X = XT[e.type];
+  if (X && X.get) {
+    const v = X.get(e, k);
+    if (v !== undefined) return v;
+  }
   if (k === 'swkey') return e.sw ? e.sw.dev + '|' + e.sw.key : '';
   const ty = e.type === 'wall' ? typeOf(e) : null;
   switch (k) {
@@ -24135,28 +23841,6 @@ function updateProps() {
         after += `<div class="hd">Тип стены · ${esc(typeOf(e).name)}</div><div id="wtSide" class="wtside"></div>`;
     }
     if (es.length === 1) {
-      if (e.type === 'line') {
-        ro('Длина', fmt(dist(e.a, e.b)));
-        ro('Угол', fmt(nAng(ang(sub(e.b, e.a))) / D2R) + '°');
-      }
-      if (e.type === 'pline') {
-        const L = prims(e).reduce((a, q) => a + primLen(q), 0);
-        ro('Вершин', e.pts.length);
-        ro('Длина', fmt(L));
-        if (hasB(e)) ro('Дуговых сегментов', e.b.filter(x => Math.abs(x || 0) > 1e-9).length);
-        if (e.closed) ro('Площадь', (Math.abs(hasB(e) ? plineArea(e) : polyArea(e.pts)) / 1e6).toFixed(2) + ' м²');
-      }
-      if (e.type === 'circle') ro('Площадь', ((Math.PI * e.r * e.r) / 1e6).toFixed(3) + ' м²');
-      if (e.type === 'arc') {
-        const sw = sweepOf(e.a0, e.a1);
-        ro('Радиус', fmt(e.r));
-        ro('Угол', fmt(sw / D2R) + '°');
-      }
-      if (e.type === 'dim') ro('Значение', dimGeom(e).txt);
-      if (e.type === 'text') {
-        h += `<dt>Текст</dt><dd style="text-align:left;white-space:pre-wrap;font-family:var(--f-ui)">${esc(e.s)}</dd>`;
-        after = `<div class="btnrow"><button class="btn pri" id="pTextEd">Редактировать текст…</button></div>` + after;
-      }
       if (e.type === 'inst') {
         const a = ASSETS.get(e.asset);
         h += `<dt>Наименование</dt><dd><input type="text" id="pName" value="${esc(e.name || (a ? a.name : ''))}"></dd>`;
@@ -24261,8 +23945,6 @@ function updateProps() {
         changed();
       })
   );
-  const pt = $('#pTextEd');
-  if (pt) pt.onclick = () => textEditor({ e });
   const pn = $('#pName');
   if (pn)
     pn.onchange = () => {
@@ -29067,6 +28749,7 @@ async function openJson(f) {
  * @property {(e)=>string} dialogPanel    HTML of the form in the object dialog when it differs from `panel` (default: panel)
  * @property {(e)=>'el'|'vt'} mepTab      tab of the engineering dialog opened by the button #bMEPopen (default: 'vt' when net === 'vt', else 'el')
  * @property {(e)=>Field[]} fields        simple fields for the generic properties table
+ * @property {(e,k)=>any} get             value of a simple field (see `fields`) when it differs from e[k] (a default); undefined = read e[k]
  * @property {(e,path,value)=>void} onSet called after a form field changed (derived values, normalisation)
  * @property {(el,e,changed)=>void} bind     binds the controls of the panel after it was rendered (buttons, selects of its own)
  * @property {(e,action,el,button)=>void} action  buttons with data-xa="action" in the panel
@@ -54582,6 +54265,12 @@ XT.adim = {
     { p: e.loc, apply: set((n, p) => (n.loc = p)) },
     { p: e.c, apply: mv(e.c) }
   ],
+  /** Mirror: the ends swap places (the angle keeps running counter-clockwise). */
+  mirror: n => {
+    const t = n.a;
+    n.a = n.b;
+    n.b = t;
+  },
   draw(e, color, o, ghost, col) {
     const g = XT.adim.geo(e);
     ctx.lineWidth = 0.9;
@@ -55307,50 +54996,11 @@ function reflectFn(a, b) {
 }
 function mirrorEnt(e, f, th) {
   const n = JSON.parse(JSON.stringify(e));
-  switch (e.type) {
-    case 'line':
-      n.a = f(e.a);
-      n.b = f(e.b);
-      break;
-    case 'pline':
-      n.pts = e.pts.map(f);
-      if (e.b) n.b = e.b.map(x => -(x || 0));
-      break;
-    case 'circle':
-      n.c = f(e.c);
-      break;
-    case 'arc': {
-      const c = f(e.c),
-        p0 = f(polar(e.c, e.a0, e.r)),
-        p1 = f(polar(e.c, e.a1, e.r));
-      n.c = c;
-      n.a0 = ang(sub(p1, c));
-      n.a1 = ang(sub(p0, c));
-      break;
-    }
-    case 'dim':
-      n.a = f(e.a);
-      n.b = f(e.b);
-      n.loc = f(e.loc);
-      break;
-    case 'text':
-      n.p = f(e.p);
-      break;
-    default: {
-      const dA = e.rot != null ? 2 * th - 2 * (e.rot || 0) : 0;
-      const m = mapEnt(e, f, dA);
-      Object.assign(n, m);
-      const X = XT[e.type];
-      if (X && X.mirror) X.mirror(n, e, f, th);
-      if (e.type === 'adim') {
-        const t = n.a;
-        n.a = n.b;
-        n.b = t;
-      }
-      if (e.type === 'ellipse' && e.a1 != null) {
-      }
-    }
-  }
+  const dA = e.rot != null ? 2 * th - 2 * (e.rot || 0) : 0;
+  const m = mapEnt(e, f, dA);
+  Object.assign(n, m);
+  const X = XT[e.type];
+  if (X && X.mirror) X.mirror(n, e, f, th);
   return n;
 }
 function mkMirror() {
@@ -116851,6 +116501,146 @@ function csgFrame(n, o) {
 }
 const CSGV = { csgSub, csgDot, csgCross, csgLen };
 
+// ===== drafting/annot-xt.js =====
+/**
+ * drafting/annot-xt.js
+ *
+ * XT.dim, XT.text — the linear dimension and the text in the registry of element types: plan primitives, picking
+ * distance, snap points, sample points, mapping (move / rotate / mirror), grips, plan drawing, the rows and the button
+ * of the properties panel, the simple fields of a text. The bodies are the former cases of the generic dispatchers
+ * (core/entity-geometry.js, view2d/picking.js, view2d/render.js, ui/properties.js, drafting/modify-commands.js);
+ * the generic code reaches them only through XT.
+ * Entities: dim { kind: 'al' | …, a, b, loc }, text { p, s, h | ph (anno), rot, font, align, … } — see
+ * dim-commands.js, text.js.
+ */
+
+
+
+
+
+
+
+
+XT.dim = {
+  prims: e => {
+    const g = dimGeom(e);
+    return g.segs.concat(g.ticks).map(([a, b]) => ({ t: 's', a, b }));
+  },
+  keys: e => [
+    { p: e.a, k: 'end' },
+    { p: e.b, k: 'end' }
+  ],
+  sample: e => {
+    const g = dimGeom(e);
+    return g.segs.flat().concat([g.tp]);
+  },
+  map: (n, e, f) => {
+    n.a = f(e.a);
+    n.b = f(e.b);
+    n.loc = f(e.loc);
+  },
+  grips: (e, set) => [
+    { p: e.a, apply: set((n, p) => (n.a = p)) },
+    { p: e.b, apply: set((n, p) => (n.b = p)) },
+    {
+      p: dimGeom(e).tp,
+      apply: set((n, p, o) => {
+        n.loc = add(o.loc, sub(p, dimGeom(o).tp));
+      })
+    }
+  ],
+  draw: (e, color, o, ghost, col) => {
+    const g = dimGeom(e);
+    ctx.lineWidth = o.hover ? 1.8 : 0.9;
+    strokePrims(g.segs.map(([a, b]) => ({ t: 's', a, b })));
+    ctx.setLineDash([]);
+    ctx.lineWidth = o.hover ? 2.6 : 1.8;
+    if (dimStyle().arrow && g.p1 && g.p2) {
+      // filled arrows pointing out to the extension lines
+      const u = nrm(sub(g.p2, g.p1)),
+        n = P(-u.y, u.x),
+        L = DS.tick * 2.2,
+        hw = DS.tick * 0.45;
+      ctx.fillStyle = col;
+      for (const [p, d] of [
+        [g.p1, 1],
+        [g.p2, -1]
+      ]) {
+        const b = add(p, mul(u, L * d));
+        pathPoly([p, add(b, mul(n, hw)), sub(b, mul(n, hw))]);
+        ctx.fill();
+      }
+    } else strokePrims(g.ticks.map(([a, b]) => ({ t: 's', a, b })));
+    drawTextW(g.tp, g.txt, DS.th, g.rot, col, 'center');
+  },
+  panel: e => `<dt>Значение</dt><dd>${dimGeom(e).txt}</dd>`
+};
+
+XT.text = {
+  prims: e => closedSegs(textBoxE(e)),
+  /** Inside the text box: distance 0 (outside — the generic distance to the box). */
+  dist: (e, p) => (inPoly(p, textBoxE(e)) ? 0 : null),
+  keys: e => [{ p: e.p, k: 'ins' }],
+  sample: e => textBoxE(e),
+  map: (n, e, f, dA) => {
+    n.p = f(e.p);
+    n.rot = (e.rot || 0) + dA;
+  },
+  /** Mirror: the text is moved but not turned (it stays readable). */
+  mirror: (n, e) => {
+    if (e.rot === undefined) delete n.rot;
+    else n.rot = e.rot;
+  },
+  grips: (e, set) => [{ p: e.p, apply: set((n, p) => (n.p = p)) }],
+  draw: (e, color, o, ghost, col) => {
+    drawTextE(e, col, o);
+    if (o.sel || o.hover) {
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      strokePrims(XT.text.prims(e));
+    }
+  },
+  fields: e => [
+    { l: 'Шрифт', k: 'font', sel: FONTS.map(f => [f, f]) },
+    { l: 'Аннотативный (мм на листе)', k: 'anno', bool: true },
+    e.anno ? { l: 'Высота на листе, мм', k: 'ph', num: true } : { l: 'Высота в модели, мм', k: 'h', num: true },
+    { l: 'Жирный', k: 'bold', bool: true },
+    { l: 'Курсив', k: 'ital', bool: true },
+    {
+      l: 'Выравнивание',
+      k: 'align',
+      sel: [
+        ['left', 'влево'],
+        ['center', 'по центру'],
+        ['right', 'вправо']
+      ]
+    },
+    { l: 'Поворот, °', k: 'rotd', num: true },
+    { l: 'Сжатие по ширине', k: 'wf', num: true },
+    { l: 'Межстрочный', k: 'ls', num: true },
+    { l: 'Маскировка фона', k: 'bg', bool: true }
+  ],
+  /** Values of the fields that have a default (undefined — the generic reading e[k]). */
+  get: (e, k) =>
+    k === 'wf'
+      ? e.wf || 1
+      : k === 'ls'
+        ? e.ls || 1.35
+        : k === 'font'
+          ? e.font || 'IBM Plex Sans'
+          : k === 'align'
+            ? e.align || 'left'
+            : k === 'ph'
+              ? e.ph || 3.5
+              : undefined,
+  panel: textPanel,
+  panelAfter: () => `<div class="btnrow"><button class="btn pri" id="pTextEd">Редактировать текст…</button></div>`,
+  bind: (el, e) => {
+    const pt = el.querySelector('#pTextEd');
+    if (pt) pt.onclick = () => textEditor({ e });
+  }
+};
+
 // ===== drafting/path-objects.js =====
 /**
  * drafting/path-objects.js
@@ -117009,6 +116799,226 @@ function joinPaths(es) {
   }
   return n;
 }
+
+// ===== drafting/prims-xt.js =====
+/**
+ * drafting/prims-xt.js
+ *
+ * XT.line, XT.pline, XT.circle, XT.arc — the plain drafting primitives in the registry of element types: plan
+ * primitives, snap points, sample points, mapping (move / rotate / mirror), grips, plan drawing, the 3D line model
+ * (cache key and model), the rows of the properties panel and the simple field of a circle. The bodies are the former
+ * cases of the generic dispatchers (core/entity-geometry.js, view2d/picking.js, view2d/render.js, view3d/build.js,
+ * ui/properties.js, drafting/modify-commands.js); the generic code reaches them only through XT.
+ * Entities: line { a, b }, pline { pts, closed, b (bulges) }, circle { c, r }, arc { c, r, a0, a1 } — see polyline.js, arcs.js.
+ */
+
+
+
+
+
+
+
+
+/** Row of the properties table. */
+const ro = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+/** 3D: the line drawing hangs 2 mm over the floor; the 3D model of every primitive is its prims as line segments. */
+function lineModel3(e) {
+  const pts = [];
+  for (const q of XT[e.type].prims(e)) {
+    if (q.t === 's') {
+      pts.push(q.a.x, q.a.y, 2, q.b.x, q.b.y, 2);
+    } else {
+      const s = q.t === 'c' ? TAU : sweepOf(q.a0, q.a1),
+        a0 = q.t === 'c' ? 0 : q.a0,
+        N = 48;
+      for (let i = 0; i < N; i++) {
+        const p1 = polar(q.c, a0 + (s * i) / N, q.r),
+          p2 = polar(q.c, a0 + (s * (i + 1)) / N, q.r);
+        pts.push(p1.x, p1.y, 2, p2.x, p2.y, 2);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  const L = layerOf(e);
+  const l = new THREE.LineSegments(
+    geo,
+    new THREE.LineBasicMaterial({
+      color: new THREE.Color(L ? L.color : '#ffffff').convertSRGBToLinear(),
+      transparent: true,
+      opacity: 0.7
+    })
+  );
+  const g = new THREE.Group();
+  g.add(l);
+  return g;
+}
+const k3Lines = e => {
+  const L = layerOf(e);
+  return [e.a, e.b, e.pts, e.b, e.closed, e.c, e.r, e.a0, e.a1, L && L.color];
+};
+const drawPrims = e => strokePrims(XT[e.type].prims(e));
+
+XT.line = {
+  prims: e => [{ t: 's', a: e.a, b: e.b }],
+  keys: e => [
+    { p: e.a, k: 'end' },
+    { p: e.b, k: 'end' },
+    { p: mid(e.a, e.b), k: 'mid' }
+  ],
+  sample: e => [e.a, e.b],
+  map: (n, e, f) => {
+    n.a = f(e.a);
+    n.b = f(e.b);
+  },
+  grips: (e, set, mv) => [
+    { p: e.a, apply: set((n, p) => (n.a = p)) },
+    { p: e.b, apply: set((n, p) => (n.b = p)) },
+    { p: mid(e.a, e.b), apply: mv(mid(e.a, e.b)) }
+  ],
+  draw: drawPrims,
+  k3own: true,
+  k3: k3Lines,
+  build3: lineModel3,
+  panel: e => ro('Длина', fmt(dist(e.a, e.b))) + ro('Угол', fmt(nAng(ang(sub(e.b, e.a))) / D2R) + '°')
+};
+
+XT.pline = {
+  prims: e => {
+    if (hasB(e))
+      return plineSegs(e).map(q =>
+        q.t === 's' ? { t: 's', a: q.a, b: q.b } : { t: 'a', c: q.c, r: q.r, a0: q.a0, a1: q.a1 }
+      );
+    const r = [];
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
+    if (e.closed && e.pts.length > 2) r.push({ t: 's', a: e.pts[e.pts.length - 1], b: e.pts[0] });
+    return r;
+  },
+  keys: e => {
+    const r = [];
+    e.pts.forEach(p => r.push({ p, k: 'end' }));
+    XT.pline.prims(e).forEach(s => r.push({ p: s.t === 's' ? mid(s.a, s.b) : arcMid(s), k: 'mid' }));
+    XT.pline.prims(e).forEach(s => {
+      if (s.t === 'a') r.push({ p: s.c, k: 'cen' });
+    });
+    return r;
+  },
+  sample: e => {
+    if (hasB(e))
+      return e.pts.concat(
+        XT.pline
+          .prims(e)
+          .filter(q => q.t === 'a')
+          .map(arcMid)
+      );
+    return e.pts;
+  },
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  /** Mirror: the bulges change their sign. */
+  mirror: (n, e) => {
+    if (e.b) n.b = e.b.map(x => -(x || 0));
+  },
+  grips: (e, set) =>
+    e.pts
+      .map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }))
+      .concat(e.pts.length <= 200 ? edgeGrips(e, set) : []),
+  draw: e => {
+    if (hasB(e)) {
+      strokePrims(XT.pline.prims(e));
+    } else {
+      pathPoly(e.pts, e.closed);
+      ctx.lineJoin = 'miter';
+      ctx.stroke();
+    }
+  },
+  k3own: true,
+  k3: k3Lines,
+  build3: lineModel3,
+  panel: e => {
+    const L = XT.pline.prims(e).reduce((a, q) => a + primLen(q), 0);
+    let h = ro('Вершин', e.pts.length) + ro('Длина', fmt(L));
+    if (hasB(e)) h += ro('Дуговых сегментов', e.b.filter(x => Math.abs(x || 0) > 1e-9).length);
+    if (e.closed) h += ro('Площадь', (Math.abs(hasB(e) ? plineArea(e) : polyArea(e.pts)) / 1e6).toFixed(2) + ' м²');
+    return h;
+  }
+};
+
+XT.circle = {
+  prims: e => [{ t: 'c', c: e.c, r: e.r }],
+  keys: e => {
+    const r = [{ p: e.c, k: 'cen' }];
+    for (let i = 0; i < 4; i++) r.push({ p: polar(e.c, (i * Math.PI) / 2, e.r), k: 'quad' });
+    return r;
+  },
+  sample: e => Array.from({ length: 48 }, (_, i) => polar(e.c, (i / 48) * TAU, e.r)),
+  map: (n, e, f) => {
+    n.c = f(e.c);
+  },
+  grips: (e, set, mv) =>
+    [{ p: e.c, apply: mv(e.c) }].concat(
+      [0, 1, 2, 3].map(i => ({
+        p: polar(e.c, (i * Math.PI) / 2, e.r),
+        apply: set((n, p) => (n.r = Math.max(1e-6, dist(p, n.c))))
+      }))
+    ),
+  draw: drawPrims,
+  k3own: true,
+  k3: k3Lines,
+  build3: lineModel3,
+  fields: () => [{ l: 'Радиус', k: 'r', num: true }],
+  panel: e => ro('Площадь', ((Math.PI * e.r * e.r) / 1e6).toFixed(3) + ' м²')
+};
+
+XT.arc = {
+  prims: e => [{ t: 'a', c: e.c, r: e.r, a0: e.a0, a1: e.a1 }],
+  keys: e => {
+    const r = [
+      { p: polar(e.c, e.a0, e.r), k: 'end' },
+      { p: polar(e.c, e.a1, e.r), k: 'end' },
+      { p: polar(e.c, e.a0 + sweepOf(e.a0, e.a1) / 2, e.r), k: 'mid' },
+      { p: e.c, k: 'cen' }
+    ];
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      if (angIn(a, e.a0, e.a1)) r.push({ p: polar(e.c, a, e.r), k: 'quad' });
+    }
+    return r;
+  },
+  sample: e => {
+    const s = sweepOf(e.a0, e.a1);
+    return Array.from({ length: 33 }, (_, i) => polar(e.c, e.a0 + (s * i) / 32, e.r));
+  },
+  map: (n, e, f, dA) => {
+    n.c = f(e.c);
+    n.a0 = e.a0 + dA;
+    n.a1 = e.a1 + dA;
+  },
+  /** Mirror: the ends swap places (the arc keeps running counter-clockwise). */
+  mirror: (n, e, f) => {
+    const c = f(e.c),
+      p0 = f(polar(e.c, e.a0, e.r)),
+      p1 = f(polar(e.c, e.a1, e.r));
+    n.c = c;
+    n.a0 = ang(sub(p1, c));
+    n.a1 = ang(sub(p0, c));
+  },
+  grips: (e, set, mv) => [
+    { p: e.c, apply: mv(e.c) },
+    { p: polar(e.c, e.a0, e.r), apply: set((n, p) => (n.a0 = ang(sub(p, n.c)))) },
+    { p: polar(e.c, e.a1, e.r), apply: set((n, p) => (n.a1 = ang(sub(p, n.c)))) },
+    {
+      p: polar(e.c, e.a0 + sweepOf(e.a0, e.a1) / 2, e.r),
+      apply: set((n, p) => (n.r = Math.max(1e-6, dist(p, n.c))))
+    }
+  ],
+  draw: drawPrims,
+  k3own: true,
+  k3: k3Lines,
+  build3: lineModel3,
+  panel: e => ro('Радиус', fmt(e.r)) + ro('Угол', fmt(sweepOf(e.a0, e.a1) / D2R) + '°')
+};
 
 // ===== elements/ceiling-edges.js =====
 /**
