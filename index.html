@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.70';
+const APP_VER = '59.71';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12720,6 +12720,86 @@ function mapEnt(e, f, dA = 0) {
   return n;
 }
 
+// ===== core/model-api.js =====
+/**
+ * core/model-api.js
+ *
+ * Writes into the keys of the document S that the block `model` owns, as functions: other blocks call these instead of
+ * assigning S.sel / S.ents / S.nextId / S.layers / S.cur / S.x themselves. Every function is one line of the original
+ * behaviour: no checks, no caches, no events, and NO undo (pushUndo / tx stay where the caller already has them).
+ *   selection : selSet (a NEW Set), selAssign (this very Set), selClear / selAdd / selDel (in place, like the Set methods)
+ *   id        : newId (S.nextId++), setNextId
+ *   elements  : entsPush, entsSet (assign the array as is), entsSplice
+ *   layers    : layersPush, layersSet, curSet
+ *   settings  : xInit (S.x ||= {}), xSet
+ */
+
+
+/** S.sel = new Set(ids): a new Set object (whoever held the old one keeps the old one). */
+function selSet(ids) {
+  S.sel = new Set(ids);
+}
+/** S.sel = set: assigns this very Set, no copy. */
+function selAssign(set) {
+  S.sel = set;
+}
+/** S.sel.clear(), in place. */
+function selClear() {
+  S.sel.clear();
+}
+/** S.sel.add(id), in place; returns the Set like add. */
+function selAdd(id) {
+  return S.sel.add(id);
+}
+/** S.sel.delete(id), in place; returns the boolean like delete. */
+function selDel(id) {
+  return S.sel.delete(id);
+}
+
+/** S.nextId++: returns the old value and increases the counter. */
+function newId() {
+  return S.nextId++;
+}
+/** S.nextId = n. */
+function setNextId(n) {
+  S.nextId = n;
+}
+
+/** S.ents.push(...es); returns the new length like push. */
+function entsPush(...es) {
+  return S.ents.push(...es);
+}
+/** S.ents = arr: assigns this very array, no copy. */
+function entsSet(arr) {
+  S.ents = arr;
+}
+/** S.ents.splice(start, del, ...items); returns the removed elements like splice. */
+function entsSplice(start, del, ...items) {
+  return S.ents.splice(start, del, ...items);
+}
+
+/** S.layers.push(layer); returns the new length. */
+function layersPush(layer) {
+  return S.layers.push(layer);
+}
+/** S.layers = arr. */
+function layersSet(arr) {
+  S.layers = arr;
+}
+/** S.cur = name (the current layer). */
+function curSet(name) {
+  S.cur = name;
+}
+
+/** S.x = S.x || {}; returns S.x. */
+function xInit() {
+  return S.x || (S.x = {});
+}
+/** S.x = o. */
+function xSet(o) {
+  S.x = o;
+}
+
 // ===== core/query.js =====
 /**
  * core/query.js
@@ -12767,6 +12847,7 @@ function queryAny(type, pred, from = S.ents) {
 
 
 
+
 /* ---- sample project ---- */
 function defaultLayers() {
   return [
@@ -12788,22 +12869,22 @@ function sample(kind) {
   // the regression tests start from their own fixture project
   if (typeof window !== 'undefined' && window.__legacySample && typeof window.__sampleFixture === 'function')
     return window.__sampleFixture();
-  S.layers = defaultLayers();
-  S.cur = 'Стены';
-  S.ents = [];
-  S.nextId = 1;
-  S.sel.clear();
+  layersSet(defaultLayers());
+  curSet('Стены');
+  entsSet([]);
+  setNextId(1);
+  selClear();
   S.wtypes = defaultWallTypes();
   S.elec = defaultElec();
   S.vent = defaultVent();
   S.ceil = 2700;
   S.curWt = 'wt_gb';
   S.profiles = defaultProfiles();
-  S.x = defaultX();
+  xSet(defaultX());
   const E = (layer, o) => {
-    o.id = S.nextId++;
+    o.id = newId();
     o.layer = layer;
-    S.ents.push(o);
+    entsPush(o);
     return o;
   };
   if (kind === 'villa') sampleVilla(E);
@@ -12900,6 +12981,7 @@ function gridStep() {
  *
  * Polylines with arc segments (bulges): geometry, sub-paths, the PLINE command.
  */
+
 
 
 
@@ -13013,12 +13095,12 @@ function replaceEnt(e, list) {
   }
   const i = S.ents.indexOf(e);
   if (i < 0) return;
-  S.ents.splice(i, 1);
-  S.sel.delete(e.id);
+  entsSplice(i, 1);
+  selDel(e.id);
   for (const n of list) {
-    n.id = S.nextId++;
+    n.id = newId();
     n.layer = n.layer || e.layer;
-    S.ents.splice(i, 0, n);
+    entsSplice(i, 0, n);
   }
 }
 const DRAFTABLE = e => ['line', 'pline', 'circle', 'arc'].includes(e.type);
@@ -13448,6 +13530,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -13607,7 +13690,7 @@ function transformSel(fn, dA, copy) {
   if (copy) {
     const created = [];
     for (const [e, n] of out) {
-      n.id = S.nextId++;
+      n.id = newId();
       idMap.set(e.id, n.id);
       created.push(n);
     }
@@ -13626,7 +13709,7 @@ function transformSel(fn, dA, copy) {
         n.from = idMap.has(n.from) ? idMap.get(n.from) : null;
         n.to = idMap.has(n.to) ? idMap.get(n.to) : null;
       }
-      S.ents.push(n);
+      entsPush(n);
     }
   } else {
     // equipment carries the duct ends standing at its spigots (a duct chosen with it moves whole)
@@ -13750,7 +13833,7 @@ function eraseSel() {
   if (!S.sel.size) return;
   pushUndo();
   const n = eraseIds([...S.sel]);
-  S.sel.clear();
+  selClear();
   changed();
   log(`Удалено объектов: ${n}`);
 }
@@ -15699,6 +15782,7 @@ function acquire(r, w) {
 
 
 
+
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -15841,7 +15925,7 @@ function finishBox(sx, sy, shift) {
   for (const e of S.ents) {
     if (!pickable(e)) continue;
     if (win ? entInside(e, r) : entCross(e, r)) {
-      shift ? S.sel.delete(e.id) : S.sel.add(e.id);
+      shift ? selDel(e.id) : selAdd(e.id);
     }
   }
   pickingState.box = null;
@@ -18888,6 +18972,7 @@ function cutLabels() {
 
 
 
+
 const M3X = { key: null, X: null };
 function render3Main() {
   const cats = cats3();
@@ -18991,12 +19076,12 @@ function pick3(ev) {
   }
   const h = hit3(ev);
   if (!h) {
-    if (!ev.shiftKey) S.sel.clear();
+    if (!ev.shiftKey) selClear();
   } else if (ev.shiftKey) {
-    S.sel.has(h.e.id) ? S.sel.delete(h.e.id) : S.sel.add(h.e.id);
+    S.sel.has(h.e.id) ? selDel(h.e.id) : selAdd(h.e.id);
   } else {
-    S.sel.clear();
-    S.sel.add(h.e.id);
+    selClear();
+    selAdd(h.e.id);
   }
   selChanged();
 }
@@ -19971,6 +20056,7 @@ afterChange(() => sync3DSoon(), 40);
 
 
 
+
 /* pointer input (plan) */
 let panning = null,
   lastMid = 0,
@@ -20146,7 +20232,7 @@ function touchUp(e, sx, sy) {
     } else {
       const ent = pickEnt(sx, sy);
       if (ent && !S.sel.has(ent.id)) {
-        S.sel = new Set([ent.id]);
+        selSet([ent.id]);
         selChanged();
       }
       showCtx(e.clientX, e.clientY, s2w(sx, sy));
@@ -20157,8 +20243,8 @@ function touchUp(e, sx, sy) {
   // a tap
   if (uiHooks.sheetDown && uiHooks.sheetDown(sx, sy, e)) return false;
   const ent = pickEnt(sx, sy);
-  if (ent) S.sel.has(ent.id) ? S.sel.delete(ent.id) : S.sel.add(ent.id);
-  else S.sel.clear();
+  if (ent) S.sel.has(ent.id) ? selDel(ent.id) : selAdd(ent.id);
+  else selClear();
   selChanged();
   dirty();
   return true;
@@ -20290,7 +20376,7 @@ function primaryDown(e, sx, sy) {
     }
     const ent = pickEnt(sx, sy);
     if (ent) {
-      e.shiftKey ? S.sel.delete(ent.id) : S.sel.add(ent.id);
+      e.shiftKey ? selDel(ent.id) : selAdd(ent.id);
       selChanged();
       return;
     }
@@ -20359,7 +20445,7 @@ function initPointerRest() {
     if (!commandsState.cmd) {
       const ent = pickEnt(sx, sy);
       if (ent && !S.sel.has(ent.id)) {
-        S.sel = new Set([ent.id]);
+        selSet([ent.id]);
         selChanged();
       }
     }
@@ -20411,10 +20497,10 @@ function initPointerRest() {
       if (x) openObj(x);
     } else if (a === 'del') eraseSel();
     else if (a === 'desel') {
-      S.sel.clear();
+      selClear();
       selChanged();
     } else if (a === 'all') {
-      S.ents.forEach(x => pickable(x) && S.sel.add(x.id));
+      S.ents.forEach(x => pickable(x) && selAdd(x.id));
       selChanged();
     } else if (a === 'undo') undo();
     else if (a === 'redo') redo();
@@ -20431,6 +20517,7 @@ function initPointerRest() {
  *
  * Context menu and clipboard (copy/paste/duplicate/select similar).
  */
+
 
 
 
@@ -20490,7 +20577,7 @@ function clipPaste(at) {
       else continue;
     } else n = mapEnt(e, q => add(q, d), 0);
     idMap.set(e.id, S.nextId);
-    n.id = S.nextId++;
+    n.id = newId();
     made.push(n);
   }
   for (const n of made) {
@@ -20501,9 +20588,9 @@ function clipPaste(at) {
     }
     if (n.type === 'node' && n.num) {
     }
-    S.ents.push(n);
+    entsPush(n);
   }
-  S.sel = new Set(made.map(n => n.id));
+  selSet(made.map(n => n.id));
   const sn = snapPipes(made);
   changed();
   selChanged();
@@ -20532,7 +20619,7 @@ function selectSimilar() {
     '|' +
     (e.type === 'wall' || e.type === 'inst' ? '' : e.layer);
   const ks = new Set(es.map(key));
-  S.sel = new Set(S.ents.filter(e => pickable(e) && ks.has(key(e))).map(e => e.id));
+  selSet(S.ents.filter(e => pickable(e) && ks.has(key(e))).map(e => e.id));
   selChanged();
   log(`Выбрано подобных: ${S.sel.size}`);
 }
@@ -20866,6 +20953,7 @@ function inkC(c) {
 
 
 
+
 const RESP = { form: 'desk', touch: false, padSeen: 0, padAt: 0 };
 
 /** Phone / tablet / desktop from the size and the pointer. */
@@ -21139,7 +21227,7 @@ function initResponsive() {
     } else if (k === 'move' || k === 'copy' || k === 'rotate') startCmd(k);
     else if (k === 'del') eraseSel();
     else if (k === 'none') {
-      S.sel.clear();
+      selClear();
       selChanged();
     }
   });
@@ -21234,6 +21322,7 @@ function wheelModeMenu() {
 
 
 
+
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -21301,7 +21390,7 @@ const MENUS = [
         n: 'Выбрать всё',
         k: 'Ctrl+A',
         a: () => {
-          S.ents.forEach(x => pickable(x) && S.sel.add(x.id));
+          S.ents.forEach(x => pickable(x) && selAdd(x.id));
           selChanged();
         }
       },
@@ -21310,7 +21399,7 @@ const MENUS = [
         n: 'Снять выделение',
         k: 'Esc',
         a: () => {
-          S.sel.clear();
+          selClear();
           selChanged();
         }
       }
@@ -21834,6 +21923,7 @@ function initMenubar() {
 
 
 
+
 /* keyboard */
 const FKEYS = { F3: 'osnap', F7: 'grid', F8: 'ortho', F9: 'snap', F10: 'polar', F11: 'otrack' };
 const MODE_N = {
@@ -21865,7 +21955,7 @@ function escape() {
     log('*Прервано*');
     endCmd();
   } else {
-    S.sel.clear();
+    selClear();
     selChanged();
   }
   cin.value = '';
@@ -21956,7 +22046,7 @@ function initKeyboard() {
       }
       if ((k === 'a' || k === 'ф') && !cin.value) {
         e.preventDefault();
-        S.ents.forEach(x => pickable(x) && S.sel.add(x.id));
+        S.ents.forEach(x => pickable(x) && selAdd(x.id));
         selChanged();
         return;
       }
@@ -22029,6 +22119,7 @@ function initKeyboard() {
  *
  * Toolbar: icons, buttons, snap popup.
  */
+
 
 
 
@@ -22333,12 +22424,12 @@ function initToolbar() {
     }
     if (f === 'new') {
       pushUndo();
-      S.ents = [];
+      entsSet([]);
       S.elec = S.elec || defaultElec();
       S.vent = S.vent || defaultVent();
-      S.sel.clear();
-      S.layers = defaultLayers();
-      S.cur = 'Стены';
+      selClear();
+      layersSet(defaultLayers());
+      curSet('Стены');
       changed();
       view.x = 0;
       view.y = 0;
@@ -22387,6 +22478,7 @@ function initToolbar() {
 
 
 
+
 /* UI: layers */
 const ICON = {
   eye: '<svg viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
@@ -22413,7 +22505,7 @@ function renderLayers() {
       ev.stopPropagation();
       pushUndo();
       L.lock = !L.lock;
-      if (L.lock) S.ents.forEach(e => e.layer === L.name && S.sel.delete(e.id));
+      if (L.lock) S.ents.forEach(e => e.layer === L.name && selDel(e.id));
       changed();
     };
     const ci = row.querySelector('input');
@@ -22451,7 +22543,7 @@ function renderLayers() {
         S.ents.forEach(e => {
           if (e.layer === L.name) e.layer = v;
         });
-        if (S.cur === L.name) S.cur = v;
+        if (S.cur === L.name) curSet(v);
         L.name = v;
         changed();
       } else renderLayers();
@@ -22462,7 +22554,7 @@ function renderLayers() {
         pushUndo();
         selEnts().forEach(e => (e.layer = L.name));
         log(`Объекты перенесены на слой «${L.name}»`);
-      } else S.cur = L.name;
+      } else curSet(L.name);
       changed();
     };
     bx.appendChild(row);
@@ -22471,7 +22563,7 @@ function renderLayers() {
 function setLayerOn(L, on) {
   pushUndo();
   L.on = on;
-  if (!on) S.ents.forEach(e => e.layer === L.name && S.sel.delete(e.id));
+  if (!on) S.ents.forEach(e => e.layer === L.name && selDel(e.id));
   changed();
 }
 
@@ -22482,8 +22574,8 @@ function initLayersPanel() {
     while (S.layers.some(l => l.name === 'Слой ' + i)) i++;
     const pal = ['#e88f8f', '#8fd0e8', '#d6e88f', '#e8c38f', '#c08fe8', '#8fe8b7'];
     pushUndo();
-    S.layers.push({ name: 'Слой ' + i, color: pal[i % pal.length], on: true, lock: false });
-    S.cur = 'Слой ' + i;
+    layersPush({ name: 'Слой ' + i, color: pal[i % pal.length], on: true, lock: false });
+    curSet('Слой ' + i);
     changed();
   };
 }
@@ -22494,6 +22586,7 @@ function initLayersPanel() {
  *
  * Project browser panel.
  */
+
 
 
 
@@ -22560,8 +22653,8 @@ function initBrowserPanel() {
     const g = e.target.closest('.bgrp');
     if (g) {
       const ids = g.dataset.ids.split(',').map(Number);
-      if (!e.shiftKey) S.sel.clear();
-      ids.forEach(i => S.sel.add(i));
+      if (!e.shiftKey) selClear();
+      ids.forEach(i => selAdd(i));
       selChanged();
       log(`Выбрано: ${ids.length}`);
     }
@@ -23553,6 +23646,7 @@ function initCatalog() {
 
 
 
+
 /** Order from which the rows put by the element types (XT[type].spec) are collected. */
 const XT_ORDER = 100;
 /** Position of a filled table whose title no section has fixed. */
@@ -23678,7 +23772,7 @@ function initSpec() {
   $('#spec').addEventListener('click', e => {
     const tr = e.target.closest('tr[data-ids]');
     if (!tr || !tr.dataset.ids) return;
-    S.sel = new Set(tr.dataset.ids.split(',').map(Number));
+    selSet(tr.dataset.ids.split(',').map(Number));
     selChanged();
     setView('plan');
     log('Элементы строки выделены на плане');
@@ -25003,6 +25097,7 @@ function defineTools(defs) {
 
 
 
+
 /* ---------- workspaces: tools only when needed ---------- */
 const TT = {
   ...Object.fromEntries(TOOLS.filter(t => Array.isArray(t))),
@@ -25356,7 +25451,7 @@ function wsApply(id) {
   wsView.ws = id || curWS;
   for (const eid of [...S.sel]) {
     const e = S.ents.find(x => x.id === eid);
-    if (e && wsHide(e)) S.sel.delete(eid);
+    if (e && wsHide(e)) selDel(eid);
   }
   const b = $('#bAllSec');
   if (b) b.classList.toggle('on', wsView.all);
@@ -25463,6 +25558,7 @@ defineTools({
  *
  * Engineering dialog (groups, panel, collector).
  */
+
 
 
 
@@ -25645,7 +25741,7 @@ function renderMEP() {
     el.querySelectorAll('tr[data-sel]').forEach(
       tr =>
         (tr.onclick = () => {
-          S.sel = new Set([+tr.dataset.sel]);
+          selSet([+tr.dataset.sel]);
           selChanged();
           $('#mepdlg').hidden = true;
         })
@@ -26806,6 +26902,7 @@ async function parseIFC(text, progress) {
 
 
 
+
 /* importers */
 let pendingFile = null,
   impTarget = null;
@@ -26971,8 +27068,8 @@ async function runImport() {
           ASSETS.set(a.id, a);
           assets.push(a);
           ensureLayer(el.cat);
-          S.ents.push({
-            id: S.nextId++,
+          entsPush({
+            id: newId(),
             type: 'inst',
             asset: a.id,
             p: shift,
@@ -27174,6 +27271,7 @@ function exportCatalog() {
 
 
 
+
 /* native project file .kontur — own binary container (not zip/gzip: archivers do not open it)
    layout: 12-byte signature, u16 major, u16 minor, u32 flags, then chunks
      [u32 dataLength][4 ASCII type][u8 codec][u32 rawLength][data][u32 CRC32 of type..data]
@@ -27282,7 +27380,7 @@ async function konBuild() {
   for (const e of S.ents) for (const f of (e.meta && e.meta.files) || []) ids.add(f.id);
   const assets = [...ids].map(id => ASSETS.get(id)).filter(a => a && !a.builtin);
   const now = new Date().toISOString();
-  S.x = S.x || {};
+  xInit();
   S.x.created = S.x.created || now;
   const meta = {
     app: 'Контур',
@@ -29232,6 +29330,7 @@ function stretchLights(e) {
 
 
 
+
 /* ---------- transition elements: plinths, shadow gaps, cornices ---------- */
 const TRIMK = {
   plinth: { n: 'Плинтус напольный', zone: 'floor', prof: 'tr_plinth', bar: 2400 },
@@ -29736,11 +29835,11 @@ function mkTrimGap() {
       pushUndo();
       const rest = trimRemovePiece(e, p1, p);
       const i = S.ents.indexOf(e);
-      S.ents.splice(i, 1);
-      S.sel.delete(e.id);
+      entsSplice(i, 1);
+      selDel(e.id);
       rest.forEach((n, k) => {
-        n.id = S.nextId++;
-        S.ents.splice(i + k, 0, n);
+        n.id = newId();
+        entsSplice(i + k, 0, n);
       });
       changed();
       log(rest.length ? `Участок удалён, осталось кусков: ${rest.length}` : 'Элемент удалён целиком');
@@ -30015,6 +30114,7 @@ XT.trim = {
  *
  * Modelled GKL bodies: boxes, suspended fireplaces, niches.
  */
+
 
 
 
@@ -30411,12 +30511,12 @@ function gbodyLoad(e) {
       n: R.fixN,
       s: Math.max(100, e.z1 - e.z0 - 260),
       src: e.id,
-      id: S.nextId++,
+      id: newId(),
       layer: ensureLayer('Усиления')
     };
-    S.ents.push(L);
+    entsPush(L);
   } else Object.assign(L, { host: best.w.id, t, side, kg: Math.round(R.mass), ecc: Math.round(depth), n: R.fixN });
-  S.sel = new Set([L.id]);
+  selSet([L.id]);
   changed();
   const c = loadCheck(L);
   log(`Нагрузка от тела: ${L.kg} кг, эксцентриситет ${L.ecc} мм → ${c.verdict}`, c.u > 1);
@@ -30428,6 +30528,7 @@ function gbodyLoad(e) {
  *
  * Reinforcement inside walls (steel tubes, OSB/plywood) and point loads with a simple verdict.
  */
+
 
 
 
@@ -30900,12 +31001,12 @@ XT.reinf = {
           n: 4,
           s: 200,
           src: e.id,
-          id: S.nextId++,
+          id: newId(),
           layer: ensureLayer('Усиления')
         };
-        S.ents.push(L);
+        entsPush(L);
       } else Object.assign(L, { t: e.t, z: e.z, side: e.side, ecc: Math.round(e.out * 0.6) });
-      S.sel = new Set([L.id]);
+      selSet([L.id]);
       changed();
       const c = loadCheck(L);
       log(
@@ -41791,6 +41892,7 @@ FIXK.vtrap = {
 
 
 
+
 /* ---- pipes: network, simplified hydraulics (DIN 1988-300), sewer checks, clamps, tees, realistic look ---- */
 // inner diameters, мм — typical for the wall class of each material (verify with the manufacturer)
 const PIPE_DI = {
@@ -42039,7 +42141,7 @@ function initPipeNetwork() {
     document.addEventListener('click', ev => {
       const b = ev.target && ev.target.closest && ev.target.closest('[data-pipelook]');
       if (b) {
-        S.x = S.x || {};
+        xInit();
         S.x.pipeLook = S.x.pipeLook === 'real' ? 'sys' : 'real';
         changed();
       }
@@ -46989,6 +47091,7 @@ function elecEngSpec(put) {
 
 
 
+
 function wireClass(e) {
   const k = wireKind(e);
   return k === 'rj45' || k === 'tv'
@@ -47022,7 +47125,7 @@ function optimizeWiring() {
     if (a) l.swk = a.dev + '|' + a.key;
   }
   const rm = new Set(before.map(w => w.id));
-  S.ents = S.ents.filter(e => !rm.has(e.id));
+  entsSet(S.ents.filter(e => !rm.has(e.id)));
   changed();
   const WS0 = query('wall');
   const md = (a, b) => {
@@ -47761,6 +47864,7 @@ function mkArcSwitch(k) {
 
 
 
+
 /* ---------- offset ---------- */
 function offsetEnt(e, d, side) {
   // side: +1 left/outer, -1 right/inner
@@ -48073,8 +48177,8 @@ function arrayPopup(es) {
       const cs = arrayCopies(es, cfg);
       pushUndo();
       for (const n of cs) {
-        n.id = S.nextId++;
-        S.ents.push(n);
+        n.id = newId();
+        entsPush(n);
       }
       arrayPopup.last = { ...cfg, c: null, path: null };
       AP.es = null;
@@ -48615,9 +48719,9 @@ function mkFillet(cham0) {
   };
 }
 function addEntNoUndo(e) {
-  e.id = S.nextId++;
+  e.id = newId();
   e.layer = e.layer || S.cur;
-  S.ents.push(e);
+  entsPush(e);
   return e;
 }
 
@@ -48800,11 +48904,11 @@ function joinEnts(es) {
     const o = mkPlineFrom(used[0], pts, b, closed);
     const i0 = S.ents.indexOf(used[0]);
     for (const u of used) {
-      S.ents.splice(S.ents.indexOf(u), 1);
-      S.sel.delete(u.id);
+      entsSplice(S.ents.indexOf(u), 1);
+      selDel(u.id);
     }
-    o.id = S.nextId++;
-    S.ents.splice(Math.max(0, i0), 0, o);
+    o.id = newId();
+    entsSplice(Math.max(0, i0), 0, o);
     made.push(o);
   }
   changed();
@@ -48887,6 +48991,7 @@ defineTools({
  *
  * Project views (plans, sections, elevations, nodes) and visibility of components.
  */
+
 
 
 
@@ -49377,7 +49482,7 @@ function vwPreview() {
     const g = modes.grid;
     modes.grid = false;
     const sel = S.sel;
-    S.sel = new Set();
+    selSet();
     nodeState.pieForce = v.type === 'node';
     const stOv = docView.stageOv,
       phOv = docView.phaseOv;
@@ -49401,7 +49506,7 @@ function vwPreview() {
         { cx, cy, k: ((D_ / (Math.min(W, H) / view.k)) * view.k) / view.k, ox, D_, span: Math.min(W, H) / view.k },
         r
       );
-    S.sel = sel;
+    selAssign(sel);
     modes.grid = g;
     saved.forEach(([l, on]) => (l.on = on));
     Object.assign(view, sv);
@@ -53282,6 +53387,7 @@ defineTools({
 
 
 
+
 /* ---------------- commands: modify ---------------- */
 function reflectFn(a, b) {
   const u = nrm(sub(b, a));
@@ -53317,7 +53423,7 @@ function mkMirror() {
       if ((e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted)) && ids.has(e.host)) continue;
       const n = mirrorEnt(e, f, th);
       if (keep) {
-        n.id = S.nextId++;
+        n.id = newId();
         idMap.set(e.id, n.id);
         created.push(n);
       } else Object.assign(e, n);
@@ -53332,12 +53438,12 @@ function mkMirror() {
         o.t = L - e.t;
         o.hand = !e.hand;
         if (keep) {
-          o.id = S.nextId++;
+          o.id = newId();
           o.host = w.id;
           created.push(o);
         }
       }
-    for (const n of created) S.ents.push(n);
+    for (const n of created) entsPush(n);
     try {
       relinkWires();
     } catch (err) {}
@@ -54513,6 +54619,7 @@ function initQuality() {
 
 
 
+
 /* levels (этажи). The model of the current level lives in S.ents (all tools work as before);
    other levels are kept in S.x.lv.ents[id] and are swapped in on switch. 3D shows all levels stacked by elevation.
    level: {id, n, z: отметка ±0.000 этажа (чистый пол) в проекте, h: высота этажа (пол–пол), top: отметка верха плиты от ±0.000, slab: толщина плиты} */
@@ -54567,14 +54674,14 @@ function withLevel(id, fn) {
     k0 = WLVKEEP;
   WLV = id;
   WLVKEEP = keep;
-  S.ents = L.ents[id] || (L.ents[id] = []);
-  S.sel = new Set();
+  entsSet(L.ents[id] || (L.ents[id] = []));
+  selSet();
   documentState.docVer++;
   try {
     return fn();
   } finally {
-    S.ents = keep;
-    S.sel = ks;
+    entsSet(keep);
+    selAssign(ks);
     WLV = w0;
     WLVKEEP = k0;
     documentState.docVer++;
@@ -54590,10 +54697,10 @@ function switchLevel(id, quiet) {
   if (id === L.cur || !lvById(id)) return;
   if (commandsState.cmd) endCmd(true);
   L.ents[L.cur] = S.ents;
-  S.ents = L.ents[id] || [];
+  entsSet(L.ents[id] || []);
   delete L.ents[id];
   L.cur = id;
-  S.sel.clear();
+  selClear();
   levelsState.LVGEN++;
   levelsState.LVU = null;
   changed();
@@ -54624,7 +54731,7 @@ function addLevel(o = {}) {
     for (const e of src)
       if (['wall', 'col'].includes(e.type) || (o.copyOps && (e.type === 'door' || e.type === 'window'))) {
         const n = JSON.parse(JSON.stringify(e));
-        n.id = S.nextId++;
+        n.id = newId();
         map.set(e.id, n.id);
         arr.push(n);
       }
@@ -54636,8 +54743,8 @@ function addLevel(o = {}) {
   if (o.copyFrom != null && o.slab !== false) {
     const fp = wallsFootprint();
     if (fp && fp.length > 2)
-      S.ents.push({
-        id: S.nextId++,
+      entsPush({
+        id: newId(),
         type: 'slab',
         pts: fp.map(p => P(Math.round(p.x), Math.round(p.y))),
         th: lv.slab || 200,
@@ -54937,13 +55044,13 @@ function specAllLevels(fn) {
       all.push(e);
     }
   });
-  S.ents = all;
+  entsSet(all);
   documentState.docVer++;
   try {
     return fn();
   } finally {
     for (const e of all) delete e.__lv;
-    S.ents = keep;
+    entsSet(keep);
     documentState.docVer++;
   }
 }
@@ -63204,6 +63311,7 @@ function galvSpec(e, L, H, put, S_) {
 
 
 
+
 /** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
 const AV_NORM = {
   person: 60, // m³/h per person in living rooms
@@ -63920,12 +64028,12 @@ function avApplyNet(sizes, noUndo) {
         const i = S.ents.indexOf(d);
         const neu = parts.map((pc, j) => ({
           ...JSON.parse(JSON.stringify(d)),
-          id: j ? S.nextId++ : d.id,
+          id: j ? newId() : d.id,
           pts: pc.pts.map(p => P(p.x, p.y)),
           from: j === 0 ? d.from : null,
           to: j === parts.length - 1 ? d.to : null
         }));
-        S.ents.splice(i, 1, ...neu);
+        entsSplice(i, 1, ...neu);
         rep.split += parts.length - 1;
         cut = true;
       }
@@ -68514,6 +68622,7 @@ defineTools({
 
 
 
+
 /* ---------- climate and system ---------- */
 const HEAT_CITY = {
   msk: ['Москва', -25],
@@ -68530,7 +68639,7 @@ const HEAT_CITY = {
   minsk: ['Минск', -24]
 };
 function heatCfg() {
-  const x = S.x || (S.x = {});
+  const x = xInit();
   const h = x.heat || (x.heat = {});
   return {
     city: h.city || 'msk',
@@ -81609,6 +81718,7 @@ defineTools({
 
 
 
+
 /* построение одного уровня — стены, проёмы, полы, потолки, приборы — повторяет приёмы прежней студии:
    инструменты и проверки работают на этих данных так же, как на модели пользователя */
 function sampleDuplex(E) {
@@ -82150,7 +82260,7 @@ function sampleDuplex(E) {
   const lv2 = { id: LVs.nid++, n: 'Этаж 2', z: lv1.z + lv1.h, h: lv1.h, top: -140, slab: lv1.slab };
   LVs.list.push(lv2);
   LVs.ents[lv1.id] = S.ents;
-  S.ents = [];
+  entsSet([]);
   LVs.cur = lv2.id;
   documentState.docVer++;
   const L2 = outer();
@@ -82394,7 +82504,7 @@ function sampleDuplex(E) {
   fitRads();
   // back to level 1
   LVs.ents[lv2.id] = S.ents;
-  S.ents = LVs.ents[lv1.id];
+  entsSet(LVs.ents[lv1.id]);
   delete LVs.ents[lv1.id];
   LVs.cur = lv1.id;
   levelsState.LVGEN++;
@@ -82422,6 +82532,7 @@ function sampleDuplex(E) {
  *  Этаж 2 — галерея над гостиной с ограждением, коридор, две спальни (карниз в нише потолка, рамки молдингов,
  *           шкаф), кабинет-гардеробная, ванная с водяным полотенцесушителем.
  */
+
 
 
 
@@ -82760,7 +82871,7 @@ function sampleHouse(E) {
   const lv2 = { id: LVs.nid++, n: 'Этаж 2', z: lv1.z + lv1.h, h: 3000, top: lv1.top, slab: lv1.slab };
   LVs.list.push(lv2);
   LVs.ents[lv1.id] = S.ents;
-  S.ents = [];
+  entsSet([]);
   LVs.cur = lv2.id;
   documentState.docVer++;
   // outer walls only over the west part: over the living room the walls of level 1 go on
@@ -82869,7 +82980,7 @@ function sampleHouse(E) {
   void [wBd, wBa, wE1, wLW];
   // back to level 1
   LVs.ents[lv2.id] = S.ents;
-  S.ents = LVs.ents[lv1.id];
+  entsSet(LVs.ents[lv1.id]);
   delete LVs.ents[lv1.id];
   LVs.cur = lv1.id;
   for (const e of S.ents) if (e.type === 'dev' && !e.blk && DEF_MODS[e.kind]) e.blk = defBlk(e.kind);
@@ -82892,6 +83003,7 @@ function sampleHouse(E) {
  *
  * Wire to a light as soon as it is assigned to a switch key, merged into the existing line of that key.
  */
+
 
 
 
@@ -82952,7 +83064,7 @@ function autoKeyWire(l, quiet) {
   }
   if (old.length) {
     const rm = new Set(old.map(w => w.id));
-    S.ents = S.ents.filter(e => !rm.has(e.id));
+    entsSet(S.ents.filter(e => !rm.has(e.id)));
   }
   const tree0 = keyWires(sw.id, key);
   const comp = new Set([sw.id]);
@@ -83058,7 +83170,7 @@ function unKeyWire(l) {
     }
   }
   const rm = new Set(old.map(w => w.id));
-  S.ents = S.ents.filter(e => !rm.has(e.id));
+  entsSet(S.ents.filter(e => !rm.has(e.id)));
   for (const o of orph) autoKeyWire(o, true);
 }
 
@@ -88721,6 +88833,7 @@ function cwGeneralInside(M) {
 
 
 
+
 function renderTools() {
   tb.innerHTML = '';
   const ws = WS.find(w => w.id === curWS) || WS[0];
@@ -89057,7 +89170,7 @@ function renderHelp() {
 function selectAndShow(id) {
   const e = byId(id);
   if (!e) return;
-  S.sel = new Set([id]);
+  selSet([id]);
   const sp = samplePts(e);
   if (sp.length) {
     const c = polyCentroid(sp);
@@ -92231,6 +92344,7 @@ function drawSheet(sh, o = {}) {
 
 
 
+
 const MS = { keepLayers: null, keepAs: null, keepLv: null, keepSel: null };
 
 /* ---------- mode ---------- */
@@ -92248,7 +92362,7 @@ function sheetMode(on) {
     if (!sh) sh = addSheet('Общие данные');
     proj().cur = sh.id;
     docView.vp = 'P' + sh.id;
-    S.sel.clear();
+    selClear();
     fitSheet();
   } else {
     if (SHT.ms != null) exitMS();
@@ -92260,7 +92374,7 @@ function sheetMode(on) {
     if (restoreColors) restoreColors();
     restoreColors = null;
     if (SHT.mview) Object.assign(view, SHT.mview);
-    S.sel.clear();
+    selClear();
   }
   selChanged();
   dirty();
@@ -92279,7 +92393,7 @@ function goSheet(id) {
   proj().cur = id;
   docView.vp = 'P' + id;
   SHT.sel = null;
-  S.sel.clear();
+  selClear();
   fitSheet();
   renderPanel();
 }
@@ -92301,7 +92415,7 @@ function enterMS(it) {
   docView.ms = true;
   Object.assign(view, vpModelView(it, SHT.pv));
   SHT.sel = it.id;
-  S.sel.clear();
+  selClear();
   log(
     `Вид «${vpTitle(it)}» активен: правки модели, размеры и выноски — как на плане (масштаб 1:${vpN(it)}). Двойной щелчок вне вида или Esc — на лист.`
   );
@@ -92324,7 +92438,7 @@ function exitMS() {
   docView.stageOv = undefined;
   docView.phaseOv = null;
   docView.vp = sh ? 'P' + sh.id : null;
-  S.sel.clear();
+  selClear();
   selChanged();
   renderPanel();
   dirty();
@@ -93316,7 +93430,7 @@ function sheetCanvas(sh, pxmm = 8) {
     keepVp = docView.vp,
     keepMs = SHT.ms,
     keepSel = new Set(S.sel);
-  S.sel.clear();
+  selClear();
   try {
     c2.setTransform(dpr, 0, 0, dpr, 0, 0);
     Object.assign(view, { x: Wm / 2, y: Hm / 2, k });
@@ -93326,7 +93440,7 @@ function sheetCanvas(sh, pxmm = 8) {
   } finally {
     docView.vp = keepVp;
     SHT.ms = keepMs;
-    S.sel = keepSel;
+    selAssign(keepSel);
     Object.assign(view, keepV);
     swapWH(...oldWH);
     swapCtx(old);
@@ -93600,7 +93714,7 @@ function bindPanel(el) {
         if (!s || !confirm(`Удалить лист «${s.name}»?`)) return;
         pushUndo();
         P_.sheets = P_.sheets.filter(x => x !== s);
-        S.ents = S.ents.filter(e => e.vp !== 'P' + s.id && !s.items.some(i => i.id === e.vp));
+        entsSet(S.ents.filter(e => e.vp !== 'P' + s.id && !s.items.some(i => i.id === e.vp)));
         if (P_.cur === s.id) P_.cur = P_.sheets[0] ? P_.sheets[0].id : null;
         changed();
         if (shCur()) goSheet(shCur().id);
@@ -93836,7 +93950,7 @@ function bindPanel(el) {
         }
         if (a === 'del') {
           sh.items = sh.items.filter(x => x !== it);
-          S.ents = S.ents.filter(e => e.vp !== it.id);
+          entsSet(S.ents.filter(e => e.vp !== it.id));
           SHT.sel = null;
         }
         if (a === 'dup') {
@@ -94422,6 +94536,7 @@ uiHooks.sheetCube = { draw: sheetCubeDraw, click: sheetCubeClick, hover: sheetCu
 
 
 
+
 function stg() {
   const x = S.x;
   if (!x) return { list: [], cur: null, nid: 1, model: null, modelAs: null };
@@ -94491,7 +94606,7 @@ function stageOpen(id) {
     g.cur = null;
     g.model = null;
   }
-  S.sel.clear();
+  selClear();
   changed();
   refresh();
 }
@@ -94560,7 +94675,7 @@ function stageDel(id) {
   pushUndo();
   g.list = g.list.filter(s => s !== st);
   // its annotations go with it; sheet viewports made from it become plain plans
-  S.ents = S.ents.filter(e => e.stage !== id);
+  entsSet(S.ents.filter(e => e.stage !== id));
   for (const sh of (S.x.proj && S.x.proj.sheets) || [])
     for (const it of sh.items) if (it.src && it.src.stage === id) delete it.src.stage;
   changed();
@@ -94581,11 +94696,11 @@ function stageDup(id) {
   for (const e of S.ents)
     if (e.stage === id) {
       const c = JSON.parse(JSON.stringify(e));
-      c.id = S.nextId++;
+      c.id = newId();
       c.stage = nst.id;
       add.push(c);
     }
-  S.ents.push(...add);
+  entsPush(...add);
   stageOpen(nst.id);
 }
 const annCount = id => S.ents.filter(e => e.stage === id).length;
@@ -94668,7 +94783,7 @@ function stageBind(el) {
         if (a === 'hide') {
           pushUndo();
           st.hide = [...new Set([...(st.hide || []), ...S.sel])];
-          S.sel.clear();
+          selClear();
           changed();
           refresh();
         }
@@ -95577,6 +95692,7 @@ function odAxis(e) {
 
 
 
+
 /* ---------- commands for the new elements ---------- */
 function polyCmd(name, label, mk, opts = {}) {
   const pts = [];
@@ -96140,7 +96256,7 @@ function mkLoad() {
           `Вердикт: ${c.verdict} (${Math.round(c.u * 100)}%), опора — ${c.support}. Высота точки и детали — в свойствах.`,
           c.u > 1
         );
-        S.sel = new Set([e.id]);
+        selSet([e.id]);
         selChanged();
         return 'end';
       }
@@ -97577,6 +97693,7 @@ defineTools({
 
 
 
+
 const RF_FLOOR = { tile: 'Плитка', lam: 'Ламинат', eng: 'Инженерная доска', vinyl: 'Кварцвинил', wet: 'Мокрая зона' };
 const RF_CEIL = { stretch: 'Натяжной', gkl: 'ГКЛ', slab: 'Покраска по плите' };
 function rfCfg() {
@@ -97584,7 +97701,7 @@ function rfCfg() {
     S.x.roomFill = { floor: 'lam', ceil: 'stretch', walls: true, wallK: 'paint', col: '#f1f0ea', plinth: true };
   return S.x.roomFill;
 }
-const nextId = () => S.nextId++;
+const nextId = () => newId();
 /** Fills the room at p; returns what was made. */
 function fillRoom(p, cfg = rfCfg()) {
   const poly0 = cfg.op && cfg.op !== 'wall' && uiHooks.zoneOutlineAt ? uiHooks.zoneOutlineAt(p, cfg.op) : null;
@@ -97598,7 +97715,7 @@ function fillRoom(p, cfg = rfCfg()) {
   // floor
   if (cfg.floor && !queryAny('floorz', e => e.pts && inside(polyCentroid(e.pts)))) {
     const wet = cfg.floor === 'wet';
-    S.ents.push({
+    entsPush({
       id: nextId(),
       type: 'floorz',
       pts: poly.map(q => ({ ...q })),
@@ -97615,7 +97732,7 @@ function fillRoom(p, cfg = rfCfg()) {
   // ceiling
   if (cfg.ceil && !queryAny('ceil', e => e.pts && inside(polyCentroid(e.pts)))) {
     const k = cfg.ceil;
-    S.ents.push({
+    entsPush({
       id: nextId(),
       type: 'ceil',
       kind: k,
@@ -97716,7 +97833,7 @@ function fillRoom(p, cfg = rfCfg()) {
     }
     for (const pts of runs)
       if (pts.length > 2) {
-        S.ents.push({
+        entsPush({
           id: nextId(),
           type: 'trim',
           kind: 'plinth',
@@ -97759,7 +97876,7 @@ function fillRoom(p, cfg = rfCfg()) {
           );
         }
       for (const [x, y] of segs) {
-        S.ents.push({
+        entsPush({
           id: nextId(),
           type: 'trim',
           kind: 'plinth',
@@ -99577,6 +99694,7 @@ migrate.step(() => {
 
 
 
+
 const ZONE_OP = {
   wall: 'по грани стены',
   mid: 'до середины проёмов',
@@ -99707,7 +99825,7 @@ function splitZone(z, a, b, kind = 't') {
   if (A.length < 3 || B.length < 3 || Math.abs(polyArea(A)) < 1e4 || Math.abs(polyArea(B)) < 1e4) return null;
   pushUndo();
   const nz = JSON.parse(JSON.stringify(z));
-  nz.id = S.nextId++;
+  nz.id = newId();
   z.pts = A;
   nz.pts = B;
   // the transition line: the part of a–b inside the zone
@@ -99722,7 +99840,7 @@ function splitZone(z, a, b, kind = 't') {
   }
   delete nz.joins;
   if (z.cover) nz.cover = JSON.parse(JSON.stringify(z.cover));
-  S.ents.push(nz);
+  entsPush(nz);
   changed();
   return nz;
 }
@@ -99796,9 +99914,9 @@ function mergeZones(zs) {
   keep.pts = u;
   keep.joins = zs.flatMap(z => z.joins || []);
   const del = new Set(zs.slice(1).map(z => z.id));
-  S.ents = S.ents.filter(e => !del.has(e.id));
-  S.sel.clear();
-  S.sel.add(keep.id);
+  entsSet(S.ents.filter(e => !del.has(e.id)));
+  selClear();
+  selAdd(keep.id);
   changed();
   return keep;
 }
@@ -99827,7 +99945,7 @@ function mkZoneMerge() {
         return;
       }
       picked.push(z);
-      S.sel.add(z.id);
+      selAdd(z.id);
     },
     onEnter() {
       const r = mergeZones(picked);
@@ -100254,6 +100372,7 @@ function clearMarks3() {
 
 
 
+
 /* ---------- settings and anchors ---------- */
 function arCfg() {
   if (!S.x.ar) S.x.ar = { eye: 1.45, fov: 63, stride: 0.7, steps: true, layerOp: {}, geo: null };
@@ -100322,10 +100441,8 @@ function mkArPts() {
       const area =
         Math.abs((pts[1].x - pts[0].x) * (pts[2].y - pts[0].y) - (pts[2].x - pts[0].x) * (pts[1].y - pts[0].y)) / 2;
       pushUndo();
-      S.ents = S.ents.filter(e => e.type !== 'arpt');
-      pts.forEach((q, i) =>
-        S.ents.push({ id: S.nextId++, type: 'arpt', n: ARN[i], p: q, layer: ensureLayer('Аннотации') })
-      );
+      entsSet(S.ents.filter(e => e.type !== 'arpt'));
+      pts.forEach((q, i) => entsPush({ id: newId(), type: 'arpt', n: ARN[i], p: q, layer: ensureLayer('Аннотации') }));
       changed();
       log(
         area < 1e6
@@ -101916,6 +102033,7 @@ uiHooks.openArNotes = openArNotes;
 
 
 
+
 /** The user's standards (ТЗ, defaults the agents follow when the source does not say otherwise). */
 const AG_STD = `Нормы по умолчанию (если источник не говорит иначе):
 - Перегородки ГКЛ 100 или 120 мм (120 — фактически 125: профиль 75 + 2×ГКЛ 12,5 с каждой стороны), газоблок 100 или 150 мм.
@@ -101960,7 +102078,7 @@ function AG_OPS() {
 }
 /** Runs of the project: { id, task, at, status:'review'|'accepted'|'rejected'|'checked', mode, und, notes, rounds }. */
 function agRuns() {
-  if (!S.x) S.x = {};
+  xInit();
   if (!S.x.agRuns) S.x.agRuns = [];
   return S.x.agRuns;
 }
@@ -102210,7 +102328,7 @@ function agRejectRun(id, ids) {
   if (ids && ids.length) {
     const set = new Set(ids);
     pushUndo();
-    S.ents = S.ents.filter(e => !(set.has(e.id) && e.ai && e.ai.run === id && e._aiLayer));
+    entsSet(S.ents.filter(e => !(set.has(e.id) && e.ai && e.ai.run === id && e._aiLayer)));
     changed();
     if (run && !agRunEnts(id).some(e => e._aiLayer)) run.status = agRunEnts(id).length ? 'accepted' : 'rejected';
   } else {
@@ -102736,6 +102854,7 @@ function initAgent() {
 
 
 
+
 /** Sheet boards: th mm, kg/m², sheet w × l mm, fire / moisture flags; screw — screw length for this board. */
 const BOARDS = {
   gkl125: { n: 'ГКЛ 12,5', th: 12.5, kgm2: 8.5, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
@@ -102924,7 +103043,7 @@ const MAT_CLS = {
 
 /* ---------- project library ---------- */
 function lib() {
-  S.x = S.x || {};
+  xInit();
   S.x.lib = S.x.lib || {};
   const L = S.x.lib;
   L.mats = L.mats || [];
@@ -103752,6 +103871,7 @@ defineTools({
 
 
 
+
 /** Level above lv (by elevation) or null. */
 function lvAbove(lv) {
   const s = LV()
@@ -103914,7 +104034,7 @@ function secondLight(ws) {
         if (hi > Lw + 10) keep.push([Lw, hi]);
         const ops = S.ents.filter(o => o.host === x.id);
         if (!keep.length) {
-          for (const o of [x, ...ops]) S.ents.splice(S.ents.indexOf(o), 1);
+          for (const o of [x, ...ops]) entsSplice(S.ents.indexOf(o), 1);
           removed++;
           continue;
         }
@@ -103930,12 +104050,12 @@ function secondLight(ws) {
           const c = add(old.a, mul(old.ux, o.t));
           const nt = dot(sub(c, x.a), ux);
           const nl = Math.hypot(x.b.x - x.a.x, x.b.y - x.a.y);
-          if (nt - o.w / 2 < -1 || nt + o.w / 2 > nl + 1) S.ents.splice(S.ents.indexOf(o), 1);
+          if (nt - o.w / 2 < -1 || nt + o.w / 2 > nl + 1) entsSplice(S.ents.indexOf(o), 1);
           else o.t = nt;
         }
         if (keep[1]) {
           const [a1, b1] = seg(keep[1]);
-          S.ents.push({ ...JSON.parse(JSON.stringify(x)), id: S.nextId++, a: a1, b: b1 });
+          entsPush({ ...JSON.parse(JSON.stringify(x)), id: newId(), a: a1, b: b1 });
         }
         trimmed++;
       }
@@ -105472,6 +105592,7 @@ function initJunctionBoxes() {
 
 
 
+
 /** Norms for residential rooms: average maintained illuminance on the reference plane (h, mm). */
 const LNORM = {
   living: { n: 'Жилая комната, гостиная, спальня', E: 150, h: 0 },
@@ -106003,8 +106124,8 @@ function lcalcMenu(btn) {
         false,
         () => {
           pushUndo();
-          S.ents = S.ents.filter(e => e !== z);
-          S.sel.delete(z.id);
+          entsSet(S.ents.filter(e => e !== z));
+          selDel(z.id);
           changed();
           lcalcMenu(btn);
         }
@@ -107453,6 +107574,7 @@ function avRoomPanel(z) {
 
 
 
+
 /* ---------- modes and limits ---------- */
 /** Season of the calculation: temperature difference supply − room, K, by the kind of the outlet; velocity limits. */
 const AR_MODE = {
@@ -108242,8 +108364,8 @@ function acalcRemove(ids) {
   if (!S.ents.some(e => e.type === 'acalc' && set.has(e.id))) return 0;
   pushUndo();
   const n = S.ents.length;
-  S.ents = S.ents.filter(e => !(e.type === 'acalc' && set.has(e.id)));
-  for (const id of set) S.sel.delete(id);
+  entsSet(S.ents.filter(e => !(e.type === 'acalc' && set.has(e.id))));
+  for (const id of set) selDel(id);
   changed();
   return n - S.ents.length;
 }
@@ -113516,6 +113638,7 @@ initLibrary();
 
 
 
+
 const AG_LAYER = 'Предложение агента';
 const AG_FIXMAP = { wc: 'wcinst', toilet: 'wcinst' };
 const AG_WALLH = { gkl: 'Стены', gas: 'Стены', ext: 'Стены', load: 'Стены' };
@@ -113620,13 +113743,13 @@ function agApply(ops, ctx) {
     return e;
   };
   const add_ = (op, e, lay) => {
-    e.id = S.nextId++;
+    e.id = newId();
     e.ai = { run: runId, src: ['dwg', 'img', 'tz', 'text', 'assumed'].includes(op.src) ? op.src : 'assumed' };
     if (op.why) e.ai.why = String(op.why);
     if (op.conf) e.ai.conf = op.conf;
     e._aiLayer = ensureLayer(lay);
     e.layer = layer;
-    S.ents.push(e);
+    entsPush(e);
     res.created.push(e.id);
     if (op.ref) res.refs[op.ref] = e.id;
     documentState.docVer++;
@@ -122672,6 +122795,7 @@ function wallFaceRounds(w, B, J) {
 
 
 
+
 /** Materials of the niche inside: the finishes of walls, glass / GKL shelves. */
 const WN_FIN = ['paint', 'tile', 'stone', 'plaster', 'veneer', 'hpl'];
 const WN_SHELF = {
@@ -123146,7 +123270,7 @@ function mkWallNiche() {
     pushUndo();
     const e = {
       type: 'wniche',
-      id: S.nextId++,
+      id: newId(),
       host: r.w.id,
       side: r.side,
       t: Math.round((r.x0 + r.x1) / 2),
@@ -123157,7 +123281,7 @@ function mkWallNiche() {
       fin: { k: D.fin || 'tile' },
       layer: r.w.layer || 'Стены'
     };
-    S.ents.push(e);
+    entsPush(e);
     D.d = e.d;
     D.h = e.h;
     D.z = e.z;
@@ -123765,6 +123889,7 @@ XT.text = {
 
 
 
+
 const PATH_T = new Set(['wire', 'pipe', 'duct', 'trim', 'rail', 'track', 'acl', 'ufh']);
 const isPathObj = e =>
   !!e && !e._src && PATH_T.has(e.type) && Array.isArray(e.pts) && e.pts.length >= 2 && !e.closed;
@@ -123895,8 +124020,8 @@ function joinPaths(es) {
             if (toB.port != null) A.toPort = toB.port;
             else delete A.toPort;
           }
-          S.ents.splice(S.ents.indexOf(B), 1);
-          S.sel.delete(B.id);
+          entsSplice(S.ents.indexOf(B), 1);
+          selDel(B.id);
           list.splice(j, 1);
           n++;
           merged = true;
@@ -125130,6 +125255,7 @@ function moduleSvg(m, k, X, Y, w, hc, on, des) {
 
 
 
+
 const LED_W = [4.8, 9.6, 14.4, 19.2];
 const LED_PROF = { surf: 'накладной', rec: 'врезной (в паз)', corner: 'угловой 45°', none: 'без профиля' };
 const LED_CT = { 2700: '2700 K тёплый', 3000: '3000 K', 4000: '4000 K нейтральный' };
@@ -125365,7 +125491,7 @@ function mkLedLine() {
     pushUndo();
     const e = {
       type: 'ledline',
-      id: S.nextId++,
+      id: newId(),
       wpm: D.wpm,
       volt: 24,
       ct: 3000,
@@ -125375,7 +125501,7 @@ function mkLedLine() {
       layer: 'Освещение',
       ...o
     };
-    S.ents.push(e);
+    entsPush(e);
     changed();
     log(`Подсветка: ${(ledLen(e) / 1000).toFixed(2)} м, ${Math.round((ledLen(e) / 1000) * e.wpm)} Вт`);
     return e;
@@ -131678,6 +131804,7 @@ const cadSym = s =>
 
 
 
+
 /** Bounding box of the visible plan entities of the current level. */
 function planBox() {
   let x0 = Infinity,
@@ -131713,7 +131840,7 @@ function recordInto(cad, box, k, draw, layer) {
     keepSel = S.sel,
     keepHover = renderState.hoverEnt,
     keepNV = NV.on;
-  S.sel = new Set();
+  selSet();
   renderState.hoverEnt = null;
   Object.assign(view, { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2, k });
   const rec = cadRecorder(cad, {
@@ -131732,7 +131859,7 @@ function recordInto(cad, box, k, draw, layer) {
     swapCtx(old);
     swapWH(...oldWH);
     Object.assign(view, keepV);
-    S.sel = keepSel;
+    selAssign(keepSel);
     renderState.hoverEnt = keepHover;
     NV.on = keepNV;
     dirty();
@@ -132716,6 +132843,7 @@ const hx = h => (h >>> 0).toString(16).toUpperCase();
 
 
 
+
 const LDWG_VER = '0.7.9';
 const LDWG_BASE = `https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@${LDWG_VER}`;
 
@@ -133180,7 +133308,7 @@ function cadToPlan(cad, opt = {}) {
     const L = cad.layers.get(String(name).toUpperCase()) || { color: 7 };
     const nm = prefix + name;
     if (!S.layers.some(l => l.name === nm))
-      S.layers.push({ name: nm, color: L.color === 7 ? '#8a9099' : aciHex(L.color), on: !L.off, lock: false });
+      layersPush({ name: nm, color: L.color === 7 ? '#8a9099' : aciHex(L.color), on: !L.off, lock: false });
     lay.set(name, nm);
     return nm;
   };
@@ -139644,6 +139772,7 @@ function handShowerSet(mb, x, zOut, zHold, col = PCHR) {
 
 
 
+
 const SG_CELL = 50;
 const SG_DIRS = [
   [1, 0],
@@ -139980,7 +140109,7 @@ function sewerGenerate(opts = {}) {
       S.ents[i].gen === 'sewer' &&
       (!opts.fixes || opts.fixes.some(f => f.id === S.ents[i].fid))
     )
-      S.ents.splice(i, 1);
+      entsSplice(i, 1);
   const obs = sewObstacles();
   // biggest outlets first, then the farthest from the riser
   outs.sort((a, b) => b.q.d - a.q.d || dist(b.q.p, tee.p) - dist(a.q.p, tee.p));
@@ -140179,9 +140308,9 @@ function sewerGenerate(opts = {}) {
       gen: 'sewer',
       fid: r.o.fix.id,
       layer: 'Сантехника',
-      id: S.nextId++
+      id: newId()
     };
-    S.ents.push(e);
+    entsPush(e);
     pipes.push(e);
   }
   changed();
@@ -140469,6 +140598,7 @@ function teceModuleAt(L) {
  * - Pipe: PEX-a Ø16 (Ø20 for outlets marked 20) — bent at the turns, no fittings in the floor.
  * Generated pipes carry gen: 'water' — running the command again replaces them.
  */
+
 
 
 
@@ -140811,7 +140941,7 @@ function waterGenerate(opts = {}) {
   const scope = opts.fixes ? new Set(opts.fixes.map(f => f.id)) : null;
   for (let i = S.ents.length - 1; i >= 0; i--)
     if (S.ents[i].type === 'pipe' && S.ents[i].gen === 'water' && (!scope || scope.has(S.ents[i].fid)))
-      S.ents.splice(i, 1);
+      entsSplice(i, 1);
   let outs = manifoldOutlets();
   if (scope) {
     const kept = S.ents.filter(e => e.type === 'pipe' && e.gen === 'water');
@@ -140896,9 +141026,9 @@ function waterGenerate(opts = {}) {
       gen: 'water',
       fid: L.w.fix.id,
       layer: 'Водоснабжение',
-      id: S.nextId++
+      id: newId()
     };
-    S.ents.push(e);
+    entsPush(e);
     pipes.push(e);
   }
   changed();
