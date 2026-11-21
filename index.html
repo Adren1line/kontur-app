@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.72';
+const APP_VER = '59.73';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -10707,6 +10707,8 @@ function mitreRing(mb, map, x0, x1, z0, z1, sec, col) {
       mb.tri3(col, A0, B1, A1);
     }
 }
+/** The radius at which a flexible (round) duct is rounded in the 3D model and on the plan: one value for both views. */
+const flexRoundR = e => Math.max(((+e.d || 0) / 2 + (+e.ins || 0)) * 2.2, 140);
 // round the corners of a 3D polyline. rad: bend radius (number) or (i,deg,l1,l2)=>tangent length
 function roundPath(pts, rad) {
   const V = (a, b) => {
@@ -14028,7 +14030,11 @@ function mkGrip(e, g) {
     prompt: () => '** РАСТЯНУТЬ ** Новое положение ручки:',
     onPoint(p) {
       pushUndo();
+      // connected things follow the ports of the element (duct ends at the spigots of a unit, taps on a main duct)
+      const X = XT[e.type],
+        tok = X && X.portsOf && X.followPorts ? X.portsOf(e) : null;
       Object.assign(e, g.apply(orig, p));
+      if (tok) X.followPorts(e, tok);
       if (e.type === 'dev') relinkWires();
       // a pipe pulled next to another one joins its row of modular clips
       if (e.type === 'pipe' && bundleSnap(e)) log('Труба пристроена к соседней в ряд модульных клипс');
@@ -14577,7 +14583,8 @@ function mkWire() {
 }
 /**
  * Points of a duct with vertical steps: where two points stand one over the other, one of them is moved 1 mm
- * along the neighbouring run, so that the plan keeps a direction there and the riser stays vertical.
+ * along the neighbouring run, so that the plan keeps a direction there and the riser stays vertical. A flexible duct
+ * has such pairs only at a vertical spigot (the straight exit out of it); a change of height elsewhere is its slope.
  */
 function ductRisers(pts) {
   const out = pts.map(p => Object.assign(P(p.x, p.y), p.z != null ? { z: p.z } : {}));
@@ -14634,7 +14641,8 @@ function mkDuct(opt = {}) {
     const dir = P(u.x * Math.cos(a) - u.y * Math.sin(a), u.x * Math.sin(a) + u.y * Math.cos(a));
     return add(last, mul(dir, Math.max(1, dot(v, dir))));
   };
-  // every point keeps the height it was put at: a change of height is a vertical step at that point
+  // every point keeps the height it was put at: a rigid duct changes height by a vertical step at a point, a flexible
+  // one by a slope to the next point (the new height belongs to the point put next)
   const put = (p, zz) => {
     const q = P(p.x, p.y);
     q.z = Math.round(zz);
@@ -14680,12 +14688,16 @@ function mkDuct(opt = {}) {
     hasValue: () => ask === 'z' || ask === 'q',
     onValue(v) {
       if (ask === 'z') {
-        // a new height in the middle of a run: a vertical step at the last point
+        // a new height in the middle of a run: a rigid duct makes a vertical step at the last point, a flexible one
+        // goes on with a slope to the next point
         if (pts.length && Math.abs(v - z) > 1) {
-          put(pts[pts.length - 1], v);
-          log(
-            `${v > z ? 'Подъём' : 'Опуск'} на ${Math.abs(Math.round(v - z))} мм в этой точке — дальше на отметке ${Math.round(v)}`
-          );
+          if (flex) log(`Следующая точка на отметке ${Math.round(v)} — гибкий пойдёт к ней плавным уклоном`);
+          else {
+            put(pts[pts.length - 1], v);
+            log(
+              `${v > z ? 'Подъём' : 'Опуск'} на ${Math.abs(Math.round(v - z))} мм в этой точке — дальше на отметке ${Math.round(v)}`
+            );
+          }
         } else mkDuct.z = v;
         z = v;
       }
@@ -14773,7 +14785,13 @@ function mkDuct(opt = {}) {
           sec = sp.shape === 'rect' ? { shape: 'rect', w: sp.w, hh: sp.hh } : { shape: 'round', d: sp.d };
           if (sp.sys) sys = sp.sys;
           put(q, zs);
-          if (vert) {
+          if (vert && flex) {
+            // a flexible duct leaves a vertical spigot straight for 200 mm, then a free route to the height wanted
+            const ex = zs + sp.dir[2] * 200,
+              want = mkDuct.z ?? ex;
+            put(q, ex);
+            z = (want - zs) * sp.dir[2] > 120 ? want : ex;
+          } else if (vert) {
             // a spigot that looks up or down: straight out of it first, then the run at its own height
             const want = mkDuct.z ?? zs + sp.dir[2] * 250;
             z = (want - zs) * sp.dir[2] > 120 ? want : zs + sp.dir[2] * 250;
@@ -14783,6 +14801,12 @@ function mkDuct(opt = {}) {
             `От патрубка «${sp.n}»: ${sp.shape === 'rect' ? sp.w + '×' + sp.hh : 'ø' + sp.d}${sp.sys ? ', ' + sp.sys : ''}, ${vert ? `вертикально до отметки ${Math.round(z)}` : 'ось ' + zs}`
           );
           return;
+        }
+        if (flex) {
+          // a flexible duct comes onto a vertical spigot by a straight exit of 200 mm, onto a level one by a slope
+          if (vert) put(q, zs + sp.dir[2] * 200);
+          put(q, zs);
+          return fin();
         }
         // onto a vertical spigot the duct comes from straight above (or below) it: the run first goes over its end
         if (vert && (z - zs) * sp.dir[2] < 120) {
@@ -16126,6 +16150,7 @@ function selChanged() {
 
 
 
+
 /* 2D rendering */
 let needs = true;
 const dirty = () => {
@@ -16987,20 +17012,48 @@ function drawDuctHoles(e, col) {
   }
   void col;
 }
+/** The route of a flexible duct on the plan: the 3D path rounded like in the model (flexBuild), projected on the plan. */
+function flexPlanPts(e) {
+  const q = e.pts.map(p => [p.x, p.y, p.z != null ? +p.z : +e.z || 0]);
+  const out = [];
+  for (const [x, y] of roundPath(q, flexRoundR(e)).pts) {
+    const l = out[out.length - 1];
+    if (!l || Math.hypot(x - l.x, y - l.y) > 0.5) out.push(P(x, y));
+  }
+  return out.length > 1 ? out : e.pts;
+}
 function drawDuct(e, color, o = {}) {
   const ghost = color === 'ghost',
     sy = sysOf(e.sys),
     col = ghost ? C.ghost : o.sel ? C.sel : sy.col;
   if (e.pts.length < 2) return;
   const hw = ductW(e) / 2 + (e.ins || 0);
-  const l = offsetLine(e.pts, hw),
-    r = offsetLine(e.pts, -hw);
+  // a flexible duct is drawn along the same rounded route as in the 3D model (its radius, the plan projection)
+  const pp = e.flex ? flexPlanPts(e) : e.pts;
+  const l = offsetLine(pp, hw),
+    r = offsetLine(pp, -hw);
   ctx.save();
   if (o.dim) ctx.globalAlpha = 0.4;
   if (!ghost) ductBreakClip(e);
   pathPoly(l.concat(r.slice().reverse()));
   ctx.fillStyle = ghost ? 'rgba(225,232,242,.08)' : hexA(sy.col, 0.3);
   ctx.fill();
+  // transitions at the ends (a spigot of another Ø): a short cone
+  for (const t of o.trans || []) {
+    const pl = Math.hypot(t.u[0], t.u[1]);
+    if (pl < 0.3) continue;
+    const u = P(t.u[0] / pl, t.u[1] / pl),
+      n = P(-u.y, u.x),
+      a = P(t.p[0], t.p[1]),
+      b = add(a, mul(u, t.len * pl)),
+      r2 = t.d2 / 2;
+    pathPoly([add(a, mul(n, r2)), add(b, mul(n, hw)), sub(b, mul(n, hw)), sub(a, mul(n, r2))]);
+    ctx.fillStyle = hexA(sy.col, 0.55);
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
   // vertical steps: a circle with a cross where the duct goes up or down
   for (let i = 1; i < e.pts.length; i++) {
     const a = e.pts[i - 1],
@@ -17023,9 +17076,9 @@ function drawDuct(e, color, o = {}) {
     ctx.strokeStyle = col;
     ctx.lineWidth = 0.7;
     ctx.beginPath();
-    for (let i = 1; i < e.pts.length; i++) {
-      const a = e.pts[i - 1],
-        b = e.pts[i],
+    for (let i = 1; i < pp.length; i++) {
+      const a = pp[i - 1],
+        b = pp[i],
         L = dist(a, b);
       if (L < 1) continue;
       const u = nrm(sub(b, a)),
@@ -17052,7 +17105,7 @@ function drawDuct(e, color, o = {}) {
   seg(l[l.length - 1], r[r.length - 1]);
   ctx.setLineDash([12, 4, 2, 4]);
   ctx.lineWidth = 0.8;
-  pathPoly(e.pts, false);
+  pathPoly(pp, false);
   ctx.stroke();
   ctx.setLineDash([]);
   if (!ghost) drawDuctHoles(e, col);
@@ -19286,7 +19339,7 @@ function buildSlab3(e) {
   return g;
 }
 /** 3D model of a duct (XT.duct.build3): rectangular body or swept round duct, flex, fittings, taps, penetrations. */
-function buildDuct3(e) {
+function buildDuct3(e, trans = []) {
   const sy = sysOf(e.sys),
     ins = e.ins || 0;
   // the colour of the system (7.1): saturated, a little lighter; insulated — the system tint on the jacket
@@ -19316,8 +19369,24 @@ function buildDuct3(e) {
       const d = id != null ? byId(id) : null;
       return d && d.type === 'dev' && Math.abs(d.z - z) > 1 ? [pts[i][0], pts[i][1], d.z - 15] : null;
     });
+    // a transition at an end (a spigot of another Ø): a short cone instead of the first part of the duct
+    const sw = pts.map(p => p.slice());
+    for (const t of trans) {
+      const i = t.i === 0 ? 0 : sw.length - 1,
+        n = sw[t.i === 0 ? 1 : sw.length - 2];
+      if (!n) continue;
+      const a = sw[i],
+        l = Math.hypot(n[0] - a[0], n[1] - a[1], n[2] - a[2]) || 1;
+      const k = Math.min(t.len, l * 0.9) / l;
+      const b = [a[0] + (n[0] - a[0]) * k, a[1] + (n[1] - a[1]) * k, a[2] + (n[2] - a[2]) * k];
+      mb.tag(`Переход Ø${Math.max(t.d1, t.d2)}/Ø${Math.min(t.d1, t.d2)}`);
+      mb.smooth(true);
+      mb.sweep([a, b], [t.d2 / 2, rr], rgbHex(hex2rgb(col).map(c => c * 0.75)), 24);
+      mb.smooth(false);
+      sw[i] = b;
+    }
     mb.sweep(
-      roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], rr * 1.5).pts,
+      roundPath([...(ends[0] ? [ends[0]] : []), ...sw, ...(ends[1] ? [ends[1]] : [])], rr * 1.5).pts,
       rr,
       col,
       18
@@ -65196,9 +65265,10 @@ const ductPath3 = e => ductDetour(e, ductPath3raw(e));
 const ductPath3raw = e => e.pts.map(p => [p.x, p.y, p.z != null ? +p.z : +e.z || 0]);
 /*
  * Detours under beams: a level leg whose top would cut into a beam (its bottom lower than the top of the duct plus
- * a gap) dips under it — down by 90° elbows before the beam, along under it, up after it, at a distance that leaves
- * room for the elbows. The plan keeps the drawn route; the 3D, the length, the elbows and the clashes use the path
- * with the detours. Kept per document version.
+ * a gap) dips under it — a rigid duct down by 90° elbows before the beam, along under it, up after it, at a distance
+ * that leaves room for the elbows; a flexible one sags smoothly: sloping ramps down and up (never shorter than two
+ * diameters), no verticals. The plan keeps the drawn route; the 3D, the length, the elbows and the clashes use the
+ * path with the detours. Kept per document version.
  */
 const DETOUR = new WeakMap();
 const DT_GAP = 30;
@@ -65246,26 +65316,44 @@ function ductDetour(e, q) {
         // the part of the leg over the beam (its footprint widened by half the duct width)
         const t = segPolyInterval(a, b, B.poly, W / 2);
         if (!t) continue;
-        const room = (H / 2 + 60) / L;
+        const zd = B.zb - H / 2 - DT_GAP;
+        const room = (e.flex ? flexRamp(W, a[2] - zd) : H / 2 + 60) / L;
         if (t[0] - room <= 0 || t[1] + room >= 1) continue; // the end of the leg is at the beam: left to the checks
-        iv.push([t[0] - room, t[1] + room, B.zb - H / 2 - DT_GAP]);
+        iv.push(e.flex ? [t[0], t[1], zd, room] : [t[0] - room, t[1] + room, zd, 0]);
       }
-    iv.sort((x, y) => x[0] - y[0]);
+    iv.sort((x, y) => x[0] - x[3] - (y[0] - y[3]));
     // overlapping detours merge: one dip under both beams at the lower height
     const mg = [];
     for (const x of iv) {
       const l = mg[mg.length - 1];
-      if (l && x[0] <= l[1]) {
+      if (l && x[0] - x[3] <= l[1] + l[3]) {
         l[1] = Math.max(l[1], x[1]);
         l[2] = Math.min(l[2], x[2]);
+        l[3] = Math.max(l[3], x[3]);
       } else mg.push(x.slice());
     }
     const P3 = (t, z) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z];
-    for (const [t0, t1, z] of mg) out.push(P3(t0, a[2]), P3(t0, z), P3(t1, z), P3(t1, a[2]));
+    for (const [t0, t1, z] of mg) {
+      if (!e.flex) {
+        out.push(P3(t0, a[2]), P3(t0, z), P3(t1, z), P3(t1, a[2]));
+        continue;
+      }
+      // a flexible duct: the beam interval is the level part, the ramps lie before and after it
+      const room = flexRamp(W, a[2] - z) / L;
+      if (t0 - room <= 0 || t1 + room >= 1) continue;
+      out.push(P3(t0 - room, a[2]), P3(t0, z), P3(t1, z), P3(t1 + room, a[2]));
+    }
     out.push(b);
   }
   DETOUR.set(e, { k, q: out });
   return out;
+}
+/**
+ * The horizontal length of the ramp with which a flexible duct goes down (or up) by dz: not shorter than two
+ * diameters and not steeper than 45°; with this the bend radius at its ends stays above the diameter.
+ */
+function flexRamp(W, dz) {
+  return Math.max(2 * W, Math.abs(dz));
 }
 /** The parameter interval [t0, t1] of segment a–b inside a convex polygon grown by r (null if it misses). */
 function segPolyInterval(a, b, poly, r) {
@@ -65350,7 +65438,7 @@ function flexMinR(e) {
 /** Builds a flexible duct: a coiled sleeve along the rounded path. */
 function flexBuild(e, mb, col) {
   const r = ductW(e) / 2 + (+e.ins || 0);
-  const path = roundPath(ductPath3(e), Math.max(r * 2.2, 140)).pts;
+  const path = roundPath(ductPath3(e), flexRoundR(e)).pts;
   // resample with a step, radius alternating — the wire coils
   const step = 22;
   const pts = [],
@@ -66114,7 +66202,7 @@ function hvPorts(e) {
       const p = d.pts[i],
         z = p.z != null ? +p.z : +d.z || 0;
       const q = sp.find(q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 && Math.abs(z - q.p[2]) < 40);
-      if (q) out.push({ d, i, key: q.key });
+      if (q) out.push({ d, i, key: q.key, old: { p: q.p, dir: q.dir } });
     }
   }
   return out;
@@ -66134,39 +66222,67 @@ function spKeyed(e) {
   });
 }
 /**
- * After a unit changed (height, turn, size), the duct ends that stood at its spigots go with them: the end point
- * moves to the spigot, its neighbour keeps the run, a change of height becomes a vertical step; a reducer or a
- * tee also passes its new Ø to the duct.
+ * Brings one end of a duct (point i of its route) to the point T = [x, y, z]; the rest of the route is kept.
+ * A rigid duct keeps the directions of its runs: when the end left their line, a turn is added, and a change of height
+ * becomes a vertical step. A flexible duct stretches: no new turns and no vertical steps, the height changes along
+ * the run; the point where it leaves the spigot (the second one, lying on the old spigot axis within 400 mm) goes
+ * with the end by the same length along the new axis, so that the straight part at the clamp stays.
+ * opt.old = { p, dir } is the old spigot, opt.dir the new axis of the spigot (the exit point follows only with both).
  */
-function hvFollow(e, links) {
-  const sp = spKeyed(e);
-  for (const { d, i, key } of links) {
-    const q = sp.find(x => x.key === key);
-    if (!q) continue;
-    const z0 = +d.z || 0;
-    for (const p of d.pts) if (p.z == null) p.z = z0;
-    const end = d.pts[i],
-      j = i === 0 ? 1 : d.pts.length - 2,
-      nb = d.pts[j];
-    const nz = Math.round(q.p[2]);
-    const moved = Math.hypot(end.x - q.p[0], end.y - q.p[1]) > 0.5;
-    const ox = end.x,
-      oy = end.y;
-    end.x = q.p[0];
-    end.y = q.p[1];
+function moveDuctEnd(d, i, T, opt = {}) {
+  const z0 = +d.z || 0;
+  for (const p of d.pts) if (p.z == null) p.z = z0;
+  const end = d.pts[i],
+    j = i === 0 ? 1 : d.pts.length - 2,
+    nb = d.pts[j];
+  const nz = Math.round(T[2]);
+  const moved = Math.hypot(end.x - T[0], end.y - T[1]) > 0.5;
+  const ox = end.x,
+    oy = end.y;
+  end.x = T[0];
+  end.y = T[1];
+  if (d.flex) {
+    const { old, dir } = opt;
+    if (old && dir && d.pts.length >= 3) {
+      const v = [nb.x - old.p[0], nb.y - old.p[1], nb.z - old.p[2]];
+      const s = v[0] * old.dir[0] + v[1] * old.dir[1] + v[2] * old.dir[2];
+      const perp = Math.hypot(v[0] - s * old.dir[0], v[1] - s * old.dir[1], v[2] - s * old.dir[2]);
+      if (s > 0 && s <= 400 && perp < 15) {
+        nb.x = T[0] + dir[0] * s;
+        nb.y = T[1] + dir[1] * s;
+        nb.z = Math.round(T[2] + dir[2] * s);
+      }
+    }
+    end.z = nz;
+  } else {
+    // a riser at the end (points standing over the end in the plan) goes along with it
+    const st = i === 0 ? 1 : -1;
+    let k = i + st;
+    while (k > 0 && k < d.pts.length - 1 && Math.hypot(d.pts[k].x - ox, d.pts[k].y - oy) < 5) {
+      d.pts[k].x += end.x - ox;
+      d.pts[k].y += end.y - oy;
+      k += st;
+    }
+    const top = d.pts[k - st],
+      nb = d.pts[k];
+    const tx = top === end ? ox : top.x - (end.x - ox),
+      ty = top === end ? oy : top.y - (end.y - oy);
     // the neighbouring run keeps its direction: when the end left its line, a turn is added
-    if (moved && d.pts.length >= 2) {
-      const wasX = Math.abs(oy - nb.y) < 1 && Math.abs(ox - nb.x) > 1,
-        wasY = Math.abs(ox - nb.x) < 1 && Math.abs(oy - nb.y) > 1;
-      const off = Math.abs(end.x - nb.x) > 1 && Math.abs(end.y - nb.y) > 1;
+    if (moved && nb && nb !== end) {
+      const wasX = Math.abs(ty - nb.y) < 1 && Math.abs(tx - nb.x) > 1,
+        wasY = Math.abs(tx - nb.x) < 1 && Math.abs(ty - nb.y) > 1;
+      const off = Math.abs(top.x - nb.x) > 1 && Math.abs(top.y - nb.y) > 1;
       if ((wasX || wasY) && off) {
-        const c = Object.assign(wasX ? P(end.x, nb.y) : P(nb.x, end.y), { z: nb.z != null ? nb.z : z0 });
-        d.pts.splice(i === 0 ? 1 : d.pts.length - 1, 0, c);
+        const c = Object.assign(wasX ? P(top.x, nb.y) : P(nb.x, top.y), { z: nb.z != null ? nb.z : z0 });
+        d.pts.splice(st > 0 ? k : k + 1, 0, c);
       }
     }
     if (Math.abs(end.z - nz) > 1) {
-      if (Math.abs(nb.z - end.z) < 1 && !moved && d.pts.length >= 2 && Math.hypot(nb.x - end.x, nb.y - end.y) > 5) {
-        // the run stays, the end comes to the new height by a vertical step
+      // the neighbour now (a turn may have been added next to the end)
+      const nb = d.pts[i === 0 ? 1 : d.pts.length - 2];
+      if (Math.abs(nb.z - end.z) < 1 && d.pts.length >= 2 && Math.hypot(nb.x - end.x, nb.y - end.y) > 5) {
+        // the run stays level, the end comes to the new height by a vertical step (also when the unit was moved:
+        // a rigid duct never slopes)
         const u = { x: nb.x - end.x, y: nb.y - end.y },
           l = Math.hypot(u.x, u.y);
         const step = Object.assign(P(end.x + u.x / l, end.y + u.y / l), { z: end.z });
@@ -66174,17 +66290,112 @@ function hvFollow(e, links) {
       }
       end.z = nz;
     }
-    // the duct takes the section of its spigot: a round one its Ø, a rectangular one its width and height
-    if (q.shape !== 'rect' && !d.flex && Math.abs((+d.d || 0) - q.d) > 0.5 && d.shape !== 'rect')
-      d.d = d.w = d.hh = q.d;
+  }
+  if (d.pts.every(p => Math.abs(p.z - d.pts[0].z) < 1)) {
+    d.z = d.pts[0].z;
+    for (const p of d.pts) delete p.z;
+  }
+}
+/** The fittings that stand in a duct line: their ducts always have the Ø of the fitting. */
+const INLINE_KINDS = ['red', 'tee', 'sil'];
+/**
+ * After a unit changed (height, turn, size), the duct ends that stood at its spigots go with them (moveDuctEnd).
+ * The section: a flexible duct is put on the spigot, so it takes the Ø of a round spigot. A rigid duct keeps its Ø,
+ * except a short stub (one run) and the ducts of an inline fitting (a reducer, a tee, a silencer) — those take it:
+ * on a longer run a different Ø of the spigot is a place of a transition (checks, specification, drawing).
+ */
+function hvFollow(e, links) {
+  const sp = spKeyed(e);
+  for (const { d, i, key, old } of links) {
+    const q = sp.find(x => x.key === key);
+    if (!q) continue;
+    // a stub is judged by its route as it was (the move may add a turn or a step to it)
+    const takes = d.flex || d.pts.length <= 2 || (e.type === 'hvu' && INLINE_KINDS.includes(e.kind));
+    moveDuctEnd(d, i, q.p, { old, dir: q.dir });
+    if (q.shape !== 'rect' && d.shape !== 'rect' && takes && Math.abs((+d.d || 0) - q.d) > 0.5) d.d = d.w = d.hh = q.d;
     if (q.shape === 'rect' && d.shape === 'rect' && q.w && q.hh && (d.w !== q.w || d.hh !== q.hh)) {
       d.w = q.w;
       d.hh = q.hh;
     }
-    if (d.pts.every(p => Math.abs(p.z - d.pts[0].z) < 1)) {
-      d.z = d.pts[0].z;
-      for (const p of d.pts) delete p.z;
+  }
+}
+/* ---------- transitions of a rigid duct to a spigot of another Ø ---------- */
+const TRANS_LEN = 175;
+const TRANS = new WeakMap();
+let SPC = { v: -1, l: [] };
+/**
+ * The places where a rigid round duct ends at a round spigot of another Ø: [{ i (end), d1 (duct), d2 (spigot),
+ * p (the end), u (unit vector along the duct, away from the end), len }]. Such a place needs a transition d1/d2:
+ * it is drawn as a short cone at the end, counted in the specification and noted by the checks. Per document version.
+ */
+function ductTransitions(e) {
+  if (e.flex || e.shape === 'rect' || !e.pts || e.pts.length < 2) return [];
+  const k = documentState.docVer + '|' + JSON.stringify(e.pts) + '|' + e.z + '|' + e.d;
+  const m = TRANS.get(e);
+  if (m && m.k === k) return m.v;
+  if (SPC.v !== documentState.docVer)
+    SPC = { v: documentState.docVer, l: allSpigots().filter(q => q.shape !== 'rect') };
+  const v = [];
+  for (const i of [0, e.pts.length - 1]) {
+    const p = e.pts[i],
+      z = p.z != null ? +p.z : +e.z || 0;
+    const q = SPC.l.find(
+      q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 && Math.abs(z - q.p[2]) < 40 && Math.abs(q.d - e.d) > 0.5
+    );
+    if (!q) continue;
+    // towards the first point that is further than a few millimetres (not the 1 mm point of a vertical step)
+    const seq = i === 0 ? e.pts.slice(1) : e.pts.slice(0, -1).reverse();
+    const w3 = n => [n.x - p.x, n.y - p.y, (n.z != null ? +n.z : +e.z || 0) - z];
+    const nb = seq.find(n => Math.hypot(...w3(n)) > 20);
+    if (!nb) continue;
+    const w = w3(nb),
+      l = Math.hypot(...w);
+    v.push({ i, d1: +e.d, d2: +q.d, p: [p.x, p.y, z], u: w.map(c => c / l), len: Math.min(TRANS_LEN, l * 0.9) });
+  }
+  TRANS.set(e, { k, v });
+  return v;
+}
+/* ---------- taps follow their main ---------- */
+/**
+ * The ends of the taps (ducts with tap: true) lying on the axis of a main duct: [{ d: tap, i: end, seg, u }] with
+ * the number of the run of the main and the parameter along it. Taken before the main changes (XT.duct.portsOf).
+ */
+function ductPorts(m) {
+  if (m.type !== 'duct' || m.flex || m.tap || m.link || !m.pts || m.pts.length < 2) return [];
+  const out = [];
+  for (const t of S.ents) {
+    if (t === m || t.type !== 'duct' || !t.tap || !t.pts || t.pts.length < 2) continue;
+    let best = null;
+    for (const i of [0, t.pts.length - 1]) {
+      const p = t.pts[i],
+        z = p.z != null ? +p.z : +t.z || 0;
+      for (let k = 1; k < m.pts.length; k++) {
+        const a = m.pts[k - 1],
+          b = m.pts[k];
+        const c = segPt(a, b, p),
+          dd = dist(c, p),
+          l = dist(a, b);
+        const u = l > 1e-6 ? dist(a, c) / l : 0;
+        const za = a.z != null ? +a.z : +m.z || 0,
+          zb = b.z != null ? +b.z : +m.z || 0;
+        if (dd < 8 && Math.abs(z - (za + (zb - za) * u)) < 40 && (!best || dd < best.dd))
+          best = { d: t, i, seg: k, u, dd };
+      }
     }
+    if (best) out.push({ d: t, i: best.i, seg: best.seg, u: best.u });
+  }
+  return out;
+}
+/** After the main changed (XT.duct.followPorts): the ends of its taps go to the same run and parameter. */
+function ductFollow(m, links) {
+  for (const { d, i, seg, u } of links) {
+    const k = Math.min(seg, m.pts.length - 1);
+    if (k < 1) continue;
+    const a = m.pts[k - 1],
+      b = m.pts[k];
+    const za = a.z != null ? +a.z : +m.z || 0,
+      zb = b.z != null ? +b.z : +m.z || 0;
+    moveDuctEnd(d, i, [a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, za + (zb - za) * u]);
   }
 }
 /** The nearest point on the rigid ducts of a system (or any, if the system has none near). */
@@ -66212,8 +66423,18 @@ function nearMain(q, sys, maxD = 6000, skip) {
   return best;
 }
 /** The flexible duct path from a spigot to a point on the main: out of the spigot, then to the main's axis. */
-function flexPath(q, m) {
+function flexPath(q, m, rigid) {
   const T = q.p;
+  if (!rigid) {
+    // flexible: straight out of the spigot (long enough for a bend of radius ≥ Ø), then one smooth bend to the main
+    const ahead = (m.c.x - T[0]) * q.dir[0] + (m.c.y - T[1]) * q.dir[1] + (m.z - T[2]) * q.dir[2];
+    const want = 2 * q.d + 20;
+    // a main close ahead: out up to its level, then one bend (the whole height gives the bend its room)
+    const out = ahead > 60 ? Math.min(want, ahead) : want;
+    const A = [T[0] + q.dir[0] * out, T[1] + q.dir[1] * out, T[2] + q.dir[2] * out];
+    const C = [m.c.x, m.c.y, m.z];
+    return Math.hypot(C[0] - A[0], C[1] - A[1], C[2] - A[2]) > 5 ? [T, A, C] : [T, C];
+  }
   // straight out of the spigot first, but not past the main when it lies ahead
   const ahead = (m.c.x - T[0]) * q.dir[0] + (m.c.y - T[1]) * q.dir[1] + (m.z - T[2]) * q.dir[2];
   const out = ahead > 60 ? Math.min(120 + q.d * 0.5, ahead * 0.5) : 120 + q.d * 0.5;
@@ -66323,7 +66544,7 @@ function flexConnect(e, main, opt = {}) {
       // the grille or the part takes the system of the machine it is fed from
       for (const x of [q, t.o]) if (x.e.type === 'hvu' && x.e.kind !== 'ahu' && sys) x.e.sys = sys;
     } else {
-      path = flexPath(q, m);
+      path = flexPath(q, m, opt.rigid);
       sys = q.sys || m.d.sys;
     }
     const pts = path.map(p => {
@@ -66559,12 +66780,16 @@ function mkHvu(kind0) {
   const onDuct = p => {
     // a silencer clicked onto a straight run takes its axis, height, Ø and system
     let best = null;
+    onDuct.flexHit = false;
     for (const d of S.ents) {
-      if (d.type !== 'duct' || d.flex || !visible(d) || d.shape === 'rect') continue;
+      if (d.type !== 'duct' || !visible(d) || d.shape === 'rect') continue;
       for (let i = 1; i < d.pts.length; i++) {
         const c = segPt(d.pts[i - 1], d.pts[i], p);
         const dd = dist(c, p);
-        if (dd < ductW(d) / 2 + 12 / (view.k || 1) && (!best || dd < best.dd)) best = { d, i, c, dd };
+        if (dd >= ductW(d) / 2 + 12 / (view.k || 1)) continue;
+        // fittings are not put into a flexible duct: it is noted, nothing is placed
+        if (d.flex) onDuct.flexHit = true;
+        else if (!best || dd < best.dd) best = { d, i, c, dd };
       }
     }
     return best;
@@ -66636,6 +66861,10 @@ function mkHvu(kind0) {
         if (h) {
           insertInline(kind, h.d, h.i, h.c, o);
           return 'end';
+        }
+        if (onDuct.flexHit) {
+          log('В гибкий воздуховод фитинги не врезаются — поставьте на жёсткий участок', true);
+          return;
         }
       }
       addEnt({ ...onWall(p), layer: ensureLayer('Вентиляция') });
@@ -66950,7 +67179,7 @@ defineTools({
     },
     title: 'Гибкая подводка вручную · ПОДВОДКА',
     icon: '<path d="M3 4h14M6 4c0 5 8 3 8 8v4"/><path d="M5 7.5l2 -1M7 10l2-1M10 12l2-1"/>',
-    help: 'Гибкая подводка рисуется вручную: щелчок по патрубку (возьмёт его Ø, систему и отметку), точки трассы, щелчок по второму патрубку или Enter. [Жёсткий] — тот же путь из оцинковки. Старое: щелчок по магистрали, затем по адаптеру, шумоглушителю или канальному кондиционеру — по одной подводке на каждый свободный патрубок.'
+    help: 'Гибкая подводка рисуется вручную и ведёт себя как гибкая: щелчок по патрубку (возьмёт его Ø, систему и отметку; у вертикального — прямой выход 200 мм), точки трассы со своими отметками — высота меняется плавным уклоном, без вертикальных ступеней и колен; щелчок по второму патрубку или Enter. Переезд оборудования тянет конец за патрубком, трасса не ломается. [Жёсткий] — тот же путь из оцинковки: прямые участки, колена и вертикальные ступени. Старое: щелчок по магистрали, затем по адаптеру, шумоглушителю или канальному кондиционеру — по одной подводке на каждый свободный патрубок.'
   },
   ventlabel: {
     command: { t: 'ПОДПИСАТЬСИСТЕМУ', m: mkLabels, a: ['подписать', 'подписатьсистему', 'выноски вентиляции'] },
@@ -130178,11 +130407,22 @@ checkRule('hvu-ducts', {
           add_(
             e,
             'info',
-            `Воздуховод обходит ригель снизу: опуск оси до +${Math.round(zMin)} (4 вертикальных колена 90°)`,
+            e.flex
+              ? `Гибкий воздуховод провисает под ригелем: опуск оси до +${Math.round(zMin)} (плавно, без колен)`
+              : `Воздуховод обходит ригель снизу: опуск оси до +${Math.round(zMin)} (4 вертикальных колена 90°)`,
             P(q[1][0], q[1][1])
           );
         }
       }
+      // a rigid duct ending at a spigot of another Ø: a transition is needed there
+      if (e.type === 'duct' && !e.flex && visible(e))
+        for (const t of ductTransitions(e))
+          add_(
+            e,
+            'warn',
+            `Ø воздуховода ${t.d1} ≠ Ø патрубка ${t.d2} — нужен переход ${t.d1}/${t.d2}`,
+            P(t.p[0], t.p[1])
+          );
       // a rigid duct turns only by its elbows
       if (e.type === 'duct' && !e.flex && visible(e))
         for (const t of ductBadTurns(e)) {
@@ -130748,11 +130988,19 @@ XT.duct = {
     return r;
   },
   sample: e => e.pts,
+  // the points move, their heights stay (a flexible duct and a stepped rigid one keep their per-point z)
   map: (n, e, f) => {
-    n.pts = e.pts.map(f);
+    n.pts = e.pts.map(p => {
+      const q = f(p);
+      if (p.z != null) q.z = p.z;
+      return q;
+    });
   },
   grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
-  draw: (e, color, o) => drawDuct(e, color, o),
+  // a rigid duct joins the taps (flexible or rigid) that stand on its axis: when it moves they go with it
+  portsOf: ductPorts,
+  followPorts: ductFollow,
+  draw: (e, color, o) => drawDuct(e, color, color === 'ghost' ? o : { ...o, trans: ductTransitions(e) }),
   k3own: true,
   k3: e => {
     const zs = [e.from, e.to].map(id => {
@@ -130774,10 +131022,11 @@ XT.duct = {
       JSON.stringify(ductWallCrossings(e).map(c => [c.p, c.kind, c.depth])),
       e.group != null ? groupOf(e.group).col : 0,
       e.sys ? sysOf(e.sys).col : 0,
-      zs
+      zs,
+      JSON.stringify(ductTransitions(e).map(t => [t.i, t.d2]))
     ];
   },
-  build3: e => buildDuct3(e),
+  build3: e => buildDuct3(e, ductTransitions(e)),
   group: e => `Воздуховод ${e.sys} · ${secTxt(e)}`,
   panel: e => ductPanel(e),
   panelAfter: e => ductPanelAfter(e),
@@ -130833,6 +131082,15 @@ XT.duct = {
           r.ids.push(e.id);
         }
       );
+      // a transition where the end stands at a spigot of another Ø
+      for (const t of ductTransitions(e)) {
+        const hi = Math.max(t.d1, t.d2),
+          lo = Math.min(t.d1, t.d2);
+        put(S_, 'b:trn' + hi + 'x' + lo, { name: `Переход Ø${hi}/Ø${lo} · ${e.sys}`, u: 'шт', base: true }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+      }
       if (e.tap)
         put(S_, 'b:tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт', base: true }, r => {
           r.q++;
