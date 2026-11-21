@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.71';
+const APP_VER = '59.72';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12800,6 +12800,161 @@ function xSet(o) {
   S.x = o;
 }
 
+// ===== blocks/building/doc-api.js =====
+/**
+ * blocks/building/doc-api.js
+ *
+ * Writes into the keys of the document S that the block `building` owns (S.wtypes, S.curWt, S.ceil, S.x.screed), as
+ * functions: other blocks call these instead of assigning the keys themselves. Every function is one line of the
+ * original behaviour: no checks, no events, and NO undo.
+ */
+
+
+/** S.wtypes = arr: assigns this very array. */
+function wtypesSet(arr) {
+  S.wtypes = arr;
+}
+/** S.wtypes.push(t); returns the new length like push. */
+function wtypesPush(t) {
+  return S.wtypes.push(t);
+}
+/** S.curWt = id: the current wall type. */
+function curWtSet(id) {
+  S.curWt = id;
+}
+/** S.ceil = h: the ceiling height, mm. */
+function ceilSet(h) {
+  S.ceil = h;
+}
+/** S.x.screed = v: the screed thickness, mm. */
+function screedSet(v) {
+  S.x.screed = v;
+}
+
+// ===== blocks/electrical/elec-api.js =====
+/**
+ * blocks/electrical/elec-api.js
+ *
+ * Writes into the key S.elec that the block `electrical` owns, as functions: other blocks call these instead of
+ * assigning S.elec themselves. Every function is one line of the original behaviour: no checks, no events, and NO undo.
+ */
+
+
+/** S.elec = o: assigns this very object. */
+function elecSet(o) {
+  S.elec = o;
+}
+/** S.elec.groups = arr: assigns this very array. */
+function elecGroupsSet(arr) {
+  S.elec.groups = arr;
+}
+/** S.elec.cur = n: the current group. */
+function elecCurSet(n) {
+  S.elec.cur = n;
+}
+/** S.elec.reserve = v. */
+function elecReserveSet(v) {
+  S.elec.reserve = v;
+}
+/** S.elec.joints = v. */
+function elecJointsSet(v) {
+  S.elec.joints = v;
+}
+/** S.elec.colorBy = v. */
+function elecColorBySet(v) {
+  S.elec.colorBy = v;
+}
+/** S.elec.defMethod = v. */
+function elecDefMethodSet(v) {
+  S.elec.defMethod = v;
+}
+/** S.elec.cover = v. */
+function elecCoverSet(v) {
+  S.elec.cover = v;
+}
+/** S.elec.sockMethod = v. */
+function elecSockMethodSet(v) {
+  S.elec.sockMethod = v;
+}
+
+// ===== blocks/finishes/profiles-api.js =====
+/**
+ * blocks/finishes/profiles-api.js
+ *
+ * Writes into the key S.profiles that the block `finishes` owns, as functions: other blocks call these instead of
+ * assigning S.profiles themselves. Every function is one line of the original behaviour: no checks, no events, NO undo.
+ */
+
+
+/** S.profiles = arr: assigns this very array. */
+function profilesSet(arr) {
+  S.profiles = arr;
+}
+/** S.profiles.push(p); returns the new length like push. */
+function profilesPush(p) {
+  return S.profiles.push(p);
+}
+
+// ===== blocks/hvac/vent-api.js =====
+/**
+ * blocks/hvac/vent-api.js
+ *
+ * Writes into the key S.vent that the block `hvac` owns, as functions: other blocks call these instead of assigning
+ * S.vent themselves. Every function is one line of the original behaviour: no checks, no events, and NO undo.
+ */
+
+
+/** S.vent = v: assigns this very object. */
+function ventSet(v) {
+  S.vent = v;
+}
+/** S.vent.cur = id: the current system. */
+function ventCurSet(id) {
+  S.vent.cur = id;
+}
+/** S.vent.systems.push(sys); returns the new length like push. */
+function ventSystemsPush(sys) {
+  return S.vent.systems.push(sys);
+}
+/** S.vent.systems.splice(start, del); returns the removed elements like splice. */
+function ventSystemsSplice(start, del) {
+  return S.vent.systems.splice(start, del);
+}
+/** S.vent.off = o: assigns this very object. */
+function ventOffSet(o) {
+  S.vent.off = o;
+}
+/** S.vent.off[key] = v. */
+function ventOffPut(key, v) {
+  S.vent.off[key] = v;
+}
+/** delete S.vent.off[key]; returns the boolean like delete. */
+function ventOffDel(key) {
+  return delete S.vent.off[key];
+}
+/** S.vent.flexMax = v. */
+function ventFlexMaxSet(v) {
+  S.vent.flexMax = v;
+}
+/** S.vent.vmax = v. */
+function ventVmaxSet(v) {
+  S.vent.vmax = v;
+}
+
+// ===== blocks/views/views-api.js =====
+/**
+ * blocks/views/views-api.js
+ *
+ * Writes into the key S.x.ascale that the block `views` owns, as a function: other blocks call it instead of assigning
+ * the key themselves. One line of the original behaviour: no checks, no events, and NO undo.
+ */
+
+
+/** S.x.ascale = v: the annotation scale (1:v). */
+function ascaleSet(v) {
+  S.x.ascale = v;
+}
+
 // ===== core/query.js =====
 /**
  * core/query.js
@@ -12848,6 +13003,9 @@ function queryAny(type, pred, from = S.ents) {
 
 
 
+
+
+
 /* ---- sample project ---- */
 function defaultLayers() {
   return [
@@ -12874,12 +13032,12 @@ function sample(kind) {
   entsSet([]);
   setNextId(1);
   selClear();
-  S.wtypes = defaultWallTypes();
-  S.elec = defaultElec();
-  S.vent = defaultVent();
-  S.ceil = 2700;
-  S.curWt = 'wt_gb';
-  S.profiles = defaultProfiles();
+  wtypesSet(defaultWallTypes());
+  elecSet(defaultElec());
+  ventSet(defaultVent());
+  ceilSet(2700);
+  curWtSet('wt_gb');
+  profilesSet(defaultProfiles());
   xSet(defaultX());
   const E = (layer, o) => {
     o.id = newId();
@@ -22138,6 +22296,8 @@ function initKeyboard() {
 
 
 
+
+
 /* UI: tools, status, menus */
 const TOOL_SVG = {
   line: '<path d="M4 16L16 4"/><rect x="2.5" y="14.5" width="3" height="3"/><rect x="14.5" y="2.5" width="3" height="3"/>',
@@ -22425,8 +22585,8 @@ function initToolbar() {
     if (f === 'new') {
       pushUndo();
       entsSet([]);
-      S.elec = S.elec || defaultElec();
-      S.vent = S.vent || defaultVent();
+      if (!S.elec) elecSet(defaultElec());
+      if (!S.vent) ventSet(defaultVent());
       selClear();
       layersSet(defaultLayers());
       curSet('Стены');
@@ -24000,7 +24160,7 @@ function wtEditor(el, t, mode) {
               layers: t.layers.map(l => ({ k: 'mat', m: l.m, th: l.th }))
             };
       n.id = 'wt_' + Date.now().toString(36);
-      S.wtypes.push(n);
+      wtypesPush(n);
       wtSel = n.id;
       changed();
       renderWT();
@@ -24038,7 +24198,7 @@ function wtEditor(el, t, mode) {
       n.id = 'wt_' + Date.now().toString(36);
       n.name = t.name + ' (копия)';
       n.auto = false;
-      S.wtypes.push(n);
+      wtypesPush(n);
       wtSel = n.id;
       changed();
       rer();
@@ -24047,8 +24207,8 @@ function wtEditor(el, t, mode) {
     el.querySelector('#wtDel').onclick = () => {
       if (wtUsage(t.id) || S.wtypes.length < 2) return;
       pushUndo();
-      S.wtypes = S.wtypes.filter(x => x !== t);
-      if (S.curWt === t.id) S.curWt = S.wtypes[0].id;
+      wtypesSet(S.wtypes.filter(x => x !== t));
+      if (S.curWt === t.id) curWtSet(S.wtypes[0].id);
       wtSel = S.curWt;
       changed();
       rer();
@@ -24061,7 +24221,7 @@ function wtEditor(el, t, mode) {
       n.id = 'wt_' + Date.now().toString(36);
       n.name = t.name + ' (копия)';
       n.auto = false;
-      S.wtypes.push(n);
+      wtypesPush(n);
       selEnts().forEach(e => {
         if (e.type === 'wall') e.wt = n.id;
       });
@@ -24215,7 +24375,7 @@ function initWallTypesDialog() {
       kind: 'custom',
       layers: JSON.parse(JSON.stringify(CTPL.part1.layers))
     };
-    S.wtypes.push(t);
+    wtypesPush(t);
     wtSel = t.id;
     changed();
     renderWT();
@@ -24232,7 +24392,7 @@ function initWallTypesDialog() {
         { m: 'Штукатурка гипсовая', th: 10 }
       ]
     };
-    S.wtypes.push(t);
+    wtypesPush(t);
     wtSel = t.id;
     changed();
     renderWT();
@@ -24526,6 +24686,7 @@ function ctBind(el, t, commit, rer) {
  *
  * Profiles dialog.
  */
+
 
 
 
@@ -24865,7 +25026,7 @@ function renderProfiles() {
     const n = JSON.parse(JSON.stringify(p));
     n.id = 'pr_' + Date.now().toString(36);
     n.name = p.name + ' (копия)';
-    S.profiles.push(n);
+    profilesPush(n);
     prSel = n.id;
     changed();
     renderProfiles();
@@ -24873,7 +25034,7 @@ function renderProfiles() {
   $('#prDel').onclick = () => {
     if (prUsage(p.id)) return;
     pushUndo();
-    S.profiles = S.profiles.filter(x => x !== p);
+    profilesSet(S.profiles.filter(x => x !== p));
     prSel = S.profiles[0].id;
     changed();
     renderProfiles();
@@ -25030,7 +25191,7 @@ function initProfilesDialog() {
       else if (/добор|ext/i.test(f.name)) p.kind = 'ext';
       else if (/короб|frame|jamb/i.test(f.name)) p.kind = 'frame';
       pushUndo();
-      S.profiles.push(p);
+      profilesPush(p);
       prSel = p.id;
       changed();
       renderProfiles();
@@ -25572,6 +25733,8 @@ defineTools({
 
 
 
+
+
 /* engineering dialog */
 let mepTab = 'el';
 function openMEP(t) {
@@ -25665,7 +25828,7 @@ function renderMEP() {
       b =>
         (b.onclick = () => {
           pushUndo();
-          S.elec.groups = S.elec.groups.filter(x => x.n !== +b.dataset.del);
+          elecGroupsSet(S.elec.groups.filter(x => x.n !== +b.dataset.del));
           changed();
           renderMEP();
         })
@@ -25679,7 +25842,7 @@ function renderMEP() {
     };
     $('#mepRes').onchange = e => {
       pushUndo();
-      S.elec.reserve = Math.max(0, parseFloat(e.target.value) || 0);
+      elecReserveSet(Math.max(0, parseFloat(e.target.value) || 0));
       changed();
       renderMEP();
     };
@@ -25719,7 +25882,7 @@ function renderMEP() {
             S.ents.forEach(e => {
               if (e.sys === s.id) e.sys = v;
             });
-            if (S.vent.cur === s.id) S.vent.cur = v;
+            if (S.vent.cur === s.id) ventCurSet(v);
             s.id = v;
           } else {
             s[k] = inp.value;
@@ -25733,7 +25896,7 @@ function renderMEP() {
       b =>
         (b.onclick = () => {
           pushUndo();
-          S.vent.systems.splice(+b.dataset.del, 1);
+          ventSystemsSplice(+b.dataset.del, 1);
           changed();
           renderMEP();
         })
@@ -25750,7 +25913,7 @@ function renderMEP() {
       pushUndo();
       let i = 2;
       while (S.vent.systems.some(x => x.id === 'П' + i)) i++;
-      S.vent.systems.push({ id: 'П' + i, name: 'Приток', kind: 'Приток', col: GPAL[(i + 3) % GPAL.length] });
+      ventSystemsPush({ id: 'П' + i, name: 'Приток', kind: 'Приток', col: GPAL[(i + 3) % GPAL.length] });
       changed();
       renderMEP();
     };
@@ -25758,9 +25921,9 @@ function renderMEP() {
       c =>
         (c.onchange = () => {
           pushUndo();
-          S.vent.off = { ...(S.vent.off || {}) };
-          if (c.checked) delete S.vent.off[c.dataset.voff];
-          else S.vent.off[c.dataset.voff] = true;
+          ventOffSet({ ...(S.vent.off || {}) });
+          if (c.checked) ventOffDel(c.dataset.voff);
+          else ventOffPut(c.dataset.voff, true);
           changed();
         })
     );
@@ -25772,12 +25935,12 @@ function renderMEP() {
     };
     $('#mepFlex').onchange = e => {
       pushUndo();
-      S.vent.flexMax = Math.max(500, parseFloat(e.target.value) || 3000);
+      ventFlexMaxSet(Math.max(500, parseFloat(e.target.value) || 3000));
       changed();
     };
     $('#mepV').onchange = e => {
       pushUndo();
-      S.vent.vmax = Math.max(0.5, parseFloat(e.target.value) || 4);
+      ventVmaxSet(Math.max(0.5, parseFloat(e.target.value) || 4));
       changed();
       renderMEP();
     };
@@ -25787,7 +25950,7 @@ function renderMEP() {
       const v = parseFloat(e.target.value);
       if (v > 1000) {
         pushUndo();
-        S.ceil = v;
+        ceilSet(v);
         changed();
       }
     };
@@ -89088,7 +89251,7 @@ function renderWS() {
   if (wj)
     wj.onchange = () => {
       pushUndo();
-      S.elec.joints = wj.value;
+      elecJointsSet(wj.value);
       changed();
       renderWS();
       log(
@@ -89102,7 +89265,7 @@ function renderWS() {
     if (sx)
       sx.onchange = () => {
         pushUndo();
-        S.x.ascale = +sx.value;
+        ascaleSet(+sx.value);
         changed();
         renderWS();
         log(`Масштаб аннотаций 1:${S.x.ascale} — аннотативные тексты пересчитаны`);
@@ -89115,7 +89278,7 @@ function renderWS() {
   if (wc)
     wc.onchange = () => {
       pushUndo();
-      S.elec.colorBy = wc.value;
+      elecColorBySet(wc.value);
       changed();
       if (V3.inited) sync3D(true);
       renderWS();
@@ -89123,14 +89286,14 @@ function renderWS() {
   const dm = $('#wsDefM');
   if (dm)
     dm.onchange = () => {
-      S.elec.defMethod = dm.value;
+      elecDefMethodSet(dm.value);
       save();
     };
   const cvr = $('#wsCover');
   if (cvr)
     cvr.onchange = () => {
       pushUndo();
-      S.elec.cover = Math.max(5, parseFloat(cvr.value) || 25);
+      elecCoverSet(Math.max(5, parseFloat(cvr.value) || 25));
       changed();
     };
   const aw = $('#wsAutoW');
@@ -89142,14 +89305,14 @@ function renderWS() {
   const smm = $('#wsSockM');
   if (smm)
     smm.onchange = () => {
-      S.elec.sockMethod = smm.value;
+      elecSockMethodSet(smm.value);
       save();
     };
   const sc = $('#wsScreed');
   if (sc)
     sc.onchange = () => {
       pushUndo();
-      S.x.screed = Math.max(0, parseFloat(sc.value) || 0);
+      screedSet(Math.max(0, parseFloat(sc.value) || 0));
       try {
         lvCur().top = -S.x.screed;
         floorsState.FSV = -1;
@@ -108985,9 +109148,9 @@ function sampleVilla(E) {
   lv.h = 4000; // 3,7 m to the slab: two levels of ducts and the flexible taps over the false ceilings
   // 150 mm of floor build-up: screed over the floor heating and the drains of the wet rooms
   lv.top = -150;
-  S.x.screed = 150;
+  screedSet(150);
   const SU = lv.h + (lv.top || 0) - (lv.slab || 200); // underside of the slab
-  S.ceil = SU; // the structural height: the false ceilings hang under it
+  ceilSet(SU); // the structural height: the false ceilings hang under it
 
   /* ---------- helpers ---------- */
   const Wt = (ax, ay, bx, by, wt, fa, fb) =>
@@ -109467,7 +109630,7 @@ function sampleVilla(E) {
   documentState.docVer++;
 
   /* ---------- electrics ---------- */
-  S.elec.groups = [
+  elecGroupsSet([
     { n: 1, name: 'Освещение', brk: 'C10', cable: 'ВВГнг(А)-LS 3×1,5', col: '#f2d15e' },
     { n: 2, name: 'Освещение спален', brk: 'C10', cable: 'ВВГнг(А)-LS 3×1,5', col: '#e8b84a' },
     { n: 3, name: 'Розетки комнат', brk: 'C16 + УЗО 30 мА', cable: 'ВВГнг(А)-LS 3×2,5', col: '#c97cf0' },
@@ -109488,9 +109651,9 @@ function sampleVilla(E) {
       cable: 'ВВГнг(А)-LS 3×2,5',
       col: '#6fbf73'
     }
-  ];
-  S.elec.cur = 3;
-  S.elec.sockMethod = 'wall'; // socket lines in the walls: the screed is taken by the floor heating and the drains
+  ]);
+  elecCurSet(3);
+  elecSockMethodSet('wall'); // socket lines in the walls: the screed is taken by the floor heating and the drains
   DV('panel', 900, YH - tg, { group: null, z: 1700 }); // in the hall, by the door to the tech room
   const SW = {
     hall: DV('sw2', XW - tg, 800, { group: 1, z: 900 }),
@@ -113658,7 +113821,7 @@ const agNum = (v, what, def) => {
 };
 
 const agSys = v => {
-  if (!S.vent) S.vent = defaultVent();
+  if (!S.vent) ventSet(defaultVent());
   const id = v != null && v !== '' ? String(v) : S.vent.cur || S.vent.systems[0].id;
   if (!S.vent.systems.some(x => x.id === id)) throw new Error(`нет системы «${id}» — сначала vsys`);
   return id;
@@ -113868,7 +114031,7 @@ function agApply(ops, ctx) {
     ceil(op) {
       const h = agNum(op.h, 'h');
       if (h < 2000 || h > 6000) throw new Error('высота потолка вне 2000..6000');
-      S.ceil = h;
+      ceilSet(h);
     },
     fix(op) {
       const kind = AG_FIXMAP[op.kind] || op.kind;
@@ -113922,7 +114085,7 @@ function agApply(ops, ctx) {
     },
     vsys(op) {
       // a ventilation system: id (П1, В1, К1…), name, kind Приток / Вытяжка / Кондиционирование
-      if (!S.vent) S.vent = defaultVent();
+      if (!S.vent) ventSet(defaultVent());
       const id = String(op.id || '').trim();
       if (!id) throw new Error('vsys: нужен id');
       const kind = /выт|ex/i.test(op.kind || '')
@@ -113933,7 +114096,7 @@ function agApply(ops, ctx) {
       const ex = S.vent.systems.find(x => x.id === id);
       if (ex) Object.assign(ex, { name: op.name || ex.name, kind });
       else
-        S.vent.systems.push({
+        ventSystemsPush({
           id,
           name: String(op.name || id),
           kind,
