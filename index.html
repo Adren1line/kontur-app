@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.64';
+const APP_VER = '59.65';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12610,6 +12610,11 @@ function dimGeom(e) {
   return { segs, ticks, val, rot, txt: dimTxt(val), tp: add(mid(p1, p2), mul(n, DS.tgap)), p1, p2 };
 }
 const closedSegs = pts => pts.map((p, i) => ({ t: 's', a: p, b: pts[(i + 1) % pts.length] }));
+/** True when the segment a–b crosses the closed polygon or lies inside it (used by the checks). */
+function segCrossPoly(a, b, poly) {
+  for (const s of closedSegs(poly)) if (segSeg(a, b, s.a, s.b)) return true;
+  return inPoly(a, poly) || inPoly(b, poly);
+}
 function prims(e) {
   if (e.type === 'inst') return closedSegs(instHull(e));
   const X = XT[e.type];
@@ -51760,7 +51765,20 @@ XT.node = {
 /**
  * docs/validation.js
  *
- * Model checks ("fool-proofing"): collects issues of all element types for the Checks tab and markers.
+ * Model checks ("fool-proofing"): the framework that collects the issues for the Checks tab and the plan marks.
+ *
+ * The module schedules, collects and shows; it holds no rule of any element type. The rules are contributed by the blocks with
+ * checkRule(id, { order, stage, run(ctx) }) (files checks-*.js of the blocks); the same id replaces the earlier rule. A rule is
+ *  • a pass: `run(ctx)` looks over the model itself and puts its issues through ctx;
+ *  • a sweep rule: `each(e, ctx)` is called for the elements whose type is in `types` (all elements without `types`), `visible: true`
+ *    skips the hidden ones. The sweep rules with the same `sweep` key (the id when none) share ONE walk over S.ents, so their issues
+ *    interleave element by element, and the sweep takes the place of its first rule; per element the rules run in `order`.
+ * Rules run in the order of `order` (one list for all blocks; keep the numbers unique). `stage()` (optional) is a heavy preparation
+ * that validateIdle runs in a task of its own before the checks (it keeps its answer for the document version).
+ * An error in a rule is logged and does not stop the other rules.
+ * ctx: add(e, lvl, msg, p) puts the issue {id, lvl, msg, p} (p defaults to the first sample point of the element),
+ * push(issue) puts a ready issue, listPt(e) the usual point of an element for the checklists ([level, text] pairs), memo(key, fn) computes a value once per run.
+ * The issue list is not sorted or de-duplicated: it is the rules' output in the order of the rules.
  */
 
 
@@ -51772,482 +51790,67 @@ XT.node = {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/* ---------- rules ---------- */
+const CHECK_RULES = [];
+/**
+ * Registers a rule of the checks (see the header). The same id replaces the earlier rule.
+ * @param {string} id
+ * @param {{order:number, stage?:()=>void, sweep?:string, types?:string[], visible?:boolean, run?:(ctx:object)=>void, each?:(e:object, ctx:object)=>void}} o
+ */
+function checkRule(id, o) {
+  const i = CHECK_RULES.findIndex(r => r.id === id);
+  if (i >= 0) CHECK_RULES.splice(i, 1);
+  CHECK_RULES.push({ id, ...o });
+  CHECK_RULES.sort((a, b) => a.order - b.order);
+}
+function safely(f) {
+  try {
+    f();
+  } catch (err) {
+    console.error(err);
+  }
+}
+/** One walk over the elements for the sweep rules of one key: per element the rules of its type, in the order of the rules. */
+function sweep(rules, ctx) {
+  const byType = new Map();
+  const ofType = t => {
+    if (!byType.has(t))
+      byType.set(
+        t,
+        rules.filter(r => !r.types || r.types.includes(t))
+      );
+    return byType.get(t);
+  };
+  for (const e of S.ents) for (const r of ofType(e.type)) if (!r.visible || visible(e)) safely(() => r.each(e, ctx));
+}
 
 /* ---------- validation ("fool-proofing") ---------- */
 let issCache = null,
   issVer = -1;
-function segCrossPoly(a, b, poly) {
-  for (const s of closedSegs(poly)) if (segSeg(a, b, s.a, s.b)) return true;
-  return inPoly(a, poly) || inPoly(b, poly);
-}
 function validate() {
   if (issVer === documentState.docVer && issCache) return issCache;
   const out = [];
-  const add_ = (e, lvl, msg, p) => out.push({ id: e.id, lvl, msg, p: p || samplePts(e)[0] || P(0, 0) });
-  const fixes = S.ents.filter(e => e.type === 'fix' && visible(e));
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w) || !w.zones) continue;
-    for (const z of w.zones) {
-      const C = zoneCalc(w, z);
-      const zp = add(w.a, mul(wallInfo(w).u, (z.x0 + z.x1) / 2));
-      if (isTileK(z.k)) {
-        const L = tileLayout(w, z);
-        if (L.slivers)
-          add_(
-            w,
-            'warn',
-            `Раскладка ${L.W}×${L.H}: узких подрезок ${L.slivers} (< ${L.c.minCut} мм). Смените привязку (авто / по центру шва) или формат.`,
-            zp
-          );
-      }
-      if (C.chase)
-        add_(
-          w,
-          C.chaseL.cls === 'conc' ? 'warn' : 'info',
-          `Панель вровень: штроба в основании (${C.chaseL.m}) до ${fmt(C.chase)} мм${C.chaseL.cls === 'conc' ? ' — по бетону нужна фрезеровка, согласуйте с конструктором' : ''}.`,
-          zp
-        );
-      if (C.flush && C.short)
-        add_(
-          w,
-          'warn',
-          `${C.M.n} вровень: не хватает глубины ${fmt(C.short)} мм (снимаемые слои ${fmt(C.R)} мм) — панель выступит. Нужна штроба, толще обшивка или накладной монтаж.`,
-          add(w.a, mul(wallInfo(w).u, (z.x0 + z.x1) / 2))
-        );
+  const memo = new Map();
+  const ctx = {
+    add: (e, lvl, msg, p) => out.push({ id: e.id, lvl, msg, p: p || samplePts(e)[0] || P(0, 0) }),
+    push: i => out.push(i),
+    listPt: e => e.p || (e.runs && e.runs[0].a) || (e.pts && e.pts[0]),
+    memo: (k, fn) => {
+      if (!memo.has(k)) memo.set(k, fn());
+      return memo.get(k);
     }
-  }
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
-    let ns = [];
-    try {
-      ns = wallNiches(w);
-    } catch (err) {}
-    for (const n of ns) {
-      const e = byId(n.id);
-      if (!e || n.noFrame) continue;
-      const rest = Math.round(w.th - (n.raw ?? n.depth));
-      if (rest <= 0)
-        add_(
-          e,
-          'bad',
-          `${n.n}: корпус глубже стены (${Math.round(n.raw ?? n.depth)} мм при толщине ${Math.round(w.th)} мм) — проходит насквозь. Нужна стена толще, накладной монтаж или короб.`
-        );
-      else if (rest < 25)
-        add_(
-          e,
-          'warn',
-          `${n.n}: за корпусом остаётся ${rest} мм — обшивка обратной стороны прорезается. Утолщите стену (двойной каркас / короб) или выберите накладной монтаж.`
-        );
-      else if (isFramedType(typeOf(w)))
-        add_(
-          e,
-          'info',
-          `${n.n} в каркасной стене: каркас по периметру ниши (стойки и перемычки ПН) добавлен автоматически.`
-        );
-    }
-  }
-  for (const e of S.ents) {
-    if (!visible(e)) continue;
-    if (e.type === 'dev') {
-      const d = DEVK[e.kind];
-      if (!d) continue;
-      const h = e.host != null ? byId(e.host) : null;
-      const hasBox = e.blk ? boxType(e) !== 'none' : !!d.box;
-      if (h && h.type === 'col' && hasBox)
-        add_(
-          e,
-          'bad',
-          `Подрозетник в ${h.mat === 'rc' ? 'ЖБ ' : ''}колонне: внутри арматура ${h.rebar ? h.rebar.n + 'Ø' + h.rebar.d : ''}, защитный слой ~${h.rebar ? h.rebar.cover : 25} мм. Сверление/штроба запрещены без согласования — перенесите на перегородку или используйте накладной монтаж.`,
-          e.p
-        );
-      if (h && h.type === 'wall' && hasBox) {
-        if (isRC(h))
-          add_(
-            e,
-            'bad',
-            'Подрозетник в монолитной ЖБ стене: высокий риск попасть в арматуру. Нужен детектор арматуры и согласование; лучше перенести или накладной монтаж.',
-            e.p
-          );
-        else if (h.bearing)
-          add_(
-            e,
-            'warn',
-            'Подрозетник в несущей стене: штробление и ослабление несущих стен без проекта не допускается.',
-            e.p
-          );
-        if (e.blk && isKnauf(h) && e.blk.box !== 'auto' && e.blk.box !== 'gkl' && e.blk.box !== 'none')
-          add_(e, 'warn', 'Стена из ГКЛ: нужен подрозетник для полых стен (с лапками).', e.p);
-      }
-      if (d.f === 'socket') {
-        for (const f of fixes) {
-          if (!['bath', 'shower'].includes(f.kind)) continue;
-          const hull = fixHull(f);
-          let dm = Infinity;
-          for (const s of closedSegs(hull)) dm = Math.min(dm, dist(segPt(s.a, s.b, e.p), e.p));
-          if (inPoly(e.p, hull)) dm = 0;
-          if (dm < 600)
-            add_(
-              e,
-              'bad',
-              `Розетка ближе 0,6 м от ${f.kind === 'bath' ? 'ванны' : 'душа'} (${Math.round(dm)} мм) — по ПУЭ 7.1.48 так нельзя.`,
-              e.p
-            );
-        }
-      }
-      for (const b of S.ents)
-        if (b.type === 'beam' && visible(b) && d.mount === 'ceil' && inPoly(e.p, XT.beam.poly(b)))
-          add_(e, 'warn', 'Светильник/устройство под ригелем: проверьте отметку и крепление в ЖБ (арматура).', e.p);
-    } else if (e.type === 'wire' && e.method === 'wall') {
-      for (const w of S.ents) {
-        if (w.type !== 'wall' || !(w.bearing || isRC(w))) continue;
-        const poly = wallInfo(w).poly;
-        for (let i = 0; i < e.pts.length - 1; i++)
-          if (segCrossPoly(e.pts[i], e.pts[i + 1], poly)) {
-            const a = nrm(sub(e.pts[i + 1], e.pts[i]));
-            if (Math.abs(dot(a, wallInfo(w).u)) > 0.7) {
-              add_(
-                e,
-                'warn',
-                'Горизонтальная штроба в несущей стене — недопустима без проекта. Ведите трассу по потолку или в полу.',
-                mid(e.pts[i], e.pts[i + 1])
-              );
-              break;
-            }
-          }
-      }
-    } else if (e.type === 'door' || e.type === 'window') {
-      if (e.type === 'window' && e.cfg && e.cfg.kind === 'alu') {
-        const I = opInfo(e);
-        for (const [l, m] of aluChecks(e)) add_(e, l, 'Витраж: ' + m, I ? I.c : null);
-      }
-      const w = byId(e.host);
-      if (w && (w.bearing || isRC(w)) && !(e.meta && /усилен|проект/i.test(e.meta.note || '')))
-        add_(
-          e,
-          'warn',
-          'Проём в несущей стене: нужен проект усиления (перемычка/обрамление). Если проём существующий — отметьте это в заметке.',
-          opInfo(e) ? opInfo(e).c : null
-        );
-    } else if (e.type === 'fix' && e.kind === 'manifold') {
-      try {
-        for (const c of mfClash(e).slice(0, 4)) add_(e, 'warn', 'Коллекторный узел: ' + c.msg, e.p);
-        const P = mfPower(e);
-        if (P.need && !mfSock(e))
-          add_(
-            e,
-            'warn',
-            `Коллекторному узлу нужно питание 230 В (≈${P.W} Вт: ${P.list.map(x => x[0]).join(', ')}) — розетки ближе 1,5 м нет. Конструктор коллектора → «Добавить розетку рядом».`,
-            e.p
-          );
-      } catch (err) {}
-    } else if (e.type === 'pipe') {
-      const k = pkind(e);
-      if (k === 'sewer') {
-        const mn = SEW_MIN[e.d] || 0.02;
-        if ((e.slope || 0) + 1e-9 < mn)
-          add_(
-            e,
-            'warn',
-            `Уклон канализации Ø${e.d} ${(e.slope || 0).toFixed(3).replace('.', ',')} меньше минимального ${String(mn).replace('.', ',')} (типовые значения СНиП 2.04.01 / СП 30.13330).`,
-            e.pts[0]
-          );
-      }
-      {
-        const M = pipeModules(e);
-        for (const v of M.verts)
-          if (v.bad) {
-            add_(
-              e,
-              'warn',
-              `Угол ${Math.round(v.deg)}° не собирается из стандартных отводов (${M.lib.ang.join('/')}°) — ближайший ${String(decompose(M.lib, v.deg).s).replace('.', ',')}°.`,
-              v.p
-            );
-            break;
-          }
-        for (const r of M.runs)
-          if (r.short) {
-            add_(e, 'warn', 'Участок трубы короче, чем занимают фитинги — точки слишком близко.', r.a);
-            break;
-          }
-      }
-      for (const c of sewerChecks(e)) add_(e, c.lvl, c.msg, c.p);
-      for (const c of pipeFloorHits(e)) add_(e, c.lvl, c.msg, c.p);
-      {
-        const H = pipeHyd(e);
-        if (H && H.v > VMAX)
-          add_(
-            e,
-            'warn',
-            `Скорость воды ${H.v.toFixed(2).replace('.', ',')} м/с > ${VMAX} м/с (${H.n} приборов, Q=${H.Q.toFixed(2).replace('.', ',')} л/с, упрощённо по DIN 1988-300) — увеличьте диаметр${H.need ? ' до Ø' + H.need : ''}.`,
-            e.pts[0]
-          );
-      }
-      for (const w of S.ents) {
-        if (w.type !== 'wall' || !visible(w) || !isRC(w)) continue;
-        const poly = wallInfo(w).poly;
-        for (let i = 0; i < e.pts.length - 1; i++)
-          if (segCrossPoly(e.pts[i], e.pts[i + 1], poly)) {
-            add_(
-              e,
-              'warn',
-              'Труба проходит через ЖБ стену: алмазное бурение с риском перебить арматуру — нужно согласование.',
-              mid(e.pts[i], e.pts[i + 1])
-            );
-            break;
-          }
-      }
-    } else if (e.type === 'fix') {
-      const K = FIXK[e.kind];
-      if (!K) continue;
-      if (e.kind === 'shower' && e.cfg.base !== 'tray') {
-        const need = e.cfg.base === 'drain' ? 80 : 70;
-        const have = fixScreed(e);
-        if (have < need)
-          add_(
-            e,
-            'bad',
-            `Трап/лоток требует ~${need} мм над плитой, в проекте стяжка ${have} мм: поднимите пол или выберите поддон / низкий трап.`,
-            e.p
-          );
-      }
-      if (['washer', 'boiler'].includes(e.kind) || (e.kind === 'towel' && e.cfg.kind === 'el')) {
-        const ok = S.ents.some(
-          d => d.type === 'dev' && DEVK[d.kind] && DEVK[d.kind].f === 'socket' && dist(d.p, e.p) < 1500
-        );
-        if (!ok) add_(e, 'warn', 'Рядом нет розетки (для мокрой зоны — IP44, группа с УЗО 30 мА).', e.p);
-      }
-      for (const q of portsOf(e)) {
-        if (K.src) break;
-        const has = S.ents.some(
-          p =>
-            p.type === 'pipe' &&
-            (PSYS[p.sys] || {}).g === (PSYS[q.s] || {}).g &&
-            pipeEnds(p).some(en => dist(en.p, q.p) < 30)
-        );
-        if (!has) {
-          add_(e, 'info', `Не подключено: ${(PSYS[q.s] || {}).n} ${q.n}`, q.p);
-          break;
-        }
-      }
-      if (e.kind === 'wcinst') {
-        const g = instGeo(e);
-        if (g.sup.need && !g.reinf)
-          add_(
-            e,
-            'bad',
-            `Инсталляция: ${g.sup.txt}. Нужно усиление — 2 трубы ≥50×50 пол–потолок и перемычка над рамой (стяжные винты / сварка) или профиль TECEprofil 50×50 на соединителях.`,
-            e.p
-          );
-        else if (g.reinf)
-          add_(
-            e,
-            'info',
-            g.tece
-              ? `Инсталляция усилена профилем TECEprofil 50×50: 2 стойки пол–потолок + ригель на соединителях TECE (${g.sup.txt}).`
-              : `Инсталляция усилена: 2 стойки ${g.ps}×${g.ps} пол–потолок + перемычка, ${g.join === 'weld' ? 'сварка' : 'стяжные винты М8'} (${g.sup.txt}).`,
-            e.p
-          );
-        if (g.wantIn && g.mode !== 'in')
-          add_(
-            e,
-            'warn',
-            'Инсталляция «внутри стены» возможна только в каркасной стене — сейчас считается «к стене».',
-            e.p
-          );
-        if (g.mode === 'in' && g.cavity < g.M.D)
-          add_(e, 'bad', `Рама ${g.M.D} мм не помещается в полость перегородки ${Math.round(g.cavity)} мм.`, e.p);
-      }
-    } else if (e.type === 'wall') {
-      const i = computeType(typeOf(e)).info;
-      if (i.maxH && e.h > i.maxH)
-        add_(
-          e,
-          'bad',
-          `Высота ${fmt(e.h)} больше допустимой для системы (${fmt(i.maxH)} мм${i.approxH ? ', ориентир.' : ''}).`,
-          mid(e.a, e.b)
-        );
-      const G = gklWall(e);
-      if (G)
-        for (const b of G.brkInfo || [])
-          if (b.maxGap && b.gap > b.maxGap + 0.5)
-            add_(
-              e,
-              'warn',
-              `Зазор от каркаса до основания ${Math.round(b.gap)} мм больше, чем допускает «${b.n}» (до ${b.maxGap} мм) — выберите кронштейн-директор или удлинённый кронштейн.`,
-              mid(e.a, e.b)
-            );
-      if (G)
-        for (const sd of G.sides)
-          for (const l of sd.layers)
-            if (l.badJoints) {
-              add_(
-                e,
-                'info',
-                `Стык листов ближе 150 мм к кромке проёма (сторона ${sd.side > 0 ? 'А' : 'Б'}, слой ${l.k + 1}) — листы у проёмов кроят Г-образно.`,
-                mid(e.a, e.b)
-              );
-              break;
-            }
-      if (G)
-        for (const d of G.doors)
-          if (!d.ok)
-            add_(
-              e,
-              'bad',
-              `Полотно ≈${d.mass} кг тяжелее допустимого для усиления «${RFK[d.rf]}» (до ${d.lim} кг, ориентир.). ${d.rf === 'ua' ? 'Нужна самонесущая коробка или закладная до перекрытия.' : 'Выберите профиль ПУ (металл).'}`,
-              d.p
-            );
-    } else if (e.type === 'load') {
-      const c = loadCheck(e);
-      if (c.u > 1)
-        add_(
-          e,
-          'bad',
-          `Нагрузка ${e.kg} кг: ${c.verdict.toLowerCase()} (${Math.round(c.u * 100)}%). Опора: ${c.support}.`,
-          XT.load.pt(e)
-        );
-      else if (c.u > 0.8) add_(e, 'warn', `Нагрузка ${e.kg} кг на пределе (${Math.round(c.u * 100)}%).`, XT.load.pt(e));
-    } else if (e.type === 'reinf') {
-      const H = hostPt(e);
-      if (H && e.kind === 'tube' && !(isCons(e) && e.fix === 'anchor')) {
-        const cav = cavityOf(H.w);
-        if (cav && tubeSec(e.size).h > cav)
-          add_(e, 'bad', `Труба ${e.size.replace(/x/g, '×')} глубже каркаса (${cav} мм).`, XT.reinf.segs(e)[0][0]);
-      }
-    } else if (e.type === 'gbody' && e.mount !== 'floor') {
-      if (!S.ents.some(l => l.type === 'load' && l.src === e.id))
-        add_(
-          e,
-          'info',
-          `Подвесное тело ≈${Math.round(gbodyCalc(e).mass)} кг: проверьте крепление (кнопка в свойствах создаст нагрузку).`,
-          polyCentroid(e.pts)
-        );
-    }
-  }
-  {
-    const T = wireTopo();
-    if (T.mode === 'fixture')
-      for (const b of T.br)
-        add_(
-          b.w,
-          'info',
-          `Ответвление посреди трассы: при правиле «разрыв в светильнике» кабель идёт обратно до точки (+${(Math.min(b.s, b.L - b.s) / 1000).toFixed(1)} м). В режиме «Wago» здесь будет клеммник.`,
-          b.p
-        );
-  }
-  switchIssues(add_);
-  try {
-    devHostIssues(add_);
-  } catch (err) {
-    console.error(err);
-  }
-  try {
-    wireRouteIssues(add_);
-  } catch (err) {
-    console.error(err);
-  }
-  try {
-    screedIssues(add_);
-    pipeCrossIssues(add_);
-    psuIssues(add_);
-    structClashIssues(add_);
-    hvacClashIssues(add_);
-    hatchIssues(add_);
-    slabPassIssues(add_);
-    lightCeilIssues(add_);
-    // climate design: air exchange, loads, network, noise
-    for (const i of avIssues()) out.push(i);
-    for (const e of S.ents) {
-      const X =
-        e.type === 'mirror'
-          ? mirrorChecks
-          : e.type === 'tv'
-            ? tvChecks
-            : e.type === 'kitchen'
-              ? kitChecks
-              : e.type === 'opening'
-                ? openingChecks
-                : e.type === 'lcalc'
-                  ? lcalcChecks
-                  : e.type === 'glass'
-                    ? glassChecks
-                    : null;
-      if (X)
-        for (const [l, m] of X(e))
-          if (l !== 'info') add_(e, l, m, e.p || (e.runs && e.runs[0].a) || (e.pts && e.pts[0]));
-    }
-    for (const e of S.ents)
-      if (e.type === 'ac') for (const [l, m] of acChecks(e)) if (l !== 'info' && !/люк/.test(m)) add_(e, l, m, e.p);
-    for (const e of S.ents) {
-      if (e.type === 'hvu' && visible(e)) for (const [l, m] of hvChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
-      if (e.type === 'duct' && e.flex && visible(e)) for (const [l, m] of flexChecks(e)) add_(e, l, m, e.pts[0]);
-      // a duct dipping under a beam: noted (the plan keeps the drawn route)
-      if (e.type === 'duct' && visible(e)) {
-        const raw = ductPath3raw(e),
-          q = ductPath3(e);
-        if (q.length > raw.length) {
-          const zMin = Math.min(...q.map(x => x[2]));
-          add_(
-            e,
-            'info',
-            `Воздуховод обходит ригель снизу: опуск оси до +${Math.round(zMin)} (4 вертикальных колена 90°)`,
-            P(q[1][0], q[1][1])
-          );
-        }
-      }
-      // a rigid duct turns only by its elbows
-      if (e.type === 'duct' && !e.flex && visible(e))
-        for (const t of ductBadTurns(e)) {
-          const lib = ductLib(e);
-          add_(
-            e,
-            'warn',
-            `Поворот ${Math.round(t.deg)}° не собирается из колен ${lib.n} (${(t.vertical && lib.vang ? lib.vang : lib.ang).join('°, ')}°) — поправьте трассу`,
-            t.p
-          );
-        }
-    }
-    for (const e of S.ents)
-      if (e.type === 'stair') for (const [l, m] of stairChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
-  } catch (err) {
-    console.error(err);
+  };
+  const swept = new Set();
+  for (const r of CHECK_RULES) {
+    if (r.each) {
+      const key = r.sweep || r.id;
+      if (swept.has(key)) continue;
+      swept.add(key);
+      sweep(
+        CHECK_RULES.filter(x => x.each && (x.sweep || x.id) === key),
+        ctx
+      );
+    } else if (r.run) safely(() => r.run(ctx));
   }
   issCache = out;
   issVer = documentState.docVer;
@@ -52278,16 +51881,12 @@ function validateSoon(restart, then) {
 /* The heaviest parts are computed in tasks of their own before the checks (each keeps its answer for the document
    version): the page answers between them, and the longest pause is about the longest part, not their sum. An edit
    in between restarts the wait (validateSoon from changed()). */
-const ISS_STAGES = [() => routeAll(), () => hvacClashes()];
 function validateIdle(stage = 0) {
   issTimer = 0;
   const v0 = documentState.docVer;
-  if (stage < ISS_STAGES.length) {
-    try {
-      ISS_STAGES[stage]();
-    } catch (err) {
-      console.error(err);
-    }
+  const stages = CHECK_RULES.filter(r => r.stage);
+  if (stage < stages.length) {
+    safely(stages[stage].stage);
     issTimer = setTimeout(() => (documentState.docVer === v0 ? validateIdle(stage + 1) : validateSoon(true)), 0);
     return;
   }
@@ -116214,6 +115813,275 @@ function ceilBoardsMesh(e, mb, col, th) {
   }
 }
 
+// ===== elements/checks-building.js =====
+/**
+ * elements/checks-building.js
+ *
+ * Checks of the building block (docs/validation.js runs them): niches deeper than the wall, wall height and brackets, sheet joints,
+ * door leaves, openings in load-bearing walls, curtain walls, loads, reinforcement tubes, hanging bodies, stairs, glass and openings,
+ * clashes of the structure with the openings (struct-clash), service hatches, slab passages.
+ * Orders of the rules: 20, 38, 50–56, 76, 80, 82, 91, 93, 98 (one list for all blocks, see docs/validation.js).
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+checkRule('wall-niches', {
+  order: 20,
+  run({ add: add_ }) {
+    for (const w of S.ents) {
+      if (w.type !== 'wall' || !visible(w)) continue;
+      let ns = [];
+      try {
+        ns = wallNiches(w);
+      } catch (err) {}
+      for (const n of ns) {
+        const e = byId(n.id);
+        if (!e || n.noFrame) continue;
+        const rest = Math.round(w.th - (n.raw ?? n.depth));
+        if (rest <= 0)
+          add_(
+            e,
+            'bad',
+            `${n.n}: корпус глубже стены (${Math.round(n.raw ?? n.depth)} мм при толщине ${Math.round(w.th)} мм) — проходит насквозь. Нужна стена толще, накладной монтаж или короб.`
+          );
+        else if (rest < 25)
+          add_(
+            e,
+            'warn',
+            `${n.n}: за корпусом остаётся ${rest} мм — обшивка обратной стороны прорезается. Утолщите стену (двойной каркас / короб) или выберите накладной монтаж.`
+          );
+        else if (isFramedType(typeOf(w)))
+          add_(
+            e,
+            'info',
+            `${n.n} в каркасной стене: каркас по периметру ниши (стойки и перемычки ПН) добавлен автоматически.`
+          );
+      }
+    }
+  }
+});
+
+/* the walk over the visible elements (sweep 'ents'): one branch per element type, see the other checks-*.js for the rest */
+checkRule('door-window', {
+  order: 38,
+  sweep: 'ents',
+  types: ['door', 'window'],
+  visible: true,
+  each(e, { add: add_ }) {
+    if (e.type === 'window' && e.cfg && e.cfg.kind === 'alu') {
+      const I = opInfo(e);
+      for (const [l, m] of aluChecks(e)) add_(e, l, 'Витраж: ' + m, I ? I.c : null);
+    }
+    const w = byId(e.host);
+    if (w && (w.bearing || isRC(w)) && !(e.meta && /усилен|проект/i.test(e.meta.note || '')))
+      add_(
+        e,
+        'warn',
+        'Проём в несущей стене: нужен проект усиления (перемычка/обрамление). Если проём существующий — отметьте это в заметке.',
+        opInfo(e) ? opInfo(e).c : null
+      );
+  }
+});
+checkRule('wall', {
+  order: 50,
+  sweep: 'ents',
+  types: ['wall'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const i = computeType(typeOf(e)).info;
+    if (i.maxH && e.h > i.maxH)
+      add_(
+        e,
+        'bad',
+        `Высота ${fmt(e.h)} больше допустимой для системы (${fmt(i.maxH)} мм${i.approxH ? ', ориентир.' : ''}).`,
+        mid(e.a, e.b)
+      );
+    const G = gklWall(e);
+    if (G)
+      for (const b of G.brkInfo || [])
+        if (b.maxGap && b.gap > b.maxGap + 0.5)
+          add_(
+            e,
+            'warn',
+            `Зазор от каркаса до основания ${Math.round(b.gap)} мм больше, чем допускает «${b.n}» (до ${b.maxGap} мм) — выберите кронштейн-директор или удлинённый кронштейн.`,
+            mid(e.a, e.b)
+          );
+    if (G)
+      for (const sd of G.sides)
+        for (const l of sd.layers)
+          if (l.badJoints) {
+            add_(
+              e,
+              'info',
+              `Стык листов ближе 150 мм к кромке проёма (сторона ${sd.side > 0 ? 'А' : 'Б'}, слой ${l.k + 1}) — листы у проёмов кроят Г-образно.`,
+              mid(e.a, e.b)
+            );
+            break;
+          }
+    if (G)
+      for (const d of G.doors)
+        if (!d.ok)
+          add_(
+            e,
+            'bad',
+            `Полотно ≈${d.mass} кг тяжелее допустимого для усиления «${RFK[d.rf]}» (до ${d.lim} кг, ориентир.). ${d.rf === 'ua' ? 'Нужна самонесущая коробка или закладная до перекрытия.' : 'Выберите профиль ПУ (металл).'}`,
+            d.p
+          );
+  }
+});
+checkRule('load', {
+  order: 52,
+  sweep: 'ents',
+  types: ['load'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const c = loadCheck(e);
+    if (c.u > 1)
+      add_(
+        e,
+        'bad',
+        `Нагрузка ${e.kg} кг: ${c.verdict.toLowerCase()} (${Math.round(c.u * 100)}%). Опора: ${c.support}.`,
+        XT.load.pt(e)
+      );
+    else if (c.u > 0.8) add_(e, 'warn', `Нагрузка ${e.kg} кг на пределе (${Math.round(c.u * 100)}%).`, XT.load.pt(e));
+  }
+});
+checkRule('reinf', {
+  order: 54,
+  sweep: 'ents',
+  types: ['reinf'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const H = hostPt(e);
+    if (H && e.kind === 'tube' && !(isCons(e) && e.fix === 'anchor')) {
+      const cav = cavityOf(H.w);
+      if (cav && tubeSec(e.size).h > cav)
+        add_(e, 'bad', `Труба ${e.size.replace(/x/g, '×')} глубже каркаса (${cav} мм).`, XT.reinf.segs(e)[0][0]);
+    }
+  }
+});
+checkRule('gbody', {
+  order: 56,
+  sweep: 'ents',
+  types: ['gbody'],
+  visible: true,
+  each(e, { add: add_ }) {
+    if (e.mount === 'floor') return;
+    if (!S.ents.some(l => l.type === 'load' && l.src === e.id))
+      add_(
+        e,
+        'info',
+        `Подвесное тело ≈${Math.round(gbodyCalc(e).mass)} кг: проверьте крепление (кнопка в свойствах создаст нагрузку).`,
+        polyCentroid(e.pts)
+      );
+  }
+});
+
+checkRule('struct-clash', { order: 76, run: ({ add }) => structClashIssues(add) });
+checkRule('hatches', { order: 80, run: ({ add }) => hatchIssues(add) });
+checkRule('slab-passages', { order: 82, run: ({ add }) => slabPassIssues(add) });
+
+/* the walk over all elements (sweep 'misc'): the checklists of the opening, glass and the other types, see checks-electrical.js etc. */
+checkRule('opening', {
+  order: 91,
+  sweep: 'misc',
+  types: ['opening'],
+  each(e, { add: add_, listPt }) {
+    for (const [l, m] of openingChecks(e)) if (l !== 'info') add_(e, l, m, listPt(e));
+  }
+});
+checkRule('glass', {
+  order: 93,
+  sweep: 'misc',
+  types: ['glass'],
+  each(e, { add: add_, listPt }) {
+    for (const [l, m] of glassChecks(e)) if (l !== 'info') add_(e, l, m, listPt(e));
+  }
+});
+
+checkRule('stairs', {
+  order: 98,
+  run({ add: add_ }) {
+    for (const e of S.ents)
+      if (e.type === 'stair') for (const [l, m] of stairChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
+  }
+});
+
+// ===== elements/checks-finishes.js =====
+/**
+ * elements/checks-finishes.js
+ *
+ * Checks of the finishes block (docs/validation.js runs them): tile layouts with narrow cuts, flush panels (chase, depth) in the wall
+ * zones, mirrors. Orders of the rules: 10, 88 (one list for all blocks, see docs/validation.js).
+ */
+
+
+
+
+
+
+
+
+checkRule('finish-zones', {
+  order: 10,
+  run({ add: add_ }) {
+    for (const w of S.ents) {
+      if (w.type !== 'wall' || !visible(w) || !w.zones) continue;
+      for (const z of w.zones) {
+        const C = zoneCalc(w, z);
+        const zp = add(w.a, mul(wallInfo(w).u, (z.x0 + z.x1) / 2));
+        if (isTileK(z.k)) {
+          const L = tileLayout(w, z);
+          if (L.slivers)
+            add_(
+              w,
+              'warn',
+              `Раскладка ${L.W}×${L.H}: узких подрезок ${L.slivers} (< ${L.c.minCut} мм). Смените привязку (авто / по центру шва) или формат.`,
+              zp
+            );
+        }
+        if (C.chase)
+          add_(
+            w,
+            C.chaseL.cls === 'conc' ? 'warn' : 'info',
+            `Панель вровень: штроба в основании (${C.chaseL.m}) до ${fmt(C.chase)} мм${C.chaseL.cls === 'conc' ? ' — по бетону нужна фрезеровка, согласуйте с конструктором' : ''}.`,
+            zp
+          );
+        if (C.flush && C.short)
+          add_(
+            w,
+            'warn',
+            `${C.M.n} вровень: не хватает глубины ${fmt(C.short)} мм (снимаемые слои ${fmt(C.R)} мм) — панель выступит. Нужна штроба, толще обшивка или накладной монтаж.`,
+            add(w.a, mul(wallInfo(w).u, (z.x0 + z.x1) / 2))
+          );
+      }
+    }
+  }
+});
+
+/* the walk over all elements (sweep 'misc', see checks-building.js) */
+checkRule('mirror', {
+  order: 88,
+  sweep: 'misc',
+  types: ['mirror'],
+  each(e, { add: add_, listPt }) {
+    for (const [l, m] of mirrorChecks(e)) if (l !== 'info') add_(e, l, m, listPt(e));
+  }
+});
+
 // ===== elements/door-drawings.js =====
 /**
  * elements/door-drawings.js
@@ -126125,6 +125993,34 @@ function winDrip(mb, s0, s1, d0, d1, z, col) {
   mb.lod('');
 }
 
+// ===== interior/checks-furniture.js =====
+/**
+ * interior/checks-furniture.js
+ *
+ * Checks of the furniture block (docs/validation.js runs them): the checklists of the TV and the kitchen. Orders of the rules: 89, 90
+ * (the walk 'misc' shared with the other blocks, see elements/checks-building.js).
+ */
+
+
+
+
+checkRule('tv', {
+  order: 89,
+  sweep: 'misc',
+  types: ['tv'],
+  each(e, { add, listPt }) {
+    for (const [l, m] of tvChecks(e)) if (l !== 'info') add(e, l, m, listPt(e));
+  }
+});
+checkRule('kitchen', {
+  order: 90,
+  sweep: 'misc',
+  types: ['kitchen'],
+  each(e, { add, listPt }) {
+    for (const [l, m] of kitChecks(e)) if (l !== 'info') add(e, l, m, listPt(e));
+  }
+});
+
 // ===== interior/kitchen-fronts.js =====
 /**
  * interior/kitchen-fronts.js
@@ -135588,6 +135484,159 @@ function svgToCad(cad, svgText, opt = {}) {
   return cad;
 }
 
+// ===== mep/electrical/checks-electrical.js =====
+/**
+ * mep/electrical/checks-electrical.js
+ *
+ * Checks of the electrical block (docs/validation.js runs them): flush boxes in columns and load-bearing / RC / plasterboard walls,
+ * devices under a beam, wall chases in load-bearing walls, the branch in the middle of a wire, switches, device hosts, wire routes,
+ * power supplies, ceiling lights, lighting calculations (lcalc), a socket near the washer / boiler / electric towel rail.
+ * Orders of the rules: 30, 34, 36, 46, 60–66, 74, 84, 92 (one list for all blocks, see docs/validation.js).
+ *
+ * Cross-discipline reads, kept in the block whose data the rule inspects:
+ *  • «fix-socket» (order 46) reports a plumbing fixture (washer, boiler, electric towel rail) that has no socket nearby; it scans the
+ *    devices, so it lives here and not in plumbing; the kinds washer, boiler and towel are always in FIXK of the plumbing block, so no FIXK guard (and no import) is needed. Its counterpart is
+ *    «dev-socket-bath» (order 32) in mep/plumbing/checks-plumbing.js: a socket close to a bath or shower scans the fixtures.
+ *  • «dev-box» reads the host (a column or a wall of the building block) and «wire-bearing-wall» the walls; the elements they
+ *    report are electrical, so they stay here.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* the walk over the visible elements (sweep 'ents', see elements/checks-building.js) */
+checkRule('dev-box', {
+  order: 30,
+  sweep: 'ents',
+  types: ['dev'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const d = DEVK[e.kind];
+    if (!d) return;
+    const h = e.host != null ? byId(e.host) : null;
+    const hasBox = e.blk ? boxType(e) !== 'none' : !!d.box;
+    if (h && h.type === 'col' && hasBox)
+      add_(
+        e,
+        'bad',
+        `Подрозетник в ${h.mat === 'rc' ? 'ЖБ ' : ''}колонне: внутри арматура ${h.rebar ? h.rebar.n + 'Ø' + h.rebar.d : ''}, защитный слой ~${h.rebar ? h.rebar.cover : 25} мм. Сверление/штроба запрещены без согласования — перенесите на перегородку или используйте накладной монтаж.`,
+        e.p
+      );
+    if (h && h.type === 'wall' && hasBox) {
+      if (isRC(h))
+        add_(
+          e,
+          'bad',
+          'Подрозетник в монолитной ЖБ стене: высокий риск попасть в арматуру. Нужен детектор арматуры и согласование; лучше перенести или накладной монтаж.',
+          e.p
+        );
+      else if (h.bearing)
+        add_(
+          e,
+          'warn',
+          'Подрозетник в несущей стене: штробление и ослабление несущих стен без проекта не допускается.',
+          e.p
+        );
+      if (e.blk && isKnauf(h) && e.blk.box !== 'auto' && e.blk.box !== 'gkl' && e.blk.box !== 'none')
+        add_(e, 'warn', 'Стена из ГКЛ: нужен подрозетник для полых стен (с лапками).', e.p);
+    }
+  }
+});
+checkRule('dev-beam', {
+  order: 34,
+  sweep: 'ents',
+  types: ['dev'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const d = DEVK[e.kind];
+    if (!d) return;
+    for (const b of S.ents)
+      if (b.type === 'beam' && visible(b) && d.mount === 'ceil' && inPoly(e.p, XT.beam.poly(b)))
+        add_(e, 'warn', 'Светильник/устройство под ригелем: проверьте отметку и крепление в ЖБ (арматура).', e.p);
+  }
+});
+checkRule('wire-bearing-wall', {
+  order: 36,
+  sweep: 'ents',
+  types: ['wire'],
+  visible: true,
+  each(e, { add: add_ }) {
+    if (e.method !== 'wall') return;
+    for (const w of S.ents) {
+      if (w.type !== 'wall' || !(w.bearing || isRC(w))) continue;
+      const poly = wallInfo(w).poly;
+      for (let i = 0; i < e.pts.length - 1; i++)
+        if (segCrossPoly(e.pts[i], e.pts[i + 1], poly)) {
+          const a = nrm(sub(e.pts[i + 1], e.pts[i]));
+          if (Math.abs(dot(a, wallInfo(w).u)) > 0.7) {
+            add_(
+              e,
+              'warn',
+              'Горизонтальная штроба в несущей стене — недопустима без проекта. Ведите трассу по потолку или в полу.',
+              mid(e.pts[i], e.pts[i + 1])
+            );
+            break;
+          }
+        }
+    }
+  }
+});
+/* the fixture is plumbing, the data scanned is the sockets: see the header */
+checkRule('fix-socket', {
+  order: 46,
+  sweep: 'ents',
+  types: ['fix'],
+  visible: true,
+  each(e, { add: add_ }) {
+    if (['washer', 'boiler'].includes(e.kind) || (e.kind === 'towel' && e.cfg.kind === 'el')) {
+      const ok = S.ents.some(
+        d => d.type === 'dev' && DEVK[d.kind] && DEVK[d.kind].f === 'socket' && dist(d.p, e.p) < 1500
+      );
+      if (!ok) add_(e, 'warn', 'Рядом нет розетки (для мокрой зоны — IP44, группа с УЗО 30 мА).', e.p);
+    }
+  }
+});
+
+checkRule('wire-branch', {
+  order: 60,
+  run({ add: add_ }) {
+    const T = wireTopo();
+    if (T.mode === 'fixture')
+      for (const b of T.br)
+        add_(
+          b.w,
+          'info',
+          `Ответвление посреди трассы: при правиле «разрыв в светильнике» кабель идёт обратно до точки (+${(Math.min(b.s, b.L - b.s) / 1000).toFixed(1)} м). В режиме «Wago» здесь будет клеммник.`,
+          b.p
+        );
+  }
+});
+checkRule('switches', { order: 62, run: ({ add }) => switchIssues(add) });
+checkRule('dev-host', { order: 64, run: ({ add }) => devHostIssues(add) });
+checkRule('wire-routes', { order: 66, stage: () => routeAll(), run: ({ add }) => wireRouteIssues(add) });
+checkRule('power-supplies', { order: 74, run: ({ add }) => psuIssues(add) });
+checkRule('ceiling-lights', { order: 84, run: ({ add }) => lightCeilIssues(add) });
+checkRule('lcalc', {
+  order: 92,
+  sweep: 'misc',
+  types: ['lcalc'],
+  each(e, { add, listPt }) {
+    for (const [l, m] of lcalcChecks(e)) if (l !== 'info') add(e, l, m, listPt(e));
+  }
+});
+
 // ===== mep/electrical/dev-xt.js =====
 /**
  * mep/electrical/dev-xt.js
@@ -138051,6 +138100,73 @@ function wirePanelAfter() {
   );
 }
 
+// ===== mep/hvac/checks-hvac.js =====
+/**
+ * mep/hvac/checks-hvac.js
+ *
+ * Checks of the hvac block (docs/validation.js runs them): clashes of the ducts with the structure, air exchange and the climate design
+ * (avIssues), air conditioners, ventilation units, flexible ducts, a duct under a beam and bends that the elbows do not make.
+ * Orders of the rules: 78, 86, 94, 96 (one list for all blocks, see docs/validation.js).
+ */
+
+
+
+
+
+
+
+
+
+checkRule('hvac-clash', { order: 78, stage: () => hvacClashes(), run: ({ add }) => hvacClashIssues(add) });
+// climate design: air exchange, loads, network, noise
+checkRule('air-exchange', {
+  order: 86,
+  run({ push }) {
+    for (const i of avIssues()) push(i);
+  }
+});
+checkRule('air-conditioners', {
+  order: 94,
+  run({ add: add_ }) {
+    for (const e of S.ents)
+      if (e.type === 'ac') for (const [l, m] of acChecks(e)) if (l !== 'info' && !/люк/.test(m)) add_(e, l, m, e.p);
+  }
+});
+checkRule('hvu-ducts', {
+  order: 96,
+  run({ add: add_ }) {
+    for (const e of S.ents) {
+      if (e.type === 'hvu' && visible(e)) for (const [l, m] of hvChecks(e)) if (l !== 'info') add_(e, l, m, e.p);
+      if (e.type === 'duct' && e.flex && visible(e)) for (const [l, m] of flexChecks(e)) add_(e, l, m, e.pts[0]);
+      // a duct dipping under a beam: noted (the plan keeps the drawn route)
+      if (e.type === 'duct' && visible(e)) {
+        const raw = ductPath3raw(e),
+          q = ductPath3(e);
+        if (q.length > raw.length) {
+          const zMin = Math.min(...q.map(x => x[2]));
+          add_(
+            e,
+            'info',
+            `Воздуховод обходит ригель снизу: опуск оси до +${Math.round(zMin)} (4 вертикальных колена 90°)`,
+            P(q[1][0], q[1][1])
+          );
+        }
+      }
+      // a rigid duct turns only by its elbows
+      if (e.type === 'duct' && !e.flex && visible(e))
+        for (const t of ductBadTurns(e)) {
+          const lib = ductLib(e);
+          add_(
+            e,
+            'warn',
+            `Поворот ${Math.round(t.deg)}° не собирается из колен ${lib.n} (${(t.vertical && lib.vang ? lib.vang : lib.ang).join('°, ')}°) — поправьте трассу`,
+            t.p
+          );
+        }
+    }
+  }
+});
+
 // ===== mep/hvac/duct-fittings.js =====
 /**
  * mep/hvac/duct-fittings.js
@@ -139420,6 +139536,221 @@ specSection('hvac', {
     return [...hvacQty().map(r => ({ name: r.name, u: r.u, q: r.q, ids: r.ids })), ...ctx.rows(devs)];
   }
 });
+
+// ===== mep/plumbing/checks-plumbing.js =====
+/**
+ * mep/plumbing/checks-plumbing.js
+ *
+ * Checks of the plumbing block (docs/validation.js runs them): a socket close to a bath or shower, manifold units, pipes (slope, fittings,
+ * speed, floor and RC wall crossings), fixtures (shower drain and screed height, unconnected ports, wall-hung closet frames), screeds
+ * and pipe crossings. Orders of the rules: 32, 40–44, 48, 70, 72 (one list for all blocks, see docs/validation.js).
+ *
+ * Cross-discipline reads, kept in the block whose data the rule inspects:
+ *  • «dev-socket-bath» (order 32) reports a socket (an electrical device) near a bath or shower; it scans the fixtures, so it lives here
+ *    and not in electrical. Its counterpart is «fix-socket» (order 46) in mep/electrical/checks-electrical.js: no socket near a washer.
+ *  • «pipe» reads the walls of the building block (a pipe through an RC wall); the element it reports is a pipe, so it stays here.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* the walk over the visible elements (sweep 'ents', see elements/checks-building.js) */
+checkRule('dev-socket-bath', {
+  order: 32,
+  sweep: 'ents',
+  types: ['dev'],
+  visible: true,
+  each(e, { add: add_, memo }) {
+    const d = DEVK[e.kind];
+    if (!d) return;
+    if (d.f === 'socket') {
+      const fixes = memo('fixes', () => S.ents.filter(f => f.type === 'fix' && visible(f)));
+      for (const f of fixes) {
+        if (!['bath', 'shower'].includes(f.kind)) continue;
+        const hull = fixHull(f);
+        let dm = Infinity;
+        for (const s of closedSegs(hull)) dm = Math.min(dm, dist(segPt(s.a, s.b, e.p), e.p));
+        if (inPoly(e.p, hull)) dm = 0;
+        if (dm < 600)
+          add_(
+            e,
+            'bad',
+            `Розетка ближе 0,6 м от ${f.kind === 'bath' ? 'ванны' : 'душа'} (${Math.round(dm)} мм) — по ПУЭ 7.1.48 так нельзя.`,
+            e.p
+          );
+      }
+    }
+  }
+});
+checkRule('fix-manifold', {
+  order: 40,
+  sweep: 'ents',
+  types: ['fix'],
+  visible: true,
+  each(e, { add: add_ }) {
+    if (e.kind !== 'manifold') return;
+    try {
+      for (const c of mfClash(e).slice(0, 4)) add_(e, 'warn', 'Коллекторный узел: ' + c.msg, e.p);
+      const P = mfPower(e);
+      if (P.need && !mfSock(e))
+        add_(
+          e,
+          'warn',
+          `Коллекторному узлу нужно питание 230 В (≈${P.W} Вт: ${P.list.map(x => x[0]).join(', ')}) — розетки ближе 1,5 м нет. Конструктор коллектора → «Добавить розетку рядом».`,
+          e.p
+        );
+    } catch (err) {}
+  }
+});
+checkRule('pipe', {
+  order: 42,
+  sweep: 'ents',
+  types: ['pipe'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const k = pkind(e);
+    if (k === 'sewer') {
+      const mn = SEW_MIN[e.d] || 0.02;
+      if ((e.slope || 0) + 1e-9 < mn)
+        add_(
+          e,
+          'warn',
+          `Уклон канализации Ø${e.d} ${(e.slope || 0).toFixed(3).replace('.', ',')} меньше минимального ${String(mn).replace('.', ',')} (типовые значения СНиП 2.04.01 / СП 30.13330).`,
+          e.pts[0]
+        );
+    }
+    {
+      const M = pipeModules(e);
+      for (const v of M.verts)
+        if (v.bad) {
+          add_(
+            e,
+            'warn',
+            `Угол ${Math.round(v.deg)}° не собирается из стандартных отводов (${M.lib.ang.join('/')}°) — ближайший ${String(decompose(M.lib, v.deg).s).replace('.', ',')}°.`,
+            v.p
+          );
+          break;
+        }
+      for (const r of M.runs)
+        if (r.short) {
+          add_(e, 'warn', 'Участок трубы короче, чем занимают фитинги — точки слишком близко.', r.a);
+          break;
+        }
+    }
+    for (const c of sewerChecks(e)) add_(e, c.lvl, c.msg, c.p);
+    for (const c of pipeFloorHits(e)) add_(e, c.lvl, c.msg, c.p);
+    {
+      const H = pipeHyd(e);
+      if (H && H.v > VMAX)
+        add_(
+          e,
+          'warn',
+          `Скорость воды ${H.v.toFixed(2).replace('.', ',')} м/с > ${VMAX} м/с (${H.n} приборов, Q=${H.Q.toFixed(2).replace('.', ',')} л/с, упрощённо по DIN 1988-300) — увеличьте диаметр${H.need ? ' до Ø' + H.need : ''}.`,
+          e.pts[0]
+        );
+    }
+    for (const w of S.ents) {
+      if (w.type !== 'wall' || !visible(w) || !isRC(w)) continue;
+      const poly = wallInfo(w).poly;
+      for (let i = 0; i < e.pts.length - 1; i++)
+        if (segCrossPoly(e.pts[i], e.pts[i + 1], poly)) {
+          add_(
+            e,
+            'warn',
+            'Труба проходит через ЖБ стену: алмазное бурение с риском перебить арматуру — нужно согласование.',
+            mid(e.pts[i], e.pts[i + 1])
+          );
+          break;
+        }
+    }
+  }
+});
+checkRule('fix-screed', {
+  order: 44,
+  sweep: 'ents',
+  types: ['fix'],
+  visible: true,
+  each(e, { add: add_ }) {
+    if (e.kind === 'manifold' || !FIXK[e.kind]) return;
+    if (e.kind === 'shower' && e.cfg.base !== 'tray') {
+      const need = e.cfg.base === 'drain' ? 80 : 70;
+      const have = fixScreed(e);
+      if (have < need)
+        add_(
+          e,
+          'bad',
+          `Трап/лоток требует ~${need} мм над плитой, в проекте стяжка ${have} мм: поднимите пол или выберите поддон / низкий трап.`,
+          e.p
+        );
+    }
+  }
+});
+checkRule('fix-ports', {
+  order: 48,
+  sweep: 'ents',
+  types: ['fix'],
+  visible: true,
+  each(e, { add: add_ }) {
+    const K = FIXK[e.kind];
+    if (e.kind === 'manifold' || !K) return;
+    for (const q of portsOf(e)) {
+      if (K.src) break;
+      const has = S.ents.some(
+        p =>
+          p.type === 'pipe' &&
+          (PSYS[p.sys] || {}).g === (PSYS[q.s] || {}).g &&
+          pipeEnds(p).some(en => dist(en.p, q.p) < 30)
+      );
+      if (!has) {
+        add_(e, 'info', `Не подключено: ${(PSYS[q.s] || {}).n} ${q.n}`, q.p);
+        break;
+      }
+    }
+    if (e.kind === 'wcinst') {
+      const g = instGeo(e);
+      if (g.sup.need && !g.reinf)
+        add_(
+          e,
+          'bad',
+          `Инсталляция: ${g.sup.txt}. Нужно усиление — 2 трубы ≥50×50 пол–потолок и перемычка над рамой (стяжные винты / сварка) или профиль TECEprofil 50×50 на соединителях.`,
+          e.p
+        );
+      else if (g.reinf)
+        add_(
+          e,
+          'info',
+          g.tece
+            ? `Инсталляция усилена профилем TECEprofil 50×50: 2 стойки пол–потолок + ригель на соединителях TECE (${g.sup.txt}).`
+            : `Инсталляция усилена: 2 стойки ${g.ps}×${g.ps} пол–потолок + перемычка, ${g.join === 'weld' ? 'сварка' : 'стяжные винты М8'} (${g.sup.txt}).`,
+          e.p
+        );
+      if (g.wantIn && g.mode !== 'in')
+        add_(
+          e,
+          'warn',
+          'Инсталляция «внутри стены» возможна только в каркасной стене — сейчас считается «к стене».',
+          e.p
+        );
+      if (g.mode === 'in' && g.cavity < g.M.D)
+        add_(e, 'bad', `Рама ${g.M.D} мм не помещается в полость перегородки ${Math.round(g.cavity)} мм.`, e.p);
+    }
+  }
+});
+
+checkRule('screeds', { order: 70, run: ({ add }) => screedIssues(add) });
+checkRule('pipe-crossings', { order: 72, run: ({ add }) => pipeCrossIssues(add) });
 
 // ===== mep/plumbing/pipe-bundles.js =====
 /**
