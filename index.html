@@ -6942,74 +6942,1711 @@ html[data-form='phone'] .modal table.cards td,
 html[data-form='phone'] .modal table.cards td::before {
   font-family: var(--f-ui);
 }
+
+/* ===== Window frame (docs/UI-LAYOUT.md): burger, two header rows, tool column, panel over the field, right panel,
+   bottom dock, mode strip. Colours only through variables (--bar1, --bar2, --chip, --chip2, --dock, --col, --sidebg
+   are set per theme by ui/theme.js; the values below are the fallback). Loaded last: `html #app …` beats the skins. */
+:root {
+  --bar1: #f6f6f8;
+  --bar2: #d7d7dc;
+  --chip: #e8e8ed;
+  --chip2: #ffffff;
+  --dock: #e2e2e7;
+  --col: #ececf0;
+  --sidebg: #f1f1f4;
+}
+html body {
+  margin: 0;
+}
+html[data-skin][data-form][data-tlab] #app {
+  --bur: 100px;
+  --colW: 100px;
+  --r1: 50px;
+  --r2: 50px;
+  --hdr: calc(var(--r1) + var(--r2));
+  --fy: calc(var(--hdr) + 20px);
+  --mR: clamp(16px, 2.6vw, 50px);
+  --sideW: 300px;
+  --dockW: clamp(560px, 52vw, 1000px);
+  --stripH: 20px;
+  --dockB: 50px;
+  display: grid;
+  grid-template-columns: var(--colW) minmax(0, 1fr) auto;
+  grid-template-rows: var(--r1) var(--r2) minmax(0, 1fr);
+  grid-template-areas: 'bur mbar hr1' 'bur top top' 'tools stage stage';
+}
+html #app > * {
+  min-width: 0;
+}
+
+/* ---------- burger ---------- */
+html[data-skin] #app #bMenu {
+  grid-area: bur;
+  display: grid;
+  place-items: center;
+  background: var(--bar1);
+  color: var(--fg);
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+  padding: 0;
+}
+html #app #bMenu svg {
+  width: 44px;
+  height: 44px;
+}
+html #app #bMenu:hover {
+  background: color-mix(in srgb, var(--bar1) 88%, var(--fg));
+}
+
+/* ---------- first row: menu bar, checks, catalogue ---------- */
+html[data-skin] #app #mbar {
+  grid-area: mbar;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 12px 0 4px;
+  height: auto;
+  background: var(--bar1);
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: hidden;
+}
+html[data-skin] #app #mbar button {
+  padding: 4px 10px;
+  font-size: 16px;
+  border-radius: 8px;
+  color: var(--fg);
+  background: none;
+}
+html[data-skin] #app #mbar button:hover,
+html[data-skin] #app #mbar button.on {
+  background: var(--chip);
+}
+html:not([data-form='phone']) #app #mbar [data-mi='0'],
+html #app #mbar .mbproj,
+html #app #mbar .mbsp {
+  display: none;
+}
+html #app #hr1 {
+  grid-area: hr1;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--mR) 0 10px;
+  background: var(--bar1);
+  min-width: 0;
+}
+html #app .ib2 {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 18px;
+  color: var(--fg);
+}
+html #app .ib2:hover {
+  background: var(--chip);
+}
+
+/* ---------- chips (plaques) ---------- */
+html #app .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  background: var(--chip2);
+  color: var(--fg);
+  font-size: 13px;
+  white-space: nowrap;
+  flex: none;
+  border: 0;
+}
+html #app .chip.chipb1 {
+  height: 40px;
+  border-radius: 20px;
+  background: var(--chip);
+  font-size: 13.5px;
+}
+html #app .chip .cap {
+  color: var(--muted);
+}
+html #app .chip button {
+  height: 100%;
+  padding: 0 4px;
+  color: inherit;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: inherit;
+}
+html #app .chip button:hover:not(:disabled) {
+  color: var(--accent);
+}
+html #app .chip .more {
+  padding: 0 2px 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+html #app .chip .car,
+html #app .fbpbtn .car,
+html #v3bar .car {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.75;
+}
+html #app .chip.open {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+html #app button.chip {
+  cursor: pointer;
+}
+html #app #bIss .cnt {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 13px;
+}
+html #app #bIss.has .cnt {
+  color: var(--accent);
+}
+html #app #bCat {
+  padding: 0 4px 0 0;
+  font-size: 13.5px;
+}
+html #app #catChip {
+  justify-content: space-between;
+  min-width: 150px;
+}
+
+/* ---------- second row ---------- */
+html[data-skin] #app #top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 var(--mR) 0 10px;
+  height: auto;
+  background: var(--bar2);
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
+  min-width: 0;
+}
+html[data-skin] #app #top .file {
+  display: block;
+  border: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+  padding-right: 12px;
+}
+html #app #top .file b {
+  font-weight: 500;
+}
+html #app #lvseg {
+  gap: 6px;
+  padding: 0 8px 0 14px;
+}
+html #app #lvseg .cap,
+html #app #stgChip .cap,
+html #app #hModes .cap,
+html #app #layerChip .cap {
+  margin-right: 2px;
+}
+html #app #lvseg button {
+  min-height: 0;
+  padding: 0 4px;
+  background: none;
+  border-radius: 0;
+}
+html #app #lvName {
+  font-variant-numeric: tabular-nums;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html #app #lvseg button:disabled {
+  opacity: 0.35;
+}
+html #app #stgChip {
+  min-width: 0;
+  max-width: 300px;
+}
+html[data-skin] #app #stageBtn {
+  box-shadow: none;
+  border-radius: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  font-size: 13px;
+  color: var(--fg);
+}
+html #app #stageBtn.on {
+  color: var(--accent);
+}
+html[data-skin] #app #bModes {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  font-size: 13px;
+  color: var(--fg);
+}
+html #app #bModes.on {
+  color: var(--accent);
+}
+html #app #modeVal {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html #app #layerChip {
+  gap: 6px;
+}
+html #app #layerChip .sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--c, #e88);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  flex: none;
+}
+html #app #layerChip .ib {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+  opacity: 0.9;
+}
+html #app #layerChip .ib svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+}
+html #app #layerChip .ib.off {
+  opacity: 0.4;
+}
+html #app #layerChip .ib.on {
+  color: var(--accent);
+}
+html #app #lcName {
+  min-width: 70px;
+  max-width: 150px;
+  justify-content: space-between;
+}
+html #app #lcText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- tool column and the section plaque ---------- */
+html[data-skin] #app #tools {
+  grid-area: tools;
+  background: var(--col);
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 70px 0 8px;
+  overflow: hidden;
+  width: auto;
+}
+html:not([data-form='phone']) #app #tools .ttop {
+  display: none;
+}
+html[data-skin]:not([data-form='phone']) #app #tools .tmain {
+  padding: 0 0 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+html:not([data-form='phone']) #app #tools .tgrid {
+  display: grid;
+  grid-template-columns: repeat(2, var(--toolS, 34px));
+  gap: 4px 6px;
+  justify-content: center;
+  align-content: start;
+}
+html:not([data-form='phone']) #app #tools .tool {
+  width: var(--toolS, 34px);
+  height: var(--toolS, 34px);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  gap: 0;
+}
+html:not([data-form='phone']) #app #tools .tool .tl {
+  display: none;
+}
+html:not([data-form='phone']) #app #tools .tcap {
+  display: block;
+  grid-column: 1/-1;
+  margin: 8px 4px 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html:not([data-form='phone']) #app #tools .tgrid .tsep {
+  grid-column: 1/-1;
+  margin: 4px 10px;
+}
+html #app #wsPlaque {
+  position: absolute;
+  left: 0;
+  top: var(--fy);
+  z-index: 26;
+}
+html #app #wsPlaque .ttop {
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+html #app #wsPlaque .wsbtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 226px;
+  height: 40px;
+  padding: 0 16px 0 10px;
+  border-radius: 0 20px 20px 0;
+  background: var(--chip);
+  color: var(--fg);
+  font-size: 14px;
+  box-shadow: none;
+  border: 0;
+}
+html #app #wsPlaque .wsbtn:hover {
+  background: color-mix(in srgb, var(--chip) 85%, var(--fg));
+}
+
+/* ---------- field ---------- */
+html #app #stage {
+  grid-area: stage;
+  background: var(--canvas);
+}
+html #app #cmdBar {
+  top: 66px;
+}
+html #app #v3msg {
+  top: 70px;
+  bottom: auto;
+  left: 12px;
+  max-width: 330px;
+  font-size: 11px;
+}
+html #app #v3 canvas.vcube3 {
+  top: 70px;
+  right: var(--mR);
+}
+html #app:not(.sidehide) #v3 canvas.vcube3 {
+  right: calc(var(--mR) + var(--sideW) + 16px);
+}
+html #app #lswPop {
+  position: fixed;
+  left: max(8px, calc(50% - min(500px, 26vw)));
+  top: calc(var(--fy) + 46px);
+  max-height: calc(100vh - var(--fy) - 120px);
+  z-index: 40;
+  background: var(--chip2);
+  border-radius: 14px;
+}
+html #app #tabs {
+  position: static;
+  display: flex;
+  gap: 2px;
+  background: none;
+  border-radius: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  max-width: none;
+}
+
+/* ---------- panel over the field (5 parts) ---------- */
+html #app #v3bar {
+  position: absolute;
+  top: var(--fy);
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--dockW);
+  height: 40px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  background: var(--dock);
+  border-radius: 20px;
+  z-index: 24;
+  color: var(--fg);
+  font-size: 13px;
+  pointer-events: auto;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+html #app #v3bar .fbpbtn {
+  display: none;
+}
+html #app #v3bar .fbp {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  min-width: 0;
+}
+html #app #v3bar .fbp + .fbp::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: color-mix(in srgb, var(--fg) 16%, transparent);
+}
+html #app #v3bar .v3grp {
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+html #app #v3bar .fbp > button,
+html #app #v3bar .v3g,
+html #app #v3bar .lswbtn {
+  flex: 1;
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  opacity: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+html #app #v3bar .fbp:first-of-type > button {
+  border-radius: 20px 0 0 20px;
+}
+html #app #v3bar .fbp > button:hover:not(:disabled),
+html #app #v3bar .v3g:hover:not(:disabled),
+html #app #v3bar .v3g.open,
+html #app #v3bar .lswbtn:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+html #app #v3bar .lswbtn.on {
+  color: var(--accent);
+}
+/* the skins force their own look on «Слои ▾» and on the pop-ups with !important: the frame answers in kind */
+html[data-skin] #app #v3bar .lswbtn,
+html[data-skin] #app #v3bar .lswbtn.on {
+  background: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  font: inherit !important;
+  color: var(--fg) !important;
+}
+html[data-skin] #app #v3bar .lswbtn.on {
+  color: var(--accent) !important;
+}
+html[data-skin] #app #v3bar .fbp:first-of-type .lswbtn {
+  border-radius: 20px 0 0 20px !important;
+}
+html #app #v3bar button.on:not(.v3menu button) {
+  color: var(--accent);
+}
+html #app #v3bar .fbp-cut {
+  flex-wrap: nowrap;
+}
+html #app #v3bar #v3cuth {
+  flex: none;
+  padding: 0 6px;
+}
+html #app #v3bar .na,
+html #app #v3bar button:disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+html #app #v3bar .v3menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 210px;
+  max-height: calc(100vh - var(--fy) - 90px);
+  overflow-y: auto;
+  background: var(--chip2);
+  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+  z-index: 60;
+}
+html #app #v3bar .v3menu[hidden] {
+  display: none;
+}
+html #app #v3bar .v3menu button {
+  display: flex;
+  width: 100%;
+  height: auto;
+  padding: 7px 10px;
+  border-radius: 8px;
+  text-align: left;
+  justify-content: flex-start;
+  color: var(--fg);
+  background: none;
+}
+html #app #v3bar .v3menu button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+html #app #v3bar .v3menu .mh {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+html #app #v3bar .fbp-views {
+  display: none;
+}
+
+/* ---------- right panel ---------- */
+html:not([data-form='phone']) #app #side {
+  position: absolute;
+  top: var(--fy);
+  right: var(--mR);
+  bottom: 22px;
+  width: min(var(--sideW), calc(100vw - 24px));
+  background: var(--sidebg);
+  border: 0;
+  border-radius: 20px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16);
+  z-index: 28;
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transform: none;
+  visibility: visible;
+}
+html:not([data-form='phone']) #app #side.open {
+  display: flex;
+}
+html #app #side::before {
+  content: '';
+  flex: none;
+  height: 46px;
+}
+html:not([data-form='phone']) #app #side .stabs,
+html:not([data-form='phone']) #app #side .sec {
+  background: none;
+}
+html #app #sideTog {
+  position: absolute;
+  top: var(--fy);
+  right: var(--mR);
+  left: auto;
+  bottom: auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--chip);
+  color: var(--fg);
+  font-size: 20px;
+  line-height: 1;
+  z-index: 34;
+  transform: none;
+  box-shadow: none;
+}
+html #app #sideTog:hover {
+  background: color-mix(in srgb, var(--chip) 80%, var(--fg));
+  color: var(--fg);
+  border: 0;
+}
+html:not([data-form='phone']) #app:not(.sidehide) #sideTog {
+  top: calc(var(--fy) + 4px);
+  right: calc(var(--mR) + min(var(--sideW), calc(100vw - 24px)) - 44px);
+  background: transparent;
+  width: 36px;
+  height: 36px;
+}
+html #app #sideGrip {
+  position: absolute;
+  top: calc(var(--fy) + 30px);
+  bottom: 52px;
+  right: calc(var(--mR) + var(--sideW) - 3px);
+  width: 7px;
+  z-index: 29;
+  display: none;
+}
+html[data-form='desk'] #app:not(.sidehide) #sideGrip {
+  display: block;
+}
+
+/* ---------- drop-downs of the chips ---------- */
+html[data-skin] body .pop.dd,
+html[data-skin] #app #lswPop {
+  background: var(--chip2) !important;
+  color: var(--fg) !important;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.24) !important;
+  padding: 6px !important;
+  overflow-y: auto;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html body .pop.dd {
+  z-index: 60;
+}
+html body #issPop {
+  width: min(400px, calc(100vw - 16px));
+}
+html body #layersPop {
+  width: min(380px, calc(100vw - 16px));
+}
+html body #popmenu {
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 16px));
+}
+html body #popmenu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--fg);
+  text-align: left;
+}
+html body #popmenu button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+html body #popmenu button:disabled {
+  opacity: 0.45;
+}
+html body #popmenu kbd {
+  font: 11px var(--f-mono);
+  color: var(--muted);
+}
+html body #popmenu .mh {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+html body .pop.dd .sec {
+  border: 0;
+  padding: 6px 8px;
+}
+
+/* ---------- bottom dock ---------- */
+html #app #dock {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: var(--dockB);
+  width: var(--dockW);
+  z-index: 24;
+  background: var(--dock);
+  border-radius: 20px;
+  color: var(--fg);
+  display: grid;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+html #app #dock.expanded {
+  height: 150px;
+  grid-template-columns: 122px minmax(0, 1fr);
+}
+html #app #dock.expanded.histbig {
+  height: auto;
+  min-height: 150px;
+}
+html #app #dock.expanded.histbig #hist {
+  max-height: 40vh;
+  min-height: 120px;
+}
+html #app #dockScene {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px 8px 12px;
+  background: color-mix(in srgb, var(--dock) 70%, var(--chip2));
+  border-radius: 20px 0 0 20px;
+  min-width: 0;
+}
+html #app .dsh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+html #app .dsh .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+html #app #sceneTools .tgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+html #app #sceneTools .tool {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+html #app #sceneTools .tool .tl,
+html #app #sceneTools .tlab {
+  display: none;
+}
+html #app #dockMain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+html #app #dockBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 4px 44px 0 8px;
+  flex: none;
+}
+html #app #tabs button {
+  padding: 5px 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  flex: none;
+}
+html #app #tabs button.on {
+  color: var(--fg);
+  background: none;
+  border-bottom-color: var(--muted);
+}
+html #app #tabs button[data-tab='new'] {
+  padding: 3px 7px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  align-self: center;
+  margin-left: 6px;
+}
+html #app #tabs {
+  flex: 1;
+  min-width: 0;
+}
+html #app .dmini {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--fg);
+  font-size: 13px;
+  background: none;
+}
+html #app .dmini:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+html #app .dmini.more {
+  font-size: 17px;
+  font-weight: 700;
+}
+html #app #dock.expanded #dockKb,
+html #app #dock.expanded #dockTog {
+  display: none;
+}
+/* the round «+» and the «▾» list of all tabs sit after the tabs; the old «+» tab inside the strip stays out of sight */
+html #app #tabs button[data-tab='new'] {
+  display: none;
+}
+html #app #dock.expanded #dockCur {
+  order: 5;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 0;
+}
+html #app #dock.expanded #dockCur .car {
+  font-size: 13px;
+}
+html #app #dock.expanded #tabs {
+  /* the tabs that do not fit fade out before the round «+» instead of running into it */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+html #app #dock.expanded #dockAdd {
+  flex: none;
+  margin-left: 6px;
+  border: 1px solid var(--muted);
+  width: 22px;
+  height: 22px;
+  align-self: center;
+  font-size: 14px;
+  line-height: 1;
+}
+html #app #dock.expanded #dockMore {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 2;
+}
+html #app #dockCur {
+  display: none;
+}
+html #app #cmdline {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: none;
+  border: 0;
+  font-size: 12px;
+  grid-area: auto;
+}
+html #app #dock #hist {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 2px 14px 0;
+}
+html #app #dock .row {
+  padding: 2px 76px 8px 14px;
+  gap: 8px;
+}
+html #app #dock #coords {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: auto;
+  padding-right: 4px;
+}
+html #app #dock #cin {
+  min-width: 80px;
+  flex: 1;
+}
+html #app #dock #prompt {
+  max-width: 60%;
+}
+html #app #histTog {
+  position: absolute;
+  right: 40px;
+  bottom: 8px;
+  width: 24px;
+  height: 24px;
+}
+html #app #dock.expanded.histbig #histTog {
+  transform: rotate(180deg);
+}
+/* collapsed dock: «● Сцена · tab + ▴ ⋮» above a row of the common tools */
+html #app #dock.collapsed {
+  width: 284px;
+  height: auto;
+  padding: 6px 8px 8px 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: 'dsh bar' 'tools tools';
+  row-gap: 2px;
+  border-radius: 16px;
+}
+html #app #dock.collapsed #dockScene,
+html #app #dock.collapsed #dockMain {
+  display: contents;
+}
+html #app #dock.collapsed .dsh {
+  grid-area: dsh;
+}
+html #app #dock.collapsed #sceneTools {
+  grid-area: tools;
+}
+html #app #dock.collapsed #sceneTools .tgrid {
+  grid-template-columns: repeat(6, 32px);
+  justify-content: start;
+}
+html #app #dock.collapsed #dockBar {
+  grid-area: bar;
+  height: 30px;
+  padding: 0;
+  justify-content: flex-end;
+}
+html #app #dock.collapsed #tabs {
+  display: none;
+}
+html #app #dock.collapsed #dockCur {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg);
+  padding: 0 4px;
+}
+html #app #dock.collapsed #dockMore {
+  position: static;
+}
+html #app #dock.collapsed #histTog {
+  display: none;
+}
+html #app #dock.collapsed #cmdline {
+  display: none;
+}
+html #app #dock.collapsed.typing #cmdline,
+html.cmdon #app #dock.collapsed #cmdline {
+  display: flex;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 16px));
+  background: var(--dock);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.14);
+}
+html #app #dock.collapsed #hist {
+  min-height: 0;
+  max-height: 3.2em;
+  flex: none;
+}
+html #app #dock.collapsed .row {
+  padding-right: 14px;
+}
+
+/* ---------- mode strip ---------- */
+html #app #status {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  height: var(--stripH);
+  max-width: calc(100vw - 16px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  background: var(--chip);
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  font-size: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  z-index: 25;
+  grid-area: auto;
+}
+html #app #status::-webkit-scrollbar {
+  display: none;
+}
+html #app #status .mode {
+  font-size: 10px;
+  height: 100%;
+  padding: 0 6px;
+  letter-spacing: 0;
+  font-weight: 500;
+  border-radius: 0;
+  color: var(--muted);
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+html #app #status .mode.on {
+  color: var(--fg);
+  font-weight: 700;
+}
+html #app #status .mode .fk {
+  margin: 0;
+  order: -1;
+  font-size: 10px;
+}
+html #app #status .caret {
+  padding: 0 3px;
+  font-size: 9px;
+}
+html #app #status select {
+  height: 14px;
+  font-size: 10px;
+  padding: 0;
+}
+html #app #status #lvBtn {
+  display: none;
+}
+html #app #status #views {
+  margin-left: 12px;
+  background: none;
+  border: 0;
+  padding: 0;
+  gap: 0;
+  flex: none;
+  height: 100%;
+}
+html #app #status #views button {
+  height: 100%;
+  padding: 0 7px;
+  font-size: 10px;
+  border-radius: 0;
+  color: var(--muted);
+  background: none;
+  font-weight: 500;
+}
+html #app #status #views button.on {
+  color: var(--fg);
+  font-weight: 700;
+  background: none;
+}
+html.nostrip #app #status {
+  display: none;
+}
+
+/* ===================== tablet (768–1279) ===================== */
+html[data-form='tablet'][data-skin][data-tlab] #app {
+  --bur: 56px;
+  --colW: 64px;
+  --r1: 48px;
+  --r2: 48px;
+  --mR: 12px;
+  --sideW: 300px;
+  --dockW: min(720px, calc(100vw - 24px));
+  --stripH: 36px;
+  --dockB: 44px;
+}
+html[data-form='tablet'] #app #bMenu svg {
+  width: 36px;
+  height: 36px;
+}
+html[data-form='tablet'] #app #mbar {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html[data-form='tablet'] #app #mbar button {
+  flex: none;
+  min-height: 44px;
+  font-size: 15px;
+}
+html[data-form='tablet'] #app #hr1 {
+  gap: 6px;
+  padding-right: 10px;
+}
+html[data-form='tablet'] #app .ib2 {
+  display: none;
+}
+html[data-form='tablet'] #app #bIss .cap,
+html[data-form='tablet'] #app #bIss .car {
+  display: none;
+}
+html[data-form='tablet'] #app #bIss::before {
+  content: '✓';
+  font-size: 16px;
+  font-weight: 700;
+}
+html[data-form='tablet'] #app #bIss {
+  min-width: 56px;
+  justify-content: center;
+}
+html[data-form='tablet'] #app #catChip {
+  min-width: 0;
+  padding: 0 6px 0 10px;
+}
+html[data-form='tablet'] #app #bCat {
+  font-size: 0;
+  width: 34px;
+  justify-content: center;
+}
+html[data-form='tablet'] #app #bCat::before {
+  content: '▦';
+  font-size: 19px;
+}
+html[data-form='tablet'] #app #bCat .car {
+  display: none;
+}
+html[data-form='tablet'] #app #top {
+  gap: 10px;
+  padding: 0 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+html[data-form='tablet'] #app #top .file {
+  display: none;
+}
+html[data-form='tablet'] #app #layerChip {
+  position: sticky;
+  right: 0;
+  margin-left: auto;
+  box-shadow: -8px 0 8px -4px var(--bar2);
+}
+html[data-form='tablet'] #app .chip {
+  height: 40px;
+  border-radius: 20px;
+}
+html[data-form='tablet'] #app .chip.chipb1 {
+  height: 40px;
+}
+html[data-form='tablet'] #app #wsPlaque .wsbtn {
+  height: 44px;
+  width: 200px;
+}
+html[data-form='tablet'] #app #tools {
+  padding-top: 76px;
+}
+html[data-form='tablet'] #app #tools .tgrid {
+  grid-template-columns: var(--toolS, 42px);
+}
+html[data-form='tablet'] #app #v3bar {
+  width: auto;
+  max-width: calc(100vw - 24px);
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 44px;
+  scrollbar-width: none;
+}
+html[data-form='tablet'] #app #v3bar .v3menu {
+  position: fixed;
+}
+html[data-form='tablet'] #app #side {
+  width: min(var(--sideW), calc(100vw - 24px));
+  z-index: 40;
+}
+html[data-form='tablet'] #app #sideTog {
+  width: 44px;
+  height: 44px;
+}
+html[data-form='tablet'] #app #dock.collapsed {
+  width: 340px;
+}
+html[data-form='tablet'] #app #sceneTools .tool {
+  width: 44px;
+  height: 44px;
+}
+html[data-form='tablet'] #app #dock.collapsed #sceneTools .tgrid {
+  grid-template-columns: repeat(6, 44px);
+  gap: 0;
+}
+html[data-form='tablet'] #app #dock.expanded {
+  height: 170px;
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+html[data-form='tablet'] #app #dock.expanded #sceneTools .tgrid {
+  grid-template-columns: repeat(3, 44px);
+  gap: 0;
+}
+html[data-form='tablet'] #app .dmini {
+  width: 44px;
+  height: 36px;
+  border-radius: 18px;
+}
+html[data-form='tablet'] #app #dock.expanded #dockMore {
+  right: 4px;
+  bottom: 4px;
+}
+html[data-form='tablet'] #app #histTog {
+  right: 48px;
+  bottom: 4px;
+}
+html[data-form='tablet'] #app #status {
+  height: var(--stripH);
+}
+html[data-form='tablet'] #app #status .mode,
+html[data-form='tablet'] #app #status #views button {
+  font-size: 12px;
+  padding: 0 10px;
+}
+html[data-form='tablet'] #app #status select {
+  font-size: 12px;
+  height: 28px;
+}
+
+/* ===================== phone (< 768) ===================== */
+html[data-form='phone'][data-skin][data-tlab] #app {
+  --r1: 48px;
+  --colW: 48px;
+  --mR: 8px;
+  --dockB: calc(8px + env(safe-area-inset-bottom, 0px));
+  --dockW: 300px;
+  grid-template-columns: 48px auto auto auto minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr) calc(var(--dockH, 82px) + 72px + env(safe-area-inset-bottom, 0px));
+  grid-template-areas: none;
+}
+html[data-form='phone'] #app::before {
+  content: '';
+  grid-area: 1/1/2/-1;
+  background: var(--bar1);
+  z-index: 0;
+}
+html[data-skin][data-form='phone'] #app #bMenu {
+  grid-area: 1/1;
+  z-index: 1;
+}
+html[data-form='phone'] #app #bMenu svg {
+  width: 30px;
+  height: 30px;
+}
+html[data-form='phone'] #app #top,
+html[data-form='phone'] #app #hr1 {
+  display: contents;
+}
+html[data-form='phone'] #app #lvseg {
+  grid-area: 1/2;
+  align-self: center;
+  height: 36px;
+  padding: 0 4px 0 8px;
+  gap: 2px;
+  z-index: 1;
+  background: var(--chip);
+}
+html[data-form='phone'] #app #lvseg .cap,
+html[data-form='phone'] #app #top .file,
+html[data-form='phone'] #app #layerChip .cap,
+html[data-form='phone'] #app #layerChip .ib,
+html[data-form='phone'] #app #layerChip .more,
+html[data-form='phone'] #app #hr1 .ib2,
+html[data-form='phone'] #app #bIss .cap,
+html[data-form='phone'] #app #bIss .car,
+html[data-form='phone'] #app #catChip .more,
+html[data-form='phone'] #app #catChip .car,
+html[data-form='phone'] #app #legacyHdr {
+  display: none;
+}
+html[data-form='phone'] #app #lvName {
+  max-width: 76px;
+  padding: 0 2px;
+}
+html[data-form='phone'] #app #lvseg button {
+  min-width: 26px;
+  justify-content: center;
+}
+html[data-form='phone'] #app #bIss {
+  grid-area: 1/3;
+  align-self: center;
+  height: 36px;
+  margin-left: 6px;
+  padding: 0 10px;
+  z-index: 1;
+  gap: 4px;
+}
+html[data-form='phone'] #app #bIss::before {
+  content: '✓';
+  color: var(--muted);
+}
+html[data-form='phone'] #app #catChip {
+  grid-area: 1/4;
+  align-self: center;
+  height: 36px;
+  margin-left: 6px;
+  padding: 0 10px;
+  z-index: 1;
+  min-width: 0;
+  background: var(--chip);
+}
+html[data-form='phone'] #app #bCat {
+  padding: 0;
+  font-size: 0;
+}
+html[data-form='phone'] #app #bCat::before {
+  content: '▤';
+  font-size: 18px;
+  line-height: 1;
+}
+html[data-form='phone'] #app #layerChip {
+  grid-area: 1/5;
+  justify-self: end;
+  align-self: center;
+  height: 36px;
+  margin-right: 8px;
+  padding: 0 8px 0 10px;
+  z-index: 1;
+  background: var(--chip);
+  min-width: 0;
+}
+html[data-form='phone'] #app #lcName {
+  min-width: 0;
+  max-width: 78px;
+}
+/* the stage chip and the modes chip stay in the page for the drawer's «Стадия…» and «Режимы…»: out of sight, anchors */
+html[data-form='phone'] #app #stgChip,
+html[data-form='phone'] #app #hModes {
+  position: fixed;
+  left: 16px;
+  top: 52px;
+  width: 140px;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  padding: 0;
+}
+html[data-form='phone'] #app #stage {
+  grid-area: 2/1/3/-1;
+}
+html[data-form='phone'] #app #mbar {
+  grid-area: auto;
+}
+html[data-form='phone'] #app #tools {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--dockH, 82px) + var(--dockB) + 6px);
+  height: 58px;
+  padding: 6px 8px 6px 128px;
+  grid-area: auto;
+  z-index: 23;
+  border-radius: 0;
+  background: var(--col);
+}
+html[data-form='phone'] #app #wsPlaque {
+  left: 8px;
+  top: auto;
+  bottom: calc(var(--dockH, 82px) + var(--dockB) + 15px);
+  z-index: 27;
+}
+html[data-form='phone'] #app #wsPlaque .wsbtn {
+  width: 112px;
+  height: 40px;
+  border-radius: 20px;
+  padding: 0 10px 0 14px;
+  font-size: 13px;
+  background: var(--chip);
+}
+html[data-form='phone'] #app #v3bar {
+  position: absolute;
+  top: 56px;
+  left: 8px;
+  transform: none;
+  width: auto;
+  height: auto;
+  display: block;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+html[data-form='phone'] #app #v3bar .fbpbtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 20px;
+  background: var(--dock);
+  color: var(--fg);
+  font-size: 14px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+html[data-form='phone'] #app #v3bar .fbp {
+  display: none;
+}
+html[data-form='phone'] #app #v3bar.fbopen {
+  background: var(--chip2);
+  border-radius: 18px;
+  padding: 0 0 6px;
+  width: min(300px, calc(100vw - 16px));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+  max-height: calc(100dvh - 190px);
+  overflow-y: auto;
+  z-index: 60;
+}
+html[data-form='phone'] #app #v3bar.fbopen .fbpbtn {
+  background: none;
+  box-shadow: none;
+}
+html[data-form='phone'] #app #v3bar.fbopen .fbp {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+html[data-form='phone'] #app #v3bar.fbopen .fbp::before {
+  display: none;
+}
+html[data-form='phone'] #app #v3bar.fbopen .fbp > button,
+html[data-form='phone'] #app #v3bar.fbopen .v3g,
+html[data-form='phone'] #app #v3bar.fbopen .lswbtn {
+  height: 44px;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+html[data-form='phone'] #app #v3bar.fbopen .v3menu {
+  position: static;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0 8px 6px;
+  max-height: none;
+  min-width: 0;
+}
+html[data-form='phone'] #app #v3bar.fbopen .v3menu button {
+  min-height: 44px;
+}
+html[data-form='phone'] #app #v3bar .fbp-views {
+  padding: 4px 8px 0;
+}
+html[data-form='phone'] #app #v3bar.fbopen .fbp-views {
+  display: flex;
+}
+html[data-form='phone'] #app #v3bar .fbp-views button {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--fg);
+}
+html[data-form='phone'] #app #v3bar .fbp-views .mh {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+html[data-form='phone'] #app #cmdBar {
+  top: 104px;
+}
+html[data-form='phone'] #app #v3 canvas.vcube3 {
+  top: 104px;
+  right: 8px;
+}
+html[data-form='phone'] #app #dock {
+  left: 50%;
+  bottom: var(--dockB);
+}
+html[data-form='phone'] #app #dock.collapsed {
+  width: 300px;
+}
+html[data-form='phone'] #app #dock.collapsed #sceneTools .tgrid {
+  grid-template-columns: repeat(6, 44px);
+  gap: 0;
+}
+html[data-form='phone'] #app #sceneTools .tool {
+  width: 44px;
+  height: 40px;
+}
+html[data-form='phone'] #app .dmini {
+  width: 36px;
+  height: 36px;
+}
+html[data-form='phone'] #app #dock.collapsed #dockCur {
+  max-width: 96px;
+}
+html[data-form='phone'] #app #dock.expanded {
+  width: calc(100vw - 16px);
+  height: auto;
+  min-height: 150px;
+}
+html[data-form='phone'] #app #status {
+  display: none;
+}
+html[data-form='phone'].stopen #app #status {
+  display: flex;
+  bottom: calc(var(--dockH, 82px) + 80px);
+  flex-wrap: wrap;
+  height: auto;
+  border-radius: 14px;
+  padding: 8px;
+  max-width: calc(100vw - 16px);
+}
+html[data-form='phone'] #app #sideTog {
+  display: grid;
+  top: 56px;
+  right: 8px;
+  width: 40px;
+  height: 40px;
+  z-index: 30;
+}
+html[data-form='phone'] #app #sideGrip {
+  display: none;
+}
+html[data-form='phone'] #app #side {
+  background: var(--sidebg);
+}
+html[data-form='phone'] #app #side::before {
+  display: none;
+}
+html[data-form='phone'] #app #side .stabs,
+html[data-form='phone'] #app #side .sec {
+  background: none;
+}
+
+/* ---------- phone: the menu bar is a drawer ---------- */
+html[data-form='phone'][data-skin] #app #mbar {
+  display: none;
+}
+html[data-form='phone'].mopen[data-skin] #app #mbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  position: fixed;
+  top: 54px;
+  right: 8px;
+  left: auto;
+  width: calc(50vw - 12px);
+  box-sizing: border-box;
+  z-index: 70;
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+  padding: 6px;
+  gap: 2px;
+  height: auto;
+  border-radius: 14px;
+  background: var(--chip2);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+html[data-form='phone'].mopen[data-skin] #app #mbar button {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 15px;
+  min-height: 44px;
+}
+html[data-form='phone'].mopen #mquick {
+  background: var(--chip2);
+}
+html[data-form='phone'] #mquick button {
+  min-height: 44px;
+}
+/* ---------- tablet: chips without captions so the row fits ---------- */
+html[data-form='tablet'] #app #lvseg .cap,
+html[data-form='tablet'] #app #stgChip .cap,
+html[data-form='tablet'] #app #hModes .cap {
+  display: none;
+}
+html[data-form='tablet'] #app #lvseg {
+  padding-left: 12px;
+}
+/* tablet: hotkey hints are useless on touch and the view switch stays in sight while the strip scrolls */
+html[data-form='tablet'] #app #status .mode .fk {
+  display: none;
+}
+html[data-form='tablet'] #app #status #views {
+  position: sticky;
+  right: 0;
+  margin-left: auto;
+  background: var(--bar2, var(--chip));
+  padding-left: 8px;
+  z-index: 2;
+}
 </style>
 
 <div id="app">
+  <button id="bMenu" class="burger" aria-label="Меню: файл, о программе" aria-haspopup="menu" title="Меню: файл, о программе"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M7 12h26M7 20h26M7 28h26"/></svg></button>
   <nav id="mbar" role="menubar" aria-label="Главное меню"></nav>
+  <div id="hr1">
+    <button id="bUndo" class="ib2" title="Отменить (Ctrl+Z)" aria-label="Отменить">↶</button>
+    <button id="bRedo" class="ib2" title="Вернуть (Ctrl+Y)" aria-label="Вернуть">↷</button>
+    <button id="bIss" class="chip chipb1" title="Проверки проекта: список замечаний" aria-haspopup="true"><span class="cap">Проверки</span><b id="issN" class="cnt">0</b><i class="car">▾</i></button>
+    <span class="chip chipb1 split" id="catChip"><button id="bCat" title="Каталог моделей">Каталог<i class="car">▾</i></button><button id="bCatMore" class="more" title="Каталоги, конвертор, свои модели" aria-label="Каталог: ещё" aria-haspopup="true">⋮</button></span>
+  </div>
   <header id="top">
-    <div class="brand"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17V3h14"/><path d="M3 17l14-14" stroke-dasharray="2 2"/><rect x="15.5" y="1.5" width="3" height="3" fill="currentColor"/></svg><span>Контур</span></div>
-    <div class="seg" id="views" role="tablist" aria-label="Вид">
-      <button data-v="plan" class="on">План</button><button data-v="split">План + 3D</button><button data-v="3d">3D</button><button data-v="spec">Спецификация</button>
-    </div>
-    <div class="seg" id="wsbar" role="tablist" aria-label="Раздел"></div>
-    <div class="file"><b>Квартира 17</b>, мм</div>
-    <div class="seg" id="lvseg" role="group" aria-label="Этажи" title="Этажи: PgUp / PgDn — соседний этаж"><button id="lvDn" title="Этаж ниже (PgDn)">▼</button><button id="lvName" title="Список этажей, добавить этаж">Этаж 1</button><button id="lvUp" title="Этаж выше (PgUp)">▲</button></div>
-    <nav class="hmenu">
-      <button id="bWT" hidden>Типы стен</button><button id="bMEP" hidden>Инженерия</button>
-      <div class="hgrp" id="hModes"><button id="bModes" class="wide" title="Сети, светорасчёт, расчёт воздуха, проверки, AR">Режимы ▾</button><div class="hpop" hidden>
+    <div class="chip" id="lvseg" role="group" aria-label="Этажи" title="Этажи: PgUp / PgDn — соседний этаж"><span class="cap">Уровень</span><button id="lvName" title="Список этажей, добавить этаж">Этаж 1</button><button id="lvDn" title="Этаж ниже (PgDn)" aria-label="Этаж ниже">▾</button><button id="lvUp" title="Этаж выше (PgUp)" aria-label="Этаж выше">▴</button></div>
+    <div class="chip" id="stgChip"><span class="cap">Стадия</span><button id="stageBtn" class="stgbtn" title="Стадия черчения: своя видимость и свои размеры">Вся модель</button><i class="car">▾</i><button id="stgMore" class="more" title="Планы демонтажа и монтажа, стиль размеров, масштаб аннотаций" aria-label="Стадия: ещё" aria-haspopup="true">⋮</button></div>
+    <div class="chip hgrp" id="hModes"><span class="cap">Режимы</span><button id="bModes" class="wide" title="Сети, светорасчёт, расчёт воздуха, AR"><span id="modeVal">Обычный</span><i class="car">▾</i></button><button id="modesMore" class="more" title="Все разделы на плане, показ фаз" aria-label="Режимы: ещё" aria-haspopup="true">⋮</button><div class="hpop" hidden>
       <button id="bNV" class="wide" title="Вид инженерных сетей · СЕТИ">Сети</button>
       <button id="bLC" class="wide" title="Светорасчёт: зоны, нормы освещённости, тепловая карта, IES">☀ Светорасчёт</button>
       <button id="bAC" class="wide" title="Воздух помещений: зоны расчёта, нормы воздухообмена, холод и тепло, карта скоростей; открыть, изменить и удалить расчёт">≋ Расчёт воздуха</button>
-      <button id="bIss" class="wide" title="Проверки проекта">Проверки <span id="issN" class="cnt" style="color:var(--danger)"></span></button>
       </div></div>
-      <button id="bCat" class="pri">Каталог</button>
-      <button id="bFile">Файл ▾</button>
-      <button id="bUndo" title="Отменить (Ctrl+Z)" aria-label="Отменить">↶</button>
-      <button id="bRedo" title="Вернуть (Ctrl+Y)" aria-label="Вернуть">↷</button>
-      <button id="bPanel">Панель</button>
-    </nav>
+    <div class="file"><b>Квартира 17</b>, мм</div>
+    <div class="chip" id="layerChip" role="group" aria-label="Текущий слой"><span class="cap">Слои</span><i class="sw" id="lcSw"></i><button id="lcEye" class="ib" title="Слой виден / скрыт" aria-label="Видимость слоя"></button><button id="lcLock" class="ib" title="Слой заблокирован / разблокирован" aria-label="Блокировка слоя"></button><button id="lcName" title="Текущий слой: выбрать из списка"><span id="lcText">Стены</span><i class="car">▾</i></button><button id="lcMore" class="more" title="Все слои и категории" aria-label="Слои: полный список" aria-haspopup="true">⋮</button></div>
+    <div id="legacyHdr" hidden>
+      <div class="brand"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17V3h14"/><path d="M3 17l14-14" stroke-dasharray="2 2"/><rect x="15.5" y="1.5" width="3" height="3" fill="currentColor"/></svg><span>Контур</span></div>
+      <div class="seg" id="wsbar" role="tablist" aria-label="Раздел"></div>
+      <nav class="hmenu"><button id="bWT" hidden>Типы стен</button><button id="bMEP" hidden>Инженерия</button><button id="bFile">Файл ▾</button><button id="bPanel">Панель</button></nav>
+    </div>
   </header>
 
   <aside id="tools" aria-label="Инструменты"></aside>
+  <div id="wsPlaque"></div>
 
   <main id="stage" class="v-plan">
     <div id="pw">
       <canvas id="cv" aria-label="План"></canvas>
       <div id="tedit" hidden></div>
-      <div id="tabs"><button class="on">Модель</button><button disabled title="Компоновка листов и выгрузка в PDF — следующий этап">Лист 1 · PDF</button></div>
     </div>
     <div id="v3">
-      <div id="v3bar">
-        <div class="v3grp"><button class="v3g" title="Направление взгляда">Вид ▾</button><div class="v3menu" hidden><button data-a="iso">Изометрия</button><button data-a="top">Сверху</button><button data-a="front" title="Вид спереди (с юга)">Спереди</button><button data-a="right" title="Вид справа (с востока)">Справа</button><button data-a="left" title="Вид слева (с запада)">Слева</button><button data-a="back" title="Вид сзади (с севера)">Сзади</button><button data-a="sel" title="Приблизить выделенное (двойной щелчок по объекту — центр вращения)">К выделенному</button></div></div><button data-a="fit" title="Показать всё">Всё</button>
-        <span class="sp"></span>
-        <button data-a="cut" id="v3cut" title="Стены перед камерой срезаются, потолок скрыт. Щелчок — полные / срез / низкие">Стены: полные</button><button data-a="cuth" id="v3cuth" title="Высота среза стен" hidden>Срез: 400</button><div class="v3grp"><button class="v3g" id="v3top" title="Скрыть крышу, чистовой потолок или перекрытие, чтобы заглянуть в помещение сверху">Потолок ▾</button><div class="v3menu" hidden id="v3gTop"><button data-top="roof" class="on" title="Кровля и скаты">Крыша</button><button data-top="ceil" class="on" title="Натяжной, ГКЛ, реечный, отделка по плите">Чистовой потолок</button><button data-top="slab" class="on" title="Несущая плита над этажом">Перекрытие</button><button data-top="all" title="Скрыть всё над помещением или вернуть">Скрыть всё / показать всё</button></div></div>
-        <span class="sp"></span>
-        <div class="v3grp"><button class="v3g" title="Тени, рёбра, гладкость, фазы, состав по категориям">Показ ▾</button><div class="v3menu" hidden id="v3gShow"><button data-a="shadow" class="on">Тени</button><button data-a="edges" class="on">Рёбра</button><button data-a="tq" id="v3tq">Гладкость: авто</button><button data-a="cats" id="v3catsBtn">Состав…</button></div></div><div class="v3grp"><button class="v3g" title="Перемещение и поворот объекта, труба в 3D, рабочая плоскость">Правка ▾</button><div class="v3menu" hidden><button data-a="move" title="Перетаскивание выбранного объекта">Переместить</button><button data-a="rot" title="Поворот выбранного объекта">Повернуть</button><button data-a="pipe3" title="Нарисовать трубу прямо в 3D: щелчок по точке подключения прибора или по поверхности; Shift — вертикальный участок (подъём/опуск)">Труба</button><button data-a="wp" id="v3wp" title="Рабочая плоскость для рисования в 3D, когда курсор не над объектом">Плоскость: пол</button></div></div>
-      </div>
       <div id="v3cats" hidden></div>
       <div id="v3msg">Ctrl+ЛКМ — вращать · Ctrl+ПКМ / ПКМ — сдвиг · колесо — масштаб к курсору · щелчок — выбрать</div>
     </div>
     <div id="spec"></div>
   </main>
 
-  <div id="sideGrip" title="Тяните — ширина панели · двойной щелчок — по умолчанию"></div><button id="sideTog" title="Скрыть/показать панель" aria-label="Скрыть или показать правую панель">›</button>
+  <div id="v3bar" role="toolbar" aria-label="Панель над полем">
+    <button id="fbpBtn" class="fbpbtn" aria-haspopup="true">Вид<i class="car">▾</i></button>
+    <div class="fbp fbp-lsw" id="fbpLayers"></div>
+    <div class="fbp"><div class="v3grp"><button class="v3g" title="Направление взгляда">Вид<i class="car">▾</i></button><div class="v3menu" hidden><button data-a="fit" title="Показать всё">Показать всё</button><button data-a="iso">Изометрия</button><button data-a="top">Сверху</button><button data-a="front" title="Вид спереди (с юга)">Спереди</button><button data-a="right" title="Вид справа (с востока)">Справа</button><button data-a="left" title="Вид слева (с запада)">Слева</button><button data-a="back" title="Вид сзади (с севера)">Сзади</button><button data-a="sel" title="Приблизить выделенное (двойной щелчок по объекту — центр вращения)">К выделенному</button></div></div></div>
+    <div class="fbp fbp-cut"><button data-a="cut" id="v3cut" title="Стены перед камерой срезаются, потолок скрыт. Щелчок — полные / срез / низкие">Стены: полные</button><button data-a="cuth" id="v3cuth" title="Высота среза стен" hidden>Срез: 400</button></div>
+    <div class="fbp"><div class="v3grp"><button class="v3g" id="v3top" title="Скрыть крышу, чистовой потолок или перекрытие, чтобы заглянуть в помещение сверху">Потолок<i class="car">▾</i></button><div class="v3menu" hidden id="v3gTop"><button data-top="roof" class="on" title="Кровля и скаты">Крыша</button><button data-top="ceil" class="on" title="Натяжной, ГКЛ, реечный, отделка по плите">Чистовой потолок</button><button data-top="slab" class="on" title="Несущая плита над этажом">Перекрытие</button><button data-top="all" title="Скрыть всё над помещением или вернуть">Скрыть всё / показать всё</button></div></div></div>
+    <div class="fbp"><div class="v3grp"><button class="v3g" title="Тени, рёбра, гладкость, фазы, состав по категориям, правка в 3D">Показ<i class="car">▾</i></button><div class="v3menu" hidden id="v3gShow"><button data-a="shadow" class="on">Тени</button><button data-a="edges" class="on">Рёбра</button><button data-a="tq" id="v3tq">Гладкость: авто</button><button data-a="cats" id="v3catsBtn">Состав…</button><hr><div class="mh">Правка в 3D</div><button data-a="move" title="Перетаскивание выбранного объекта">Переместить</button><button data-a="rot" title="Поворот выбранного объекта">Повернуть</button><button data-a="pipe3" title="Нарисовать трубу прямо в 3D: щелчок по точке подключения прибора или по поверхности; Shift — вертикальный участок (подъём/опуск)">Труба</button><button data-a="wp" id="v3wp" title="Рабочая плоскость для рисования в 3D, когда курсор не над объектом">Плоскость: пол</button></div></div></div>
+  </div>
+
+  <button id="sideTog" title="Открыть / закрыть правую панель" aria-label="Открыть или закрыть правую панель" aria-expanded="false">‹</button>
+  <div id="sideGrip" title="Тяните — ширина панели · двойной щелчок — по умолчанию"></div>
   <aside id="side">
-    <section class="sec" id="secWS"></section>
-    <div class="stabs"><button data-t="layers" class="on">Слои</button><button data-t="browser">Проект</button><button data-t="iss">Проверки</button><button data-t="agent" title="ИИ-агенты: построение по заданию и проверка проекта">Агент</button></div>
-    <section class="sec" id="secLayers">
-      <div class="sech">Слои и категории <button id="bAddLayer">+ Слой</button></div>
-      <div id="layers"></div>
-    </section>
-    <section class="sec" id="secBrowser" hidden>
-      <div class="sech">Элементы по категориям</div>
-      <div id="browser"></div>
-    </section>
-    <section class="sec" id="secIss" hidden><div class="sech">Проверки проекта</div><div id="issues"></div></section>
-    <section class="sec" id="secAgent" hidden><div class="sech">ИИ-агенты</div><div id="agent"></div></section>
-    <section class="sec">
+    <section class="sec" id="secProps">
       <div class="sech">Свойства</div>
       <div id="props"></div>
     </section>
+    <section class="sec" id="secWS"></section>
+    <div class="stabs"><button data-t="browser" class="on">Проект</button><button data-t="agent" title="ИИ-агенты: построение по заданию и проверка проекта">Агент</button></div>
+    <section class="sec" id="secBrowser">
+      <div class="sech">Элементы по категориям</div>
+      <div id="browser"></div>
+    </section>
+    <section class="sec" id="secAgent" hidden><div class="sech">ИИ-агенты</div><div id="agent"></div></section>
     <section class="sec" id="secHelp">
       <div class="sech">Подсказка</div><div class="hint" id="ctxHelp"></div>
       <div class="hint" id="snapHelp">Точка: <code>1200,300</code> · <code>@500,0</code> · <code>@800&lt;45</code> · <code>1500</code> по направлению курсора.
@@ -7032,13 +8669,29 @@ html[data-form='phone'] .modal table.cards td::before {
     </section>
   </aside>
 
-  <footer id="cmdline">
-    <div id="hist"></div>
-    <div class="row"><span id="prompt"></span><input id="cin" autocomplete="off" spellcheck="false" aria-label="Командная строка"></div>
+  <div id="issPop" class="pop dd" hidden role="dialog" aria-label="Проверки проекта"><section class="sec" id="secIss" hidden><div class="sech">Проверки проекта</div><div id="issues"></div></section></div>
+  <div id="layersPop" class="pop dd" hidden role="dialog" aria-label="Слои и категории"><section class="sec" id="secLayers"><div class="sech">Слои и категории <button id="bAddLayer">+ Слой</button></div><div id="layers"></div></section></div>
+  <div id="popmenu" class="pop menu dd" hidden role="menu"></div>
+
+  <footer id="dock" class="expanded">
+    <div id="dockScene"><div class="dsh"><i class="dot"></i>Сцена</div><div id="sceneTools"></div></div>
+    <div id="dockMain">
+      <div id="dockBar">
+        <div id="tabs"></div>
+        <button id="dockCur" class="dcur" title="Лист или вкладка: выбрать" aria-haspopup="true"></button>
+        <button id="dockKb" class="dmini" title="Командная строка: ввод с клавиатуры" aria-label="Командная строка">⌨</button>
+        <button id="dockAdd" class="dmini" title="Новый лист" aria-label="Новый лист">+</button>
+        <button id="dockTog" class="dmini" title="Свернуть или развернуть нижнюю панель" aria-label="Свернуть или развернуть нижнюю панель" aria-expanded="true">▾</button>
+        <button id="dockMore" class="dmini more" title="Нижняя панель: ещё" aria-label="Нижняя панель: ещё" aria-haspopup="true">⋮</button>
+      </div>
+      <footer id="cmdline">
+        <div id="hist"></div>
+        <div class="row"><span id="prompt"></span><input id="cin" autocomplete="off" spellcheck="false" aria-label="Командная строка"><span id="coords">0, 0</span><button id="histTog" class="dmini" title="Развернуть журнал" aria-label="Развернуть журнал">▴</button></div>
+      </footer>
+    </div>
   </footer>
 
   <footer id="status">
-    <span id="coords">0, 0</span>
     <button class="mode" data-m="grid" title="Сетка (F7)">Сетка<span class="fk">F7</span></button>
     <button class="mode" data-m="snap" title="Шаг курсора по сетке (F9)">Шаг<span class="fk">F9</span></button>
     <button class="mode" data-m="ortho" title="Орто — только горизонтально и вертикально (F8)">Орто<span class="fk">F8</span></button>
@@ -7049,6 +8702,9 @@ html[data-form='phone'] .modal table.cards td::before {
     <span class="sgrp"><button class="mode" data-m="osnap" title="Объектная привязка (F3)">Привязка<span class="fk">F3</span></button><button class="caret" id="bOs" title="Режимы привязки" aria-label="Режимы привязки">▲</button></span>
     <button class="mode" id="bAllSec" title="Инженерные разделы на плане. Выключено — проводка, трубы, вентиляция и отопление видны только в своём разделе (Электрика, Сантехника, Климат), план работает быстрее. Включено — все разделы сразу. На листах и в 3D всё видно всегда.">Все разделы</button>
     <button class="mode" data-m="otrack" title="Объектное отслеживание — линии от точек привязки (F11)">Слежение<span class="fk">F11</span></button><button class="mode" data-v="dyn" title="Динамический ввод (F12): длина и угол у курсора; число + Tab — зафиксировать длину, затем угол">Дин. ввод</button><button class="mode" data-v="lwt" title="Отображение весов линий">Веса линий</button><button class="mode" data-v="cad" title="CAD-отображение чертежа:перья по ГОСТ, без заливок и свечения, чертёжный шрифт. Выкл — презентационный вид">Чертёж</button>
+    <div class="seg" id="views" role="tablist" aria-label="Вид">
+      <button data-v="plan" class="on">План</button><button data-v="split">План + 3D</button><button data-v="3d">3D</button><button data-v="spec">Спецификация</button>
+    </div>
   </footer>
 </div>
 
@@ -7181,7 +8837,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.77';
+const APP_VER = '59.78';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -13128,9 +14784,18 @@ function zoomExtents() {
     x1 = Math.max(x1, p.x);
     y1 = Math.max(y1, p.y);
   }
-  view.x = (x0 + x1) / 2;
-  view.y = (y0 + y1) / 2;
-  view.k = Math.max(1e-4, Math.min((W - 80) / Math.max(x1 - x0, 1), (H - 80) / Math.max(y1 - y0, 1)));
+  // panels floating over the field (uiHooks.fitInsets, ui/layout.js) take their share: the plan fits the free area
+  const ins = (uiHooks.fitInsets && uiHooks.fitInsets()) || {};
+  const iT = ins.top || 0,
+    iB = ins.bottom || 0,
+    iL = ins.left || 0,
+    iR = ins.right || 0;
+  view.k = Math.max(
+    1e-4,
+    Math.min((W - 80 - iL - iR) / Math.max(x1 - x0, 1), (H - 80 - iT - iB) / Math.max(y1 - y0, 1))
+  );
+  view.x = (x0 + x1) / 2 - (iL - iR) / 2 / view.k;
+  view.y = (y0 + y1) / 2 + (iT - iB) / 2 / view.k;
   dirty();
 }
 function zoomAt(sx, sy, f) {
@@ -15519,6 +17184,9 @@ function renderCmdBar() {
 }
 function refreshPrompt() {
   renderCmdBar();
+  // a running command keeps the command line on screen even when the bottom dock is collapsed
+  if (typeof document !== 'undefined' && document.documentElement && document.documentElement.classList)
+    document.documentElement.classList.toggle('cmdon', !!commandsState.cmd);
   const t = promptText();
   $('#prompt').innerHTML =
     (commandsState.ovr ? `<span class="ovr">[${OSN[commandsState.ovr]}]</span> ` : '') +
@@ -21112,6 +22780,58 @@ const THEMES = {
     canvas: '#fbfbf9'
   }
 };
+/**
+ * Colours of the window frame (docs/UI-LAYOUT.md): bar1 — the first header row (lighter), bar2 — the second row
+ * (darker), chip / chip2 — plaques on them, dock — floating panels over the field, col — the tool column,
+ * sidebg — the right panel. One set per theme; they become CSS variables --bar1 … --sidebg.
+ */
+const FRAME = {
+  mac: {
+    bar1: '#f6f6f8',
+    bar2: '#d7d7dc',
+    chip: '#e8e8ed',
+    chip2: '#ffffff',
+    dock: '#e2e2e7',
+    col: '#ececf0',
+    sidebg: '#f1f1f4'
+  },
+  kalka: {
+    bar1: '#e6ebe7',
+    bar2: '#c9d1cb',
+    chip: '#d9dfdb',
+    chip2: '#f3f6f3',
+    dock: '#d3dad5',
+    col: '#dde3df',
+    sidebg: '#e5eae6'
+  },
+  dark: {
+    bar1: '#2b3037',
+    bar2: '#181b1f',
+    chip: '#363c44',
+    chip2: '#222730',
+    dock: '#262b32',
+    col: '#1e2227',
+    sidebg: '#1e2227'
+  },
+  graphite: {
+    bar1: '#383c42',
+    bar2: '#232629',
+    chip: '#454a51',
+    chip2: '#2b2e32',
+    dock: '#33373c',
+    col: '#2a2d31',
+    sidebg: '#2a2d31'
+  },
+  light: {
+    bar1: '#f8f9fa',
+    bar2: '#d8dce1',
+    chip: '#e4e7eb',
+    chip2: '#ffffff',
+    dock: '#e4e7eb',
+    col: '#eceef1',
+    sidebg: '#f1f2f4'
+  }
+};
 const ICONS = {
   s: { n: 'Мелкие', t: 28, i: 16 },
   m: { n: 'Средние', t: 34, i: 20 },
@@ -21148,6 +22868,7 @@ function applyUI() {
   // colours that only some themes set must not leak from the previous theme
   for (const k of ['danger', 'ok']) if (!(k in th.v)) rs.removeProperty('--' + k);
   for (const [k, v] of Object.entries(th.v)) rs.setProperty('--' + k, v);
+  for (const [k, v] of Object.entries(FRAME[themeState.UI.theme] || FRAME.mac)) rs.setProperty('--' + k, v);
   if (DE.dataset) DE.dataset.skin = th.skin || 'classic';
   const canvas = hexOk(themeState.UI.canvas)
     ? themeState.UI.canvas
@@ -21226,8 +22947,8 @@ function inkC(c) {
  *  - The form of the device goes to <html data-form="phone|tablet|desk" data-touch="0|1">; the layout is in
  *    styles/zz-responsive.css. Phone: a compact header with the menu button, the tools in a bottom strip, the
  *    side panel as a bottom sheet («Свойства» chip when something is selected), the command line in one row
- *    with ✓ / ✕ buttons, the status toggles in a pop-up. Tablet: larger targets, the panel slides over in
- *    portrait.
+ *    with ✓ / ✕ buttons, the status toggles in a pop-up. Tablet: larger targets, the panel slides over the field.
+ *    The form follows the width (phone < 768, tablet 768–1279, desktop ≥ 1280), the pointer only sets data-touch.
  *  - On a touch screen the command input does not grab the focus (no keyboard popping up on every tap);
  *    pick and snap radii are larger.
  *  - Touchpad: two fingers move the view, a pinch zooms; in 3D two fingers orbit (with Shift — pan).
@@ -21244,16 +22965,21 @@ function inkC(c) {
 
 
 
+
+
 const RESP = { form: 'desk', touch: false, padSeen: 0, padAt: 0 };
 
 /** Phone / tablet / desktop from the size and the pointer. */
 function respDetect() {
   if (typeof window === 'undefined' || !window.matchMedia) return;
-  const w = window.innerWidth,
-    h = window.innerHeight;
   const coarse = matchMedia('(pointer: coarse)').matches;
+  // on a touch device the screen width is trusted too: a page that overflows is zoomed out and reports a wider window
+  const sw = window.screen && window.screen.width ? window.screen.width : Infinity;
+  const w = coarse ? Math.min(window.innerWidth, sw) : window.innerWidth,
+    h = window.innerHeight;
   const anyCoarse = matchMedia('(any-pointer: coarse)').matches;
-  const form = w <= 700 || (coarse && Math.min(w, h) <= 520) ? 'phone' : coarse ? 'tablet' : 'desk';
+  // docs/UI-LAYOUT.md: phone < 768, tablet 768–1279, desktop ≥ 1280 (a phone turned sideways is still a phone)
+  const form = w < 768 || (coarse && Math.min(w, h) <= 520) ? 'phone' : w < 1280 ? 'tablet' : 'desk';
   RESP.form = form;
   RESP.touch = coarse || (anyCoarse && form !== 'desk');
   const de = document.documentElement;
@@ -21323,6 +23049,7 @@ function initResponsive() {
   if (typeof document === 'undefined' || !document.documentElement || !document.querySelector) return;
   respDetect();
   window.addEventListener('resize', respDetect);
+  setTimeout(respDetect, 400);
   window.addEventListener('orientationchange', () => setTimeout(respDetect, 120));
   // the command line does not take the focus by itself on a touch screen: no keyboard on every tap
   if (cin && cin.focus) {
@@ -21332,27 +23059,17 @@ function initResponsive() {
       f(o);
     };
   }
-  const top = $('#top');
-  if (!top || !top.insertBefore) return;
-  // header: the menu button (phone) and the status toggles pop-up
-  const bm = document.createElement('button');
-  bm.id = 'bMenu';
-  bm.setAttribute('aria-label', 'Меню');
-  bm.innerHTML =
-    '<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>';
-  top.insertBefore(bm, top.firstChild);
+  // the menu button (the burger of index.html): a drawer on a phone, the «Файл» menu elsewhere
+  const bm = $('#bMenu');
+  if (!bm) return;
   const quick = document.createElement('div');
   quick.id = 'mquick';
   quick.innerHTML = [
-    ['bCat', 'Каталог'],
-    ['bIss', 'Проверки'],
+    ['stageBtn', 'Стадия…'],
+    ['bModes', 'Режимы…'],
     ['bNV', 'Сети'],
     ['bLC', 'Светорасчёт'],
     ['bAR', 'AR'],
-    ['bFile', 'Файл'],
-    ["#views [data-v='plan']", 'План'],
-    ["#views [data-v='3d']", '3D'],
-    ["#views [data-v='spec']", 'Спецификация'],
     ['sb', 'Привязки и режимы']
   ]
     .map(([id, n]) => `<button data-q="${id}">${n}</button>`)
@@ -21361,7 +23078,9 @@ function initResponsive() {
   const closeMenu = () => document.documentElement.classList.remove('mopen');
   bm.onclick = ev => {
     ev.stopPropagation();
-    document.documentElement.classList.toggle('mopen');
+    if (RESP.form === 'phone') document.documentElement.classList.toggle('mopen');
+    else if (menubarState.MB_OPEN === 0) hideMenus();
+    else openMenu(0, bm);
   };
   quick.onclick = ev => {
     const b = ev.target.closest('[data-q]');
@@ -21622,6 +23341,26 @@ const clickId = id => {
   const b = $('#' + id);
   if (b) b.click();
 };
+/** «Настройки → Черчение»: the toggles of the mode strip (grid, step, ortho, angles, snap, tracking, …) as menu items. */
+function drawModeItems() {
+  const m = (sel, n, k) => ({
+    n,
+    k,
+    a: () => document.querySelector(`#status ${sel}`).click(),
+    c: () => document.querySelector(`#status ${sel}`).classList.contains('on')
+  });
+  return [
+    m('[data-m="grid"]', 'Сетка', 'F7'),
+    m('[data-m="snap"]', 'Шаг', 'F9'),
+    m('[data-m="ortho"]', 'Орто', 'F8'),
+    m('[data-m="polar"]', 'Углы', 'F10'),
+    m('[data-m="osnap"]', 'Привязка', 'F3'),
+    m('[data-m="otrack"]', 'Слежение', 'F11'),
+    m('[data-v="dyn"]', 'Динамический ввод'),
+    m('[data-v="lwt"]', 'Веса линий'),
+    m('[data-v="cad"]', 'Чертёж (CAD-отображение)')
+  ];
+}
 const MENUS = [
   {
     n: 'Файл',
@@ -21661,7 +23400,9 @@ const MENUS = [
           else log('Импорт DXF недоступен', true);
         }
       },
-      { n: 'Печать текущего вида…', k: 'Ctrl+P', a: () => window.print() }
+      { n: 'Печать текущего вида…', k: 'Ctrl+P', a: () => window.print() },
+      { h: 'Программа' },
+      { n: 'О программе', a: () => openAbout() }
     ]
   },
   {
@@ -21713,6 +23454,9 @@ const MENUS = [
       { n: 'Дополненная реальность (AR)', k: 'AR', a: () => run('ar') },
       { n: 'Заметки с объекта…', a: () => uiHooks.openArNotes && uiHooks.openArNotes() },
       { n: 'Проверка датчиков телефона…', a: () => uiHooks.arSensorCheck && uiHooks.arSensorCheck() },
+      { h: 'Стадия и режимы' },
+      { n: 'Стадия черчения…', a: () => clickId('stageBtn') },
+      { n: 'Режимы: сети, светорасчёт, AR…', a: () => clickId('bModes') },
       { h: 'Фазы' },
       {
         n: 'План демонтажа',
@@ -21823,7 +23567,7 @@ const MENUS = [
       { n: 'Дотянуть устройства до щита', a: () => autoWirePanel() },
       { n: 'Перетрассировать все провода', a: () => rerouteAll() },
       { h: 'Проект' },
-      { n: 'Проверки проекта', a: () => clickId('bIss') },
+      { n: 'Проверки проекта', a: () => uiHooks.openDropdown && uiHooks.openDropdown('iss') },
       { n: 'Спецификация', a: () => setView('spec') }
     ]
   },
@@ -21832,6 +23576,8 @@ const MENUS = [
     it: [
       { n: 'Интерфейс…', a: () => openUI() },
       { n: 'Объектная привязка…', k: 'F3', a: () => setTimeout(() => clickId('bOs'), 0) },
+      { h: 'Черчение' },
+      ...drawModeItems(),
       '-',
       ...wheelModeMenu(),
       { h: 'Оформление' },
@@ -21956,12 +23702,13 @@ function renderMbar() {
     ).join('') +
     `<span class="mbsp"></span><span class="hint mbproj">${esc(document.querySelector('#top .file') ? document.querySelector('#top .file').textContent : '')}</span>`;
 }
-function openMenu(i) {
+/** Opens the drop-down of a menu bar item under its button, or under another anchor (the burger opens «Файл»). */
+function openMenu(i, anchor) {
   const M = MENUS[i];
   if (!M) return;
   menubarState.MB_OPEN = i;
   renderMbar();
-  const b = $(`#mbar [data-mi="${i}"]`);
+  const b = anchor || $(`#mbar [data-mi="${i}"]`);
   const r = b.getBoundingClientRect();
   const p = $('#mbmenu');
   p.innerHTML = M.it
@@ -22566,6 +24313,7 @@ function hideMenus() {
   if (wm) wm.hidden = true;
   const pm = $('#pipemenu');
   if (pm) pm.hidden = true;
+  if (uiHooks.closeDropdowns) uiHooks.closeDropdowns();
 }
 function placePop(el, x, y) {
   el.hidden = false;
@@ -22736,6 +24484,7 @@ function initToolbar() {
       !e.target.closest('#mbar') &&
       !e.target.closest('#bOs') &&
       !e.target.closest('#bFile') &&
+      !e.target.closest('#bMenu') &&
       !e.target.closest('#wsBtn') &&
       !e.target.closest('.tool[data-c=pipe]') &&
       !e.target.closest('.tool.fly')
@@ -22795,10 +24544,7 @@ function renderLayers() {
     };
     row.querySelector('[data-a=lock]').onclick = ev => {
       ev.stopPropagation();
-      pushUndo();
-      L.lock = !L.lock;
-      if (L.lock) S.ents.forEach(e => e.layer === L.name && selDel(e.id));
-      changed();
+      toggleLayerLock(L);
     };
     const ci = row.querySelector('input');
     ci.onclick = ev => ev.stopPropagation();
@@ -22851,6 +24597,14 @@ function renderLayers() {
     };
     bx.appendChild(row);
   }
+  if (uiHooks.layerChip) uiHooks.layerChip();
+}
+/** Locks or unlocks a layer (one undo step); the objects of a locked layer leave the selection. */
+function toggleLayerLock(L) {
+  pushUndo();
+  L.lock = !L.lock;
+  if (L.lock) S.ents.forEach(e => e.layer === L.name && selDel(e.id));
+  changed();
 }
 function setLayerOn(L, on) {
   pushUndo();
@@ -55213,7 +56967,7 @@ function lvBtn() {
     b.style.color = 'var(--accent)';
     b.title = 'Этажи: переключить, добавить, задать отметки';
     const c = $('#coords');
-    st.insertBefore(b, c ? c.nextSibling : st.firstChild);
+    st.insertBefore(b, c && c.parentNode === st ? c.nextSibling : st.firstChild);
     b.onclick = ev => {
       ev.stopPropagation();
       lvMenu(b);
@@ -89402,41 +91156,71 @@ function renderTools() {
   lab.textContent = 'Общие';
   fix.appendChild(lab);
   for (const t of ['move', 'copy', 'rotate', 'erase', 'pan', 'zoomext']) fix.appendChild(toolBtn(t));
-  tb.appendChild(top);
+  // the section plaque and the common tools live in their own places of the frame (docs/UI-LAYOUT.md)
+  const plaque = $('#wsPlaque'),
+    scene = $('#sceneTools');
+  if (plaque) {
+    plaque.innerHTML = '';
+    plaque.appendChild(top);
+  } else tb.appendChild(top);
   tb.appendChild(main);
-  tb.appendChild(fix);
+  if (scene) {
+    scene.innerHTML = '';
+    fix.removeChild(lab);
+    scene.appendChild(fix);
+  } else tb.appendChild(fix);
   syncTools();
 }
+/** Device form from <html data-form> (desk when not set). */
+function formOf() {
+  const de = document.documentElement;
+  return (de && de.dataset && de.dataset.form) || 'desk';
+}
+/** Sets the width of the right panel (px); a width of 0 or less closes the panel. */
 function sideW(w, save = true) {
   const app = $('#app');
   if (w <= 0) {
     app.classList.add('sidehide');
-    $('#sideTog').textContent = '‹';
+    $('#side').classList.remove('open');
   } else {
-    app.classList.remove('sidehide');
     app.style.setProperty('--sideW', clamp(w, 240, Math.min(720, window.innerWidth - 420)) + 'px');
-    $('#sideTog').textContent = '›';
   }
   if (save)
     try {
       localStorage.setItem('kontur-sideW', String(w));
     } catch (_) {}
-  setTimeout(() => {
-    resize();
-    if (V3.inited) {
-      V3.host && req3();
-    }
-  }, 30);
 }
+/** Opens or closes the right panel (all forms); on a desktop the choice is remembered. */
+function setSideOpen(on) {
+  const side = $('#side');
+  if (!side) return;
+  side.classList.toggle('open', on);
+  $('#app').classList.toggle('sidehide', !on);
+  $('#sideTog').textContent = on ? '›' : '‹';
+  try {
+    localStorage.setItem('kontur-side-open', on ? '1' : '0');
+  } catch (_) {}
+}
+/** Wires the right panel: the toggle, the width grip; the panel is closed unless it was left open. */
 function initSide() {
-  let w = 320;
+  let w = 300;
   try {
     const v = parseFloat(localStorage.getItem('kontur-sideW'));
-    if (isFinite(v)) w = v;
+    if (isFinite(v) && v >= 240) w = v;
   } catch (_) {}
   sideW(w, false);
+  let open = false;
+  try {
+    open = localStorage.getItem('kontur-side-open') === '1';
+  } catch (_) {}
+  const side = $('#side');
+  if (formOf() !== 'desk') open = false;
+  side.classList.toggle('open', open);
+  $('#app').classList.toggle('sidehide', !open);
+  $('#sideTog').textContent = open ? '›' : '‹';
   const g = $('#sideGrip');
   let drag = false;
+  const margin = () => parseFloat(getComputedStyle($('#app')).getPropertyValue('--mR')) || 0;
   g.addEventListener('pointerdown', e => {
     drag = true;
     g.classList.add('drag');
@@ -89445,37 +91229,24 @@ function initSide() {
   });
   g.addEventListener('pointermove', e => {
     if (!drag) return;
-    const w_ = window.innerWidth - e.clientX;
-    const app = $('#app');
-    app.classList.remove('sidehide');
-    app.style.setProperty('--sideW', clamp(w_, 240, Math.min(720, window.innerWidth - 420)) + 'px');
-    resize();
+    const w_ = window.innerWidth - e.clientX - margin();
+    $('#app').style.setProperty('--sideW', clamp(w_, 240, Math.min(720, window.innerWidth - 420)) + 'px');
   });
   g.addEventListener('pointerup', e => {
     if (!drag) return;
     drag = false;
     g.classList.remove('drag');
-    sideW(window.innerWidth - e.clientX);
+    sideW(window.innerWidth - e.clientX - margin());
   });
-  g.addEventListener('dblclick', () => sideW(320));
-  $('#sideTog').onclick = () => {
-    const hid = $('#app').classList.contains('sidehide');
-    if (hid) {
-      let w_ = 320;
-      try {
-        w_ = parseFloat(localStorage.getItem('kontur-sideW-open')) || 320;
-      } catch (_) {}
-      sideW(w_);
-    } else {
-      try {
-        localStorage.setItem(
-          'kontur-sideW-open',
-          String(parseFloat(getComputedStyle($('#app')).getPropertyValue('--sideW')) || 320)
-        );
-      } catch (_) {}
-      sideW(0);
-    }
-  };
+  g.addEventListener('dblclick', () => sideW(300));
+  $('#sideTog').onclick = () => setSideOpen(!side.classList.contains('open'));
+  // a tap outside the panel closes it where it covers the field (tablet)
+  document.addEventListener('pointerdown', e => {
+    const f = formOf();
+    if (f !== 'tablet' || !side.classList.contains('open')) return;
+    if (e.target.closest('#side,#sideTog,.pop,.modal')) return;
+    setSideOpen(false);
+  });
 }
 function renderWS() {
   const el = $('#secWS');
@@ -89698,16 +91469,18 @@ function selectAndShow(id) {
   selChanged();
   dirty();
 }
+/** Shows a tab: «Проект» and «Агент» in the right panel; «Проверки» and «Слои» are drop-downs of the header. */
 function showTab(t) {
+  if (t === 'iss' || t === 'layers') {
+    if (uiHooks.openDropdown) uiHooks.openDropdown(t);
+    return;
+  }
   document.querySelectorAll('.stabs button').forEach(x => x.classList.toggle('on', x.dataset.t === t));
-  $('#secLayers').hidden = t !== 'layers';
   $('#secBrowser').hidden = t !== 'browser';
-  $('#secIss').hidden = t !== 'iss';
   if ($('#secAgent')) $('#secAgent').hidden = t !== 'agent';
   if (t === 'agent') renderAgent();
   if (t === 'browser') renderBrowser();
-  if (t === 'iss') renderIssues();
-  $('#side').classList.add('open');
+  setSideOpen(true);
 }
 function renderIssues() {
   if (!issuesFresh()) validateSoon(false);
@@ -89715,9 +91488,9 @@ function renderIssues() {
   const n = { bad: 0, warn: 0, info: 0 };
   L.forEach(i => n[i.lvl]++);
   const badge = $('#issN');
-  if (badge) badge.textContent = n.bad + n.warn ? String(n.bad + n.warn) : '';
-  const tb_ = document.querySelector('.stabs [data-t=iss]');
-  if (tb_) tb_.dataset.n = n.bad + n.warn || '';
+  if (badge) badge.textContent = String(n.bad + n.warn);
+  const chip = $('#bIss');
+  if (chip) chip.classList.toggle('has', n.bad + n.warn > 0);
   const el = $('#issues');
   if (!el || $('#secIss').hidden) return;
   el.innerHTML = L.length
@@ -89957,20 +91730,12 @@ function initLayerSwitch() {
   pop.id = 'lswPop';
   pop.hidden = true;
   stage.appendChild(pop);
-  const pw = $('#pw');
-  if (pw) {
-    const b = document.createElement('button');
-    b.className = 'lswbtn';
-    b.textContent = 'Слои ▾';
-    b.title = 'Быстрая видимость по разделам: вкл / тускло / выкл, готовые виды, изоляция выделенного';
-    b.onclick = () => lswToggle();
-    pw.appendChild(b);
-  }
-  const bar = $('#v3bar');
+  const bar = $('#fbpLayers') || $('#v3bar');
   if (bar) {
     const b = document.createElement('button');
     b.className = 'lswbtn';
     b.textContent = 'Слои ▾';
+    b.title = 'Быстрая видимость по разделам: вкл / тускло / выкл, готовые виды, изоляция выделенного';
     b.onclick = () => lswToggle();
     bar.insertBefore(b, bar.firstChild);
   }
@@ -95354,15 +97119,22 @@ function stageBtn() {
   const pw = $('#pw');
   if (!pw || !pw.appendChild) return;
   let b = $('#stageBtn');
-  if (!b) {
+  const fresh = !b;
+  if (fresh) {
     b = document.createElement('button');
     b.id = 'stageBtn';
     b.className = 'stgbtn';
     b.title = 'Стадия черчения: своя видимость и свои размеры';
+  }
+  // the button may come with the page (the «Стадия» chip of the header): the handler is set once here
+  if (!b.dataset.wired) {
+    b.dataset.wired = '1';
     b.onclick = ev => {
       ev.stopPropagation();
       stageMenu(b);
     };
+  }
+  if (fresh) {
     // «Слои ▾» and the stage switch share one row in the corner of the drawing
     const row = document.createElement('div');
     row.id = 'cvBtns';
@@ -95372,7 +97144,8 @@ function stageBtn() {
     pw.appendChild(row);
   }
   const st = stageById(stg().cur);
-  b.textContent = st ? `Стадия: ${st.n} ▾` : 'Вся модель ▾';
+  // the chip of the header has its own caption «Стадия» and arrow, the button shows the name only
+  b.textContent = st ? st.n : 'Вся модель';
   b.classList.toggle('on', !!st);
 }
 function stageMenu(b) {
@@ -102528,6 +104301,545 @@ function renderList() {
   );
 }
 uiHooks.openArNotes = openArNotes;
+
+// ===== ui/layout.js =====
+/**
+ * ui/layout.js
+ *
+ * Frame of the application window (docs/UI-LAYOUT.md): the burger and the header chips (checks, catalogue, level,
+ * stage, modes, current layer), drop-downs that open from them, the panel over the field, the right panel toggle and
+ * the bottom dock («Сцена», sheet tabs, command line). The markup is in index.html and the placement in
+ * styles/zzz-layout.css; this module only wires it: it moves no logic of the elements, each old button keeps its id
+ * and its handler and the chips here call the same functions. Chip state (checks count, current layer) is rendered
+ * by pure-ish functions that tests call without a browser.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const POP = { anchor: null, downFor: null };
+const KEY_DOCK = 'kontur-dock-';
+
+/** The record of the current layer (S.cur), or the first layer, or null when the project has no layers. */
+function curLayer() {
+  return S.layers.find(l => l.name === S.cur) || S.layers[0] || null;
+}
+
+/** Paints the «Слои» chip: colour, eye, lock and name of the current layer. */
+function renderLayerChip() {
+  const L = curLayer();
+  if (!L) return;
+  const t = $('#lcText');
+  if (t) t.textContent = L.name;
+  const sw = $('#lcSw');
+  if (sw && sw.style) sw.style.setProperty('--c', safeCol(L.color));
+  const eye = $('#lcEye');
+  if (eye) {
+    eye.innerHTML = ICON.eye;
+    eye.classList.toggle('off', !L.on);
+    eye.setAttribute('aria-pressed', L.on ? 'true' : 'false');
+  }
+  const lk = $('#lcLock');
+  if (lk) {
+    lk.innerHTML = L.lock ? ICON.lock : ICON.unlock;
+    lk.classList.toggle('on', !!L.lock);
+    lk.setAttribute('aria-pressed', L.lock ? 'true' : 'false');
+  }
+}
+uiHooks.layerChip = renderLayerChip;
+
+/** The eye or the lock of the layer chip: switches the visibility / the lock of the current layer. */
+function layerChipToggle(kind) {
+  const L = curLayer();
+  if (!L) return;
+  if (kind === 'eye') setLayerOn(L, !L.on);
+  else if (kind === 'lock') toggleLayerLock(L);
+}
+
+/** Makes the layer with this name the current one (the chip's list); returns true when it exists. */
+function layerChipPick(name) {
+  if (!S.layers.some(l => l.name === name)) return false;
+  curSet(name);
+  changed();
+  return true;
+}
+
+/** Text of the «Проверки» chip: the count of errors and warnings. */
+function checksChipText(bad, warn) {
+  return String((bad || 0) + (warn || 0));
+}
+
+/**
+ * Which controls of the panel over the field work in the given view: layers always; «Показать всё» in the plan too;
+ * walls cut, ceiling and display options — only where there is a 3D window.
+ */
+function fbarState(view) {
+  const has3 = view === '3d' || view === 'split';
+  return { layers: true, fit: view !== 'spec', dirs: has3, cut: has3, top: has3, show: has3 };
+}
+
+/**
+ * Space of the plan canvas taken by the panels floating over it (the panel over the field on top, the dock below,
+ * the right panel on a desktop): { top, bottom, left, right } in px, so «Показать всё» fits the free area.
+ */
+function fitInsets() {
+  const cv = $('#cv');
+  if (!cv || !cv.getBoundingClientRect) return {};
+  const c = cv.getBoundingClientRect();
+  const over = id => {
+    const e = $(id);
+    return e && !e.hidden && e.offsetWidth ? e.getBoundingClientRect() : null;
+  };
+  const out = { top: 0, bottom: 0, left: 0, right: 0 };
+  const bar = over('#v3bar');
+  if (bar && formNow() !== 'phone') out.top = Math.max(0, bar.bottom + 12 - c.top);
+  const dock = over('#dock');
+  if (dock && !(formNow() === 'phone')) out.bottom = Math.max(0, c.bottom - dock.top + 12);
+  const side = over('#side');
+  if (side && formNow() === 'desk') out.right = Math.max(0, c.right - side.left + 12);
+  return out;
+}
+uiHooks.fitInsets = fitInsets;
+
+/* ---------- drop-downs ---------- */
+/** Places a floating element under its anchor, aligned to the anchor's left or right edge and kept inside the window. */
+function placeUnder(el, anchor, align) {
+  el.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const w = el.offsetWidth || 240;
+  let left = align === 'right' ? r.right - w : r.left;
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+  el.style.left = Math.round(left) + 'px';
+  el.style.top = Math.round(r.bottom + 6) + 'px';
+  el.style.maxHeight = Math.max(160, window.innerHeight - r.bottom - 20) + 'px';
+}
+/** Closes every drop-down of the frame (items menu, checks, layers). */
+function closeDropdowns() {
+  for (const id of ['#popmenu', '#issPop', '#layersPop']) {
+    const p = $(id);
+    if (p) p.hidden = true;
+  }
+  const si = $('#secIss');
+  if (si) si.hidden = true;
+  document.querySelectorAll('.chip.open, .split.open').forEach(x => x.classList.remove('open'));
+  POP.anchor = null;
+}
+uiHooks.closeDropdowns = closeDropdowns;
+
+/**
+ * Opens a drop-down list under the anchor. Items: { h } header, '-' rule, { n, k, a, c, d } — name, hint, action,
+ * checked, disabled. A second press on the same anchor closes it.
+ */
+function popMenu(anchor, items, align) {
+  const was = POP.downFor === anchor;
+  POP.downFor = null;
+  hideMenus();
+  if (was) return;
+  const p = $('#popmenu');
+  p.innerHTML = items
+    .map((x, j) =>
+      x === '-'
+        ? '<hr>'
+        : x.h
+          ? `${j ? '<hr>' : ''}<div class="mh">${esc(x.h)}</div>`
+          : `<button data-pj="${j}" ${x.d && x.d() ? 'disabled' : ''}><span>${x.c ? (x.c() ? '✓ ' : '<i style="display:inline-block;width:1em"></i>') : ''}${esc(x.n)}</span>${x.k ? `<kbd>${esc(x.k)}</kbd>` : ''}</button>`
+    )
+    .join('');
+  p.onclick = ev => {
+    const b = ev.target.closest('[data-pj]');
+    if (!b) return;
+    const it = items[+b.dataset.pj];
+    closeDropdowns();
+    if (it && it.a) it.a();
+  };
+  placeUnder(p, anchor, align);
+  POP.anchor = anchor;
+  const chip = anchor.closest('.chip');
+  if (chip) chip.classList.add('open');
+}
+/** Opens a panel (checks or layers) under the anchor; a second press closes it. */
+function popPanel(id, anchor, align, onOpen) {
+  const was = POP.downFor === anchor;
+  POP.downFor = null;
+  hideMenus();
+  if (was) return;
+  const p = $(id);
+  if (onOpen) onOpen();
+  placeUnder(p, anchor, align);
+  POP.anchor = anchor;
+  const chip = anchor.closest('.chip');
+  if (chip) chip.classList.add('open');
+}
+/** Opens the checks list under its chip (also from «Сервис → Проверки проекта»). */
+function openIssuesPop() {
+  const a = $('#bIss');
+  if (!a) return;
+  popPanel('#issPop', a, 'right', () => {
+    $('#secIss').hidden = false;
+    renderIssues();
+  });
+}
+uiHooks.openDropdown = t => (t === 'iss' ? openIssuesPop() : openLayersPop());
+/** Opens the full list of layers and categories under the layer chip. */
+function openLayersPop() {
+  const a = $('#lcMore');
+  if (!a) return;
+  popPanel('#layersPop', a, 'right', () => {
+    renderLayers();
+  });
+}
+
+/* ---------- menus of the chips ---------- */
+/** Items of the «⋮» menu of the catalogue chip: catalogues, the converter, own models. */
+function catalogMoreItems() {
+  const svc = MENUS.find(m => m.n === 'Сервис');
+  const out = [];
+  if (!svc) return out;
+  for (let i = 0, on = false; i < svc.it.length; i++) {
+    const x = svc.it[i];
+    if (x && x.h) {
+      if (on) break;
+      on = x.h === 'Типы и библиотеки';
+      continue;
+    }
+    if (on) out.push(x);
+  }
+  return out;
+}
+/** Items of the «⋮» menu of the stage chip: demolition and installation plans, dimension style, annotation scale. */
+function stageMoreItems() {
+  const viaMenu = key => () => {
+    const b = $('#stageBtn');
+    if (!b) return;
+    b.click();
+    const m = $('#stageMenu');
+    const t = m && m.querySelector(`[data-o="${key}"]`);
+    if (t) t.click();
+    else if (m) m.remove();
+  };
+  return [
+    { n: '+ План демонтажа', k: 'красным — что сносится', a: viaMenu('pdemo') },
+    { n: '+ План монтажа', k: 'зелёным — новое', a: viaMenu('pmount') },
+    { n: 'Стиль размеров…', a: () => uiHooks.dimStyle && uiHooks.dimStyle() },
+    { h: 'Масштаб аннотаций' },
+    ...SCALES.map(x => ({
+      n: '1:' + x,
+      c: () => (S.x.ascale || 50) === x,
+      a: () => {
+        pushUndo();
+        ascaleSet(x);
+        changed();
+      }
+    }))
+  ];
+}
+/** Items of the «⋮» menu of the modes chip: all sections on the plan, phase display. */
+function modesMoreItems() {
+  const click = id => () => {
+    const b = $(id);
+    if (b) b.click();
+  };
+  return [
+    { n: 'Все разделы на плане', c: () => !!wsView.all, a: click('#bAllSec') },
+    { n: 'Вид инженерных сетей', c: () => !!NV.on, a: click('#bNV') },
+    { h: 'Показ фаз' },
+    ...Object.entries(PHM).map(([k, n]) => ({ n, c: () => phaseMode() === k, a: () => setPhaseMode(k) }))
+  ];
+}
+/** Items of the layer list under the chip: every layer, the current one ticked. */
+function layerListItems() {
+  return S.layers.map(L => ({ n: L.name, c: () => L.name === S.cur, a: () => layerChipPick(L.name) }));
+}
+/** Items of the «⋮» menu of the bottom panel: collapse or expand it, history size, the mode strip. */
+function dockMoreItems() {
+  const dock = $('#dock');
+  const col = dock && dock.classList.contains('collapsed');
+  return [
+    { n: col ? 'Развернуть панель' : 'Свернуть панель', a: () => setDock(!col) },
+    { n: 'Командная строка', k: 'ввод с клавиатуры', a: () => typeInCmd() },
+    { n: 'Журнал команд: развернуть / свернуть', a: () => toggleHist() },
+    { n: 'Полоска режимов', c: () => !document.documentElement.classList.contains('nostrip'), a: () => toggleStrip() }
+  ];
+}
+/** Items of the sheet list of the collapsed bottom panel: the tabs «Модель» and the sheets, the open one ticked. */
+function tabItems() {
+  return [...document.querySelectorAll('#tabs [data-tab]')]
+    .filter(b => b.dataset.tab !== 'new')
+    .map(b => ({ n: b.textContent, c: () => b.classList.contains('on'), a: () => b.click() }));
+}
+
+/* ---------- dock ---------- */
+/** The form of the device now: phone, tablet or desk (from <html data-form>). */
+function formNow() {
+  return (document.documentElement.dataset && document.documentElement.dataset.form) || 'desk';
+}
+/** Collapses or expands the bottom dock; the choice is kept per device form. */
+function setDock(collapsed, save = true) {
+  const dock = $('#dock');
+  if (!dock) return;
+  dock.classList.toggle('collapsed', collapsed);
+  dock.classList.toggle('expanded', !collapsed);
+  dock.classList.remove('typing');
+  const t = $('#dockTog');
+  if (t) {
+    t.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    t.textContent = collapsed ? '▴' : '▾';
+  }
+  if (save)
+    try {
+      localStorage.setItem(KEY_DOCK + formNow(), collapsed ? '1' : '0');
+    } catch (_) {}
+}
+/** Sets the bottom panel to the state stored for the current form (collapsed by default on a tablet and a phone). */
+function dockDefault() {
+  let v = null;
+  try {
+    v = localStorage.getItem(KEY_DOCK + formNow());
+  } catch (_) {}
+  setDock(v == null ? formNow() !== 'desk' : v === '1', false);
+}
+/** Opens the command line of the collapsed bottom panel and gives it the keyboard focus. */
+function typeInCmd() {
+  const dock = $('#dock');
+  if (dock && dock.classList.contains('collapsed')) dock.classList.add('typing');
+  const cin = $('#cin');
+  if (cin) HTMLElement.prototype.focus.call(cin);
+}
+/** Switches the command history between the short and the tall view. */
+function toggleHist() {
+  const dock = $('#dock');
+  if (dock) dock.classList.toggle('histbig');
+}
+/** Shows or hides the mode strip at the bottom edge and remembers the choice. */
+function toggleStrip() {
+  const de = document.documentElement;
+  de.classList.toggle('nostrip');
+  try {
+    localStorage.setItem('kontur-strip', de.classList.contains('nostrip') ? '0' : '1');
+  } catch (_) {}
+}
+/** Writes the name of the open sheet tab into the collapsed bottom panel. */
+function syncDockCur() {
+  const on = document.querySelector('#tabs .on');
+  const c = $('#dockCur');
+  if (c) c.innerHTML = `${esc(on ? on.textContent : 'Модель')}<i class="car">▾</i>`;
+}
+
+/* ---------- panel over the field ---------- */
+/** Greys the controls of the panel over the field that do not apply to the current view. */
+function syncFbar() {
+  const bar = $('#v3bar');
+  if (!bar) return;
+  const st = fbarState(sceneState.viewMode);
+  const off = (el, dis) => {
+    if (!el) return;
+    el.classList.toggle('na', dis);
+    if (el.tagName === 'BUTTON') el.disabled = dis;
+  };
+  bar.querySelectorAll('.v3g, #v3cut, #v3cuth').forEach(b => {
+    const grp = b.closest('.v3grp');
+    const inShow = grp && grp.querySelector('#v3gShow');
+    const inTop = grp && grp.querySelector('#v3gTop');
+    const isDir = grp && !inShow && !inTop;
+    off(b, isDir ? false : b.id === 'v3cut' || b.id === 'v3cuth' ? !st.cut : inTop ? !st.top : !st.show);
+  });
+  bar.querySelectorAll('.v3menu button[data-a]').forEach(b => {
+    const a = b.dataset.a;
+    if (a === 'fit') return off(b, !st.fit);
+    if (['iso', 'top', 'front', 'right', 'left', 'back', 'sel'].includes(a)) off(b, !st.dirs);
+  });
+  bar.dataset.view = sceneState.viewMode;
+}
+/** Puts the drop-down menus of the panel over the field under their buttons (on a phone they open as a sheet). */
+function placeV3Menus() {
+  document.querySelectorAll('#v3bar .v3menu').forEach(m => {
+    if (m.hidden || formNow() === 'phone') {
+      m.style.position = '';
+      return;
+    }
+    const b = m.previousElementSibling;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    m.style.position = 'fixed';
+    m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - (m.offsetWidth || 220) - 8)) + 'px';
+    m.style.top = Math.round(r.bottom + 6) + 'px';
+  });
+}
+/** Builds the view switch inside the panel over the field for a phone, where the mode strip is hidden. */
+function buildPhoneViews() {
+  const bar = $('#v3bar');
+  if (!bar || $('#fbpViews')) return;
+  const d = document.createElement('div');
+  d.className = 'fbp fbp-views';
+  d.id = 'fbpViews';
+  d.innerHTML =
+    '<div class="mh">Вид</div>' +
+    [
+      ['plan', 'План'],
+      ['split', 'План + 3D'],
+      ['3d', '3D'],
+      ['spec', 'Спецификация']
+    ]
+      .map(([v, n]) => `<button data-pv="${v}">${n}</button>`)
+      .join('');
+  bar.appendChild(d);
+  d.onclick = ev => {
+    const b = ev.target.closest('[data-pv]');
+    if (!b) return;
+    const t = document.querySelector(`#views [data-v="${b.dataset.pv}"]`);
+    if (t) t.click();
+    bar.classList.remove('fbopen');
+  };
+}
+
+/* ---------- right panel ---------- */
+/** Sets the «‹» / «›» button of the right panel to the open or closed state of the panel. */
+function syncSideTog() {
+  const side = $('#side');
+  const t = $('#sideTog');
+  if (!side || !t) return;
+  const open = side.classList.contains('open');
+  t.textContent = open ? '›' : '‹';
+  t.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const app = $('#app');
+  if (app) app.classList.toggle('sidehide', !open);
+}
+
+/** Wires the frame to the page. Called once by app/boot.js. */
+function initLayout() {
+  if (typeof document === 'undefined' || !document.documentElement || !document.body) return;
+  const de = document.documentElement;
+  const bind = (sel, fn) => {
+    const e = $(sel);
+    if (e) e.addEventListener('click', fn);
+  };
+  // a press on an anchor that is open: remembered before the global handler closes the list
+  document.addEventListener(
+    'pointerdown',
+    ev => {
+      POP.downFor = null;
+      const a = POP.anchor;
+      if (a && ev.target.closest && a.contains(ev.target)) POP.downFor = a;
+    },
+    true
+  );
+  document.addEventListener('pointerdown', ev => {
+    if (!ev.target.closest('#popmenu,#issPop,#layersPop,.chip,#dockMore,#dockCur')) closeDropdowns();
+  });
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape') closeDropdowns();
+  });
+  // chips
+  bind('#bIss', () => openIssuesPop());
+  bind('#bCatMore', () => popMenu($('#bCatMore'), catalogMoreItems(), 'right'));
+  bind('#stgMore', () => popMenu($('#stgMore'), stageMoreItems()));
+  bind('#modesMore', () => popMenu($('#modesMore'), modesMoreItems()));
+  bind('#lcMore', () => openLayersPop());
+  bind('#lcName', () => popMenu($('#lcName'), layerListItems(), 'right'));
+  bind('#lcSw', () => openLayersPop());
+  bind('#lcEye', () => layerChipToggle('eye'));
+  bind('#lcLock', () => layerChipToggle('lock'));
+  // the mode name in the «Режимы» chip: what is switched on in its list
+  const hp = document.querySelector('.hgrp-pop') || document.querySelector('#hModes .hpop');
+  const modeName = () => {
+    const on = hp && hp.querySelector('button.on');
+    const v = $('#modeVal');
+    if (v) v.textContent = on ? on.textContent.replace(/^[^\wА-Яа-я]+/, '').trim() : 'Обычный';
+  };
+  if (typeof MutationObserver !== 'undefined' && hp) {
+    new MutationObserver(modeName).observe(hp, { subtree: true, childList: true, attributes: true });
+    modeName();
+  }
+  // right panel: one toggle for every form
+  const side = $('#side');
+  bind('#sideTog', () => setTimeout(syncSideTog, 0));
+  if (side && typeof MutationObserver !== 'undefined')
+    new MutationObserver(syncSideTog).observe(side, { attributes: true, attributeFilter: ['class'] });
+  syncSideTog();
+  // dock
+  bind('#dockTog', () => setDock(!$('#dock').classList.contains('collapsed')));
+  bind('#dockMore', () => popMenu($('#dockMore'), dockMoreItems(), 'right'));
+  bind('#dockCur', () => popMenu($('#dockCur'), tabItems()));
+  bind('#dockAdd', () => {
+    const n = document.querySelector('#tabs [data-tab="new"]');
+    if (n) n.click();
+  });
+  bind('#dockKb', () => typeInCmd());
+  bind('#histTog', () => toggleHist());
+  dockDefault();
+  window.addEventListener('resize', dockDefault);
+  const tabs = $('#tabs');
+  if (tabs && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(syncDockCur).observe(tabs, { subtree: true, childList: true, attributes: true });
+    syncDockCur();
+  }
+  // typing with the dock collapsed brings the command line out; it goes away when the line is left
+  document.addEventListener('keydown', ev => {
+    const dock = $('#dock');
+    if (!dock || !dock.classList.contains('collapsed') || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key.length !== 1) return;
+    const t = ev.target;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '')) return;
+    if (t && t.isContentEditable) return;
+    dock.classList.add('typing');
+  });
+  const cin = $('#cin');
+  if (cin)
+    cin.addEventListener('blur', () => {
+      const dock = $('#dock');
+      if (dock) dock.classList.remove('typing');
+    });
+  if (typeof ResizeObserver !== 'undefined') {
+    const dock = $('#dock');
+    if (dock)
+      new ResizeObserver(() => {
+        const app = $('#app');
+        if (app) app.style.setProperty('--dockH', dock.offsetHeight + 'px');
+      }).observe(dock);
+  }
+  // panel over the field
+  const bar = $('#v3bar');
+  if (bar) {
+    buildPhoneViews();
+    bar.addEventListener(
+      'click',
+      ev => {
+        const f = ev.target.closest('[data-a="fit"]');
+        if (f && sceneState.viewMode !== '3d') zoomExtents();
+        if (ev.target.closest('#fbpBtn')) bar.classList.toggle('fbopen');
+        setTimeout(placeV3Menus, 0);
+      },
+      true
+    );
+    document.addEventListener('pointerdown', ev => {
+      if (!ev.target.closest('#v3bar')) bar.classList.remove('fbopen');
+    });
+    const stage = $('#stage');
+    if (stage && typeof MutationObserver !== 'undefined') {
+      new MutationObserver(syncFbar).observe(stage, { attributes: true, attributeFilter: ['class'] });
+      new MutationObserver(placeV3Menus).observe(bar, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    }
+    syncFbar();
+  }
+  try {
+    if (localStorage.getItem('kontur-strip') === '0') de.classList.add('nostrip');
+  } catch (_) {}
+  renderLayerChip();
+  void themeState;
+}
 
 // ===== agent/flow.js =====
 /**
@@ -113686,6 +115998,7 @@ defineTools({
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -113740,7 +116053,6 @@ function xBoot() {
     );
     new MutationObserver(sync).observe(pop, { subtree: true, attributes: true, attributeFilter: ['class'] });
   }
-  $('#bIss').onclick = () => showTab('iss');
   $('#odClose').onclick = () => {
     $('#objdlg').hidden = true;
     OD.id = null;
@@ -114023,6 +116335,7 @@ initHeating();
 initLayerSwitch();
 initToolbar();
 initResponsive();
+initLayout();
 initLayersPanel();
 initBrowserPanel();
 initCatalog();
