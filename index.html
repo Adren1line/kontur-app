@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.69';
+const APP_VER = '59.70';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7808,6 +7808,7 @@ const documentState = {
 
 
 
+
 /* Extension points of the model. The model layer is called by nothing above it by name: the blocks above register their
    reactions here at load (an explicit numeric `order` keeps the old call order; equal orders keep registration order). */
 const byOrder = (a, b) => a.order - b.order;
@@ -8090,11 +8091,11 @@ function addEnt(e) {
 }
 function eraseIds(ids) {
   const set = new Set(ids);
-  for (const e of S.ents) if (e.type === 'view3' && e.vw && e.vw.hatch != null && set.has(e.vw.hatch)) set.add(e.id);
+  for (const e of query('view3')) if (e.vw && e.vw.hatch != null && set.has(e.vw.hatch)) set.add(e.id);
   for (const e of S.ents)
     if ((e.type === 'door' || e.type === 'window' || (XT[e.type] && XT[e.type].hosted)) && set.has(e.host))
       set.add(e.id);
-  for (const e of S.ents) if (e.type === 'note' && set.has(e.target)) e.target = null;
+  for (const e of query('note')) if (set.has(e.target)) e.target = null;
   if (S.x && set.has(S.x.clip)) S.x.clip = null;
   S.ents = S.ents.filter(e => !set.has(e.id));
   set.forEach(id => S.sel.delete(id));
@@ -8585,6 +8586,7 @@ migrate.step(() => {
 
 
 
+
 /* engineering: electrics & ventilation */
 const CABLES = [
   'ВВГнг(А)-LS 3×1,5',
@@ -8814,8 +8816,8 @@ function ductBends(e) {
   return out;
 }
 function devAt(p, fam) {
-  for (const e of S.ents) {
-    if (e.type !== 'dev' || !visible(e)) continue;
+  for (const e of query('dev')) {
+    if (!visible(e)) continue;
     const d = DEVK[e.kind];
     if (!d) continue;
     if (fam === 'vterm' ? d.f !== 'vterm' : d.f === 'vterm') continue;
@@ -8837,8 +8839,7 @@ function sizeWH(s) {
   return p.shape === 'round' ? { w: p.d, h: p.d, round: true, d: p.d } : { w: p.w, h: p.hh, round: false };
 }
 function relinkWires() {
-  for (const e of S.ents) {
-    if (e.type !== 'wire' && e.type !== 'duct') continue;
+  for (const e of query(['wire', 'duct'])) {
     const a = e.from != null ? byId(e.from) : null,
       b = e.to != null ? byId(e.to) : null;
     if (a && a.type === 'dev') e.pts[0] = a.p;
@@ -12719,6 +12720,39 @@ function mapEnt(e, f, dA = 0) {
   return n;
 }
 
+// ===== core/query.js =====
+/**
+ * core/query.js
+ *
+ * Query of the model by element type: the one way for a block to ask "which elements of type X are there" instead of
+ * filtering by the literal type of someone else's block. No side effects, no caches: every call walks the array.
+ *   query('wall')                      -> all walls of S.ents (a new array, in the original order)
+ *   query('wall', e => e.th > 100)     -> walls that satisfy pred (pred is called only for elements of that type)
+ *   query(['door', 'window'])          -> elements of any of the types
+ *   query('wall', null, sel)           -> the same over another array (`from`) instead of S.ents
+ */
+
+
+const matcher = type => (Array.isArray(type) ? e => type.includes(e.type) : e => e.type === type);
+
+/** Elements of type `type` (a string or an array of strings) that satisfy `pred`, from `from` (default S.ents). */
+function query(type, pred, from = S.ents) {
+  const is = matcher(type);
+  return from.filter(e => is(e) && (!pred || pred(e)));
+}
+
+/** The first such element or undefined (like find). */
+function queryFirst(type, pred, from = S.ents) {
+  const is = matcher(type);
+  return from.find(e => is(e) && (!pred || pred(e)));
+}
+
+/** Whether there is such an element (like some). */
+function queryAny(type, pred, from = S.ents) {
+  const is = matcher(type);
+  return from.some(e => is(e) && (!pred || pred(e)));
+}
+
 // ===== samples/sample.js =====
 /**
  * samples/sample.js
@@ -13413,6 +13447,7 @@ function mkText() {
 
 
 
+
 /* commands */
 let lastCmd = null;
 const kw = (s, ...words) => {
@@ -13778,7 +13813,7 @@ function mkWall() {
     arcEnd = null,
     lastCur = null;
   // started with a wall selected: draw on with its type and height
-  const sw = S.ents.filter(e => S.sel.has(e.id) && e.type === 'wall');
+  const sw = query('wall', e => S.sel.has(e.id));
   if (sw.length === 1 && sw[0].wt && S.wtypes.some(t => t.id === sw[0].wt)) {
     setCurWt(sw[0].wt, true);
     if (sw[0].h > 0) mkWall.h = sw[0].h;
@@ -14555,8 +14590,8 @@ function mkOpening(kind) {
   const find = p => {
     let best = null,
       bd = Infinity;
-    for (const e of S.ents) {
-      if (e.type !== 'wall' || !pickable(e)) continue;
+    for (const e of query('wall')) {
+      if (!pickable(e)) continue;
       const d = dist(segPt(e.a, e.b, p), p);
       if (d < Math.max(e.th / 2 + 10 / view.k, 16 / view.k) && d < bd) {
         bd = d;
@@ -15310,6 +15345,7 @@ uiHooks.log = log;
 
 
 
+
 /* snapping & tracking */
 let acqTimer = null;
 /* snap strength per type: capture radius (px) and priority; small hysteresis so the cursor tears off with little effort */
@@ -15447,17 +15483,16 @@ function findSnap(w, base, only) {
     }
   }
   if (base && allow('tan'))
-    for (const e of near)
-      if (e.type === 'circle' || e.type === 'arc') {
-        const dd = dist(base, e.c);
-        if (dd <= e.r + 1e-6) continue;
-        const th = Math.acos(e.r / dd),
-          f = ang(sub(base, e.c));
-        for (const t of [polar(e.c, f + th, e.r), polar(e.c, f - th, e.r)]) {
-          if (e.type === 'arc' && !angIn(ang(sub(t, e.c)), e.a0, e.a1)) continue;
-          consider(t, 'tan', dist(t, w));
-        }
+    for (const e of query(['circle', 'arc'], null, near)) {
+      const dd = dist(base, e.c);
+      if (dd <= e.r + 1e-6) continue;
+      const th = Math.acos(e.r / dd),
+        f = ang(sub(base, e.c));
+      for (const t of [polar(e.c, f + th, e.r), polar(e.c, f - th, e.r)]) {
+        if (e.type === 'arc' && !angIn(ang(sub(t, e.c)), e.a0, e.a1)) continue;
+        consider(t, 'tan', dist(t, w));
       }
+    }
   if (base && allow('perp'))
     for (const e of near) {
       for (const q of prims(e)) {
@@ -15825,6 +15860,7 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
+
 
 
 
@@ -16436,8 +16472,7 @@ function drawDev(e, color, o = {}) {
       else poly([L(-A, 0), L(A, 0), L(A, -Bd), L(-A, -Bd)]);
       const pr = Math.max(3 / view.k, 6);
       const used = new Set(
-        S.ents
-          .filter(w => w.type === 'wire' && (w.from === e.id || w.to === e.id))
+        query('wire', w => w.from === e.id || w.to === e.id)
           .flatMap(w => [w.from === e.id ? w.fromPort : null, w.to === e.id ? w.toPort : null])
           .filter(x => x != null)
       );
@@ -17322,8 +17357,8 @@ function drawModel0(o) {
     }
   for (const e of vis) if (e.type === 'inst' && flatCat(e.layer)) drawEnt(e, layerOf(e).color, opt(e));
   // demolition / mounting plans: walls of the shown phase are drawn simplified on top, the rest faded
-  const phW = uiHooks.phaseWalls ? uiHooks.phaseWalls(vis.filter(e => e.type === 'wall')) : null;
-  const walls = vis.filter(e => e.type === 'wall' && !(phW && phW.own.has(e)));
+  const phW = uiHooks.phaseWalls ? uiHooks.phaseWalls(query('wall', null, vis)) : null;
+  const walls = query('wall', e => !(phW && phW.own.has(e)), vis);
   if (walls.length) {
     ctx.save();
     ctx.lineJoin = 'miter';
@@ -17454,11 +17489,10 @@ function drawModel0(o) {
       }
       ctx.restore();
     }
-    for (const e of vis)
-      if (e.type === 'door' || e.type === 'window') {
-        CAD.ent = e;
-        drawOpening(e, inkC(layerOf(e).color), opt(e));
-      }
+    for (const e of query(['door', 'window'], null, vis)) {
+      CAD.ent = e;
+      drawOpening(e, inkC(layerOf(e).color), opt(e));
+    }
     CAD.ent = null;
     if (phW) for (const w of phW.own) drawEnt(w, inkC(layerOf(w).color), opt(w));
     for (const w of walls) {
@@ -18540,6 +18574,7 @@ function cats3() {
 
 
 
+
 /* ---------- Sims-like cutaway: walls between camera and view centre drop to a low stub ---------- */
 const CUTM = { off: 'полные', cut: 'срез', low: 'низкие' },
   CUTH = [150, 400, 900, 1200];
@@ -18645,13 +18680,8 @@ function cutPlan() {
       if (cam.z > lvz + (+e.z || 0) - (+e.th || 200)) res.set(e.id, 'hide');
     }
   }
-  for (const e of S.ents)
-    if (
-      (e.type === 'door' || e.type === 'window') &&
-      typeof res.get(e.host) === 'number' &&
-      (e.type === 'door' || (e.sill || 0) + 0 >= 0)
-    )
-      res.set(e.id, 'hide');
+  for (const e of query(['door', 'window']))
+    if (typeof res.get(e.host) === 'number' && (e.type === 'door' || (e.sill || 0) + 0 >= 0)) res.set(e.id, 'hide');
   return res;
 }
 function applyCut(X) {
@@ -18659,7 +18689,7 @@ function applyCut(X) {
   const R = cutPlan();
   const ids = new Set();
   for (const [id, v] of R) if (typeof v === 'number') ids.add(id);
-  for (const e of S.ents) if ((e.type === 'door' || e.type === 'window') && ids.has(e.host)) ids.add(e.id);
+  for (const e of query(['door', 'window'])) if (ids.has(e.host)) ids.add(e.id);
   for (const [id, o] of V3.objs) {
     const e = byId(id);
     if (!e) continue;
@@ -22568,6 +22598,7 @@ function initBrowserPanel() {
 
 
 
+
 /* UI: properties */
 const OLDF = {
   door: [
@@ -22951,9 +22982,7 @@ function updateProps() {
   } catch (err) {}
   if (!es.length) {
     const n = S.ents.length,
-      bim = S.ents.filter(e =>
-        ['wall', 'door', 'window', 'slab', 'inst', 'dev', 'wire', 'duct'].includes(e.type)
-      ).length;
+      bim = query(['wall', 'door', 'window', 'slab', 'inst', 'dev', 'wire', 'duct']).length;
     const wt = S.wtypes.find(t => t.id === S.curWt);
     el.innerHTML = `<div class="empty">Ничего не выбрано. Щёлкните объект на плане или в 3D. Рамка слева направо берёт объекты целиком, справа налево — все пересечённые.</div><dl class="props"><dt>Текущий слой</dt><dd>${esc(S.cur)}</dd><dt>Стена для рисования</dt><dd><select id="pCurWt" title="${esc(wt ? wt.name : '')}">${S.wtypes.map(t => `<option value="${esc(t.id)}" ${t.id === S.curWt ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></dd><dt>Объектов</dt><dd>${n}</dd><dt>BIM и инженерия</dt><dd>${bim}</dd></dl><div class="btnrow"><button class="btn" id="bWT2">Типы стен…</button><button class="btn" id="bMEP2">Инженерия…</button></div>`;
     $('#bWT2').onclick = () => openWT();
@@ -23673,9 +23702,10 @@ function initSpec() {
 
 
 
+
 /* wall types dialog */
 let wtSel = null;
-const wtUsage = id => S.ents.filter(e => e.type === 'wall' && e.wt === id).length;
+const wtUsage = id => query('wall', e => e.wt === id).length;
 const sheetOpts = v =>
   Object.keys(SHEETS)
     .filter(k => !k.startsWith('b:'))
@@ -23721,7 +23751,7 @@ function wtEditor(el, t, mode) {
   const ct = computeType(t),
     i = ct.info,
     used = wtUsage(t.id),
-    nsel = selEnts().filter(e => e.type === 'wall').length;
+    nsel = query('wall', null, selEnts()).length;
   let h = `<div class="form"><label style="grid-column:1/-1">Название<input id="wtName" value="${esc(t.name)}"></label>`;
   if (t.kind === 'knauf') {
     const sd = KN[t.sys];
@@ -23947,12 +23977,10 @@ function wtEditor(el, t, mode) {
     };
     q('#wtSideFlip').onclick = () => {
       pushUndo();
-      for (const w of selEnts().filter(e => e.type === 'wall')) {
+      for (const w of query('wall', null, selEnts())) {
         const L = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
         [w.a, w.b] = [w.b, w.a];
-        for (const o of S.ents)
-          if (o.host === w.id && o.t != null && (o.type === 'door' || o.type === 'window' || o.type === 'opening'))
-            o.t = L - o.t;
+        for (const o of query(['door', 'window', 'opening'])) if (o.host === w.id && o.t != null) o.t = L - o.t;
       }
       syncWalls();
       changed();
@@ -24413,6 +24441,7 @@ function ctBind(el, t, commit, rer) {
 
 
 
+
 /* profiles dialog */
 let prSel = null,
   prPick = null,
@@ -24584,9 +24613,7 @@ function prMark(g, k, x, y) {
   g.restore();
 }
 const prUsage = id =>
-  S.ents.filter(
-    e => e.type === 'door' && e.cfg && (e.cfg.frame.prof === id || e.cfg.ext.prof === id || e.cfg.casing.prof === id)
-  ).length;
+  query('door', e => e.cfg && (e.cfg.frame.prof === id || e.cfg.ext.prof === id || e.cfg.casing.prof === id)).length;
 function openProfiles(id) {
   prSel = id || prSel || S.profiles[0].id;
   $('#prdlg').hidden = false;
@@ -25448,6 +25475,7 @@ defineTools({
 
 
 
+
 /* engineering dialog */
 let mepTab = 'el';
 function openMEP(t) {
@@ -25570,7 +25598,7 @@ function renderMEP() {
       }
       if (e.type === 'duct' && stat.has(e.sys)) stat.get(e.sys).L += ductLen(e);
     }
-    const fast = S.ents.filter(e => e.type === 'duct' && ductVel(e) > (S.vent.vmax || 4));
+    const fast = query('duct', e => ductVel(e) > (S.vent.vmax || 4));
     el.innerHTML = `<p class="hint">Система объединяет воздуховоды и решётки одного назначения. Скорость в воздуховоде считается из расхода и сечения; для жилых помещений обычно держат до 3–4 м/с в ответвлениях, чтобы не было шума.</p>
     <div class="tblwrap"><table class="mtbl"><thead><tr><th title="Показывать систему на плане и в 3D">Вид</th><th>Обозначение</th><th>Название</th><th>Тип</th><th>Цвет</th><th style="text-align:right">Устройств</th><th style="text-align:right">Σ расход, м³/ч</th><th style="text-align:right">Воздуховоды, м</th><th></th></tr></thead><tbody>${S.vent.systems
       .map((s, i) => {
@@ -28615,6 +28643,7 @@ const gklSheetsState = {
 
 
 
+
 /* ---------- ceilings: slab finish, Knauf frame ceilings, stretch ---------- */
 const CEILK = { gkl: 'Каркасный из ГКЛ (Кнауф)', stretch: 'Натяжной', slab: 'По плите перекрытия' };
 const CEIL_SYS = {
@@ -29177,13 +29206,9 @@ XT.ceil = {
   }
 };
 function stretchLights(e) {
-  return S.ents.filter(
-    d =>
-      d.type === 'dev' &&
-      DEVK[d.kind] &&
-      DEVK[d.kind].f === 'light' &&
-      DEVK[d.kind].mount === 'ceil' &&
-      inPoly(d.p, e.pts)
+  return query(
+    'dev',
+    d => DEVK[d.kind] && DEVK[d.kind].f === 'light' && DEVK[d.kind].mount === 'ceil' && inPoly(d.p, e.pts)
   ).length;
 }
 
@@ -33617,6 +33642,7 @@ XT.fix = {
 
 
 
+
 /* sanitary model library: GROHE / TECE installations, Roca WC pans
    Frame follows the pan: drain/flush axes and studs come from the pan
    model and the chosen rim height; inlet side and bend direction come
@@ -34145,8 +34171,8 @@ function instSupport(e, g) {
   }
   const wi = wallInfo(h);
   const back = add(e.p, mul(wi.n, -g.wside * (h.th + 40)));
-  for (const w2 of S.ents) {
-    if (w2.type !== 'wall' || w2.id === h.id) continue;
+  for (const w2 of query('wall')) {
+    if (w2.id === h.id) continue;
     const t2 = typeOf(w2);
     if (isFramedType(t2)) continue;
     if (dist(segPt(w2.a, w2.b, back), back) <= w2.th / 2 + 150)
@@ -36880,6 +36906,7 @@ function initMixers() {
 
 
 
+
 /* wall finishing tool: whole side or zones; panels surface / flush with the build-up;
    substrate made up from sheet materials; joint profiles on zone borders */
 const FINM = {
@@ -37443,8 +37470,8 @@ function brush() {
 function wallSideAt(p) {
   let best = null,
     bd = Infinity;
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
+  for (const w of query('wall')) {
+    if (!visible(w)) continue;
     const d = dist(segPt(w.a, w.b, p), p);
     if (d < Math.max(w.th / 2 + 300, 30 / view.k) && d < bd) {
       bd = d;
@@ -38336,6 +38363,7 @@ function tilePanel(w, z, i) {
 
 
 
+
 /* manifold node constructor (water / heating / underfloor):
    chains of real components on inlets and outlets, plumber or owner-friendly
    valves, auto-build from fixtures, 3D block with connection points */
@@ -38640,14 +38668,9 @@ function mfPower(e) {
   return { W, list, need: W > 0, v24: Object.keys(sv).some(k => k.startsWith('24')) };
 }
 function mfSock(e) {
-  return S.ents.find(
-    d =>
-      d.type === 'dev' &&
-      DEVK[d.kind] &&
-      DEVK[d.kind].f === 'socket' &&
-      !DEVK[d.kind].weak &&
-      visible(d) &&
-      dist(d.p, e.p) < 1500
+  return queryFirst(
+    'dev',
+    d => DEVK[d.kind] && DEVK[d.kind].f === 'socket' && !DEVK[d.kind].weak && visible(d) && dist(d.p, e.p) < 1500
   );
 }
 function mfAddSocket(e) {
@@ -45353,6 +45376,7 @@ function wireColor(e) {
 
 
 
+
 /* ---------- routing grid (orthogonal A*) ---------- */
 const RG = { v: -1, g: {} };
 const WPEN = w => {
@@ -45369,8 +45393,8 @@ function routeGrid(method) {
     RG.g = {};
   }
   if (RG.g[method]) return RG.g[method];
-  const ws = S.ents.filter(e => e.type === 'wall');
-  const ps = S.ents.filter(e => ['wall', 'dev', 'wire', 'col', 'beam', 'ceil'].includes(e.type)).flatMap(samplePts);
+  const ws = query('wall');
+  const ps = query(['wall', 'dev', 'wire', 'col', 'beam', 'ceil']).flatMap(samplePts);
   if (!ps.length) return null;
   const xs = ps.map(p => p.x),
     ys = ps.map(p => p.y);
@@ -45422,10 +45446,10 @@ function routeGrid(method) {
       }
     }
   }
-  for (const c of S.ents.filter(e => e.type === 'col')) fill(colPoly(c), k => (obs[k] = 1));
+  for (const c of query('col')) fill(colPoly(c), k => (obs[k] = 1));
   // outside the building (no slab, no floor zone, no wall under the cell) a cable has nothing to lie in: such cells
   // cost a lot — a route goes along the facade only when a device stands outside
-  const foot = S.ents.filter(e => (e.type === 'slab' || e.type === 'floorz') && e.pts && e.pts.length > 2);
+  const foot = query(['slab', 'floorz'], e => e.pts && e.pts.length > 2);
   let out = null;
   if (foot.length) {
     out = new Uint8Array(N).fill(1);
@@ -45448,11 +45472,11 @@ function routeGrid(method) {
         k => (soft[k] = Math.max(soft[k], 30))
       );
     }
-    for (const b of S.ents.filter(e => e.type === 'beam')) {
+    for (const b of query('beam')) {
       const zb = (b.zt || S.ceil) - (b.h || 0);
       if (zb < S.ceil - 20) fill(XT.beam.poly(b), k => (beamZ[k] = Math.min(beamZ[k], zb)));
     }
-    for (const c of S.ents.filter(e => e.type === 'ceil' && e.kind !== 'slab'))
+    for (const c of query('ceil', e => e.kind !== 'slab'))
       fill(c.pts, k => (ceilV[k] = Math.max(ceilV[k], S.ceil - (c.z || S.ceil))));
     air = ceilAir(N, fill);
   }
@@ -45629,8 +45653,7 @@ function hostWallOf(d) {
   }
   let best = null,
     bd = Infinity;
-  for (const w of S.ents) {
-    if (w.type !== 'wall') continue;
+  for (const w of query('wall')) {
     const q = segPt(w.a, w.b, d.p);
     const dd = Math.abs(dist(q, d.p) - w.th / 2);
     if (dd < 60 && dd < bd) {
@@ -45725,12 +45748,12 @@ function ceilAir(N, fill) {
   const up = L.list.filter(l => l.z > cur.z).sort((a, b) => a.z - b.z)[0];
   if (!up) return null;
   const E = up.id === L.cur ? S.ents : L.ents[up.id] || [];
-  const slabs = E.filter(e => e.type === 'slab' && e.pts && e.pts.length > 2);
+  const slabs = query('slab', e => e.pts && e.pts.length > 2, E);
   if (!slabs.length) return null;
   const air = new Uint8Array(N).fill(1);
   for (const sl of slabs) fill(sl.pts, k => (air[k] = 0));
   // large openings only (> 0.5 m²): a pipe penetration is no void
-  for (const h of E.filter(e => e.type === 'shole')) {
+  for (const h of query('shole', null, E)) {
     const q = sholePoly(h);
     if (Math.abs(polyArea(q)) > 5e5) fill(q, k => (air[k] = 1));
   }
@@ -45848,8 +45871,7 @@ function rtInputSig() {
   if (L && L.list && L.ents)
     for (const l of L.list)
       if (l.id !== L.cur)
-        for (const e of L.ents[l.id] || [])
-          if (e.type === 'slab' || e.type === 'shole') parts.push(l.id + ':' + JSON.stringify(e));
+        for (const e of query(['slab', 'shole'], null, L.ents[l.id] || [])) parts.push(l.id + ':' + JSON.stringify(e));
   RTI.v = documentState.docVer;
   RTI.s = parts.join('\n');
   return RTI.s;
@@ -46013,8 +46035,7 @@ function zProfile(pts, R) {
   R.dips = [];
   const zR = R.zR,
     g = R.gof;
-  const beams = S.ents
-    .filter(b => b.type === 'beam')
+  const beams = query('beam')
     .map(b => ({ poly: XT.beam.poly(b), zb: (b.zt || S.ceil) - (b.h || 0) }))
     .filter(b => b.zb < zR + g / 2 + 2);
   if (!beams.length || pts.length < 2) return pts.map(p => [p.x, p.y, zR]);
@@ -46377,7 +46398,7 @@ function computeRoute(e) {
     measureRoute(R);
   }
   for (const dp of R.dips || []) {
-    const c = S.ents.find(x => x.type === 'ceil' && x.kind !== 'slab' && inPoly(dp.p, x.pts));
+    const c = queryFirst('ceil', x => x.kind !== 'slab' && inPoly(dp.p, x.pts));
     if (c && dp.z - gof / 2 < (c.z || S.ceil) + 5)
       R.issues.push({
         lvl: 'warn',
@@ -46967,6 +46988,7 @@ function elecEngSpec(put) {
 
 
 
+
 function wireClass(e) {
   const k = wireKind(e);
   return k === 'rj45' || k === 'tv'
@@ -47002,7 +47024,7 @@ function optimizeWiring() {
   const rm = new Set(before.map(w => w.id));
   S.ents = S.ents.filter(e => !rm.has(e.id));
   changed();
-  const WS0 = S.ents.filter(w => w.type === 'wall');
+  const WS0 = query('wall');
   const md = (a, b) => {
     let v = Math.abs(a.p.x - b.p.x) + Math.abs(a.p.y - b.p.y);
     for (const w of WS0) if (segSeg(a.p, b.p, w.a, w.b)) v += w.bearing ? 4000 : 2500;
@@ -47091,7 +47113,7 @@ function autoWirePanel() {
   const lowOf = x => !(isLight(x) || isSwitch(x) || x.kind === 'panel');
   // «distance» for the tree: orthogonal length plus every wall the straight line crosses (a pass through a wall
   // costs a hole, a sleeve and a longer detour) — devices behind the same wall are joined first
-  const WS = S.ents.filter(w => w.type === 'wall');
+  const WS = query('wall');
   const md = (a, b) => {
     let v = Math.abs(a.p.x - b.p.x) + Math.abs(a.p.y - b.p.y);
     for (const w of WS) if (segSeg(a.p, b.p, w.a, w.b)) v += w.bearing ? 4000 : 2500;
@@ -50670,10 +50692,10 @@ defineTools({
 
 
 
+
 /* ---------- node: wall pie in plan at large scale ---------- */
 function nodePieLabels(c, e, M, r) {
-  const w = S.ents
-    .filter(x => x.type === 'wall' && visible(x))
+  const w = query('wall', x => visible(x))
     .map(x => ({ x, d: dist(segPt(x.a, x.b, e.c), e.c) }))
     .sort((a, b) => a.d - b.d)[0];
   if (!w || w.d > e.r * 1.4) return;
@@ -50756,7 +50778,7 @@ function mkElev() {
       const off = mul(wi.n, sd * (w.th / 2 + 700));
       const a = add(w.a, off),
         b = add(w.b, off);
-      const used = new Set(S.ents.filter(e => e.type === 'sect' && e.kind === 'elev').map(e => e.name));
+      const used = new Set(query('sect', e => e.kind === 'elev').map(e => e.name));
       let k = 1;
       while (used.has('Р' + k)) k++;
       const flip = dot(mul(P(-wi.u.y, wi.u.x), 1), mul(wi.n, -sd)) < 0;
@@ -53259,6 +53281,7 @@ defineTools({
 
 
 
+
 /* ---------------- commands: modify ---------------- */
 function reflectFn(a, b) {
   const u = nrm(sub(b, a));
@@ -53300,8 +53323,8 @@ function mkMirror() {
       } else Object.assign(e, n);
       if (e.type === 'wall') walls.set(e.id, keep ? n : e);
     }
-    for (const e of es)
-      if ((e.type === 'door' || e.type === 'window') && ids.has(e.host)) {
+    for (const e of query(['door', 'window'], null, es))
+      if (ids.has(e.host)) {
         const w = walls.get(e.host);
         if (!w) continue;
         const o = keep ? JSON.parse(JSON.stringify(e)) : e;
@@ -57722,6 +57745,7 @@ function zoneMinusCutters(pts, where, lv) {
 
 
 
+
 /* floor build-up (пирог пола): плита → стяжка → наливной пол → покрытие, отметки, выравнивание, уклоны к трапам.
    Level datum ±0.000 = чистый пол; верх плиты этажа = lvCur().top (например −80). */
 var FLK = {
@@ -57786,8 +57810,8 @@ function rayHitPoly(c, d, poly) {
 /* drains inside a floor zone: [{kind:'pt',c}|{kind:'ln',a,b}] */
 function zoneDrains(z) {
   const out = [];
-  for (const e of S.ents) {
-    if (e.type !== 'fix' || !e.p) continue;
+  for (const e of query('fix')) {
+    if (!e.p) continue;
     if (e.kind === 'fdrain') {
       const c = e.cfg;
       if (!inPoly(e.p, z.pts)) continue;
@@ -58823,6 +58847,7 @@ defineTools({
 
 
 
+
 /* ---------- catalogue ---------- */
 const COVER_MAT = {
   parquet: {
@@ -59596,8 +59621,7 @@ function mergeFrags(frags) {
 /** Openings next to the zone: [{ o (door / opening), rect (world, CCW), side, depth, pos, kind, len }]. */
 function coverTrans(z, c = coverCfg(z)) {
   const out = [];
-  for (const o of S.ents) {
-    if (o.type !== 'door' && o.type !== 'opening') continue;
+  for (const o of query(['door', 'opening'])) {
     const I = opInfo(o);
     if (!I) continue;
     const n = I.wi.n,
@@ -61931,8 +61955,8 @@ function bathWallContacts(e) {
   const c = e.cfg;
   if (!c || c.type === 'free') return [];
   const out = [];
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !w.a || !w.b) continue;
+  for (const w of query('wall')) {
+    if (!w.a || !w.b) continue;
     for (const side of [1, -1]) {
       let ob;
       try {
@@ -62132,6 +62156,7 @@ function bathMigrate(e) {
 
 
 
+
 /* ---------- slab openings ---------- */
 var SHK = { round: 'Круглое (алмазное бурение)', rect: 'Прямоугольное (проём)' };
 function sholePoly(e) {
@@ -62246,7 +62271,7 @@ XT.shole = {
   },
   group: e => `Отверстие в плите ${e.shape === 'round' ? 'Ø' + e.d : e.w + '×' + e.h}`,
   panel: e => {
-    const p = S.ents.filter(x => x.type === 'pipe' && x.pts.some(q => slabHoleAt(q) === e));
+    const p = query('pipe', x => x.pts.some(q => slabHoleAt(q) === e));
     return xGroups(e, [
       [
         'Отверстие в плите',
@@ -62417,8 +62442,8 @@ function slabPassIssues(add_) {
         );
     }
     if (e.type === 'shole') {
-      for (const p of S.ents)
-        if (p.type === 'pipe' && p.pts.some(q => slabHoleAt(q) === e)) {
+      for (const p of query('pipe'))
+        if (p.pts.some(q => slabHoleAt(q) === e)) {
           const od = p.d + 2 * insTh(p);
           const sz = e.shape === 'round' ? e.d : Math.min(e.w, e.h);
           if (od > sz - 10)
@@ -63178,6 +63203,7 @@ function galvSpec(e, L, H, put, S_) {
 
 
 
+
 /** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
 const AV_NORM = {
   person: 60, // m³/h per person in living rooms
@@ -63278,8 +63304,8 @@ const hvHooksAv = { spigots: null, acSpigots: null };
 /** Drawn false ceiling under a point, mm; null when no drawn ceiling covers it (over a wall, an open space). */
 function avFcDrawn(p) {
   let best = null;
-  for (const c of S.ents)
-    if (c.type === 'ceil' && visible(c)) {
+  for (const c of query('ceil'))
+    if (visible(c)) {
       const pts = ceilOutline(c);
       if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
     }
@@ -63288,8 +63314,8 @@ function avFcDrawn(p) {
 /** False ceiling level over a point: a drawn ceiling, else the slab underside minus the default drop, mm. */
 function avFc(p) {
   let best = null;
-  for (const c of S.ents)
-    if (c.type === 'ceil' && visible(c)) {
+  for (const c of query('ceil'))
+    if (visible(c)) {
       const pts = ceilOutline(c);
       if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
     }
@@ -63298,14 +63324,14 @@ function avFc(p) {
 /** Height of the room air: false ceiling over its centre, else the level ceiling, mm. */
 function avCeil(p) {
   let best = null;
-  for (const c of S.ents)
-    if (c.type === 'ceil' && visible(c)) {
+  for (const c of query('ceil'))
+    if (visible(c)) {
       const pts = ceilOutline(c);
       if (pts && pts.length > 2 && inPoly(p, pts) && (best == null || c.z < best)) best = c.z;
     }
   return best != null ? best : S.ceil || 2700;
 }
-const avRooms = () => S.ents.filter(e => e.type === 'floorz' && visible(e) && e.pts && e.pts.length > 2);
+const avRooms = () => query('floorz', e => visible(e) && e.pts && e.pts.length > 2);
 function avCenter(z) {
   let x = 0,
     y = 0;
@@ -63411,8 +63437,8 @@ function avAz(n) {
 function avOutside(z) {
   const zones = avRooms().filter(q => q !== z);
   const out = [];
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
+  for (const w of query('wall')) {
+    if (!visible(w)) continue;
     const wi = wallInfo(w);
     let L = 0,
       side = 0,
@@ -63491,7 +63517,7 @@ function avLoad(z, R) {
   // fresh air into the room (after the recuperator)
   const row = R && R.rows.find(r => r.z === z);
   const L = row ? Math.max(row.hs, row.sup) : 0;
-  const rec = S.ents.some(e => e.type === 'dev' && e.kind === 'vunit' && visible(e));
+  const rec = queryAny('dev', e => e.kind === 'vunit' && visible(e));
   const tSup = rec ? tS - N.eta * (tS - N.tIn) : tS;
   if (L && tSup > N.tIn) parts.push([`Приточный воздух ${Math.round(L)} м³/ч`, Math.round(L * 0.335 * (tSup - N.tIn))]);
   const Q = parts.reduce((s, p) => s + p[1], 0);
@@ -64438,6 +64464,7 @@ function dbSpigotFlows(e) {
 
 
 
+
 /* ---------- catalogue ---------- */
 /** Air handling units with heat recovery: body L × W × H (mm), spigot Ø, nominal / max flow m³/h, pressure Pa at the nominal flow. */
 const AHU_CAT = {
@@ -64905,7 +64932,7 @@ const ductPath3raw = e => e.pts.map(p => [p.x, p.y, p.z != null ? +p.z : +e.z ||
 const DETOUR = new WeakMap();
 const DT_GAP = 30;
 function ductDetour(e, q) {
-  if (!S.ents.some(b => b.type === 'beam')) return q;
+  if (!queryAny('beam')) return q;
   const k =
     documentState.docVer +
     '|' +
@@ -64924,8 +64951,7 @@ function ductDetour(e, q) {
   if (m && m.k === k) return m.q;
   const H = (e.shape === 'rect' ? +e.hh : +e.d) + 2 * (+e.ins || 0),
     W = (e.shape === 'rect' ? +e.w : +e.d) + 2 * (+e.ins || 0);
-  const beams = S.ents
-    .filter(b => b.type === 'beam' && visible(b))
+  const beams = query('beam', b => visible(b))
     .map(b => {
       let poly = null;
       try {
@@ -65292,10 +65318,10 @@ const PWR_KIND = { out: 'электровывод (кабель в клеммы 
 /** The power point of a unit: the one made for it, else any socket or outlet within 2 m. */
 function powerNear(e) {
   return (
-    S.ents.find(d => d.type === 'dev' && d.feeds === e.id) ||
-    S.ents.find(
-      d =>
-        d.type === 'dev' && DEVK[d.kind] && DEVK[d.kind].f === 'socket' && !DEVK[d.kind].weak && dist(d.p, e.p) < 2000
+    queryFirst('dev', d => d.feeds === e.id) ||
+    queryFirst(
+      'dev',
+      d => DEVK[d.kind] && DEVK[d.kind].f === 'socket' && !DEVK[d.kind].weak && dist(d.p, e.p) < 2000
     ) ||
     null
   );
@@ -66165,13 +66191,13 @@ function labelSystems(ids) {
         t.type === 'hvu' ||
         (t.type === 'ac' && t.kind === 'duct'))
   );
-  const have = new Set(S.ents.filter(n => n.type === 'note' && n.target != null).map(n => n.target));
+  const have = new Set(query('note', n => n.target != null).map(n => n.target));
   const todo = els.filter(t => !have.has(t.id));
   if (!todo.length) return 0;
   pushUndo();
   const boxes = [];
-  for (const n of S.ents)
-    if (n.type === 'note' && n.p) boxes.push({ x0: n.p.x - 50, y0: n.p.y - 50, x1: n.p.x + 1600, y1: n.p.y + 600 });
+  for (const n of query('note'))
+    if (n.p) boxes.push({ x0: n.p.x - 50, y0: n.p.y - 50, x1: n.p.x + 1600, y1: n.p.y + 600 });
   const hit = b => boxes.some(o => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
   let n = 0;
   for (const t of todo) {
@@ -66687,6 +66713,7 @@ defineTools({
 
 
 
+
 /* кондиционеры: настенный сплит, канальный (с камерой статического давления, щелевыми решётками, возвратом с фильтром, помпой), кассетный;
    наружный блок (фасад/балкон/корзина), трасса: фреон (медь в изоляции), дренаж, межблочный кабель */
 var ACK = {
@@ -67126,9 +67153,7 @@ function acChecks(e) {
       out.push(['warn', `До потолка ${Math.round((S.ceil || 2700) - top)} мм — нужно ≥ 150 мм для забора воздуха.`]);
   }
   if (e.kind !== 'split') {
-    const hs = S.ents.filter(
-      h => h.type === 'rhatch' && h.plane === 'ceil' && dist(h.p, e.p) < 1200 && h.w >= 500 && h.h >= 500
-    );
+    const hs = query('rhatch', h => h.plane === 'ceil' && dist(h.p, e.p) < 1200 && h.w >= 500 && h.h >= 500);
     if (!hs.length)
       out.push(['warn', `${ACK[e.kind]}: нужен сервисный люк в потолке ≥ 600×600 под блоком (фильтр, помпа, плата).`]);
   }
@@ -67137,7 +67162,7 @@ function acChecks(e) {
       'info',
       'Дренаж на фасад: в МКД часто запрещено — уточните в УК; лучше в канализацию через сухой гидрозатвор.'
     ]);
-  if (e.drain === 'sewer' && !S.ents.some(f => f.type === 'fix' && f.kind === 'vtrap'))
+  if (e.drain === 'sewer' && !queryAny('fix', f => f.kind === 'vtrap'))
     out.push(['info', 'Дренаж в канализацию: поставьте гидрозатвор для кондиционера (сухой сифон) рядом с трассой.']);
   if (!powerNear(e))
     out.push([
@@ -67790,6 +67815,7 @@ defineTools({
 
 
 
+
 const ACL_DRAIN = {
   hose16: { n: 'Дренажный шланг гофрированный Ø16', d: 16, col: '#e9ecef' },
   pvc16: { n: 'Трубка ПВХ жёсткая Ø16', d: 16, col: '#f2f3f4' },
@@ -67873,9 +67899,8 @@ function aclMinSlope(e) {
 }
 function wallsCrossed(e) {
   let n = 0;
-  for (const w of S.ents)
-    if (w.type === 'wall' && w.a && w.b)
-      for (let i = 1; i < e.pts.length; i++) if (segSeg(e.pts[i - 1], e.pts[i], w.a, w.b)) n++;
+  for (const w of query('wall'))
+    if (w.a && w.b) for (let i = 1; i < e.pts.length; i++) if (segSeg(e.pts[i - 1], e.pts[i], w.a, w.b)) n++;
   return n;
 }
 function bends(e) {
@@ -68488,6 +68513,7 @@ defineTools({
 
 
 
+
 /* ---------- climate and system ---------- */
 const HEAT_CITY = {
   msk: ['Москва', -25],
@@ -68853,12 +68879,12 @@ function heatLoss(z) {
   const hR = (S.ceil || 2700) / 1000;
   const V = A * hR;
   const parts = [];
-  const zones = S.ents.filter(e => e.type === 'floorz' && e !== z && e.pts && e.pts.length > 2);
+  const zones = query('floorz', e => e !== z && e.pts && e.pts.length > 2);
   let Qw = 0,
     Qo = 0,
     Aw = 0;
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
+  for (const w of query('wall')) {
+    if (!visible(w)) continue;
     const wi = wallInfo(w);
     // overlap of the wall face with the zone edges
     let L = 0,
@@ -69716,7 +69742,7 @@ function radChecks(e) {
     if (w) {
       const wi = wallInfo(w);
       const t = dot(sub(e.p, w.a), wi.u);
-      const win = hosted(w.id).find(o => o.type === 'window' && Math.abs(o.t - t) < o.w / 2);
+      const win = queryFirst('window', o => Math.abs(o.t - t) < o.w / 2, hosted(w.id));
       if (win) {
         if (M.W < win.w * 0.5)
           out.push([
@@ -69780,7 +69806,7 @@ function mkRad() {
       let q = pl.p;
       const cfg = radDefaults(kind);
       const t = dot(sub(pl.p, w.a), wi.u);
-      const win = hosted(w.id).find(o => o.type === 'window' && Math.abs(o.t - t) < o.w / 2 + 200);
+      const win = queryFirst('window', o => Math.abs(o.t - t) < o.w / 2 + 200, hosted(w.id));
       if (win) {
         q = add(add(w.a, mul(wi.u, win.t)), sub(pl.p, add(w.a, mul(wi.u, t))));
         const ww = win.w * 0.7;
@@ -69834,6 +69860,7 @@ function heatInput(ev) {
  * Revision (access) hatches: frames, reach of hatches, which elements need access, hatch views and
  * specification.
  */
+
 
 
 
@@ -70218,7 +70245,7 @@ function hatchIssues(add_) {
       continue;
     }
     const R = hatchReach(h);
-    const mf = R.find(e => e.type === 'fix' && e.kind === 'manifold');
+    const mf = queryFirst('fix', e => e.kind === 'manifold', R);
     if (mf && h.w < 500) add_(h, 'warn', `Люк ${h.w}×${h.h} мал для коллектора — рекомендуется от 600×600`, F.o);
     if (F.vert && F.host && F.host.type === 'wall' && h.z + h.h > F.host.h) add_(h, 'bad', 'Люк выше стены', F.o);
     if (h.plane === 'floor' && floorAt(h.p).zone && HTK[h.kind] && h.kind === 'floor') {
@@ -70390,7 +70417,7 @@ XT.rhatch = {
   panel(e) {
     const K = HTK[e.kind] || HTK.tile;
     const R = hatchReach(e);
-    const v = S.ents.find(x => x.type === 'view3' && x.vw && x.vw.hatch === e.id);
+    const v = queryFirst('view3', x => x.vw && x.vw.hatch === e.id);
     const kinds = Object.entries(HTK).filter(([k, v]) => v.planes.includes(e.plane));
     return xGroups(e, [
       [
@@ -70469,7 +70496,7 @@ XT.rhatch = {
       return;
     }
     if (a === 'hview') {
-      let v = S.ents.find(x => x.type === 'view3' && x.vw && x.vw.hatch === e.id);
+      let v = queryFirst('view3', x => x.vw && x.vw.hatch === e.id);
       if (!v) v = hatchView(e);
       openViews(v.id);
     }
@@ -72204,6 +72231,7 @@ function drawInstPorts(e) {
 
 
 
+
 /* replace module mechanisms in assembled blocks */
 /* ---------- lights: kinds and models ---------- */
 Object.assign(DEVK, {
@@ -72238,14 +72266,14 @@ function lcOf(e) {
 function ceilAt(p) {
   let z = S.ceil || 2700,
     best = null;
-  for (const c of S.ents)
-    if (c.type === 'ceil' && c.pts && inPoly(p, c.pts)) {
+  for (const c of query('ceil'))
+    if (c.pts && inPoly(p, c.pts)) {
       if (best == null || c.z < best) best = c.z;
     }
   return best ?? z;
 }
 function ceilKindAt(p) {
-  for (const c of S.ents) if (c.type === 'ceil' && c.pts && inPoly(p, c.pts)) return c;
+  for (const c of query('ceil')) if (c.pts && inPoly(p, c.pts)) return c;
   return null;
 }
 /** Solid of revolution about a vertical axis: prof = [[radius, z], ...] from one end to the other. */
@@ -74055,6 +74083,7 @@ defineTools({
 
 
 
+
 /* свет ↔ потолок: раскладка профиля ГКЛ на плане, споты не должны попадать на профиль (иначе обрамление),
    закладные под споты/люстры/трек в натяжном потолке, ниша встроенного трека в ГКЛ — в 3D, плане и спецификации */
 const RECESSED = new Set(['lspot', 'lspotG', 'lspotH']);
@@ -74284,8 +74313,7 @@ function drawCeilLightsOverlay(e, o) {
   ctx.restore();
 }
 function lightCeilIssues(add_) {
-  for (const c of S.ents) {
-    if (c.type !== 'ceil') continue;
+  for (const c of query('ceil')) {
     for (const d of ceilLights(c)) {
       const h = spotHits(c, d);
       if (h.length)
@@ -75209,6 +75237,7 @@ defineTools({
 
 
 
+
 /* генератор зеркал (как у дверей): форма, рама/фацет, подсветка (контурная, фронтальная, светильник), сенсор, подогрев, навеска */
 var MRS = { rect: 'прямоугольное', round: 'круглое', oval: 'овальное', arch: 'арка', capsule: 'капсула' };
 var MRF = {
@@ -75443,8 +75472,9 @@ function mirrorChecks(e) {
   const F = mirrorFrame(e);
   if (!F) return [['bad', 'Зеркало потеряло стену']];
   if (mirrorPower(e)) {
-    const near = S.ents.some(
-      d => d.type === 'dev' && dist(d.p, F.o) < Math.max(e.w, 600) && Math.abs((d.z || 0) - (e.z + e.h / 2)) < e.h
+    const near = queryAny(
+      'dev',
+      d => dist(d.p, F.o) < Math.max(e.w, 600) && Math.abs((d.z || 0) - (e.z + e.h / 2)) < e.h
     );
     if (!near)
       out.push([
@@ -75452,7 +75482,7 @@ function mirrorChecks(e) {
         'Подсветке/подогреву нужен вывод кабеля за зеркалом (коробка/подрозетник за зеркалом, IP44 в санузле).'
       ]);
   }
-  const wet = S.ents.some(f => f.type === 'fix' && (f.kind === 'bath' || f.kind === 'shower') && dist(f.p, F.o) < 1200);
+  const wet = queryAny('fix', f => (f.kind === 'bath' || f.kind === 'shower') && dist(f.p, F.o) < 1200);
   if (wet && mirrorPower(e))
     out.push([
       'info',
@@ -75687,8 +75717,7 @@ function mkMirrorObj() {
     onPoint(p) {
       let best = null,
         bd = 400;
-      for (const w of S.ents) {
-        if (w.type !== 'wall') continue;
+      for (const w of query('wall')) {
         const wi = wallInfo(w);
         const t = dot(sub(p, w.a), wi.u);
         if (t < 0 || t > wi.L) continue;
@@ -76424,6 +76453,7 @@ migrate.step(() => {
 
 
 
+
 /* телевизор: на стене (кронштейн стационарный / наклонный / телескопический поворотный), на тумбе (ножки/подставка), на напольной стойке */
 var TVB = {
   fixed: 'стационарный (плоский, 25 мм)',
@@ -76530,9 +76560,7 @@ function tvChecks(e) {
   const D = tvDims(e);
   const zc = +e.zc || 1100;
   const near = k =>
-    S.ents.filter(
-      d => d.type === 'dev' && k(d) && dist(d.p, e.p) < D.W / 2 + 200 && Math.abs((d.z || 0) - zc) < D.H / 2 + 250
-    );
+    query('dev', d => k(d) && dist(d.p, e.p) < D.W / 2 + 200 && Math.abs((d.z || 0) - zc) < D.H / 2 + 250);
   if (!near(d => DEVK[d.kind] && DEVK[d.kind].f === 'socket' && !DEVK[d.kind].weak).length)
     out.push([
       'warn',
@@ -76542,7 +76570,7 @@ function tvChecks(e) {
     out.push(['info', 'За ТВ нет розеток ТВ/RJ45 — интернет и антенна.']);
   const w = e.host != null ? byId(e.host) : null;
   if (e.mount === 'wall' && w && w.type === 'wall' && isKnauf(w)) {
-    const has = S.ents.some(r => r.type === 'reinf' && r.host === w.id);
+    const has = queryAny('reinf', r => r.host === w.id);
     if (!has)
       out.push([
         e.bracket === 'swivel' ? 'bad' : 'warn',
@@ -77119,6 +77147,7 @@ function mini3D(A) {
  *
  * Kitchen: runs along walls, modules (Blum/Häfele), fronts, hardware, checks, the constructor dialog.
  */
+
 
 
 
@@ -78534,9 +78563,9 @@ function kitChecks(e) {
   const zt = c.legs + c.baseH + c.top;
   if (c.wallZ - zt < 500)
     out.push(['warn', `Между столешницей и навесными ${c.wallZ - zt} мм — мало (обычно 550–650).`]);
-  const socks = S.ents.filter(
+  const socks = query(
+    'dev',
     d =>
-      d.type === 'dev' &&
       DEVK[d.kind] &&
       DEVK[d.kind].f === 'socket' &&
       L.runs.some(r => {
@@ -78579,9 +78608,7 @@ function kitChecks(e) {
       `Розеток у кухни ${socks}, нужно ≈ ${need}: техника (${need - 3}) + 3 над столешницей; варочной — силовая 32 А.`
     ]);
   if (sink) {
-    const ws = S.ents.filter(
-      f => f.type === 'fix' && (f.kind === 'riserW' || f.kind === 'manifold' || f.kind === 'riserK')
-    );
+    const ws = query('fix', f => f.kind === 'riserW' || f.kind === 'manifold' || f.kind === 'riserK');
     const sp = (() => {
       const q = kitXF(sink.r)(sink.s0 + sink.m.w / 2, 100, 0);
       return P(q[0], q[1]);
@@ -78806,7 +78833,7 @@ function kitNormal(a, b) {
   const u = nrm(sub(b, a)),
     n = P(-u.y, u.x);
   const m = mid(a, b);
-  const inWall = q => S.ents.some(w => w.type === 'wall' && inPoly(q, wallInfo(w).poly));
+  const inWall = q => queryAny('wall', w => inPoly(q, wallInfo(w).poly));
   if (inWall(sub(m, mul(n, 60))) && !inWall(add(m, mul(n, 60)))) return n;
   if (inWall(add(m, mul(n, 60))) && !inWall(sub(m, mul(n, 60)))) return mul(n, -1);
   return n;
@@ -79390,6 +79417,7 @@ defineTools({
  * Run-local coordinates: x along the wall from the run start, y from the wall face into the room, z up from the
  * floor. Every carcass part carries its box, so the 3D model, the drawings and the cutting list are the same data.
  */
+
 
 
 
@@ -80563,7 +80591,7 @@ function cwChecks(e, G = cwGeom(e)) {
       w = f.x1 - f.x0;
     const xh = f.hinge === 'L' ? f.x0 : f.x1;
     const tip = cwXF(R)(xh, G.yF + f.ft.t + w * 0.98, 900);
-    if (S.ents.some(o => o.type === 'wall' && inPoly(P(tip[0], tip[1]), wallInfo(o).poly))) {
+    if (queryAny('wall', o => inPoly(P(tip[0], tip[1]), wallInfo(o).poly))) {
       W(
         'bad',
         `С${f.sec.gi}: распашная дверь ${Math.round(w)} мм упирается в стену напротив — проход узкий, нужны купе или узкие створки.`
@@ -81414,8 +81442,8 @@ function cwRaySeg(o, d, a, b) {
 }
 function cwRay(o, d) {
   let best = Infinity;
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
+  for (const w of query('wall')) {
+    if (!visible(w)) continue;
     const Pl = wallInfo(w).poly;
     for (let i = 0; i < Pl.length; i++) {
       const t = cwRaySeg(o, d, Pl[i], Pl[(i + 1) % Pl.length]);
@@ -81427,8 +81455,8 @@ function cwRay(o, d) {
 /** A niche around point p: the nearest wall face behind, the side walls left and right. */
 function cwNiche(p) {
   let best = null;
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w)) continue;
+  for (const w of query('wall')) {
+    if (!visible(w)) continue;
     const Pl = wallInfo(w).poly;
     for (let i = 0; i < Pl.length; i++) {
       const a = Pl[i],
@@ -81454,7 +81482,7 @@ function cwNiche(p) {
   return { a, b, n };
 }
 function cwWallAt(q) {
-  return S.ents.some(w => w.type === 'wall' && visible(w) && inPoly(q, wallInfo(w).poly));
+  return queryAny('wall', w => visible(w) && inPoly(q, wallInfo(w).poly));
 }
 /** Creates the product along the runs, detects walls at the run ends, fills it with a template. */
 function cwCreate(runs, product = 'wardrobe', put = addEnt) {
@@ -83341,6 +83369,7 @@ function crossoverFittings(e) {
 
 
 
+
 /** Distance in plan from point p to segment a–b. */
 function stPtD(p, a, b) {
   const dx = b[0] - a[0],
@@ -83608,7 +83637,7 @@ function wireHopPass() {
     hops.get(eh.id).push({ i: sh.i, s: sv, p: r.X.p, dz, o: eo.id, kind: 'wire', w: Ro.gof });
   });
   // 2) cables over pipes (screed / floor; ceiling plenum)
-  const ps = S.ents.filter(e => e.type === 'pipe' && visible(e) && e.pts && e.pts.length > 1);
+  const ps = query('pipe', e => visible(e) && e.pts && e.pts.length > 1);
   for (const [e, R] of RR)
     for (const s of S_.get(e.id))
       for (const p of ps) {
@@ -83981,6 +84010,7 @@ function drawKitchen3D(canvas, e) {
  * Checks: aisles, knee space by the seating height, overhang supports, water / drain and power outlets from the floor
  * under the island (mep/floor-outlets.js), hood over an island hob, stone slab seams.
  */
+
 
 
 
@@ -84844,11 +84874,10 @@ function islandChecks(e) {
   const foot = islandFoot(e);
   // aisles
   const obst = [];
-  for (const w of S.ents)
-    if (w.type === 'wall') {
-      const pl = wallInfo(w).poly;
-      for (let i = 0; i < pl.length; i++) obst.push({ a: pl[i], b: pl[(i + 1) % pl.length], n: 'стена' });
-    }
+  for (const w of query('wall')) {
+    const pl = wallInfo(w).poly;
+    for (let i = 0; i < pl.length; i++) obst.push({ a: pl[i], b: pl[(i + 1) % pl.length], n: 'стена' });
+  }
   for (const k of S.ents)
     if (k.type === 'kitchen')
       for (const r of k.runs) {
@@ -84928,8 +84957,7 @@ function islandChecks(e) {
     hasDW = M.equip.some(q => q.k === 'b_dw');
   if (hasSink || hasDW) {
     const wet =
-      S.ents.some(f => f.type === 'fix' && f.kind === 'floorout' && inFoot(f.p)) ||
-      S.ents.some(p => p.type === 'pipe' && p.pts.some(q => inFoot(q)));
+      queryAny('fix', f => f.kind === 'floorout' && inFoot(f.p)) || queryAny('pipe', p => p.pts.some(q => inFoot(q)));
     if (!wet)
       out.push([
         'bad',
@@ -84938,7 +84966,7 @@ function islandChecks(e) {
     else out.push(['info', 'Канализация от острова идёт в стяжке — уклон ≥ 3 % до стояка, проверьте высоту пола.']);
   }
   if (c.cab && c.g === 'i') {
-    const pw = S.ents.some(d => d.type === 'dev' && inFoot(d.p));
+    const pw = queryAny('dev', d => inFoot(d.p));
     if (!pw)
       out.push([
         'bad',
@@ -84964,8 +84992,7 @@ function islandChecks(e) {
     ]);
   if (ISK[e.kind].wallEnd || ISK[e.kind].wall) {
     const p0 = ISK[e.kind].wall ? LP(e, 0, -5) : LP(e, -c.L / 2 - 5, 0);
-    const near =
-      S.ents.some(w => w.type === 'wall' && inPoly(p0, wallInfo(w).poly)) || S.ents.some(k => k.type === 'kitchen');
+    const near = queryAny('wall', w => inPoly(p0, wallInfo(w).poly)) || S.ents.some(k => k.type === 'kitchen');
     if (!near) out.push(['warn', 'Примыкание: торец/край не упирается в стену — проверьте установку.']);
   }
   out.push([
@@ -85612,14 +85639,13 @@ function nearestDir(p) {
         }
       }
   if (best) return best;
-  for (const w of S.ents)
-    if (w.type === 'wall') {
-      const d = dist(segPt(w.a, w.b, p), p);
-      if (d < bd) {
-        bd = d;
-        best = { u: nrm(sub(w.b, w.a)) };
-      }
+  for (const w of query('wall')) {
+    const d = dist(segPt(w.a, w.b, p), p);
+    if (d < bd) {
+      bd = d;
+      best = { u: nrm(sub(w.b, w.a)) };
     }
+  }
   return best;
 }
 function mkIsland(group) {
@@ -92204,6 +92230,7 @@ function drawSheet(sh, o = {}) {
 
 
 
+
 const MS = { keepLayers: null, keepAs: null, keepLv: null, keepSel: null };
 
 /* ---------- mode ---------- */
@@ -93462,7 +93489,7 @@ function itemPanel(sh, it) {
     h += `<label class="fl fx">${ip('src.allLv', 'b', it.src.allLv === false ? '' : 'checked')} все этажи</label>`;
     h += fl('Горизонтальный разрез на высоте, мм (0 — нет)', ip('src.cutZ'));
     if (it.src.ids) h += `<p class="hint">Только объекты: ${it.src.ids.length} шт.</p>`;
-    h += `<div class="btnrow"><button class="btn" data-ia="fit">Вписать</button><button class="btn pri" data-ia="dim3">Размер 3D</button>${S.ents.some(x => x.type === 'molding') ? `<button class="btn" data-ia="mldim" title="Цепочки отступов молдингов на стенах, обращённых к виду, и размеры из редактора раскладки">${(it.dims3 || []).some(d => d.ml) ? 'Обновить размеры молдингов' : 'Размеры молдингов'}</button>` : ''}</div>`;
+    h += `<div class="btnrow"><button class="btn" data-ia="fit">Вписать</button><button class="btn pri" data-ia="dim3">Размер 3D</button>${queryAny('molding') ? `<button class="btn" data-ia="mldim" title="Цепочки отступов молдингов на стенах, обращённых к виду, и размеры из редактора раскладки">${(it.dims3 || []).some(d => d.ml) ? 'Обновить размеры молдингов' : 'Размеры молдингов'}</button>` : ''}</div>`;
     if ((it.dims3 || []).length)
       h += `<div class="shdims">${it.dims3.map((d, i) => `<div>${Math.round(dim3Geo(d).val)} мм · ${d.pl.toUpperCase()}${d.m !== 'al' ? ' · ось ' + d.m.toUpperCase() : ''}<button class="x" data-idel="${i}" aria-label="Удалить размер">×</button></div>`).join('')}</div>`;
   }
@@ -93789,8 +93816,8 @@ function bindPanel(el) {
           const fn = f.map(v => v / fl);
           it.dims3 = (it.dims3 || []).filter(d => !d.ml);
           let n = 0;
-          for (const m of S.ents)
-            if (m.type === 'molding' && visible(m) && mlFacing(m, fn)) {
+          for (const m of query('molding'))
+            if (visible(m) && mlFacing(m, fn)) {
               const ds = mlSheetDims(m);
               it.dims3.push(...ds);
               n += ds.length;
@@ -95549,6 +95576,7 @@ function odAxis(e) {
 
 
 
+
 /* ---------- commands for the new elements ---------- */
 function polyCmd(name, label, mk, opts = {}) {
   const pts = [];
@@ -95630,7 +95658,7 @@ function mkCeil() {
     if (kind === 'slab') {
       const t = ceilSlabTop(pp);
       const lv = lvCur();
-      if (!t.dup && !S.ents.some(x => x.type === 'slab' && x.role === 'ceil' && inPoly(polyCentroid(pp), x.pts))) {
+      if (!t.dup && !queryAny('slab', x => x.role === 'ceil' && inPoly(polyCentroid(pp), x.pts))) {
         addEnt({
           type: 'slab',
           pts: pp.map(p => P(p.x, p.y)),
@@ -95961,8 +95989,8 @@ function mkGbody() {
 function wallAt(p) {
   let best = null,
     bd = Infinity;
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !pickable(w)) continue;
+  for (const w of query('wall')) {
+    if (!pickable(w)) continue;
     const d = dist(segPt(w.a, w.b, p), p);
     if (d < Math.max(w.th / 2 + 20 / view.k, 24 / view.k) && d < bd) {
       bd = d;
@@ -96224,8 +96252,8 @@ function portMarks3(g, col) {
   if (!V3.inited) return;
   clearMarks3();
   const mb = MB();
-  for (const f of S.ents)
-    if (f.type === 'fix' && visible(f))
+  for (const f of query('fix'))
+    if (visible(f))
       for (const q of portsOf(f))
         if ((PSYS[q.s] || {}).g === g) {
           mb.box(q.p.x - 28, q.p.y - 28, q.z - 28, q.p.x + 28, q.p.y + 28, q.z + 28, col);
@@ -96512,8 +96540,8 @@ function mkPipe(cfg) {
       const { rc, mx, my, rect } = ray3(ev);
       let best = null,
         bd = 16;
-      for (const f of S.ents)
-        if (f.type === 'fix' && visible(f))
+      for (const f of query('fix'))
+        if (visible(f))
           for (const q of portsOf(f)) {
             if ((PSYS[q.s] || {}).g !== G()) continue;
             const v = new THREE.Vector3(q.p.x, q.p.y, q.z).project(V3.cam);
@@ -96824,7 +96852,7 @@ function mkSect() {
   let a = null,
     b = null;
   const nm = () => {
-    const used = new Set(S.ents.filter(e => e.type === 'sect').map(e => e.name));
+    const used = new Set(query('sect').map(e => e.name));
     return 'АБВГДЕЖИКЛМН'.split('').find(c => !used.has(c)) || 'А';
   };
   return {
@@ -96859,7 +96887,7 @@ function mkSect() {
 function mkNode() {
   let c = null,
     r = null;
-  const num = () => String(S.ents.filter(e => e.type === 'node').length + 1);
+  const num = () => String(query('node').length + 1);
   return {
     name: 'node',
     base: () => (r ? null : c),
@@ -97548,6 +97576,7 @@ defineTools({
 
 
 
+
 const RF_FLOOR = { tile: 'Плитка', lam: 'Ламинат', eng: 'Инженерная доска', vinyl: 'Кварцвинил', wet: 'Мокрая зона' };
 const RF_CEIL = { stretch: 'Натяжной', gkl: 'ГКЛ', slab: 'Покраска по плите' };
 function rfCfg() {
@@ -97567,7 +97596,7 @@ function fillRoom(p, cfg = rfCfg()) {
   const inside = q => inPoly(q, poly);
   pushUndo();
   // floor
-  if (cfg.floor && !S.ents.some(e => e.type === 'floorz' && e.pts && inside(polyCentroid(e.pts)))) {
+  if (cfg.floor && !queryAny('floorz', e => e.pts && inside(polyCentroid(e.pts)))) {
     const wet = cfg.floor === 'wet';
     S.ents.push({
       id: nextId(),
@@ -97584,7 +97613,7 @@ function fillRoom(p, cfg = rfCfg()) {
     made.floor = 1;
   }
   // ceiling
-  if (cfg.ceil && !S.ents.some(e => e.type === 'ceil' && e.pts && inside(polyCentroid(e.pts)))) {
+  if (cfg.ceil && !queryAny('ceil', e => e.pts && inside(polyCentroid(e.pts)))) {
     const k = cfg.ceil;
     S.ents.push({
       id: nextId(),
@@ -97607,8 +97636,7 @@ function fillRoom(p, cfg = rfCfg()) {
   }
   // wall sides facing the room (kept if already finished)
   if (cfg.walls)
-    for (const w of S.ents) {
-      if (w.type !== 'wall') continue;
+    for (const w of query('wall')) {
       const wi = wallInfo(w);
       for (const sd of [1, -1]) {
         const key = sd > 0 ? 'fa' : 'fb';
@@ -97655,10 +97683,7 @@ function fillRoom(p, cfg = rfCfg()) {
   // skirting along the room outline, broken at the doors
   if (cfg.plinth && TRIMK.plinth) {
     const K = TRIMK.plinth;
-    const doors = S.ents
-      .filter(o => o.type === 'door')
-      .map(opInfo)
-      .filter(Boolean);
+    const doors = query('door').map(opInfo).filter(Boolean);
     // a run of short edges turning a little each time is the face of a curved wall: one flexible skirting along it
     const N = poly.length;
     const turn = i => {
@@ -106556,8 +106581,7 @@ function layoutData() {
       cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
     snaps.push([cx, cy]);
     for (const t of R.trans || []) snaps.push([(t.line[0].x + t.line[1].x) / 2, (t.line[0].y + t.line[1].y) / 2]);
-    for (const e of S.ents)
-      if (e.type === 'fix' && e.kind === 'fdrain' && e.p && inPoly(e.p, pts)) snaps.push([e.p.x, e.p.y]);
+    for (const e of query('fix')) if (e.kind === 'fdrain' && e.p && inPoly(e.p, pts)) snaps.push([e.p.x, e.p.y]);
     const sz = coverSize(c);
     return {
       title:
@@ -106955,7 +106979,7 @@ function layoutAt(p) {
     );
     if (i >= 0) return { kind: 'wall', id: ws.w.id, i };
   }
-  const f = S.ents.find(e => e.type === 'floorz' && e.pts && inPoly(p, e.pts));
+  const f = queryFirst('floorz', e => e.pts && inPoly(p, e.pts));
   if (f) return { kind: 'floor', id: f.id };
   return null;
 }
@@ -110871,6 +110895,7 @@ defineTools({
 
 
 
+
 /* ---------- small linear algebra ---------- */
 const sv3 = {
   add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
@@ -111279,8 +111304,7 @@ function contextPolys() {
   const out = [];
   if (!isFinite(bb.mn[0])) return out;
   const pad = 1500;
-  for (const w of S.ents) {
-    if (w.type !== 'wall') continue;
+  for (const w of query('wall')) {
     const poly = wallInfo(w).poly;
     if (!poly.some(p => p.x > bb.mn[0] - pad && p.x < bb.mx[0] + pad && p.y > bb.mn[1] - pad && p.y < bb.mx[1] + pad))
       continue;
@@ -124133,6 +124157,7 @@ XT.arc = {
 
 
 
+
 /* the walk over the visible elements (sweep 'ents', see blocks/building/checks-building.js) */
 checkRule('dev-box', {
   order: 30,
@@ -124179,8 +124204,8 @@ checkRule('dev-beam', {
   each(e, { add: add_ }) {
     const d = DEVK[e.kind];
     if (!d) return;
-    for (const b of S.ents)
-      if (b.type === 'beam' && visible(b) && d.mount === 'ceil' && inPoly(e.p, XT.beam.poly(b)))
+    for (const b of query('beam'))
+      if (visible(b) && d.mount === 'ceil' && inPoly(e.p, XT.beam.poly(b)))
         add_(e, 'warn', 'Светильник/устройство под ригелем: проверьте отметку и крепление в ЖБ (арматура).', e.p);
   }
 });
@@ -124191,8 +124216,8 @@ checkRule('wire-bearing-wall', {
   visible: true,
   each(e, { add: add_ }) {
     if (e.method !== 'wall') return;
-    for (const w of S.ents) {
-      if (w.type !== 'wall' || !(w.bearing || isRC(w))) continue;
+    for (const w of query('wall')) {
+      if (!(w.bearing || isRC(w))) continue;
       const poly = wallInfo(w).poly;
       for (let i = 0; i < e.pts.length - 1; i++)
         if (segCrossPoly(e.pts[i], e.pts[i + 1], poly)) {
@@ -126725,6 +126750,7 @@ function wirePanelAfter() {
 
 
 
+
 const CEIL_CORN = { none: 'Без обработки', round: 'Скругление', chamfer: 'Фаска', notch: 'Обратная выборка' };
 const CEIL_CORN_IN = { none: 'Без обработки', round: 'Скругление', chamfer: 'Фаска' };
 /** Corner modes of a ceiling (old projects: rOut / rIn were radii of rounding). */
@@ -126896,7 +126922,7 @@ function ceilRuns(e) {
   const n = pts.length;
   let A = 0;
   for (let i = 0; i < n; i++) A += pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y;
-  const walls = S.ents.filter(w => w.type === 'wall');
+  const walls = query('wall');
   const wpolys = walls.map(w => {
     try {
       return wallInfo(w).poly;
@@ -126904,7 +126930,7 @@ function ceilRuns(e) {
       return null;
     }
   });
-  const others = S.ents.filter(o => o.type === 'ceil' && o !== e && o.pts && o.pts.length > 2);
+  const others = query('ceil', o => o !== e && o.pts && o.pts.length > 2);
   const oPolys = others.map(o => ceilOutline(o));
   const classify = (p, outw) => {
     for (const d of [25, 60]) {
@@ -127017,11 +127043,12 @@ function ceilBoardsMesh(e, mb, col, th) {
 
 
 
+
 checkRule('finish-zones', {
   order: 10,
   run({ add: add_ }) {
-    for (const w of S.ents) {
-      if (w.type !== 'wall' || !visible(w) || !w.zones) continue;
+    for (const w of query('wall')) {
+      if (!visible(w) || !w.zones) continue;
       for (const z of w.zones) {
         const C = zoneCalc(w, z);
         const zp = add(w.a, mul(wallInfo(w).u, (z.x0 + z.x1) / 2));
@@ -128735,14 +128762,14 @@ function mlFacing(e, f) {
 
 
 
+
 specSection('wall-finish', {
   order: 40,
   title: 'Отделка стен',
   collect(ctx) {
     const { put, bucket } = ctx;
     const fins = bucket();
-    for (const e of ctx.ents) {
-      if (e.type !== 'wall') continue;
+    for (const e of query('wall', null, ctx.ents)) {
       const { ct, A } = wallSpecArea(e);
       for (const [side, f] of [
         ['А', e.fa],
@@ -130200,6 +130227,7 @@ function ductDetails3(mb, e, W, H, col, dark) {
 
 
 
+
 const PEN_GAP = 20;
 /** How a wall is passed: 'frame' (a framed wall or construction), 'core' (block / monolithic), 'other'. */
 function wallPassKind(w) {
@@ -130237,8 +130265,8 @@ function ductWallCrossings0(e) {
   const W = (round ? +e.d : +e.w) + 2 * ins,
     H = (round ? +e.d : +e.hh) + 2 * ins;
   const out = [];
-  for (const w of S.ents) {
-    if (w.type !== 'wall' || !visible(w) || !w.a || !w.b) continue;
+  for (const w of query('wall')) {
+    if (!visible(w) || !w.a || !w.b) continue;
     const w0 = +w.z || 0,
       w1 = w0 + (+w.h || S.ceil || 2700);
     for (let i = 1; i < q.length; i++) {
@@ -130256,9 +130284,9 @@ function ductWallCrossings0(e) {
       if (out.some(x => x.w === w && dist(x.p, p) < 150)) continue;
       // through a door / window opening: nothing to make
       if (
-        S.ents.some(
+        queryAny(
+          ['door', 'window', 'opening'],
           o =>
-            (o.type === 'door' || o.type === 'window' || o.type === 'opening') &&
             o.host === w.id &&
             (() => {
               const I = opInfo(o);
@@ -130603,6 +130631,7 @@ function ductFields(e) {
 
 
 
+
 const HC_TOL = 2, // mm: overlap up to this is touching
   HC_SOFT = 50, // mm: assembly clearance
   HC_JOIN = 30, // mm: ends closer than this are a connection
@@ -130790,8 +130819,8 @@ function hcWallFlags(w) {
 }
 /** Rough opening (door, window, shaped opening) of wall w that contains plan point p at heights z0..z1. */
 function hcInOpening(w, p, z0, z1) {
-  for (const o of S.ents) {
-    if ((o.type !== 'door' && o.type !== 'window' && o.type !== 'opening') || o.host !== w.id) continue;
+  for (const o of query(['door', 'window', 'opening'])) {
+    if (o.host !== w.id) continue;
     const I = opInfo(o);
     if (I && inPoly(p, I.rect) && z0 >= (o.sill || 0) - HC_TOL && z1 <= (o.sill || 0) + o.h + HC_TOL) return true;
   }
@@ -130872,7 +130901,7 @@ function hcFind() {
       msg
     });
   }
-  const walls = vis.filter(e => e.type === 'wall' && e.a && e.b);
+  const walls = query('wall', e => e.a && e.b, vis);
   for (const A of ducts) {
     const e = A.e,
       z = e.z || 0,
@@ -130894,7 +130923,7 @@ function hcFind() {
     }
     // false ceiling: lowest ceiling over the sample point (avFc: drawn ceiling or default drop below the slab), skipping the terminal ends
     let worst = null;
-    const anyCeil = S.ents.some(c => c.type === 'ceil' && visible(c));
+    const anyCeil = queryAny('ceil', c => visible(c));
     const endPts = [
       [e.pts[0], e.from],
       [e.pts[e.pts.length - 1], e.to]
@@ -131228,14 +131257,14 @@ function pvcSpec(e) {
 
 
 
+
 specSection('hvac', {
   order: 80,
   title: 'Вентиляция',
   collect(ctx) {
     const { put, bucket } = ctx;
     const devs = bucket();
-    for (const e of ctx.ents) {
-      if (e.type !== 'dev') continue;
+    for (const e of query('dev', null, ctx.ents)) {
       const d = DEVK[e.kind];
       if (!d || e.blk || d.f !== 'vterm') continue;
       const nm = `${d.n} ${e.size ? (sizeWH(e.size).round ? 'Ø' + e.size : e.size.replace('x', '×')) : ''} · ${e.sys}`;
@@ -132686,6 +132715,7 @@ const hx = h => (h >>> 0).toString(16).toUpperCase();
 
 
 
+
 const LDWG_VER = '0.7.9';
 const LDWG_BASE = `https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@${LDWG_VER}`;
 
@@ -133274,7 +133304,7 @@ function wallsFromLines(ents) {
 
 /** Command «Стены по линиям»: the selected lines of an imported plan become walls of the matching thickness. */
 function wallsFromSelection() {
-  const sel = S.ents.filter(e => S.sel.has(e.id) && (e.type === 'line' || e.type === 'pline'));
+  const sel = query(['line', 'pline'], e => S.sel.has(e.id));
   if (!sel.length) return log('Выделите линии стен импортированного плана (рамкой), затем повторите', true);
   const W = wallsFromLines(sel);
   if (!W.length) return log('Пар параллельных линий на расстоянии 50–600 мм не найдено', true);
@@ -137527,6 +137557,7 @@ function ifcToProject(els, opts, shift, mkInst) {
 
 
 
+
 const IFC64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
 /** 128-bit hash of a string (cyrb128) → the 22-character compressed IFC GlobalId; the same key gives the same id. */
 function ifcGuid(key) {
@@ -138017,8 +138048,7 @@ function writeIFC(o = {}) {
         pset(key, 'Контур', kp, el);
       }
       // openings: every hosted door / window / opening voids its wall; doors and windows fill them
-      for (const e of S.ents) {
-        if (!(e.type === 'door' || e.type === 'window' || e.type === 'opening')) continue;
+      for (const e of query(['door', 'window', 'opening'])) {
         if (o.onlyVisible !== false && !visible(e)) continue;
         const I = opInfo(e);
         const wref = I && refOf.get(I.w.id);
@@ -138591,6 +138621,7 @@ function svgToCad(cad, svgText, opt = {}) {
 
 
 
+
 /* the walk over the visible elements (sweep 'ents', see blocks/building/checks-building.js) */
 checkRule('dev-socket-bath', {
   order: 32,
@@ -138686,8 +138717,8 @@ checkRule('pipe', {
           e.pts[0]
         );
     }
-    for (const w of S.ents) {
-      if (w.type !== 'wall' || !visible(w) || !isRC(w)) continue;
+    for (const w of query('wall')) {
+      if (!visible(w) || !isRC(w)) continue;
       const poly = wallInfo(w).poly;
       for (let i = 0; i < e.pts.length - 1; i++)
         if (segCrossPoly(e.pts[i], e.pts[i + 1], poly)) {
