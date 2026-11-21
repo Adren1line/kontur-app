@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.59';
+const APP_VER = '59.60';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12640,18 +12640,13 @@ function prims(e) {
     }
     case 'text':
       return closedSegs(textBox(e));
-    case 'slab':
-      return closedSegs(e.pts);
     case 'inst':
       return closedSegs(instHull(e));
     case 'dev':
       return [{ t: 'c', c: devCenter(e), r: devR() }];
-    case 'wire':
-    case 'duct': {
+    case 'wire': {
       const r = [];
       for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
-      // the sides of the duct (its width, with insulation) and the end faces: near / perpendicular / intersections
-      for (const L of ductSides(e)) for (let i = 0; i < L.length - 1; i++) r.push({ t: 's', a: L[i], b: L[i + 1] });
       return r;
     }
     default: {
@@ -12712,11 +12707,6 @@ function entDist(e, p) {
   if (e.type === 'dev') {
     const d = dist(devCenter(e), p);
     return d < devR() * 1.1 ? -2 : d - devR();
-  }
-  if (e.type === 'duct') {
-    let m = Infinity;
-    for (const q of prims(e)) m = Math.min(m, primDist(q, p));
-    return Math.max(0, m - ductW(e) / 2);
   }
   if (e.type === 'wire' && NV.on && S.elec.eng !== false && e.id != null) {
     try {
@@ -12781,10 +12771,6 @@ function keyPts(e) {
     case 'text':
       r.push({ p: e.p, k: 'ins' });
       break;
-    case 'slab':
-      e.pts.forEach(p => r.push({ p, k: 'end' }));
-      closedSegs(e.pts).forEach(s => r.push({ p: mid(s.a, s.b), k: 'mid' }));
-      break;
     case 'inst':
       r.push({ p: e.p, k: 'ins' });
       instHull(e).forEach(p => r.push({ p, k: 'end' }));
@@ -12792,16 +12778,9 @@ function keyPts(e) {
     case 'dev':
       r.push({ p: e.p, k: 'ins' });
       break;
-    case 'wire':
-    case 'duct': {
+    case 'wire': {
       e.pts.forEach((p, i) => r.push({ p, k: 'end' }));
       for (let i = 0; i < e.pts.length - 1; i++) r.push({ p: mid(e.pts[i], e.pts[i + 1]), k: 'mid' });
-      // corners of the outline and the middles of its sides
-      const S2 = ductSides(e);
-      for (const L of S2.slice(0, 2)) {
-        L.forEach(p => r.push({ p, k: 'end' }));
-        for (let i = 0; i < L.length - 1; i++) r.push({ p: mid(L[i], L[i + 1]), k: 'mid' });
-      }
       break;
     }
     default: {
@@ -12810,39 +12789,6 @@ function keyPts(e) {
     }
   }
   return r;
-}
-/**
- * The outline of a duct in plan: the left and the right side (offset by half the width plus insulation) and the two
- * end faces. Shared by the snaps and the cutting edges.
- */
-function ductSides(e) {
-  if (!e.pts || e.pts.length < 2) return [];
-  const hw = (+(e.shape === 'rect' ? e.w : e.d) || 0) / 2 + (+e.ins || 0);
-  if (!(hw > 0)) return [];
-  const l = offsetPts(e.pts, hw),
-    rr = offsetPts(e.pts, -hw);
-  return [l, rr, [l[0], rr[0]], [l[l.length - 1], rr[rr.length - 1]]];
-}
-/** A polyline offset by d to the left (mitred joins). */
-function offsetPts(pts, d) {
-  const n = pts.length,
-    out = [];
-  const nr = (a, b) => {
-    const x = b.x - a.x,
-      y = b.y - a.y,
-      L = Math.hypot(x, y) || 1;
-    return P(-y / L, x / L);
-  };
-  for (let i = 0; i < n; i++) {
-    const n0 = i > 0 ? nr(pts[i - 1], pts[i]) : null,
-      n1 = i < n - 1 ? nr(pts[i], pts[i + 1]) : null;
-    let m = n0 && n1 ? P(n0.x + n1.x, n0.y + n1.y) : n0 || n1;
-    const ml = Math.hypot(m.x, m.y) || 1;
-    m = P(m.x / ml, m.y / ml);
-    const c = n0 && n1 ? Math.max(0.25, m.x * n1.x + m.y * n1.y) : 1;
-    out.push(P(pts[i].x + (m.x * d) / c, pts[i].y + (m.y * d) / c));
-  }
-  return out;
 }
 function gcenOf(e) {
   if ((e.type === 'pline' && e.closed && e.pts.length > 2) || e.type === 'slab') return polyCentroid(e.pts);
@@ -12860,8 +12806,6 @@ function samplePts(e) {
             .filter(q => q.t === 'a')
             .map(arcMid)
         );
-      return e.pts;
-    case 'slab':
       return e.pts;
     case 'circle':
       return Array.from({ length: 48 }, (_, i) => polar(e.c, (i / 48) * TAU, e.r));
@@ -12883,7 +12827,6 @@ function samplePts(e) {
       return [P(c.x - r, c.y - r), P(c.x + r, c.y - r), P(c.x + r, c.y + r), P(c.x - r, c.y + r)];
     }
     case 'wire':
-    case 'duct':
       return e.pts;
     default: {
       const X = XT[e.type];
@@ -12900,7 +12843,6 @@ function mapEnt(e, f, dA = 0) {
       n.b = f(e.b);
       break;
     case 'pline':
-    case 'slab':
       n.pts = e.pts.map(f);
       break;
     case 'circle':
@@ -12926,7 +12868,6 @@ function mapEnt(e, f, dA = 0) {
       n.rot = (e.rot || 0) + dA;
       break;
     case 'wire':
-    case 'duct':
       n.pts = e.pts.map(f);
       break;
     default: {
@@ -16004,7 +15945,6 @@ function gripsOf0(e) {
         { p: mid(e.a, e.b), apply: mv(mid(e.a, e.b)) }
       ];
     case 'pline':
-    case 'slab':
       return e.pts
         .map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }))
         .concat(e.pts.length <= 200 ? edgeGrips(e, set) : []);
@@ -16055,7 +15995,6 @@ function gripsOf0(e) {
         }
       ];
     case 'wire':
-    case 'duct':
     case 'spline':
       return e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }));
     default: {
@@ -17215,11 +17154,6 @@ function drawEnt(e, color, o = {}) {
             strokePrims(prims(e));
           }
           break;
-        case 'slab':
-          pathPoly(e.pts);
-          ctx.lineWidth = o.hover ? 2 : 1;
-          ctx.stroke();
-          break;
         case 'inst': {
           const h = instHull(e);
           const a = ASSETS.get(e.asset);
@@ -17258,9 +17192,6 @@ function drawEnt(e, color, o = {}) {
           break;
         case 'wire':
           drawWire(e, color, o);
-          break;
-        case 'duct':
-          drawDuct(e, color, o);
           break;
         default: {
           const X = XT[e.type];
@@ -19384,14 +19315,6 @@ function pick3(ev) {
 function key3Base(e) {
   const L = layerOf(e);
   switch (e.type) {
-    case 'slab':
-      return JSON.stringify([
-        slabOutline(e),
-        e.th,
-        e.z,
-        typeof slabHoles === 'function' ? slabHoles(e) : 0,
-        slabPierce(e)
-      ]);
     case 'inst':
       return JSON.stringify([e.asset, ASSETS.has(e.asset), e.p, e.rot, e.z]);
     case 'dev':
@@ -19409,8 +19332,7 @@ function key3Base(e) {
         NV.on && (DEVK[e.kind] || {}).box ? documentState.docVer : 0,
         (DEVK[e.kind] || {}).k3 ? DEVK[e.kind].k3(e) : 0
       ]);
-    case 'wire':
-    case 'duct': {
+    case 'wire': {
       const zs = [e.from, e.to].map(id => {
         const d = id != null ? byId(id) : null;
         return d ? d.z : null;
@@ -19427,8 +19349,7 @@ function key3Base(e) {
         e.flex || 0,
         e.tap || 0,
         e.mat || 0,
-        e.type === 'duct' ? JSON.stringify(ductWallCrossings(e).map(c => [c.p, c.kind, c.depth])) : 0,
-        e.type === 'wire' ? [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable] : 0,
+        [wireColor(e), S.elec.eng !== false ? wireRouteKey(e) : 0, e.method, e.cable],
         e.group != null ? groupOf(e.group).col : 0,
         e.sys ? sysOf(e.sys).col : 0,
         zs
@@ -19454,35 +19375,114 @@ function boxesGroup(xf, build, opts) {
   build(mb);
   return meshGroup(mb.meshes(), opts);
 }
+/** 3D model of a slab (XT.slab.build3): extruded outline with holes, cut by CSG where walls of the level below rise through it. */
+function buildSlab3(e) {
+  if (e.pts.length < 3) return null;
+  // walls of the level below rising through the slab (second light): cut by CSG
+  const cuts = slabPierce(e);
+  if (cuts.length) {
+    const g = meshGroup(slabCsgMeshes(e, slabOutline(e), slabHoles(e), cuts, MATC.slab), { edges: true });
+    g.position.z = (e.z || 0) - e.th;
+    return g;
+  }
+  const sh = new THREE.Shape(slabOutline(e).map(p => new THREE.Vector2(p.x, p.y)));
+  try {
+    for (const h of slabHoles(e)) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p.x, p.y))));
+  } catch (err) {}
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: e.th, bevelEnabled: false });
+  const m = new THREE.Mesh(geo, matFor(hex2rgb(MATC.slab)));
+  m.userData.base = m.material;
+  m.receiveShadow = true;
+  m.castShadow = true;
+  const g = new THREE.Group();
+  g.add(m);
+  const l = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat());
+  l.userData.edge = true;
+  l.visible = V3.edges;
+  g.add(l);
+  g.position.z = (e.z || 0) - e.th;
+  return g;
+}
+/** 3D model of a duct (XT.duct.build3): rectangular body or swept round duct, flex, fittings, taps, penetrations. */
+function buildDuct3(e) {
+  const sy = sysOf(e.sys),
+    ins = e.ins || 0;
+  // the colour of the system (7.1): saturated, a little lighter; insulated — the system tint on the jacket
+  const col = rgbHex(hex2rgb(sy.col).map(c => c * (ins ? 0.45 : 0.82) + (ins ? 0.85 * 0.55 : 0.18)));
+  const mb = MB(),
+    z = e.z || 0,
+    W = ductW(e) + 2 * ins,
+    Hh = (e.shape === 'rect' ? e.hh : e.d) + 2 * ins,
+    rr = W / 2;
+  if (e.flex) {
+    flexBuild(e, mb, col);
+    try {
+      penetrationMesh(mb, e);
+    } catch (err) {
+      console.error(err);
+    }
+    return meshGroup(mb.meshes(), {});
+  }
+  const pts = ductPath3(e);
+  // a rectangular duct: one body with mitred corners (nothing past the elbows)
+  if (e.shape === 'rect') rectDuctBody(mb, pts, W, Hh, col);
+  if (e.shape !== 'rect') {
+    const ends = [
+      [e.from, 0],
+      [e.to, pts.length - 1]
+    ].map(([id, i]) => {
+      const d = id != null ? byId(id) : null;
+      return d && d.type === 'dev' && Math.abs(d.z - z) > 1 ? [pts[i][0], pts[i][1], d.z - 15] : null;
+    });
+    mb.sweep(
+      roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], rr * 1.5).pts,
+      rr,
+      col,
+      18
+    );
+  }
+  [
+    [e.from, 0],
+    [e.to, pts.length - 1]
+  ].forEach(([id, i]) => {
+    const d = id != null ? byId(id) : null;
+    if (d && d.type === 'dev') {
+      const p = pts[i],
+        top = [p[0], p[1], d.z - 15];
+      if (Math.abs(d.z - z) > 1) {
+        if (e.shape === 'rect') mb.obox([p[0], p[1], z - Hh / 2], top, W, Hh, col);
+      }
+    }
+  });
+  // the parts it is made of: joints of the straight bars, the ends of the elbows
+  ductDetails3(mb, e, W, Hh, col, hvShade(col, -0.28));
+  try {
+    penetrationMesh(mb, e);
+  } catch (err) {
+    console.error(err);
+  }
+  if (e.tap && pts.length > 1) {
+    // the saddle on the main and the rolled (beaded) joint at the spigot of a rigid connection
+    const ring = (a, b, s0, s1, r) => {
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
+      const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
+      mb.tube(
+        [a[0] + u[0] * s0, a[1] + u[1] * s0, a[2] + u[2] * s0],
+        [a[0] + u[0] * s1, a[1] + u[1] * s1, a[2] + u[2] * s1],
+        r,
+        '#8b939d',
+        24
+      );
+    };
+    mb.tag('Врезка в магистраль');
+    ring(pts[pts.length - 1], pts[pts.length - 2], 40, 70, rr + 6);
+    mb.tag('Вальцовка');
+    ring(pts[0], pts[1], 14, 22, rr + 3);
+  }
+  return meshGroup(mb.meshes(), { edges: e.shape === 'rect' });
+}
 function build3(e) {
   switch (e.type) {
-    case 'slab': {
-      if (e.pts.length < 3) return null;
-      // walls of the level below rising through the slab (second light): cut by CSG
-      const cuts = slabPierce(e);
-      if (cuts.length) {
-        const g = meshGroup(slabCsgMeshes(e, slabOutline(e), slabHoles(e), cuts, MATC.slab), { edges: true });
-        g.position.z = (e.z || 0) - e.th;
-        return g;
-      }
-      const sh = new THREE.Shape(slabOutline(e).map(p => new THREE.Vector2(p.x, p.y)));
-      try {
-        for (const h of slabHoles(e)) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p.x, p.y))));
-      } catch (err) {}
-      const geo = new THREE.ExtrudeGeometry(sh, { depth: e.th, bevelEnabled: false });
-      const m = new THREE.Mesh(geo, matFor(hex2rgb(MATC.slab)));
-      m.userData.base = m.material;
-      m.receiveShadow = true;
-      m.castShadow = true;
-      const g = new THREE.Group();
-      g.add(m);
-      const l = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat());
-      l.userData.edge = true;
-      l.visible = V3.edges;
-      g.add(l);
-      g.position.z = (e.z || 0) - e.th;
-      return g;
-    }
     case 'inst': {
       const a = ASSETS.get(e.asset);
       let g;
@@ -19525,83 +19525,6 @@ function build3(e) {
       });
       mb.sweep(roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], 45).pts, 8, col, 8);
       return meshGroup(mb.meshes(), {});
-    }
-    case 'duct': {
-      const sy = sysOf(e.sys),
-        ins = e.ins || 0;
-      // the colour of the system (7.1): saturated, a little lighter; insulated — the system tint on the jacket
-      const col = rgbHex(hex2rgb(sy.col).map(c => c * (ins ? 0.45 : 0.82) + (ins ? 0.85 * 0.55 : 0.18)));
-      const mb = MB(),
-        z = e.z || 0,
-        W = ductW(e) + 2 * ins,
-        Hh = (e.shape === 'rect' ? e.hh : e.d) + 2 * ins,
-        rr = W / 2;
-      if (e.flex) {
-        flexBuild(e, mb, col);
-        try {
-          penetrationMesh(mb, e);
-        } catch (err) {
-          console.error(err);
-        }
-        return meshGroup(mb.meshes(), {});
-      }
-      const pts = ductPath3(e);
-      // a rectangular duct: one body with mitred corners (nothing past the elbows)
-      if (e.shape === 'rect') rectDuctBody(mb, pts, W, Hh, col);
-      if (e.shape !== 'rect') {
-        const ends = [
-          [e.from, 0],
-          [e.to, pts.length - 1]
-        ].map(([id, i]) => {
-          const d = id != null ? byId(id) : null;
-          return d && d.type === 'dev' && Math.abs(d.z - z) > 1 ? [pts[i][0], pts[i][1], d.z - 15] : null;
-        });
-        mb.sweep(
-          roundPath([...(ends[0] ? [ends[0]] : []), ...pts, ...(ends[1] ? [ends[1]] : [])], rr * 1.5).pts,
-          rr,
-          col,
-          18
-        );
-      }
-      [
-        [e.from, 0],
-        [e.to, pts.length - 1]
-      ].forEach(([id, i]) => {
-        const d = id != null ? byId(id) : null;
-        if (d && d.type === 'dev') {
-          const p = pts[i],
-            top = [p[0], p[1], d.z - 15];
-          if (Math.abs(d.z - z) > 1) {
-            if (e.shape === 'rect') mb.obox([p[0], p[1], z - Hh / 2], top, W, Hh, col);
-          }
-        }
-      });
-      // the parts it is made of: joints of the straight bars, the ends of the elbows
-      ductDetails3(mb, e, W, Hh, col, hvShade(col, -0.28));
-      try {
-        penetrationMesh(mb, e);
-      } catch (err) {
-        console.error(err);
-      }
-      if (e.tap && pts.length > 1) {
-        // the saddle on the main and the rolled (beaded) joint at the spigot of a rigid connection
-        const ring = (a, b, s0, s1, r) => {
-          const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
-          const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
-          mb.tube(
-            [a[0] + u[0] * s0, a[1] + u[1] * s0, a[2] + u[2] * s0],
-            [a[0] + u[0] * s1, a[1] + u[1] * s1, a[2] + u[2] * s1],
-            r,
-            '#8b939d',
-            24
-          );
-        };
-        mb.tag('Врезка в магистраль');
-        ring(pts[pts.length - 1], pts[pts.length - 2], 40, 70, rr + 6);
-        mb.tag('Вальцовка');
-        ring(pts[0], pts[1], 14, 22, rr + 3);
-      }
-      return meshGroup(mb.meshes(), { edges: e.shape === 'rect' });
     }
     case 'line':
     case 'pline':
@@ -23000,7 +22923,6 @@ function initLayersPanel() {
 
 
 
-
 /* UI: project browser */
 function groupName(e) {
   switch (e.type) {
@@ -23008,10 +22930,6 @@ function groupName(e) {
       return (DEVK[e.kind] || {}).n || 'Устройство';
     case 'wire':
       return `Трасса гр.${e.group} · ${e.cable}`;
-    case 'duct':
-      return `Воздуховод ${e.sys} · ${secTxt(e)}`;
-    case 'slab':
-      return `Перекрытие ${fmt(e.th)} мм`;
     case 'inst': {
       const a = ASSETS.get(e.asset);
       if (!a) return 'Объект без геометрии';
@@ -23144,10 +23062,6 @@ const OLDF = {
     ['Подоконник', 'sill'],
     ['Положение по стене', 't']
   ],
-  slab: [
-    ['Толщина', 'th'],
-    ['Отметка верха', 'z']
-  ],
   inst: [
     ['X', 'px'],
     ['Y', 'py'],
@@ -23158,6 +23072,80 @@ const OLDF = {
 };
 const grpOpts = () => S.elec.groups.map(g => [g.n, `${g.n} · ${g.name}`]);
 const sysOpts = () => S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`]);
+/** Properties panel of a slab (XT.slab.panel): the area and the button that takes the outline from a polyline. */
+function slabPanel(e) {
+  return `<dt>Площадь</dt><dd>${(Math.abs(polyArea(e.pts)) / 1e6).toFixed(2)} м²</dd>`;
+}
+/** Button row of a slab under the properties table (XT.slab.panelAfter). */
+function slabPanelAfter() {
+  return `<div class="btnrow"><button class="btn" id="bSlabLine">Контур из полилинии…</button></div>`;
+}
+/** Binds the slab panel (XT.slab.bind): «outline from a polyline». */
+function bindSlabLine(el, e, changed) {
+  const bsl = $('#bSlabLine');
+  if (bsl)
+    bsl.onclick = () => {
+      const sl = e;
+      startCmd('slabfrom', {
+        name: 'slabfrom',
+        noSnap: true,
+        prompt: () => 'Замкнутая полилиния для контура:',
+        onPoint(p) {
+          const x = pickAt(p, y => y.type === 'pline' && y.closed);
+          if (!x) {
+            log('Нужна замкнутая полилиния', true);
+            return;
+          }
+          pushUndo();
+          sl.pts = x.pts.slice();
+          changed();
+          return 'end';
+        },
+        onEnter: () => 'end'
+      });
+    };
+}
+/** Properties panel of a duct (XT.duct.panel): the air velocity and the calculated sizes. */
+function ductPanel(e) {
+  const v = ductVel(e),
+    bad = v > (S.vent.vmax || 4),
+    L = ductLen(e);
+  const ro = (k, x) => `<dt>${k}</dt><dd>${x}</dd>`;
+  return (
+    `<div class="hd">Расчёт</div>` +
+    ro(
+      'Скорость воздуха',
+      `<span class="${bad ? 'bad' : 'ok'}">${v.toFixed(2)} м/с${bad ? ' — выше ' + S.vent.vmax : ''}</span>`
+    ) +
+    ro('Площадь сечения', (ductArea(e) * 1e4).toFixed(1) + ' см²') +
+    ro('Длина', (L / 1000).toFixed(2) + ' м') +
+    ro('Площадь поверхности', ((ductPerim(e) * L) / 1000).toFixed(2) + ' м²') +
+    ro('Отводов', ductBends(e).length)
+  );
+}
+/** Button row of a duct under the properties table (XT.duct.panelAfter). */
+function ductPanelAfter() {
+  return `<div class="btnrow"><button class="btn" id="bMEPopen">Системы вентиляции…</button></div>`;
+}
+/** Simple fields of a duct for the properties table (XT.duct.fields). */
+function ductFields(e) {
+  return [
+    { l: 'Система', k: 'sys', sel: sysOpts() },
+    { l: 'Сечение (Ø или Ш×В)', k: 'sec', txt: true },
+    { l: 'Отметка оси', k: 'z', num: true },
+    { l: 'Отметка начала', k: 'dza', num: true },
+    { l: 'Отметка конца', k: 'dzb', num: true },
+    { l: 'Расход, м³/ч', k: 'flow', num: true },
+    { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
+    ...(e.mat === PVC_MAT
+      ? [
+          { l: 'Канал ПВХ', k: 'pvcsz', sel: PVC_SIZES.map(([a, b]) => [a + '×' + b, a + '×' + b + ' мм']) },
+          { l: 'Обратных клапанов', k: 'cv', num: true }
+        ]
+      : []),
+    { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
+  ];
+}
 function fieldsFor(e) {
   if (e.type === 'text')
     return [
@@ -23242,23 +23230,6 @@ function fieldsFor(e) {
           ['1', 'вручную — по линии провода']
         ]
       }
-    ];
-  if (e.type === 'duct')
-    return [
-      { l: 'Система', k: 'sys', sel: sysOpts() },
-      { l: 'Сечение (Ø или Ш×В)', k: 'sec', txt: true },
-      { l: 'Отметка оси', k: 'z', num: true },
-      { l: 'Отметка начала', k: 'dza', num: true },
-      { l: 'Отметка конца', k: 'dzb', num: true },
-      { l: 'Расход, м³/ч', k: 'flow', num: true },
-      { l: 'Материал', k: 'mat', sel: DUCT_MATS.map(m => [m, m]) },
-      ...(e.mat === PVC_MAT
-        ? [
-            { l: 'Канал ПВХ', k: 'pvcsz', sel: PVC_SIZES.map(([a, b]) => [a + '×' + b, a + '×' + b + ' мм']) },
-            { l: 'Обратных клапанов', k: 'cv', num: true }
-          ]
-        : []),
-      { l: 'Изоляция', k: 'ins', sel: DUCT_INS.map(v => [v, v ? v + ' мм' : 'нет']) }
     ];
   return (OLDF[e.type] || []).map(([l, k, kind]) => (kind === 'bool' ? { l, k, bool: true } : { l, k, num: true }));
 }
@@ -24226,10 +24197,6 @@ function updateProps() {
         if (hasB(e)) ro('Дуговых сегментов', e.b.filter(x => Math.abs(x || 0) > 1e-9).length);
         if (e.closed) ro('Площадь', (Math.abs(hasB(e) ? plineArea(e) : polyArea(e.pts)) / 1e6).toFixed(2) + ' м²');
       }
-      if (e.type === 'slab') {
-        ro('Площадь', (Math.abs(polyArea(e.pts)) / 1e6).toFixed(2) + ' м²');
-        after += `<div class="btnrow"><button class="btn" id="bSlabLine">Контур из полилинии…</button></div>`;
-      }
       if (e.type === 'circle') ro('Площадь', ((Math.PI * e.r * e.r) / 1e6).toFixed(3) + ' м²');
       if (e.type === 'arc') {
         const sw = sweepOf(e.a0, e.a1);
@@ -24267,21 +24234,6 @@ function updateProps() {
         ro('Откуда', a ? esc(DEVK[a.kind].n) : '—');
         ro('Куда', b ? esc(DEVK[b.kind].n) : '—');
         after += `<div class="btnrow"><button class="btn" id="bMEPopen">Группы электрики…</button></div>`;
-      }
-      if (e.type === 'duct') {
-        const v = ductVel(e),
-          bad = v > (S.vent.vmax || 4),
-          L = ductLen(e);
-        h += `<div class="hd">Расчёт</div>`;
-        ro(
-          'Скорость воздуха',
-          `<span class="${bad ? 'bad' : 'ok'}">${v.toFixed(2)} м/с${bad ? ' — выше ' + S.vent.vmax : ''}</span>`
-        );
-        ro('Площадь сечения', (ductArea(e) * 1e4).toFixed(1) + ' см²');
-        ro('Длина', (L / 1000).toFixed(2) + ' м');
-        ro('Площадь поверхности', ((ductPerim(e) * L) / 1000).toFixed(2) + ' м²');
-        ro('Отводов', ductBends(e).length);
-        after += `<div class="btnrow"><button class="btn" id="bMEPopen">Системы вентиляции…</button></div>`;
       }
       if (e.type === 'inst') {
         const a = ASSETS.get(e.asset);
@@ -24323,6 +24275,7 @@ function updateProps() {
     if (e.type === 'dev' && e.blk) h += blkPanel(e);
     if (odSupports(e))
       after = `<div class="btnrow"><button class="btn pri" data-xa="obj">Параметры объекта…</button></div>` + after;
+    if (XT[e.type] && XT[e.type].panelAfter) after += XT[e.type].panelAfter(e);
     after += issuesPanel(e) + metaPanel(e);
   }
   if (uiHooks.phaseProps) after = uiHooks.phaseProps(es) + after;
@@ -24435,29 +24388,10 @@ function updateProps() {
   if (wsd && typeOf(e)) wtEditor(wsd, typeOf(e), 'side');
   const bm = $('#bMEPopen');
   if (bm)
-    bm.onclick = () => openMEP(e.type === 'duct' || (e.type === 'dev' && DEVK[e.kind].f === 'vterm') ? 'vt' : 'el');
-  const bsl = $('#bSlabLine');
-  if (bsl)
-    bsl.onclick = () => {
-      const sl = e;
-      startCmd('slabfrom', {
-        name: 'slabfrom',
-        noSnap: true,
-        prompt: () => 'Замкнутая полилиния для контура:',
-        onPoint(p) {
-          const x = pickAt(p, y => y.type === 'pline' && y.closed);
-          if (!x) {
-            log('Нужна замкнутая полилиния', true);
-            return;
-          }
-          pushUndo();
-          sl.pts = x.pts.slice();
-          changed();
-          return 'end';
-        },
-        onEnter: () => 'end'
-      });
-    };
+    bm.onclick = () =>
+      openMEP(
+        (XT[e.type] && XT[e.type].net === 'vt') || (e.type === 'dev' && DEVK[e.kind].f === 'vterm') ? 'vt' : 'el'
+      );
   if (es.length === 1) {
     xBindForm(el, e, (p, v) => {
       if (e.type === 'dev' && p.startsWith('blk.')) onBlockFieldSet(e, p, v);
@@ -24822,9 +24756,6 @@ function initCatalog() {
 
 
 
-
-
-
 /* specification */
 function renderSpecLevel() {
   const T = [];
@@ -24841,14 +24772,11 @@ function renderSpecLevel() {
     walls = bucket(),
     fins = bucket(),
     opens = bucket(),
-    slabs = bucket(),
     kn = bucket(),
     mas = bucket(),
     devs = bucket(),
     cables = bucket(),
     boxes = bucket(),
-    ducts = bucket(),
-    bends = bucket(),
     insts = bucket();
   for (const e of S.ents) {
     if (!visible(e)) continue;
@@ -25142,12 +25070,7 @@ function renderSpecLevel() {
           r.q += opn;
           r.ids.push(id);
         });
-    } else if (e.type === 'slab')
-      put(slabs, 's' + e.th, { name: `Перекрытие ${fmt(e.th)} мм`, u: 'м²' }, r => {
-        r.q += Math.abs(polyArea(e.pts)) / 1e6;
-        r.ids.push(e.id);
-      });
-    else if (e.type === 'dev') {
+    } else if (e.type === 'dev') {
       const d = DEVK[e.kind];
       if (!d || e.blk) continue;
       const nm =
@@ -25171,61 +25094,7 @@ function renderSpecLevel() {
         r.q += wireLen(e).total / 1000;
         r.ids.push(e.id);
       });
-    else if (e.type === 'duct' && e.flex) {
-      const st = secTxt(e);
-      put(
-        ducts,
-        'flex' + st + (e.ins ? 'i' : ''),
-        { name: `Воздуховод гибкий ${st}${e.ins ? ' в изоляции' : ''}, м`, u: 'м' },
-        r => {
-          r.q += ductLen3(e) / 1000;
-          r.A = (r.A || 0) + (ductPerim(e) * ductLen3(e)) / 1000;
-          r.ids.push(e.id);
-        }
-      );
-      put(bends, 'tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт' }, r => {
-        r.q++;
-        r.ids.push(e.id);
-      });
-      put(bends, 'clamp' + st, { name: `Хомут для гибкого воздуховода ${st}`, u: 'шт' }, r => {
-        r.q += 2;
-        r.ids.push(e.id);
-      });
-    } else if (isPvc(e)) {
-      // the flat PVC system: channels of 2 m, connectors, elbows, adapters, valves, holders
-      for (const r of pvcSpec(e))
-        put(r.k.startsWith('bar') ? ducts : bends, 'pvc' + r.k, { name: r.name + ` · ${e.sys}`, u: r.u }, x => {
-          x.q += r.q;
-          if (r.k.startsWith('bar')) x.A = 0;
-          x.ids.push(e.id);
-        });
-    } else if (e.type === 'duct') {
-      const st = secTxt(e);
-      put(ducts, e.sys + st + e.mat, { name: `Воздуховод ${st}, ${e.mat.toLowerCase()} · ${e.sys}`, u: 'м' }, r => {
-        r.q += Math.max(ductLen(e), ductLen3(e)) / 1000;
-        r.A = (r.A || 0) + (ductPerim(e) * Math.max(ductLen(e), ductLen3(e))) / 1000;
-        r.ids.push(e.id);
-      });
-      if (e.tap)
-        put(bends, 'tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт' }, r => {
-          r.q++;
-          r.ids.push(e.id);
-        });
-      // the straight bars and their joints (nipples, flanges, sleeves)
-      for (const r of ductSysRows(e))
-        put(bends, 'ds' + e.mat + r.k, { name: `${r.name} · ${e.sys}`, u: 'шт' }, x => {
-          x.q += r.q;
-          x.ids.push(e.id);
-        });
-      // every turn made of the real elbows of the material
-      const lib = ductLib(e);
-      for (const t of ductTurns(e))
-        for (const a of (ductElbows(lib, t.deg, t.vertical) || {}).c || [])
-          put(bends, st + a, { name: `Отвод ${a}° ${st}`, u: 'шт' }, r => {
-            r.q++;
-            r.ids.push(e.id);
-          });
-    } else if (e.type === 'inst') {
+    else if (e.type === 'inst') {
       const a = ASSETS.get(e.asset);
       if (!a) continue;
       const pr = { ...(a.props || {}), ...(e.props || {}) };
@@ -25243,10 +25112,7 @@ function renderSpecLevel() {
     }
   }
   const rows = m => [...m.values()];
-  T.push([
-    'Конструкции',
-    [...rows(walls).map(r => ({ ...r, name: `${r.name} · ${q2(r.L)} м` })), ...rows(opens), ...rows(slabs)]
-  ]);
+  T.push(['Конструкции', [...rows(walls).map(r => ({ ...r, name: `${r.name} · ${q2(r.L)} м` })), ...rows(opens)]]);
   T.push(['Комплектация дверей', rows(dkit)]);
   T.push(['Комплектация окон', rows(wkit)]);
   T.push(['Отделка стен', rows(fins)]);
@@ -25258,14 +25124,23 @@ function renderSpecLevel() {
   ]);
   T.push([
     'Вентиляция',
-    [
-      ...rows(ducts).map(r => ({ ...r, name: `${r.name} · ${q2(r.A)} м²` })),
-      ...rows(bends),
-      ...hvacQty().map(r => ({ name: r.name, u: r.u, q: r.q, ids: r.ids })),
-      ...rows(devs).filter(r => r.vt)
-    ]
+    [...hvacQty().map(r => ({ name: r.name, u: r.u, q: r.q, ids: r.ids })), ...rows(devs).filter(r => r.vt)]
   ]);
-  for (const [t, r] of xSpec()) T.push([t, r]);
+  // rows of the types that belong to the tables above (a slab — «Конструкции», a duct — «Вентиляция») carry base: true:
+  // they join those tables (ducts with the surface area in the name, before the fittings); the rest are separate tables
+  for (const [t, r] of xSpec()) {
+    const own = T.find(x => x[0] === t),
+      base = r.filter(x => x.base),
+      rest = r.filter(x => !x.base);
+    if (own && base.length) {
+      const named = [
+        ...base.filter(x => x.A != null).map(x => ({ ...x, name: `${x.name} · ${q2(x.A)} м²` })),
+        ...base.filter(x => x.A == null)
+      ];
+      own[1] = t === 'Вентиляция' ? [...named, ...own[1]] : [...own[1], ...named];
+    }
+    if (rest.length) T.push([t, rest]);
+  }
   let total = 0;
   const catRows = rows(insts).sort((a, b) => a.cat.localeCompare(b.cat));
   catRows.forEach(r => {
@@ -29281,6 +29156,7 @@ async function openJson(f) {
  * Properties and data
  * @property {(e)=>string} group          one-line description for the project browser
  * @property {(e)=>string} panel          HTML of the properties panel (use xGroups / xRows from ui/forms.js)
+ * @property {(e)=>string} panelAfter     HTML under the properties table (button rows): after «Параметры объекта…», before the issues
  * @property {(e)=>Field[]} fields        simple fields for the generic properties table
  * @property {(e,path,value)=>void} onSet called after a form field changed (derived values, normalisation)
  * @property {(e,action,el,button)=>void} action  buttons with data-xa="action" in the panel
@@ -53998,7 +53874,6 @@ function netKey(e) {
     const d = DEVK[e.kind] || {};
     return d.f === 'vterm' ? 'vt' : d.weak ? 'low' : 'el';
   }
-  if (e.type === 'duct') return 'vt';
   const X = XT[e.type];
   if (!X || !X.net) return null;
   return typeof X.net === 'function' ? X.net(e) : X.net;
@@ -55534,7 +55409,6 @@ function mirrorEnt(e, f, th) {
       n.b = f(e.b);
       break;
     case 'pline':
-    case 'slab':
       n.pts = e.pts.map(f);
       if (e.b) n.b = e.b.map(x => -(x || 0));
       break;
@@ -123119,6 +122993,74 @@ defineTools({
   }
 });
 
+// ===== elements/slab-xt.js =====
+/**
+ * elements/slab-xt.js
+ *
+ * XT.slab — the element type «slab» (floor slab, ceiling slab) in the registry of element types: plan primitives,
+ * snap points, grips, mapping (move / rotate / mirror), plan drawing, 3D (cache key and model), project browser
+ * group, the properties panel and its button, simple fields, the specification row and the IFC class. The bodies
+ * are the existing functions (railings.js, second-light.js, view3d/build.js, ui/properties.js …); the generic code
+ * reaches them only through XT.slab.
+ * Entity: { type:'slab', pts, th, z, role? ('ceil' — a ceiling slab) } — see commands/commands.js (mkSlab).
+ */
+
+
+
+
+
+
+
+
+
+
+
+XT.slab = {
+  layer: 'Перекрытия',
+  prims: e => closedSegs(e.pts),
+  keys: e => {
+    const r = [];
+    e.pts.forEach(p => r.push({ p, k: 'end' }));
+    closedSegs(e.pts).forEach(s => r.push({ p: mid(s.a, s.b), k: 'mid' }));
+    return r;
+  },
+  sample: e => e.pts,
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  /** Mirror: the bulges of a polyline outline change their sign. */
+  mirror: (n, e) => {
+    if (e.b) n.b = e.b.map(x => -(x || 0));
+  },
+  grips: (e, set) =>
+    e.pts
+      .map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) }))
+      .concat(e.pts.length <= 200 ? edgeGrips(e, set) : []),
+  draw: (e, color, o) => {
+    pathPoly(e.pts);
+    ctx.lineWidth = o.hover ? 2 : 1;
+    ctx.stroke();
+  },
+  k3own: true,
+  k3: e => [slabOutline(e), e.th, e.z, slabHoles(e), slabPierce(e)],
+  build3: e => buildSlab3(e),
+  group: e => `Перекрытие ${fmt(e.th)} мм`,
+  panel: e => slabPanel(e),
+  panelAfter: e => slabPanelAfter(e),
+  bind: (el, e, changed) => bindSlabLine(el, e, changed),
+  fields: () => [
+    { l: 'Толщина', k: 'th', num: true },
+    { l: 'Отметка верха', k: 'z', num: true }
+  ],
+  spec: (e, put) => {
+    put('Конструкции', 's' + e.th, { name: `Перекрытие ${fmt(e.th)} мм`, u: 'м²', base: true }, r => {
+      r.q += Math.abs(polyArea(e.pts)) / 1e6;
+      r.ids.push(e.id);
+    });
+  },
+  ifc: () => ['IFCSLAB', 'FLOOR', 'Pset_SlabCommon']
+};
+
 // ===== elements/solid-body.js =====
 /**
  * elements/solid-body.js
@@ -134851,8 +134793,6 @@ const R_ = (v, d = 3) => {
 /** IFC class, predefined type and property set of a Kontur element. */
 function ifcClassOf(e, cat) {
   switch (e.type) {
-    case 'slab':
-      return ['IFCSLAB', 'FLOOR', 'Pset_SlabCommon'];
     case 'floorz':
       return ['IFCCOVERING', 'FLOORING', 'Pset_CoveringCommon'];
     case 'ceil':
@@ -134882,8 +134822,6 @@ function ifcClassOf(e, cat) {
       return ['IFCSPACEHEATER', 'CONVECTOR', null];
     case 'pipe':
       return ['IFCPIPESEGMENT', 'NOTDEFINED', null];
-    case 'duct':
-      return ['IFCDUCTSEGMENT', 'NOTDEFINED', null];
     case 'fix':
       return ['IFCLIGHTFIXTURE', 'NOTDEFINED', null];
     case 'dev':
@@ -138303,6 +138241,201 @@ function penetrationMesh(mb, e) {
     }
   }
 }
+
+// ===== mep/hvac/duct-xt.js =====
+/**
+ * mep/hvac/duct-xt.js
+ *
+ * XT.duct — the element type «duct» (air duct, rigid, flexible or flat PVC) in the registry of element types: plan
+ * primitives with the sides of the duct, picking distance, snap points, grips, mapping, plan drawing, 3D (cache key and
+ * model), the network view, project browser group, the properties panel and its button, simple fields, the
+ * specification rows and the IFC class. The bodies are the existing functions (air-units.js, duct-fittings.js,
+ * pvc-ducts.js, view2d/render.js, view3d/build.js, ui/properties.js); the generic code reaches them only through XT.duct.
+ * Entity: { type:'duct', pts, z, sys, shape ('rect'|round), w, hh, d, ins, flex, tap, mat, flow, from, to } — see commands/commands.js (mkDuct).
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * The outline of a duct in plan: the left and the right side (offset by half the width plus insulation) and the two
+ * end faces. Shared by the snaps and the cutting edges.
+ */
+function ductSides(e) {
+  if (!e.pts || e.pts.length < 2) return [];
+  const hw = (+(e.shape === 'rect' ? e.w : e.d) || 0) / 2 + (+e.ins || 0);
+  if (!(hw > 0)) return [];
+  const l = offsetPts(e.pts, hw),
+    rr = offsetPts(e.pts, -hw);
+  return [l, rr, [l[0], rr[0]], [l[l.length - 1], rr[rr.length - 1]]];
+}
+/** A polyline offset by d to the left (mitred joins). */
+function offsetPts(pts, d) {
+  const n = pts.length,
+    out = [];
+  const nr = (a, b) => {
+    const x = b.x - a.x,
+      y = b.y - a.y,
+      L = Math.hypot(x, y) || 1;
+    return P(-y / L, x / L);
+  };
+  for (let i = 0; i < n; i++) {
+    const n0 = i > 0 ? nr(pts[i - 1], pts[i]) : null,
+      n1 = i < n - 1 ? nr(pts[i], pts[i + 1]) : null;
+    let m = n0 && n1 ? P(n0.x + n1.x, n0.y + n1.y) : n0 || n1;
+    const ml = Math.hypot(m.x, m.y) || 1;
+    m = P(m.x / ml, m.y / ml);
+    const c = n0 && n1 ? Math.max(0.25, m.x * n1.x + m.y * n1.y) : 1;
+    out.push(P(pts[i].x + (m.x * d) / c, pts[i].y + (m.y * d) / c));
+  }
+  return out;
+}
+
+XT.duct = {
+  layer: 'Вентиляция',
+  net: 'vt',
+  prims: e => {
+    const r = [];
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ t: 's', a: e.pts[i], b: e.pts[i + 1] });
+    // the sides of the duct (its width, with insulation) and the end faces: near / perpendicular / intersections
+    for (const L of ductSides(e)) for (let i = 0; i < L.length - 1; i++) r.push({ t: 's', a: L[i], b: L[i + 1] });
+    return r;
+  },
+  /** The distance to the edge of the duct body: inside it is 0. */
+  dist: (e, p) => {
+    let m = Infinity;
+    for (const q of prims(e)) m = Math.min(m, primDist(q, p));
+    return Math.max(0, m - ductW(e) / 2);
+  },
+  keys: e => {
+    const r = [];
+    e.pts.forEach(p => r.push({ p, k: 'end' }));
+    for (let i = 0; i < e.pts.length - 1; i++) r.push({ p: mid(e.pts[i], e.pts[i + 1]), k: 'mid' });
+    // corners of the outline and the middles of its sides
+    for (const L of ductSides(e).slice(0, 2)) {
+      L.forEach(p => r.push({ p, k: 'end' }));
+      for (let i = 0; i < L.length - 1; i++) r.push({ p: mid(L[i], L[i + 1]), k: 'mid' });
+    }
+    return r;
+  },
+  sample: e => e.pts,
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  draw: (e, color, o) => drawDuct(e, color, o),
+  k3own: true,
+  k3: e => {
+    const zs = [e.from, e.to].map(id => {
+      const d = id != null ? byId(id) : null;
+      return d ? d.z : null;
+    });
+    return [
+      e.type,
+      e.pts,
+      e.z,
+      e.d,
+      e.w,
+      e.hh,
+      e.shape,
+      e.ins,
+      e.flex || 0,
+      e.tap || 0,
+      e.mat || 0,
+      JSON.stringify(ductWallCrossings(e).map(c => [c.p, c.kind, c.depth])),
+      e.group != null ? groupOf(e.group).col : 0,
+      e.sys ? sysOf(e.sys).col : 0,
+      zs
+    ];
+  },
+  build3: e => buildDuct3(e),
+  group: e => `Воздуховод ${e.sys} · ${secTxt(e)}`,
+  panel: e => ductPanel(e),
+  panelAfter: e => ductPanelAfter(e),
+  fields: e => ductFields(e),
+  /**
+   * Rows of the ventilation table («base»: they join the table of the specification, ducts first — they carry the
+   * surface area A — then the fittings). Keys: d: — ducts, b: — fittings.
+   */
+  spec: (e, put) => {
+    const S_ = 'Вентиляция';
+    if (e.flex) {
+      const st = secTxt(e);
+      put(
+        S_,
+        'd:flex' + st + (e.ins ? 'i' : ''),
+        { name: `Воздуховод гибкий ${st}${e.ins ? ' в изоляции' : ''}, м`, u: 'м', base: true },
+        r => {
+          r.q += ductLen3(e) / 1000;
+          r.A = (r.A || 0) + (ductPerim(e) * ductLen3(e)) / 1000;
+          r.ids.push(e.id);
+        }
+      );
+      put(S_, 'b:tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт', base: true }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+      put(S_, 'b:clamp' + st, { name: `Хомут для гибкого воздуховода ${st}`, u: 'шт', base: true }, r => {
+        r.q += 2;
+        r.ids.push(e.id);
+      });
+    } else if (isPvc(e)) {
+      // the flat PVC system: channels of 2 m, connectors, elbows, adapters, valves, holders
+      for (const r of pvcSpec(e))
+        put(
+          S_,
+          (r.k.startsWith('bar') ? 'd:' : 'b:') + 'pvc' + r.k,
+          { name: r.name + ` · ${e.sys}`, u: r.u, base: true },
+          x => {
+            x.q += r.q;
+            if (r.k.startsWith('bar')) x.A = 0;
+            x.ids.push(e.id);
+          }
+        );
+    } else {
+      const st = secTxt(e);
+      put(
+        S_,
+        'd:' + e.sys + st + e.mat,
+        { name: `Воздуховод ${st}, ${e.mat.toLowerCase()} · ${e.sys}`, u: 'м', base: true },
+        r => {
+          r.q += Math.max(ductLen(e), ductLen3(e)) / 1000;
+          r.A = (r.A || 0) + (ductPerim(e) * Math.max(ductLen(e), ductLen3(e))) / 1000;
+          r.ids.push(e.id);
+        }
+      );
+      if (e.tap)
+        put(S_, 'b:tap' + st, { name: `Врезка в магистраль ${st}`, u: 'шт', base: true }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
+      // the straight bars and their joints (nipples, flanges, sleeves)
+      for (const r of ductSysRows(e))
+        put(S_, 'b:ds' + e.mat + r.k, { name: `${r.name} · ${e.sys}`, u: 'шт', base: true }, x => {
+          x.q += r.q;
+          x.ids.push(e.id);
+        });
+      // every turn made of the real elbows of the material
+      const lib = ductLib(e);
+      for (const t of ductTurns(e))
+        for (const a of (ductElbows(lib, t.deg, t.vertical) || {}).c || [])
+          put(S_, 'b:' + st + a, { name: `Отвод ${a}° ${st}`, u: 'шт', base: true }, r => {
+            r.q++;
+            r.ids.push(e.id);
+          });
+    }
+  },
+  ifc: () => ['IFCDUCTSEGMENT', 'NOTDEFINED', null]
+};
 
 // ===== mep/hvac/hvac-clash.js =====
 /**
