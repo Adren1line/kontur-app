@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.66';
+const APP_VER = '59.67';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7802,7 +7802,6 @@ const documentState = {
  * Persistence and undo: snapshot/restore, autosave to localStorage, undo/redo stacks, changed(), addEnt(),
  * eraseIds().
  */
-
 
 
 
@@ -13162,7 +13161,6 @@ function mkPline() {
 
 
 
-
 /* ---------- text: fonts, annotative paper height, multi-line, in-place editor ---------- */
 const FONTS = [
   'IBM Plex Sans',
@@ -13391,11 +13389,6 @@ function mkText() {
  * Command engine: the command table CMDS of the core tools, command start/finish, point input, core commands
  * (line, rect, wall, device, wire, duct, opening, slab, insert, move, rotate, erase…).
  */
-
-
-
-
-
 
 
 
@@ -15133,7 +15126,6 @@ function log(t, err) {
 
 
 
-
 /* A colour read from a project file: only #hex is allowed, anything else gets the fallback. */
 const safeCol = (c, fb = '#d9dde3') => (/^#[0-9a-fA-F]{3,8}$/.test(String(c ?? '')) ? String(c) : fb);
 /* A thumbnail read from a catalogue file: only a PNG/JPEG/WebP data URL is allowed. */
@@ -15696,7 +15688,6 @@ function acquire(r, w) {
 
 
 
-
 /* picking & grips */
 const LINEAR_NET = new Set(['wire', 'duct', 'pipe']);
 function pickEnt(sx, sy) {
@@ -15858,7 +15849,6 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
-
 
 
 
@@ -17994,7 +17984,6 @@ afterChange(() => dirty(), 10);
 
 
 
-
 /* 3D */
 const V3 = {
   inited: false,
@@ -18886,10 +18875,6 @@ function cutLabels() {
  *
  * Builds three.js objects for entities and keeps the 3D scene in sync with the model.
  */
-
-
-
-
 
 
 
@@ -20012,9 +19997,6 @@ afterChange(() => sync3DSoon(), 40);
 
 
 
-
-
-
 /* pointer input (plan) */
 let panning = null,
   lastMid = 0,
@@ -20475,8 +20457,6 @@ function initPointerRest() {
  *
  * Context menu and clipboard (copy/paste/duplicate/select similar).
  */
-
-
 
 
 
@@ -21283,18 +21263,6 @@ function wheelModeMenu() {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 /* ---------- menu bar ---------- */
 const run = n => {
   if (CMDS[n]) startCmd(n);
@@ -21896,7 +21864,6 @@ function initMenubar() {
 
 
 
-
 /* keyboard */
 const FKEYS = { F3: 'osnap', F7: 'grid', F8: 'ortho', F9: 'snap', F10: 'polar', F11: 'otrack' };
 const MODE_N = {
@@ -22092,10 +22059,6 @@ function initKeyboard() {
  *
  * Toolbar: icons, buttons, snap popup.
  */
-
-
-
-
 
 
 
@@ -22454,7 +22417,6 @@ function initToolbar() {
 
 
 
-
 /* UI: layers */
 const ICON = {
   eye: '<svg viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
@@ -22571,7 +22533,6 @@ function initLayersPanel() {
 
 
 
-
 /* UI: project browser */
 function groupName(e) {
   if (e.type === 'inst') {
@@ -22643,8 +22604,6 @@ function initBrowserPanel() {
  *
  * Properties panel of the selection.
  */
-
-
 
 
 
@@ -23355,9 +23314,6 @@ async function toCatalog(insts) {
 
 
 
-
-
-
 /* catalog */
 let catFilter = 'Все',
   catSel = null;
@@ -23639,7 +23595,6 @@ function initCatalog() {
 
 
 
-
 /** Order from which the rows put by the element types (XT[type].spec) are collected. */
 const XT_ORDER = 100;
 /** Position of a filled table whose title no section has fixed. */
@@ -23778,7 +23733,6 @@ function initSpec() {
  *
  * Wall types dialog.
  */
-
 
 
 
@@ -24533,8 +24487,6 @@ function ctBind(el, t, commit, rer) {
 
 
 
-
-
 /* profiles dialog */
 let prSel = null,
   prPick = null,
@@ -25099,7 +25051,6 @@ function defineTools(defs) {
 
 
 
-
 /* ---------- workspaces: tools only when needed ---------- */
 const TT = {
   ...Object.fromEntries(TOOLS.filter(t => Array.isArray(t))),
@@ -25560,7 +25511,6 @@ defineTools({
  *
  * Engineering dialog (groups, panel, collector).
  */
-
 
 
 
@@ -26904,8 +26854,6 @@ async function parseIFC(text, progress) {
 
 
 
-
-
 /* importers */
 let pendingFile = null,
   impTarget = null;
@@ -27191,7 +27139,6 @@ function initImport() {
 
 
 
-
 /* files: export / open */
 function b64(arr) {
   const u = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
@@ -27264,7 +27211,6 @@ function exportCatalog() {
  *
  * Native .kontur file: chunked binary container with optional deflate.
  */
-
 
 
 
@@ -27802,9 +27748,6 @@ const cR = (l, ctl) => `<dt>${l}</dt><dd>${ctl}</dd>`;
 
 
 
-
-
-
 function metaPanel(e) {
   const m = e.meta || { note: '', data: [], files: [] };
   const n = (m.data || []).length + (m.files || []).length + (m.note ? 1 : 0);
@@ -27918,7 +27861,6 @@ function bindMeta(el, e) {
  *
  * Load-bearing structure: columns and beams.
  */
-
 
 
 
@@ -28749,7 +28691,6 @@ const gklSheetsState = {
 
 
 
-
 /* ---------- ceilings: slab finish, Knauf frame ceilings, stretch ---------- */
 const CEILK = { gkl: 'Каркасный из ГКЛ (Кнауф)', stretch: 'Натяжной', slab: 'По плите перекрытия' };
 const CEIL_SYS = {
@@ -29328,10 +29269,6 @@ function stretchLights(e) {
  *
  * Transition elements: plinths, shadow gaps, cornices.
  */
-
-
-
-
 
 
 
@@ -30147,8 +30084,6 @@ XT.trim = {
 
 
 
-
-
 /* ---------- modelled GKL bodies (boxes, suspended fireplace, niches) ---------- */
 const GB_MOUNT = {
   floor: 'Стоит на полу',
@@ -30545,9 +30480,6 @@ function gbodyLoad(e) {
  *
  * Reinforcement inside walls (steel tubes, OSB/plywood) and point loads with a simple verdict.
  */
-
-
-
 
 
 
@@ -31519,13 +31451,6 @@ XT.load = {
  *
  * Pipes: systems, materials, catalogue fittings, the pipe element type.
  */
-
-
-
-
-
-
-
 
 
 
@@ -32618,8 +32543,6 @@ defineTools({
  *
  * Plumbing fixtures registry FIXK and the fixture element type.
  */
-
-
 
 
 
@@ -33756,8 +33679,6 @@ XT.fix = {
  *
  * Sanitary model library: GROHE/TECE installations, WC pans, catalogue editor.
  */
-
-
 
 
 
@@ -37041,8 +36962,6 @@ function initMixers() {
 
 
 
-
-
 /* wall finishing tool: whole side or zones; panels surface / flush with the build-up;
    substrate made up from sheet materials; joint profiles on zone borders */
 const FINM = {
@@ -38478,8 +38397,6 @@ function tilePanel(w, z, i) {
  *
  * Manifold node constructor (water / heating / underfloor): components, layout, ports, checks.
  */
-
-
 
 
 
@@ -42209,7 +42126,6 @@ function initPipeNetwork() {
 
 
 
-
 /* ---- 3D editor of the manifold node (own WebGL view, snaps, offsets) ---- */
 let MFMODE = 'scheme';
 const MF3 = {
@@ -44099,8 +44015,6 @@ function renderCollTab(el) {
 
 
 
-
-
 /* ---------- modular wiring devices: frame + mechanisms + back boxes ---------- */
 const MODK = {
   s: { n: 'Розетка 2К+З', f: 'socket' },
@@ -45502,7 +45416,6 @@ function wireColor(e) {
  *
  * Engineering routes of wires: routing grid, A*, lanes, chases, drops, issues and specification.
  */
-
 
 
 
@@ -47916,9 +47829,6 @@ function mkArcSwitch(k) {
 
 
 
-
-
-
 /* ---------- offset ---------- */
 function offsetEnt(e, d, side) {
   // side: +1 left/outer, -1 right/inner
@@ -49066,9 +48976,6 @@ defineTools({
 
 
 
-
-
-
 /* ---------- project views: plans, sections, elevations, nodes ---------- */
 const VW = { sel: 'plan', inited: false };
 function openViews(id) {
@@ -50001,7 +49908,6 @@ defineTools({
 
 
 
-
 /* 3D wall "pie", layered walls in views, engineering views
    (horizontal / complex sections, 3D section box, components) */
 function make3View(host, bg) {
@@ -50492,8 +50398,6 @@ function clipKeep(poly, clips) {
 
 
 
-
-
 /* ---------- engineering view entities: horizontal / complex section, 3D box ---------- */
 const V3K = {
   h: 'Горизонтальный разрез',
@@ -50853,7 +50757,6 @@ defineTools({
  *
  * Node views: wall build-up at large scale.
  */
-
 
 
 
@@ -51487,10 +51390,6 @@ uiHooks.v3Init = () => {
 
 
 
-
-
-
-
 /* ---------- annotations: callouts, sections, nodes ---------- */
 function noteText(e) {
   const t = e.target != null ? byId(e.target) : null;
@@ -51789,7 +51688,6 @@ XT.node = {
 
 
 
-
 /* ---------- rules ---------- */
 const CHECK_RULES = [];
 /**
@@ -51924,7 +51822,6 @@ afterAdd(xAfterAdd);
  *
  * Network view: highlight engineering networks, x-ray other elements, clipping.
  */
-
 
 
 
@@ -52082,7 +51979,6 @@ defineTools({
  *
  * Dynamic input (length/angle next to the cursor) and edge grips of polylines/rectangles/slabs.
  */
-
 
 
 
@@ -52260,7 +52156,6 @@ function initDynamicInput() {
  *
  * Drafting entity types: ellipse, spline, xline/ray, point, hatch, aligned/radial dimensions.
  */
-
 
 
 
@@ -52841,8 +52736,6 @@ XT.rdim = {
  * Drafting draw commands: polygon, ellipse, spline, construction lines, points, hatch, revision cloud,
  * divide/measure.
  */
-
-
 
 
 
@@ -53463,9 +53356,6 @@ defineTools({
 
 
 
-
-
-
 /* ---------------- commands: modify ---------------- */
 function reflectFn(a, b) {
   const u = nrm(sub(b, a));
@@ -53997,8 +53887,6 @@ defineTools({
 
 
 
-
-
 /* ---------------- commands: dimensions ---------------- */
 function lastDim() {
   const s = selEnts().find(e => e.type === 'dim');
@@ -54264,7 +54152,6 @@ defineTools({
 
 
 
-
 /* ---------------- commands: inquiry ---------------- */
 function mkDist() {
   let a = null;
@@ -54402,7 +54289,6 @@ defineTools({
  *
  * Split-button tool groups and repeat of the last tool.
  */
-
 
 
 
@@ -54689,10 +54575,6 @@ function initQuality() {
  *
  * Levels (floors of a building): current level, other levels in 3D, underlay on the plan, levels dialog.
  */
-
-
-
-
 
 
 
@@ -55208,8 +55090,6 @@ afterRestore(() => {
  *
  * Stairs: geometry, solids, treads/finishes, railings on stairs, plan, checks, walls under stairs.
  */
-
-
 
 
 
@@ -57320,9 +57200,6 @@ function slabCut(mb, outer, holes, z0, z1, col, map = (x, y, z) => [x, y, z], op
 
 
 
-
-
-
 /* ---------- railing entity (galleries, mezzanines, openings) ---------- */
 XT.rail = {
   layer: 'Лестницы и ограждения',
@@ -57923,9 +57800,6 @@ function zoneMinusCutters(pts, where, lv) {
  *
  * Floor build-up zones (slab → screed → levelling → covering), slopes, room contour detection.
  */
-
-
-
 
 
 
@@ -59039,8 +58913,6 @@ defineTools({
  * Layout frame: origin O (room centre or a corner + offsets), x along the angle `ang`. Pieces are generated in the
  * frame as convex polygons and clipped by the zone polygon (and by the door extensions) in world coordinates.
  */
-
-
 
 
 
@@ -60830,8 +60702,6 @@ function coverChecks(z) {
 
 
 
-
-
 /* ---------- drains (трапы): Viega Advantix Vario / Cleviva, MCH CH, квадратные точечные ---------- */
 var DRN = {
   vario: {
@@ -61263,7 +61133,6 @@ CUTK['fix:fdrain'] = (e, where) => {
  *
  * Baths: built-in (screen/podium) and freestanding.
  */
-
 
 
 
@@ -62372,7 +62241,6 @@ function bathMigrate(e) {
 
 
 
-
 /* ---------- slab openings ---------- */
 var SHK = { round: 'Круглое (алмазное бурение)', rect: 'Прямоугольное (проём)' };
 function sholePoly(e) {
@@ -62690,8 +62558,6 @@ defineTools({
  *
  * Ventilation shafts: precast blocks, brick and modular shafts, ducts in boxes.
  */
-
-
 
 
 
@@ -64668,10 +64534,6 @@ function dbSpigotFlows(e) {
  * The same module labels the systems (leaders with text taken from the model) and makes the album sheet with the
  * axonometric scheme and the 3D view with the walls.
  */
-
-
-
-
 
 
 
@@ -66937,10 +66799,6 @@ defineTools({
 
 
 
-
-
-
-
 /* кондиционеры: настенный сплит, канальный (с камерой статического давления, щелевыми решётками, возвратом с фильтром, помпой), кассетный;
    наружный блок (фасад/балкон/корзина), трасса: фреон (медь в изоляции), дренаж, межблочный кабель */
 var ACK = {
@@ -68045,10 +67903,6 @@ defineTools({
 
 
 
-
-
-
-
 const ACL_DRAIN = {
   hose16: { n: 'Дренажный шланг гофрированный Ø16', d: 16, col: '#e9ecef' },
   pvc16: { n: 'Трубка ПВХ жёсткая Ø16', d: 16, col: '#f2f3f4' },
@@ -68731,10 +68585,6 @@ defineTools({
  *
  * Project settings: S.x.heat = { ts, tr (radiators), uts, utr (underfloor), tOut, n (air changes), city }.
  */
-
-
-
-
 
 
 
@@ -70102,9 +69952,6 @@ function heatInput(ev) {
  * Revision (access) hatches: frames, reach of hatches, which elements need access, hatch views and
  * specification.
  */
-
-
-
 
 
 
@@ -71834,9 +71681,6 @@ function blkSpec(e, put) {
 
 
 
-
-
-
 /** inserts of floor boxes; m — modules (a post = 2 modules 22,5×45) */
 const FLM = {
   sock: { n: 'Розетка 2К+З 230 В', m: 2, pw: 500, col: '#e9e9e6' },
@@ -72470,7 +72314,6 @@ function drawInstPorts(e) {
  *
  * Light fittings: kinds, parameters, 3D models, light settings panel.
  */
-
 
 
 
@@ -73370,9 +73213,6 @@ function devCfgPanel(e) {
  *
  * Track lighting: track geometry, stock cutting, connectors, drivers, track modules.
  */
-
-
-
 
 
 
@@ -74337,7 +74177,6 @@ defineTools({
 
 
 
-
 /* свет ↔ потолок: раскладка профиля ГКЛ на плане, споты не должны попадать на профиль (иначе обрамление),
    закладные под споты/люстры/трек в натяжном потолке, ниша встроенного трека в ГКЛ — в 3D, плане и спецификации */
 const RECESSED = new Set(['lspot', 'lspotG', 'lspotH']);
@@ -74607,7 +74446,6 @@ function lightCeilIssues(add_) {
  * Model coordinates are those of windows.js: s along the wall from the opening start, d across the wall
  * (−T street face … 0 room face), z from the floor of the level.
  */
-
 
 
 
@@ -75495,9 +75333,6 @@ defineTools({
 
 
 
-
-
-
 /* генератор зеркал (как у дверей): форма, рама/фацет, подсветка (контурная, фронтальная, светильник), сенсор, подогрев, навеска */
 var MRS = { rect: 'прямоугольное', round: 'круглое', oval: 'овальное', arch: 'арка', capsule: 'капсула' };
 var MRF = {
@@ -76014,10 +75849,6 @@ defineTools({
  *
  * Case furniture: parts of an LDSP carcass with sizes and edging, hardware, 3D.
  */
-
-
-
-
 
 
 
@@ -76702,9 +76533,6 @@ migrate.step(() => {
  *
  * TV sets with stands and wall brackets.
  */
-
-
-
 
 
 
@@ -77416,8 +77244,6 @@ function mini3D(A) {
  *
  * Kitchen: runs along walls, modules (Blum/Häfele), fronts, hardware, checks, the constructor dialog.
  */
-
-
 
 
 
@@ -79689,9 +79515,6 @@ defineTools({
  * Run-local coordinates: x along the wall from the run start, y from the wall face into the room, z up from the
  * floor. Every carcass part carries its box, so the 3D model, the drawings and the cutting list are the same data.
  */
-
-
-
 
 
 
@@ -84332,10 +84155,6 @@ function drawKitchen3D(canvas, e) {
 
 
 
-
-
-
-
 /** kinds: g — group (island / bar), cab — has cabinets, wall — placed against a wall */
 const ISK = {
   island: {
@@ -86440,8 +86259,6 @@ function drCSV(M) {
  * Drawing set (A3) for case furniture and the kitchen: general view, part drawings, cutting maps, assembly
  * scheme, specification.
  */
-
-
 
 
 
@@ -89043,11 +88860,6 @@ function cwGeneralInside(M) {
 
 
 
-
-
-
-
-
 function renderTools() {
   tb.innerHTML = '';
   const ws = WS.find(w => w.id === curWS) || WS[0];
@@ -89460,8 +89272,6 @@ afterChange(() => {
  * selection, back to the previous state. Dimmed layers stay visible but faded (plan: transparent, 3D: x-ray), so the
  * general plan can be read by one system at a time without losing the context.
  */
-
-
 
 
 
@@ -90184,7 +89994,6 @@ function openStampEditor() {
  * or a toned look. Cut lines of section planes are drawn bold. The same projection serves the 3D dimensions and the
  * snap points (vertices and midpoints of the feature edges).
  */
-
 
 
 
@@ -91695,7 +91504,6 @@ function elecSchemeSvg() {
 
 
 
-
 /** Sheet runtime state (not saved): on, the paper view, the active viewport (model space), the selected item. */
 const SHT = {
   on: false,
@@ -92540,11 +92348,6 @@ function drawSheet(sh, o = {}) {
  * the sheets, adds viewports, drawings and tables and edits the selected item; the template dialog sets the format,
  * title block and its fields; sheets are printed / saved as PDF (through printing), PNG or an HTML set.
  */
-
-
-
-
-
 
 
 
@@ -94759,7 +94562,6 @@ uiHooks.sheetCube = { draw: sheetCubeDraw, click: sheetCubeClick, hover: sheetCu
 
 
 
-
 function stg() {
   const x = S.x;
   if (!x) return { list: [], cur: null, nid: 1, model: null, modelAs: null };
@@ -95179,8 +94981,6 @@ uiHooks.phaseOpen = ph => {
 
 
 
-
-
 const PHN = { exist: 'Существующее', demo: 'Демонтаж', new: 'Монтаж' };
 const PHM = {
   model: 'Модель (без демонтажа)',
@@ -95402,8 +95202,6 @@ uiHooks.phaseCol3 = e => {
  *
  * Object settings dialog: form + 3D / exploded preview.
  */
-
-
 
 
 
@@ -95905,11 +95703,6 @@ function odAxis(e) {
  * Commands that create BIM elements: ceilings, columns, beams, GKL bodies, reinforcement, loads, pipes,
  * fixtures, trims, notes, sections, nodes; 3D picking helpers for them.
  */
-
-
-
-
-
 
 
 
@@ -97353,7 +97146,6 @@ defineTools({
 
 
 
-
 /* ---------- washing machine ---------- */
 const WM_K = {
   front: { n: 'фронтальная', w: 600, d: 600, h: 850 },
@@ -97944,7 +97736,6 @@ defineTools({
 
 
 
-
 const RF_FLOOR = { tile: 'Плитка', lam: 'Ламинат', eng: 'Инженерная доска', vinyl: 'Кварцвинил', wet: 'Мокрая зона' };
 const RF_CEIL = { stretch: 'Натяжной', gkl: 'ГКЛ', slab: 'Покраска по плите' };
 function rfCfg() {
@@ -98222,8 +98013,6 @@ defineTools({
  * overhang on both sides; two points — anywhere along a wall. Specification: rail bars, fasteners / brackets,
  * runners, end caps, the niche, the motor, the fabric.
  */
-
-
 
 
 
@@ -99020,9 +98809,6 @@ defineTools({
  * The section is any profile of the «trim» kind (the catalogue below or one drawn in «Сечения (DXF)»).
  * Specification: metres by profile with waste, bars, mitre cuts, frames, glue.
  */
-
-
-
 
 
 
@@ -99955,7 +99741,6 @@ migrate.step(() => {
 
 
 
-
 const ZONE_OP = {
   wall: 'по грани стены',
   mid: 'до середины проёмов',
@@ -100239,7 +100024,6 @@ defineTools({
  *
  * Drawing and placing in 3D: points from surfaces or the work plane.
  */
-
 
 
 
@@ -100621,10 +100405,6 @@ function clearMarks3() {
  * В режиме AR: прозрачность групп слоёв, показ фаз, свойства объекта по касанию, заметки с отметкой на плане
  * (ar/ar-notes.js). Нужен HTTPS (или файл, открытый локально) и разрешение на камеру и датчики.
  */
-
-
-
-
 
 
 
@@ -101953,7 +101733,6 @@ if (typeof document !== 'undefined' && document.getElementById)
 
 
 
-
 const ARN_KIND = {
   info: ['Информация', '#0a84ff'],
   issue: ['Проблема', '#ff453a'],
@@ -103116,7 +102895,6 @@ function initAgent() {
  *   the catalogue (name, category, tags, parameters) and the elements deleted in the catalogue since the last time;
  * - «Открыть в конверторе» on a catalogue card opens that element in the converter for editing.
  */
-
 
 
 
@@ -104400,8 +104178,6 @@ const CTPL = {
 
 
 
-
-
 const LYV = { kind: null, id: null, i: 0, hl: null, pick: false };
 const lvPct = v => (v * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
 const lvN2 = v => (Math.round(v * 100) / 100).toLocaleString('ru-RU');
@@ -105067,9 +104843,6 @@ function initLayoutView() {
  * and the part of the box outside the outline is filled back (openingFills), so every function that works with
  * rectangular openings keeps working; areas, perimeters and the specification use the real outline.
  */
-
-
-
 
 
 
@@ -105977,7 +105750,6 @@ function ceilSlabTop(pts) {
 
 
 
-
 const WT_KEY = 'kontur.curWt';
 /** Makes type id the type for drawing (and remembers it). */
 function setCurWt(id, quiet) {
@@ -106703,11 +106475,6 @@ function initJunctionBoxes() {
  * component), applies the maintenance factor and compares the average with the norm of the room type
  * (СП 52.13330.2016 / СанПиН 1.2.3685-21). The plan shows a false-colour heat map.
  */
-
-
-
-
-
 
 
 
@@ -108012,11 +107779,6 @@ function avRoomPanel(z) {
  *     ГОСТ 30494) and where the air stands still.
  * The model is an engineering estimate for checking the layout, not CFD.
  */
-
-
-
-
-
 
 
 
@@ -110934,9 +110696,6 @@ function initShortLabels() {
 
 
 
-
-
-
 const SK_ANCH = {
   el: '230 В',
   el3: '380 В',
@@ -111320,7 +111079,6 @@ defineTools({
  *     sheet / tile layout; dimensions can be placed in every view and on the unfold; export of the view to SVG.
  * Renderer: own WebGL (shader of mep/plumbing/manifold-3d.js), CPU picking against the CSG polygons.
  */
-
 
 
 
@@ -113522,21 +113280,6 @@ defineTools({
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -114971,7 +114714,6 @@ const cadSym = s =>
  * Plan and sheets are recorded from the renderers themselves (io/cad-record.js), so the file shows
  * exactly what is on the screen — on the layers of the project, with pens as lineweights.
  */
-
 
 
 
@@ -121934,7 +121676,6 @@ function svgToCad(cad, svgText, opt = {}) {
 
 
 
-
 const ML_CREASE = Math.cos((30 * Math.PI) / 180);
 /** Above this the model is drawn by its outline (the lines would take too long and draw too dense). */
 const ML_MAXTRI = 400000;
@@ -126586,9 +126327,6 @@ function panelPlan(F, sa, sb, da, db, seg) {
 
 
 
-
-
-
 const ceilOf = () => S.ceil || 2700;
 /** The wall at a plan point (the end of a glass run against a wall): { framed } or null. */
 function glassWallAt(p) {
@@ -128315,7 +128053,6 @@ function glassCalc(e, ceil, wallAt) {
 
 
 
-
 const GVS = { id: null };
 const gvRu = (v, d) => (+v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
 const gvMm = v => Math.round(v).toLocaleString('ru-RU');
@@ -128757,7 +128494,6 @@ function cutLayout(pieces, opt) {
  *
  * Properties panels of doors and windows (XT.door / XT.window panel and bind).
  */
-
 
 
 
@@ -129479,8 +129215,6 @@ XT.window = {
 
 
 
-
-
 const ROOFK = { gable: 'Двускатная', hip: 'Вальмовая', shed: 'Односкатная', flat: 'Плоская' };
 /** Smallest rectangle around the points: centre c, long axis u, length L, width W. */
 function roofRect(pts) {
@@ -129862,7 +129596,6 @@ defineTools({
 
 
 
-
 XT.slab = {
   layer: 'Перекрытия',
   prims: e => closedSegs(e.pts),
@@ -129958,7 +129691,6 @@ function bindSlabLine(el, e, changed) {
  * Mass: solid materials by volume × density; framed materials (GKL, GVL, cement board, OSB on a frame) by the clad
  * area × sheet mass × layers + frame per m².
  */
-
 
 
 
@@ -132330,10 +132062,6 @@ function wallFaceRounds(w, B, J) {
 
 
 
-
-
-
-
 /** Materials of the niche inside: the finishes of walls, glass / GKL shelves. */
 const WN_FIN = ['paint', 'tile', 'stone', 'plaster', 'veneer', 'hpl'];
 const WN_SHELF = {
@@ -133940,7 +133668,6 @@ function kitApplianceShape(F, f, cd, hcol) {
  * zones at any heights, openings skipped, split around or framed. The result is the molding's own item list
  * (mode «custom»), still editable by hand afterwards.
  */
-
 
 
 
@@ -135997,7 +135724,6 @@ checkRule('lcalc', {
 
 
 
-
 XT.dev = {
   net: e => {
     const d = DEVK[e.kind] || {};
@@ -136817,8 +136543,6 @@ function moduleSvg(m, k, X, Y, w, hc, on, des) {
 
 
 
-
-
 const LED_W = [4.8, 9.6, 14.4, 19.2];
 const LED_PROF = { surf: 'накладной', rec: 'врезной (в паз)', corner: 'угловой 45°', none: 'без профиля' };
 const LED_CT = { 2700: '2700 K тёплый', 3000: '3000 K', 4000: '4000 K нейтральный' };
@@ -137400,9 +137124,6 @@ function wires3D(mb, L, z0, yM, yB) {
  * (DIN enclosure or open shelf with IP67 units) or locally next to the consumer. psuPlan() packs consumers into
  * power supplies (≤ 80 % load), chooses the models and the cable cross-sections by voltage drop.
  */
-
-
-
 
 
 
@@ -138275,8 +137996,6 @@ function buildLoads(out) {
  * The cable rows of the specification are still collected per level in docs/spec.js (they share the table with the devices).
  * Entity: { type:'wire', pts, z, from, to, group, cable, method, sw, manual, rt, … } — see wiring.js.
  */
-
-
 
 
 
@@ -140917,7 +140636,6 @@ function handShowerSet(mb, x, zOut, zHold, col = PCHR) {
 
 
 
-
 const SG_CELL = 50;
 const SG_DIRS = [
   [1, 0],
@@ -141743,7 +141461,6 @@ function teceModuleAt(L) {
  * - Pipe: PEX-a Ø16 (Ø20 for outlets marked 20) — bent at the turns, no fittings in the floor.
  * Generated pipes carry gen: 'water' — running the command again replaces them.
  */
-
 
 
 
