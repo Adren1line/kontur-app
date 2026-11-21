@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.75';
+const APP_VER = '59.76';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -7715,6 +7715,9 @@ const WS_SEC = {
   track: 'elec',
   tmod: 'elec',
   lcalc: 'elec',
+  net: 'elec',
+  netline: 'elec',
+  wcalc: 'elec',
   duct: 'hvac',
   hvu: 'hvac',
   ac: 'hvac',
@@ -25375,7 +25378,9 @@ const WSDEF = [
     g: [
       ['Устройства', ['socket', 'switch', 'fout', 'eout']],
       ['Свет', ['light', 'track', 'tmod', 'ledline', 'lcalc']],
-      ['Щит и кабели', ['eq', 'wire']]
+      ['Щит и кабели', ['eq', 'wire']],
+      ['Wi-Fi', ['wap', 'router', 'mesh', 'repeater', 'wcalc']],
+      ['Слаботочка', ['ont', 'netsw', 'lvpanel', 'netline']]
     ]
   },
   {
@@ -25500,6 +25505,15 @@ const TLBL = {
   track: 'Трек',
   tmod: 'Модуль',
   lcalc: 'Светорасчёт',
+  wap: 'Точка',
+  router: 'Роутер',
+  mesh: 'Mesh',
+  repeater: 'Репитер',
+  wcalc: 'Покрытие',
+  ont: 'Модем',
+  netsw: 'Коммутатор',
+  lvpanel: 'Слаботочный щит',
+  netline: 'Кабель ЛАН',
   eq: 'Щит',
   wire: 'Провод',
   pipe: 'Труба',
@@ -139423,6 +139437,1990 @@ function svgToCad(cad, svgText, opt = {}) {
     pen: w => (pen = w)
   });
   return cad;
+}
+
+// ===== blocks/network/checks-network.js =====
+/**
+ * blocks/network/checks-network
+ *
+ * Checks of the network block: the share of a room with a signal below «good» (with a place for an access point or a mesh node), the power of every device (a socket
+ * near for a mains adapter, a PoE cable to a PoE switch), the cable of an access point, the provider input of a router, the uplink of a repeater / wireless mesh node.
+ * The link graph is built from the ends of the cables (netline) and from devices standing next to each other (patch cord). Orders of the rules: 110, 111.
+ */
+
+
+
+
+
+
+
+
+
+
+/** Weakest uplink of a repeater / wireless mesh node that still works well, dBm. */
+const REP_MIN = -70,
+  MESH_MIN = -72;
+/** Share of a room that may be below «good» before the check speaks. */
+const BAD_SHARE = 0.1;
+/** Link graph: Map id → Set of ids (cable ends within LINK_R of a device, devices closer than LINK_R to each other). */
+function netGraph() {
+  const nets = query('net', e => visible(e) && e.p);
+  const g = new Map(nets.map(n => [n.id, new Set()]));
+  const link = (a, b) => {
+    if (a && b && a !== b) {
+      g.get(a.id).add(b.id);
+      g.get(b.id).add(a.id);
+    }
+  };
+  for (const l of query('netline', e => e.pts && e.pts.length > 1))
+    link(nearNet(l.pts[0], nets), nearNet(l.pts[l.pts.length - 1], nets));
+  for (let i = 0; i < nets.length; i++)
+    for (let j = i + 1; j < nets.length; j++) if (dist(nets[i].p, nets[j].p) < LINK_R) link(nets[i], nets[j]);
+  return { nets, g };
+}
+/** Devices reachable from e through the graph (e excluded) that satisfy pred. */
+function reach(G, e, pred) {
+  const seen = new Set([e.id]),
+    q = [e.id],
+    out = [];
+  while (q.length) {
+    for (const id of G.g.get(q.shift()) || []) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      q.push(id);
+      const n = G.nets.find(x => x.id === id);
+      if (n && pred(n)) out.push(n);
+    }
+  }
+  return out;
+}
+/** Sockets that give 230 V: [{ p }]. DEVK kinds of the family «socket» with a power (no antenna / TV sockets). */
+function sockets() {
+  return S.ents.filter(d => d.p && DEVK[d.kind] && DEVK[d.kind].f === 'socket' && DEVK[d.kind].pw > 0);
+}
+/** Millimetres → metres text with a decimal comma. */
+const mm = v => String(Math.round(v / 10) / 100).replace('.', ',');
+checkRule('net-coverage', {
+  order: 110,
+  stage() {
+    for (const z of query('wcalc', e => visible(e))) wcalcRun(z);
+  },
+  run({ add }) {
+    for (const z of query('wcalc', e => visible(e))) {
+      const R = wcalcRun(z),
+        B = BANDS[R.band].n;
+      if (!R.srcs.length) {
+        add(
+          z,
+          'warn',
+          `Покрытие ${B}: нет ни одного источника Wi-Fi на этом диапазоне — поставьте точку доступа или роутер.`,
+          polyCentroid(z.pts)
+        );
+        continue;
+      }
+      for (const rm of wcalcRooms(z, R)) {
+        if (rm.share <= BAD_SHARE) continue;
+        const sg = wcalcSuggest(z, R, rm);
+        const where = sg ? query('floorz', f => f.pts && f.pts.length > 2 && inPoly(sg.p, f.pts))[0] : null;
+        const bad = rm.cells.filter(q => q.v < GOOD);
+        const c = P(bad.reduce((a, q) => a + q.x, 0) / bad.length, bad.reduce((a, q) => a + q.y, 0) / bad.length);
+        add(
+          z,
+          'warn',
+          `${rm.name ? `Помещение «${rm.name}»` : 'Зона покрытия'}: ${Math.round(rm.share * 100)} % площади с сигналом хуже −67 дБм (${B})` +
+            (sg
+              ? ` — поставьте точку доступа или mesh-модуль рядом с ${where && where.name ? `«${where.name}», ` : ''}у стены (около ${mm(sg.p.x)}; ${mm(sg.p.y)} м).`
+              : ' — добавьте точку доступа или mesh-модуль.'),
+          c
+        );
+      }
+    }
+  }
+});
+checkRule('net-devices', {
+  order: 111,
+  run({ add, memo }) {
+    const G = memo('net-graph', netGraph);
+    const socks = memo('net-sockets', sockets);
+    const onNet = n => n.kind === 'router' || n.kind === 'switch' || n.kind === 'lvpanel';
+    for (const e of G.nets) {
+      const m = netModel(e),
+        nm = e.label ? `«${e.label}»` : m.n;
+      if (e.kind !== 'lvpanel') {
+        if (e.pwr === 'poe') {
+          if (!m.poe) add(e, 'warn', `${nm}: модель не поддерживает PoE — выберите питание от розетки.`, e.p);
+          else if (!reach(G, e, n => netModel(n).poeOut > 0).length)
+            add(e, 'warn', `${nm}: питание PoE — нужен кабель (ЛАН) до коммутатора с PoE.`, e.p);
+        } else {
+          const R = e.kind === 'repeater' ? 400 : 1500;
+          if (!socks.some(s => dist(s.p, e.p) <= R))
+            add(e, 'info', `${nm}: рядом нет розетки (${mm(R)} м) — добавьте розетку или переведите на PoE.`, e.p);
+        }
+      }
+      if (e.kind === 'ap' || (e.kind === 'mesh' && e.link === 'cable')) {
+        if (!reach(G, e, onNet).length)
+          add(e, 'warn', `${nm}: нет кабеля до роутера или коммутатора — проведите кабель (ЛАН).`, e.p);
+      }
+      if (e.kind === 'router') {
+        if (!G.nets.some(n => n.kind === 'ont'))
+          add(e, 'info', `${nm}: нет ввода провайдера — добавьте модем / ONT и соедините кабелем.`, e.p);
+        else if (!reach(G, e, n => n.kind === 'ont').length) add(e, 'info', `${nm}: нет кабеля до модема / ONT.`, e.p);
+      }
+      if (e.kind === 'repeater' || (e.kind === 'mesh' && e.link !== 'cable')) {
+        const u = uplinkOf(e);
+        const lim = e.kind === 'repeater' ? REP_MIN : MESH_MIN;
+        if (!u) add(e, 'warn', `${nm}: нет источника сигнала, от которого он мог бы работать.`, e.p);
+        else if (u.v < lim)
+          add(
+            e,
+            'warn',
+            `${nm}: в слабой зоне — ${String(Math.round(u.v)).replace('-', '−')} дБм от «${u.s.name}» (${BANDS[u.band].n}); нужно не хуже ${String(lim).replace('-', '−')} — скорость упадёт, переставьте ближе.`,
+            e.p
+          );
+      }
+    }
+  }
+});
+
+// ===== blocks/network/net-3d.js =====
+/**
+ * blocks/network/net-3d
+ *
+ * 3D models of the network equipment at 1:1: a router with antennas, a ceiling or wall access point, a mesh tower, a plug-in repeater, a modem / ONT, a switch and a
+ * low-voltage cabinet. The local frame of a device: origin on the mounting surface (the wall face, the ceiling), +y into the room, z absolute (element's z is the centre).
+ */
+
+
+
+
+const N3_WHITE = '#eef0f2',
+  N3_GREY = '#3b4046',
+  N3_DARK = '#1d2024',
+  N3_LED = '#6fe08a',
+  N3_METAL = '#b9bec4';
+/** Builds the meshes of a device into mb (local frame); returns nothing. */
+function netParts(mb, e) {
+  const m = netModel(e);
+  const z = +e.z || 0;
+  const wallish = e.mount === 'wall' || e.mount === 'outlet';
+  const yc = wallish ? m.d / 2 : 0;
+  const w = m.w,
+    d = m.d,
+    h = m.h;
+  switch (e.kind) {
+    case 'router': {
+      mb.tag('Корпус роутера');
+      mb.rbox(-w / 2, yc - d / 2, z - h / 2, w / 2, yc + d / 2, z + h / 2, 6, N3_WHITE);
+      mb.tag('Индикаторы');
+      for (let i = 0; i < 5; i++)
+        mb.box(-w / 2 + 30 + i * 14, yc + d / 2, z - 3, -w / 2 + 38 + i * 14, yc + d / 2 + 1, z + 3, N3_LED);
+      mb.tag('Антенны');
+      const n = m.ant || 4;
+      for (let i = 0; i < n; i++) {
+        const x = -w / 2 + ((i + 0.5) * w) / n;
+        mb.tube(
+          [x, yc - d / 2 + 12, z + h / 2],
+          [x + (i - (n - 1) / 2) * 6, yc - d / 2 + 12 - 10, z + h / 2 + 190],
+          5,
+          N3_GREY,
+          8
+        );
+      }
+      break;
+    }
+    case 'ap': {
+      mb.tag('Корпус точки доступа');
+      if (e.mount === 'wall') {
+        mb.rbox(-w / 2, 0, z - h / 2, w / 2, d, z + h / 2, 12, N3_WHITE);
+        mb.tag('Индикатор');
+        mb.box(-6, d, z - 6, 6, d + 1, z + 6, '#4aa3ff');
+      } else {
+        mb.cyl(0, 0, z - h / 2, z + h / 2, w / 2, N3_WHITE, 40);
+        mb.tag('Кольцо');
+        mb.cyl(0, 0, z - h / 2 - 1, z - h / 2, w / 2 - 28, '#dfe2e5', 40);
+        mb.tag('Индикатор');
+        mb.cyl(0, 0, z - h / 2 - 2, z - h / 2 - 1, 8, '#4aa3ff', 16);
+      }
+      break;
+    }
+    case 'mesh': {
+      mb.tag('Mesh-модуль');
+      const r = w / 2;
+      mb.cyl(0, yc, z - h / 2, z + h / 2, r, N3_WHITE, 36);
+      mb.tag('Кольцо индикатора');
+      mb.cyl(0, yc, z + h / 2 - 8, z + h / 2 - 5, r + 0.5, N3_LED, 36);
+      break;
+    }
+    case 'repeater': {
+      mb.tag('Репитер');
+      const y0 = e.mount === 'outlet' ? 0 : 0;
+      mb.rbox(-w / 2, y0, z - h / 2, w / 2, y0 + d, z + h / 2, 8, N3_WHITE);
+      mb.tag('Антенны');
+      mb.cyl(-w / 4, y0 + d / 2, z + h / 2, z + h / 2 + 40, 4, N3_GREY, 8);
+      mb.cyl(w / 4, y0 + d / 2, z + h / 2, z + h / 2 + 40, 4, N3_GREY, 8);
+      mb.tag('Вилка');
+      for (const x of [-11, 11]) mb.box(x - 2, -19, z - 3, x + 2, 0, z + 3, N3_METAL);
+      mb.tag('Индикатор');
+      mb.box(-5, y0 + d, z - 3, 5, y0 + d + 1, z + 3, N3_LED);
+      break;
+    }
+    case 'ont': {
+      mb.tag('Корпус ONT');
+      mb.rbox(-w / 2, yc - d / 2, z - h / 2, w / 2, yc + d / 2, z + h / 2, 5, N3_WHITE);
+      mb.tag('Индикаторы');
+      for (let i = 0; i < 4; i++)
+        mb.box(
+          -w / 2 + 18 + i * 12,
+          yc + d / 2,
+          z + h / 2 - 20,
+          -w / 2 + 24 + i * 12,
+          yc + d / 2 + 1,
+          z + h / 2 - 14,
+          i < 3 ? N3_LED : '#e8a03c'
+        );
+      mb.tag('Оптический патч-корд');
+      mb.tube([w / 2 - 25, yc, z - h / 2], [w / 2 - 25, yc, z - h / 2 - 120], 2.5, '#e8d34a', 6);
+      for (let i = 0; i < (netModel(e).ant || 0); i++)
+        mb.tube(
+          [-w / 2 + 20 + i * 30, yc - d / 2 + 8, z + h / 2],
+          [-w / 2 + 20 + i * 30, yc - d / 2 + 8, z + h / 2 + 120],
+          4,
+          N3_GREY,
+          8
+        );
+      break;
+    }
+    case 'switch': {
+      mb.tag('Корпус коммутатора');
+      mb.rbox(-w / 2, yc - d / 2, z - h / 2, w / 2, yc + d / 2, z + h / 2, 3, N3_GREY);
+      mb.tag('Порты');
+      const n = Math.min(m.ports || 8, 16);
+      const pw = Math.min(14, (w - 20) / n - 2);
+      for (let i = 0; i < n; i++) {
+        const x = -w / 2 + 10 + (i + 0.5) * ((w - 20) / n);
+        mb.box(x - pw / 2, yc + d / 2, z - h / 4, x + pw / 2, yc + d / 2 + 1, z + h / 4, N3_DARK);
+        mb.box(x - 1.5, yc + d / 2, z + h / 4 + 1, x + 1.5, yc + d / 2 + 1, z + h / 4 + 4, N3_LED);
+      }
+      break;
+    }
+    default: {
+      mb.tag('Корпус щита');
+      mb.box(-w / 2, 0, z - h / 2, w / 2, d, z + h / 2, '#f4f4f1');
+      mb.tag('Дверца');
+      mb.box(-w / 2 + 6, d, z - h / 2 + 6, w / 2 - 6, d + 3, z + h / 2 - 6, '#e6e7e3');
+      mb.tag('Ручка');
+      mb.box(w / 2 - 30, d + 3, z - 15, w / 2 - 24, d + 10, z + 15, N3_METAL);
+      mb.tag('Вентиляционные прорези');
+      for (let i = 0; i < 4; i++)
+        mb.box(-w / 2 + 40, d + 3, z + h / 2 - 25 - i * 6, w / 2 - 60, d + 3.5, z + h / 2 - 22 - i * 6, '#c9cbc6');
+    }
+  }
+}
+/** 3D model of a net device (a THREE group in world coordinates). */
+function netMesh(e) {
+  const c = Math.cos(e.rot || 0),
+    s = Math.sin(e.rot || 0);
+  const mb = MB((x, y, z) => [e.p.x + x * c - y * s, e.p.y + x * s + y * c, z]);
+  netParts(mb, e);
+  return meshGroup(mb.meshes(), { edges: true });
+}
+
+// ===== blocks/network/net-data.js =====
+/**
+ * blocks/network/net-data
+ *
+ * Reference data of the network block: kinds of equipment (modem / ONT, router, access point, mesh node, repeater, switch, low-voltage panel), typical models with their radio
+ * parameters, bands, wall and floor attenuation per material, the signal classes of the coverage map. No state, no registrations: other files of the block read from here.
+ */
+/** Wi-Fi standards: id → name. */
+const NET_STD = {
+  n: 'Wi-Fi 4 (n)',
+  ac: 'Wi-Fi 5 (ac)',
+  ax: 'Wi-Fi 6 (ax)',
+  axe: 'Wi-Fi 6E',
+  be: 'Wi-Fi 7 (be)'
+};
+/** Bands: id → { f: centre frequency MHz, N: ITU-R P.1238 distance power-loss coefficient (residential), k: wall attenuation relative to 5 GHz, n: name }. */
+const BANDS = {
+  2.4: { f: 2437, N: 28, k: 0.67, n: '2,4 ГГц' },
+  5: { f: 5500, N: 30, k: 1, n: '5 ГГц' },
+  6: { f: 6000, N: 30, k: 1.15, n: '6 ГГц' }
+};
+/** Kinds of equipment. mounts: allowed ways to mount; z: default height (mm) by mount; snap: a click near a wall puts the device on the wall. */
+const NET_KINDS = {
+  ont: {
+    n: 'Модем / ONT (ввод провайдера)',
+    ab: 'ONT',
+    mounts: ['wall', 'desk'],
+    mount: 'wall',
+    z: { wall: 1500, desk: 1000 },
+    snap: true
+  },
+  router: {
+    n: 'Wi-Fi роутер',
+    ab: 'Роутер',
+    mounts: ['desk', 'wall'],
+    mount: 'desk',
+    z: { desk: 1100, wall: 1900 },
+    snap: false
+  },
+  ap: {
+    n: 'Точка доступа Wi-Fi',
+    ab: 'AP',
+    mounts: ['ceil', 'wall'],
+    mount: 'ceil',
+    z: { ceil: 0, wall: 2300 },
+    snap: false
+  },
+  mesh: {
+    n: 'Mesh-модуль',
+    ab: 'Mesh',
+    mounts: ['desk', 'wall', 'outlet'],
+    mount: 'desk',
+    z: { desk: 1100, wall: 1900, outlet: 300 },
+    snap: false
+  },
+  repeater: {
+    n: 'Репитер Wi-Fi (в розетку)',
+    ab: 'Репитер',
+    mounts: ['outlet', 'desk'],
+    mount: 'outlet',
+    z: { outlet: 300, desk: 1000 },
+    snap: true
+  },
+  switch: {
+    n: 'Коммутатор',
+    ab: 'Комм.',
+    mounts: ['wall', 'desk'],
+    mount: 'wall',
+    z: { wall: 1500, desk: 1000 },
+    snap: true
+  },
+  lvpanel: { n: 'Слаботочный щит', ab: 'ЩС', mounts: ['wall'], mount: 'wall', z: { wall: 1500 }, snap: true }
+};
+/** Names of the mounts. */
+const NET_MOUNT = { wall: 'на стене', ceil: 'на потолке', desk: 'на полке / столе', outlet: 'в розетку' };
+/**
+ * Typical models. k kind, std, b supported bands, tx transmitter power dBm, g antenna gain dBi, poe: powered by PoE, poeOut / poeW: PoE ports and budget
+ * of a switch, ant: external antennas (3D), w × h × d: body, mm (d is the depth from the mounting surface).
+ */
+const NET_MODELS = {
+  'ont-gpon': { k: 'ont', n: 'ONT GPON, 1×GE', std: null, b: [], tx: 0, g: 0, w: 150, h: 110, d: 35 },
+  'ont-wifi': {
+    k: 'ont',
+    n: 'ONT GPON, 4×GE + Wi-Fi 5 (2,4/5 ГГц)',
+    std: 'ac',
+    b: [2.4, 5],
+    tx: 17,
+    g: 2,
+    w: 200,
+    h: 140,
+    d: 40,
+    ant: 2
+  },
+  'rt-ac1200': {
+    k: 'router',
+    n: 'Роутер Wi-Fi 5 AC1200 (2,4/5 ГГц, 4 антенны)',
+    std: 'ac',
+    b: [2.4, 5],
+    tx: 18,
+    g: 3,
+    w: 230,
+    h: 32,
+    d: 150,
+    ant: 4
+  },
+  'rt-ax3000': {
+    k: 'router',
+    n: 'Роутер Wi-Fi 6 AX3000 (2,4/5 ГГц, 4 антенны)',
+    std: 'ax',
+    b: [2.4, 5],
+    tx: 20,
+    g: 4,
+    w: 240,
+    h: 34,
+    d: 160,
+    ant: 4
+  },
+  'rt-axe5400': {
+    k: 'router',
+    n: 'Роутер Wi-Fi 6E AXE5400 (2,4/5/6 ГГц, 6 антенн)',
+    std: 'axe',
+    b: [2.4, 5, 6],
+    tx: 20,
+    g: 4,
+    w: 260,
+    h: 38,
+    d: 180,
+    ant: 6
+  },
+  'rt-be7200': {
+    k: 'router',
+    n: 'Роутер Wi-Fi 7 BE7200 (2,4/5/6 ГГц, 6 антенн)',
+    std: 'be',
+    b: [2.4, 5, 6],
+    tx: 21,
+    g: 4,
+    w: 270,
+    h: 40,
+    d: 190,
+    ant: 6
+  },
+  'ap-ax1800-c': {
+    k: 'ap',
+    n: 'Точка доступа потолочная Wi-Fi 6 AX1800, PoE',
+    std: 'ax',
+    b: [2.4, 5],
+    tx: 18,
+    g: 4,
+    poe: true,
+    w: 200,
+    h: 35,
+    d: 200
+  },
+  'ap-ax3000-c': {
+    k: 'ap',
+    n: 'Точка доступа потолочная Wi-Fi 6 AX3000, PoE',
+    std: 'ax',
+    b: [2.4, 5],
+    tx: 20,
+    g: 4,
+    poe: true,
+    w: 210,
+    h: 35,
+    d: 210
+  },
+  'ap-be5000-c': {
+    k: 'ap',
+    n: 'Точка доступа потолочная Wi-Fi 7 BE5000 (2,4/5/6 ГГц), PoE+',
+    std: 'be',
+    b: [2.4, 5, 6],
+    tx: 20,
+    g: 4,
+    poe: true,
+    w: 220,
+    h: 38,
+    d: 220
+  },
+  'ap-ac1200-w': {
+    k: 'ap',
+    n: 'Точка доступа настенная (в подрозетник) Wi-Fi 5 AC1200, PoE',
+    std: 'ac',
+    b: [2.4, 5],
+    tx: 17,
+    g: 3,
+    poe: true,
+    w: 160,
+    h: 160,
+    d: 30
+  },
+  'ms-ac1200': {
+    k: 'mesh',
+    n: 'Mesh-модуль Wi-Fi 5 AC1200 (2,4/5 ГГц)',
+    std: 'ac',
+    b: [2.4, 5],
+    tx: 18,
+    g: 3,
+    w: 100,
+    h: 110,
+    d: 100
+  },
+  'ms-ax1800': {
+    k: 'mesh',
+    n: 'Mesh-модуль Wi-Fi 6 AX1800 (2,4/5 ГГц)',
+    std: 'ax',
+    b: [2.4, 5],
+    tx: 19,
+    g: 3,
+    w: 110,
+    h: 115,
+    d: 110
+  },
+  'ms-axe5400': {
+    k: 'mesh',
+    n: 'Mesh-модуль Wi-Fi 6E AXE5400 (2,4/5/6 ГГц)',
+    std: 'axe',
+    b: [2.4, 5, 6],
+    tx: 20,
+    g: 4,
+    w: 120,
+    h: 130,
+    d: 120
+  },
+  'rp-n300': {
+    k: 'repeater',
+    n: 'Репитер Wi-Fi 4 N300 (2,4 ГГц)',
+    std: 'n',
+    b: [2.4],
+    tx: 17,
+    g: 2,
+    w: 70,
+    h: 90,
+    d: 45
+  },
+  'rp-ac1200': {
+    k: 'repeater',
+    n: 'Репитер Wi-Fi 5 AC1200 (2,4/5 ГГц)',
+    std: 'ac',
+    b: [2.4, 5],
+    tx: 18,
+    g: 3,
+    w: 75,
+    h: 95,
+    d: 50
+  },
+  'rp-ax1800': {
+    k: 'repeater',
+    n: 'Репитер Wi-Fi 6 AX1800 (2,4/5 ГГц)',
+    std: 'ax',
+    b: [2.4, 5],
+    tx: 19,
+    g: 3,
+    w: 80,
+    h: 100,
+    d: 55
+  },
+  'sw-5': {
+    k: 'switch',
+    n: 'Коммутатор 5 портов GE',
+    std: null,
+    b: [],
+    tx: 0,
+    g: 0,
+    ports: 5,
+    poeOut: 0,
+    w: 100,
+    h: 25,
+    d: 70
+  },
+  'sw-8-poe': {
+    k: 'switch',
+    n: 'Коммутатор 8 портов GE, 4 порта PoE+ (60 Вт)',
+    std: null,
+    b: [],
+    tx: 0,
+    g: 0,
+    ports: 8,
+    poeOut: 4,
+    poeW: 60,
+    w: 160,
+    h: 28,
+    d: 100
+  },
+  'sw-16-poe': {
+    k: 'switch',
+    n: 'Коммутатор 16 портов GE, 8 портов PoE+ (120 Вт)',
+    std: null,
+    b: [],
+    tx: 0,
+    g: 0,
+    ports: 16,
+    poeOut: 8,
+    poeW: 120,
+    w: 280,
+    h: 44,
+    d: 160
+  },
+  'lv-12': {
+    k: 'lvpanel',
+    n: 'Слаботочный щит встраиваемый 300×300 (12 модулей)',
+    std: null,
+    b: [],
+    tx: 0,
+    g: 0,
+    w: 300,
+    h: 300,
+    d: 100
+  },
+  'lv-24': {
+    k: 'lvpanel',
+    n: 'Слаботочный щит встраиваемый 450×350 (24 модуля)',
+    std: null,
+    b: [],
+    tx: 0,
+    g: 0,
+    w: 450,
+    h: 350,
+    d: 110
+  },
+  'lv-media': {
+    k: 'lvpanel',
+    n: 'Слаботочный щит 500×400 с розеткой и медиаконвертером',
+    std: null,
+    b: [],
+    tx: 0,
+    g: 0,
+    w: 500,
+    h: 400,
+    d: 120
+  }
+};
+/** Cables: id → { n: name, u: row of the specification }. */
+const NET_CABLES = {
+  cat6: 'Кабель витая пара U/UTP cat.6, 4×2×0,57, LSZH',
+  cat5e: 'Кабель витая пара U/UTP cat.5e, 4×2×0,52, LSZH',
+  cat6a: 'Кабель витая пара F/UTP cat.6a, 4×2×0,57, LSZH',
+  fiber: 'Оптический кабель абонентский (дроп), 1 волокно'
+};
+/** Models of one kind: [[id, name]]. */
+const modelsOf = k =>
+  Object.entries(NET_MODELS)
+    .filter(([, m]) => m.k === k)
+    .map(([id, m]) => [id, m.n]);
+
+/** Per-layer attenuation at 5 GHz, dB = c + k × thickness (mm), by the class of a wall layer (computeType). */
+const LAYER_LOSS = {
+  conc: { c: 4, k: 0.08 },
+  brick: { c: 3, k: 0.03 },
+  aer: { c: 2, k: 0.035 },
+  block: { c: 3, k: 0.04 },
+  pgp: { c: 1, k: 0.035 },
+  plas: { c: 0, k: 0.03 },
+  ins: { c: 0, k: 0.005 },
+  air: { c: 0, k: 0 },
+  gkl: { c: 0.8, k: 0.016 },
+  wood: { c: 1.5, k: 0.03 }
+};
+/** Extra attenuation of a metal frame layer (studs, tracks), dB at 5 GHz. */
+const FRAME_LOSS = 1.5;
+/** A wall is never counted heavier than this, dB at 5 GHz. */
+const WALL_MAX = 30;
+/** Attenuation of a floor slab, dB at 5 GHz: c + k × thickness. */
+const SLAB_LOSS = { c: 4, k: 0.08 };
+/** Other obstacles between the floors (walls of the other floor are not modelled), dB at 5 GHz. */
+const FLOOR_CLUTTER = 5;
+/** Signal classes of the map, from the best: min RSSI (dBm), name, range, colour. */
+const COVER = [
+  { min: -55, n: 'Отлично', d: '≥ −55', col: [46, 184, 92] },
+  { min: -67, n: 'Хорошо (видео, звонки)', d: '−55…−67', col: [140, 200, 60] },
+  { min: -75, n: 'Удовлетворительно', d: '−67…−75', col: [240, 200, 50] },
+  { min: -85, n: 'Слабо', d: '−75…−85', col: [240, 130, 40] },
+  { min: -Infinity, n: 'Нет связи', d: '< −85', col: [210, 50, 50] }
+];
+/** The level from which the signal is «good» (video, calls), dBm. */
+const GOOD = -67;
+/** Colours of access points in the «best access point» mode. */
+const AP_COLS = [
+  [66, 133, 244],
+  [219, 68, 55],
+  [244, 180, 0],
+  [15, 157, 88],
+  [171, 71, 188],
+  [0, 172, 193],
+  [255, 112, 67],
+  [124, 179, 66]
+];
+
+/** Index of the signal class of a level (0 — the best). */
+function coverClass(v) {
+  let i = 0;
+  while (i < COVER.length - 1 && v < COVER[i].min) i++;
+  return i;
+}
+/** Model record of a device (a missing model falls back to the first of its kind). */
+function netModel(e) {
+  const m = NET_MODELS[e.model];
+  if (m) return m;
+  return Object.values(NET_MODELS).find(x => x.k === e.kind) || NET_MODELS['rt-ax3000'];
+}
+/** Bands a device radiates: model support AND the switches of the element: ['2.4', 5, 6]. */
+function netBands(e) {
+  const m = netModel(e);
+  return m.b.filter(b => (b === 2.4 ? e.b24 : b === 5 ? e.b5 : e.b6) !== false).map(b => String(b));
+}
+/** EIRP of a device, dBm: transmitter power + antenna gain (the element's own values, else the model's). */
+function netEirp(e) {
+  const m = netModel(e);
+  return (e.tx != null && e.tx !== '' ? +e.tx : m.tx) + (e.gain != null && e.gain !== '' ? +e.gain : m.g);
+}
+/** Free-space-like distance (m) where a band falls to `level` dBm for this device, walls not counted (ITU-R P.1238). */
+function netReach(e, band, level = GOOD) {
+  const B = BANDS[band];
+  return Math.pow(10, (netEirp(e) - level - (20 * Math.log10(B.f) - 28)) / B.N);
+}
+/** Path loss, dB, ITU-R P.1238 indoor model: 20·log10(f MHz) + N·log10(d m) − 28 (d is never less than 1 m). */
+function pathLoss(band, dm) {
+  const B = BANDS[band];
+  return 20 * Math.log10(B.f) + B.N * Math.log10(Math.max(1, dm)) - 28;
+}
+
+// ===== blocks/network/net-devices.js =====
+/**
+ * blocks/network/net-devices
+ *
+ * Network equipment (type 'net'): modem / ONT, Wi-Fi router, access point, mesh node, repeater, switch, low-voltage panel — one type, the kind in `kind`, the model in `model`.
+ * Entity: { type:'net', kind, model, p, rot, z (centre, mm), mount ('wall'|'ceil'|'desk'|'outlet'), std, b24, b5, b6, tx (dBm), gain (dBi), ch24, ch5,
+ * pwr ('outlet'|'poe'), link ('wifi'|'cable' for mesh), label }. The record XT.net gives the plan symbol, 3D, panel, move, grips; the commands put a device at a wall
+ * (back on the wall face) or at the ceiling; the specification rows come from XT.net.spec (section «Сеть и Wi-Fi»).
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+TN.net = 'Сетевое оборудование';
+/** Nearest wall to a point within its half thickness + reach: { w, p (on the face, the side of p), n (into the room) } or null. */
+function wallSnap(p, reach = 400) {
+  let best = null,
+    bd = Infinity;
+  for (const w of query('wall')) {
+    if (!w.a || !w.b || !visible(w)) continue;
+    const L = dist(w.a, w.b);
+    if (L < 1) continue;
+    const f = segPt(w.a, w.b, p),
+      d = dist(f, p);
+    if (d < bd && d <= (+w.th || 100) / 2 + reach) {
+      const n0 = P(-(w.b.y - w.a.y) / L, (w.b.x - w.a.x) / L);
+      const sd = dot(sub(p, f), n0) >= 0 ? 1 : -1;
+      const n = mul(n0, sd);
+      bd = d;
+      best = { w, n, p: add(f, mul(n, (+w.th || 100) / 2)) };
+    }
+  }
+  return best;
+}
+/** Fresh fields of a device of this kind and model (the model's std, bands, power, gain). */
+function netDefaults(kind, modelId) {
+  const id = modelId && NET_MODELS[modelId] && NET_MODELS[modelId].k === kind ? modelId : modelsOf(kind)[0][0];
+  const m = NET_MODELS[id];
+  return {
+    type: 'net',
+    kind,
+    model: id,
+    std: m.std,
+    b24: m.b.includes(2.4),
+    b5: m.b.includes(5),
+    b6: m.b.includes(6),
+    tx: m.tx,
+    gain: m.g,
+    ch24: 'auto',
+    ch5: 'auto',
+    pwr: m.poe ? 'poe' : 'outlet',
+    link: 'wifi',
+    label: '',
+    layer: 'Слаботочка'
+  };
+}
+/** Where a device of a kind goes for a click: { p, rot, mount, z }. want: 'ceil' | 'wall' | 'desk' | null; a kind that snaps goes on the wall when a wall is near. */
+function netPlace(kind, p, want, modelId) {
+  const K = NET_KINDS[kind];
+  const m = NET_MODELS[modelId] || NET_MODELS[modelsOf(kind)[0][0]];
+  if (want === 'ceil' && K.mounts.includes('ceil')) return { p, rot: 0, mount: 'ceil', z: (S.ceil || 2700) - m.h / 2 };
+  const wantWall = K.snap || want === 'wall';
+  const sn = wantWall ? wallSnap(p) : null;
+  if (sn && (K.mounts.includes('wall') || K.mounts.includes('outlet'))) {
+    const mount = kind === 'repeater' ? 'outlet' : 'wall';
+    return { p: sn.p, rot: Math.atan2(-sn.n.x, sn.n.y), mount, z: K.z[mount] ?? K.z.wall };
+  }
+  if (K.mount === 'ceil' && want !== 'desk') return { p, rot: 0, mount: 'ceil', z: (S.ceil || 2700) - m.h / 2 };
+  const mount = K.mounts.includes('desk') ? 'desk' : K.mount;
+  return { p, rot: 0, mount, z: K.z[mount] ?? 1000 };
+}
+/** Pick radius of a device on the plan, mm. */
+const netR = e => Math.max(120, Math.min(netModel(e).w, 300) / 2);
+/** Draws the symbol of a device (circle with the netGlyph of its kind) at screen point s, radius r. */
+function netGlyph(e, s, r, col) {
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, r, 0, TAU);
+  ctx.fillStyle = 'rgba(20,26,32,.82)';
+  ctx.fill();
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.fillStyle = col;
+  const k = e.kind;
+  if (k === 'router' || k === 'ap' || k === 'mesh' || k === 'repeater') {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y + r * 0.4, r * 0.12, 0, TAU);
+    ctx.fill();
+    for (const q of [0.38, 0.62, 0.86]) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y + r * 0.4, r * q, -Math.PI * 0.8, -Math.PI * 0.2);
+      ctx.stroke();
+    }
+    if (k === 'repeater') ctx.fillRect(s.x - r * 0.3, s.y + r * 0.55, r * 0.6, r * 0.18);
+  } else {
+    ctx.font = `700 ${Math.max(7, r * 0.7)}px ${TFONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(k === 'ont' ? 'ONT' : k === 'switch' ? 'SW' : 'ЩС', s.x, s.y);
+  }
+}
+/** Rows of the panel with the status of the device (reach per band, power). */
+function infoRows(e) {
+  const bands = netBands(e);
+  let h = cR('EIRP', `${fmt(netEirp(e))} дБм`);
+  for (const b of bands)
+    h += cR(`Уверенный приём (−67 дБм), ${BANDS[b].n}`, `≈ ${netReach(e, b).toFixed(1).replace('.', ',')} м без стен`);
+  if (!bands.length) h += cR('Радио', 'нет (не излучает)');
+  return h;
+}
+XT.net = {
+  layer: 'Слаботочка',
+  net: 'low',
+  prims: e => {
+    const r = netR(e);
+    const q = [P(e.p.x - r, e.p.y - r), P(e.p.x + r, e.p.y - r), P(e.p.x + r, e.p.y + r), P(e.p.x - r, e.p.y + r)];
+    return q.map((a, i) => ({ t: 's', a, b: q[(i + 1) % 4] }));
+  },
+  dist: (e, p) => (dist(e.p, p) <= netR(e) ? -0.4 : null),
+  keys: e => [{ p: e.p, k: 'ins' }],
+  sample: e => [e.p],
+  map(n, e, f, dA) {
+    n.p = f(e.p);
+    n.rot = (e.rot || 0) + dA;
+  },
+  grips: (e, set) => [{ p: e.p, apply: set((n, p) => (n.p = p)) }],
+  draw(e, color, o, ghost) {
+    const s = w2s(e.p);
+    const r = Math.max(8, Math.min(15, 150 * view.k));
+    const col = ghost ? C.ghost : o && o.sel ? C.sel : '#62c7f0';
+    ctx.save();
+    if (!ghost && o && (o.sel || o.hover))
+      for (const b of netBands(e)) {
+        ctx.strokeStyle = 'rgba(98,199,240,.45)';
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, netReach(e, b) * 1000 * view.k, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        break;
+      }
+    netGlyph(e, s, r, col);
+    if (!ghost && view.k > 0.04) {
+      ctx.fillStyle = col;
+      ctx.font = `10px ${TFONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(
+        `${NET_KINDS[e.kind].ab}${e.label ? ' · ' + e.label : ''}${e.pwr === 'poe' ? ' · PoE' : ''}`,
+        s.x,
+        s.y + r + 2
+      );
+    }
+    ctx.restore();
+  },
+  k3: e => [e.p, e.rot, e.z, e.kind, e.model, e.mount],
+  build3: e => netMesh(e),
+  name: e => NET_KINDS[e.kind].n,
+  group: e => `${NET_KINDS[e.kind].n}: ${netModel(e).n}`,
+  panel(e) {
+    const K = NET_KINDS[e.kind],
+      m = netModel(e);
+    const radio = m.b.length > 0;
+    const groups = [
+      [
+        'Оборудование',
+        K.ab,
+        [
+          ['Модель', 'model', 's', modelsOf(e.kind)],
+          ['Метка (на плане)', 'label', 't'],
+          ...(e.kind === 'mesh'
+            ? [
+                [
+                  'Связь с основным узлом',
+                  'link',
+                  's',
+                  [
+                    ['wifi', 'по Wi-Fi'],
+                    ['cable', 'кабелем']
+                  ]
+                ]
+              ]
+            : [])
+        ]
+      ],
+      [
+        'Установка',
+        NET_MOUNT[e.mount] || '',
+        [
+          ['Крепление', 'mount', 's', K.mounts.map(k => [k, NET_MOUNT[k]])],
+          ['Высота центра от пола, мм', 'z', 'n'],
+          ['Поворот, °', 'rotd', 'n'],
+          ...(e.kind !== 'lvpanel'
+            ? [['Питание', 'pwr', 's', [['outlet', 'от розетки'], ...(m.poe ? [['poe', 'PoE по кабелю']] : [])]]]
+            : [])
+        ]
+      ]
+    ];
+    if (radio)
+      groups.splice(1, 0, [
+        'Радио',
+        e.std ? NET_STD[e.std] : '',
+        [
+          ['Стандарт', 'std', 's', Object.entries(NET_STD)],
+          ...m.b.map(b => [`Диапазон ${BANDS[b].n}`, b === 2.4 ? 'b24' : b === 5 ? 'b5' : 'b6', 'b']),
+          ['Мощность передатчика, дБм', 'tx', 'n'],
+          ['Усиление антенны, дБи', 'gain', 'n'],
+          ['Канал 2,4 ГГц', 'ch24', 's', ['auto', 1, 6, 11].map(v => [v, v === 'auto' ? 'авто' : v])],
+          [
+            'Канал 5 ГГц',
+            'ch5',
+            's',
+            ['auto', 36, 40, 44, 48, 149, 153, 157, 161].map(v => [v, v === 'auto' ? 'авто' : v])
+          ]
+        ]
+      ]);
+    return (
+      xGroups(e, groups) +
+      (radio ? infoRows(e) : '') +
+      (e.kind === 'repeater' ? cR('', 'Репитер делит канал с источником: скорость за ним примерно вдвое ниже.') : '')
+    );
+  },
+  fields: () => [],
+  onSet(e, p) {
+    if (p === 'model') {
+      const d = netDefaults(e.kind, e.model);
+      for (const k of ['std', 'b24', 'b5', 'b6', 'tx', 'gain', 'pwr']) e[k] = d[k];
+    }
+    if (p === 'mount') {
+      const K = NET_KINDS[e.kind];
+      e.z = e.mount === 'ceil' ? (S.ceil || 2700) - netModel(e).h / 2 : (K.z[e.mount] ?? e.z);
+    }
+    if (e.pwr === 'poe' && !netModel(e).poe) e.pwr = 'outlet';
+  },
+  spec(e, put) {
+    const T = 'Сеть и Wi-Fi';
+    const m = netModel(e);
+    put(T, 'm' + e.model, { name: m.n, u: 'шт' }, r => {
+      r.q++;
+      r.ids.push(e.id);
+    });
+    if (e.pwr === 'poe')
+      put(T, 'rj45', { name: 'Розетка компьютерная RJ45 (модуль + подрозетник) — для PoE-точки', u: 'шт' }, r => {
+        r.q++;
+        r.ids.push(e.id);
+      });
+  }
+};
+
+/** Command of a kind: a click puts the device (at the wall or the ceiling); [Потолок/Стена/Стол/Модель] set the way. */
+function mkNet(kind) {
+  const K = NET_KINDS[kind];
+  const ms = modelsOf(kind);
+  let want = null,
+    mi = 0;
+  const full = p => {
+    const d = netDefaults(kind, ms[mi][0]);
+    return { ...d, ...netPlace(kind, p, want, d.model) };
+  };
+  return {
+    name: kind,
+    prompt: () =>
+      `${K.n}: щёлкните ${K.snap ? 'у стены' : kind === 'ap' ? 'в помещении (потолок) или у стены' : 'в помещении'} [${K.mounts.includes('ceil') ? 'Потолок/' : ''}Стена/Стол/Модель: ${ms[mi][1]}]:`,
+    onInput(s) {
+      if (kw(s, 'п', 'потолок', 'ceil')) want = 'ceil';
+      else if (kw(s, 'с', 'стена', 'wall')) want = 'wall';
+      else if (kw(s, 'ст', 'стол', 'desk')) want = 'desk';
+      else if (kw(s, 'м', 'модель', 'model')) mi = (mi + 1) % ms.length;
+      else return false;
+      return true;
+    },
+    onPoint(p) {
+      const e = full(p);
+      ensureLayer('Слаботочка');
+      tx('Сетевое оборудование', t => t.add(e));
+      log(`${K.n}: ${NET_MODELS[e.model].n}`);
+    },
+    preview(c) {
+      drawEnt(full(c), 'ghost');
+    }
+  };
+}
+const NET_ICON = {
+  wap: '<circle cx="10" cy="14" r="1.3"/><path d="M5.5 11a6.4 6.4 0 0 1 9 0M3 8.5a10 10 0 0 1 14 0"/>',
+  router: '<rect x="3" y="12" width="14" height="4" rx="1"/><path d="M6 12V6M10 12V4M14 12V6"/>',
+  mesh: '<ellipse cx="10" cy="15" rx="4" ry="1.6"/><path d="M6 15V8a4 1.6 0 0 1 8 0v7"/><path d="M7 5a4.2 4.2 0 0 1 6 0"/>',
+  repeater:
+    '<rect x="6" y="5" width="8" height="9" rx="1.5"/><path d="M8 14v3M12 14v3M3.5 4a8 8 0 0 1 0 6M16.5 4a8 8 0 0 0 0 6"/>',
+  ont: '<rect x="3" y="6" width="14" height="9" rx="1.5"/><path d="M6 9h.01M9 9h.01M12 9h.01"/><path d="M10 15v3"/>',
+  netsw: '<rect x="2" y="7" width="16" height="7" rx="1"/><path d="M5 10v2M8 10v2M11 10v2M14 10v2"/>',
+  lvpanel: '<rect x="4" y="3" width="12" height="14" rx="1"/><path d="M4 8h12M4 13h12M13 15.5h.01"/>'
+};
+const NET_DEFS = [
+  [
+    'wap',
+    'ap',
+    'ТОЧКАДОСТУПА',
+    ['ap', 'accesspoint', 'wifi', 'вайфай', 'точка', 'точкадоступа'],
+    'Точка доступа Wi-Fi: потолочная или настенная, питание PoE',
+    'Точка доступа: щелчок — на потолке (по умолчанию) или у стены ([Стена]). Модель — [Модель]; диапазоны, мощность, канал и питание — в свойствах. Источник сигнала для «Покрытия Wi-Fi».'
+  ],
+  [
+    'router',
+    'router',
+    'РОУТЕР',
+    ['router', 'роутер'],
+    'Wi-Fi роутер: на полке или на стене',
+    'Роутер: щелчок — на полке или столе, [Стена] — на стене. Модель — [Модель]. Для интернета соедините кабелем (ЛАН) с модемом / ONT.'
+  ],
+  [
+    'mesh',
+    'mesh',
+    'МЕШ',
+    ['mesh', 'меш'],
+    'Mesh-модуль: на полке, на стене или в розетку',
+    'Mesh-модуль: щелчок — на полке; [Стена] — на стене. Связь с основным узлом — по Wi-Fi или кабелем (в свойствах).'
+  ],
+  [
+    'repeater',
+    'repeater',
+    'РЕПИТЕР',
+    ['repeater', 'репитер', 'повторитель', 'extender'],
+    'Репитер Wi-Fi: вставляется в розетку',
+    'Репитер: щелчок у стены — в розетку (высота 300 мм). Ставьте там, где сигнал источника ещё не хуже −70 дБм, иначе скорость упадёт.'
+  ],
+  [
+    'ont',
+    'ont',
+    'МОДЕМ',
+    ['ont', 'модем', 'онт', 'ввод'],
+    'Модем / ONT — ввод провайдера',
+    'Модем / ONT: щелчок у стены. Сюда приходит кабель провайдера; к нему кабелем (ЛАН) подключается роутер.'
+  ],
+  [
+    'netsw',
+    'switch',
+    'КОММУТАТОР',
+    ['netswitch', 'коммутатор', 'poe', 'свитч'],
+    'Коммутатор (с PoE для точек доступа)',
+    'Коммутатор: щелчок у стены. Модель с PoE питает точки доступа по кабелю (ЛАН).'
+  ],
+  [
+    'lvpanel',
+    'lvpanel',
+    'СЛАБОТОЧКАЩИТ',
+    ['lvpanel', 'слаботочка', 'слаботочныйщит', 'медиаконвертер'],
+    'Слаботочный щит (встраиваемый, ввод, коммутатор, роутер)',
+    'Слаботочный щит: щелчок у стены (ниша на высоте 1500 мм). Обычно здесь сходятся кабели сети.'
+  ]
+];
+defineTools(
+  Object.fromEntries(
+    NET_DEFS.map(([id, kind, t, a, title, help]) => [
+      id,
+      { command: { t, m: () => mkNet(kind), a }, title: `${title} · ${t}`, icon: NET_ICON[id], help }
+    ])
+  )
+);
+
+// ===== blocks/network/net-lines.js =====
+/**
+ * blocks/network/net-lines
+ *
+ * Network cable (type 'netline', command ЛАН): a polyline of points between the devices — UTP cat.6 / cat.5e / cat.6a or an optical drop. Its ends snap to the
+ * nearest network device. Length = the plan length + the rise from the run height to the devices at the ends, +10 % reserve; the specification gets the cable in metres and two
+ * RJ45 connectors per twisted-pair line. The link graph of the checks (checks-network) is built from the ends of these lines. Entity: { type:'netline', pts, cable, z }.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+TN.netline = 'Сетевой кабель';
+/** Radius within which an end of a cable attaches to a device, mm. */
+const LINK_R = 600;
+/** The device nearest to a point within LINK_R among the given ones: element or null. */
+function nearNet(p, list) {
+  let best = null,
+    bd = LINK_R;
+  for (const n of list) {
+    const d = dist(n.p, p);
+    if (d <= bd) {
+      bd = d;
+      best = n;
+    }
+  }
+  return best;
+}
+/** Length of a cable, mm: plan length + rise to the devices at its ends + 10 % reserve. */
+function netLineLen(e) {
+  const z = +e.z || 0;
+  let L = 0;
+  for (let i = 1; i < e.pts.length; i++) L += dist(e.pts[i - 1], e.pts[i]);
+  const nets = query('net');
+  let rise = 0;
+  for (const p of [e.pts[0], e.pts[e.pts.length - 1]]) {
+    const n = nearNet(p, nets);
+    rise += Math.abs(z - (n ? +n.z || 0 : 300));
+  }
+  return (L + rise) * 1.1;
+}
+XT.netline = {
+  layer: 'Слаботочка',
+  net: 'low',
+  prims: e => e.pts.slice(1).map((b, i) => ({ t: 's', a: e.pts[i], b })),
+  keys: e => e.pts.map(p => ({ p, k: 'end' })),
+  sample: e => e.pts,
+  map(n, e, f) {
+    n.pts = e.pts.map(f);
+  },
+  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  draw(e, color, o, ghost) {
+    ctx.save();
+    ctx.strokeStyle = ghost ? C.ghost : o && o.sel ? C.sel : e.cable === 'fiber' ? '#e8d34a' : '#62c7f0';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([7, 3]);
+    ctx.beginPath();
+    e.pts.forEach((p, i) => {
+      const s = w2s(p);
+      i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y);
+    });
+    ctx.stroke();
+    if (!ghost && view.k > 0.05 && e.pts.length > 1) {
+      const m = w2s(P((e.pts[0].x + e.pts[1].x) / 2, (e.pts[0].y + e.pts[1].y) / 2));
+      ctx.setLineDash([]);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = '10px "IBM Plex Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        `${e.cable === 'fiber' ? 'оптика' : String(e.cable).replace('cat', 'cat.')} · ${(netLineLen(e) / 1000).toFixed(1).replace('.', ',')} м`,
+        m.x,
+        m.y - 6
+      );
+    }
+    ctx.restore();
+  },
+  k3: e => [e.pts, e.z, e.cable],
+  build3(e) {
+    const mb = MB();
+    mb.tag(NET_CABLES[e.cable] || 'Сетевой кабель');
+    const z = +e.z || 0;
+    const col = e.cable === 'fiber' ? '#e8d34a' : '#4aa3ff';
+    const q = e.pts.map(p => [p.x, p.y, z]);
+    for (let i = 1; i < q.length; i++) mb.tube(q[i - 1], q[i], 3, col, 6);
+    const nets = query('net');
+    for (const p of [e.pts[0], e.pts[e.pts.length - 1]]) {
+      const n = nearNet(p, nets);
+      mb.tube([p.x, p.y, z], [p.x, p.y, n ? +n.z || 0 : 300], 3, col, 6);
+    }
+    return meshGroup(mb.meshes(), { edges: false });
+  },
+  group: e => `Кабель ${(netLineLen(e) / 1000).toFixed(1)} м`,
+  panel: e =>
+    xGroups(e, [
+      [
+        'Кабель',
+        `${(netLineLen(e) / 1000).toFixed(1)} м`,
+        [
+          ['Тип', 'cable', 's', Object.entries(NET_CABLES)],
+          ['Высота трассы, мм', 'z', 'n']
+        ]
+      ]
+    ]) + cR('Длина с запасом 10 % и подъёмами', `${(netLineLen(e) / 1000).toFixed(2).replace('.', ',')} м`),
+  fields: () => [],
+  spec(e, put) {
+    const T = 'Сеть и Wi-Fi';
+    const L = netLineLen(e) / 1000;
+    put(T, 'c' + e.cable, { name: NET_CABLES[e.cable] || NET_CABLES.cat6, u: 'м' }, r => {
+      r.q = Math.round((r.q + L) * 10) / 10;
+      r.ids.push(e.id);
+    });
+    if (e.cable !== 'fiber')
+      put(T, 'rj45c', { name: 'Коннектор RJ45 8P8C (кабельный)', u: 'шт' }, r => {
+        r.q += 2;
+        r.ids.push(e.id);
+      });
+  }
+};
+
+/** Command ЛАН: points of the cable, Enter finishes; the ends snap to devices; [cat6/cat5e/cat6a/оптика] and a number (height) set the options. */
+function mkNetLine() {
+  const pts = [];
+  const D = mkNetLine.D;
+  const snap = p => {
+    const n = nearNet(p, query('net'));
+    return n ? P(n.p.x, n.p.y) : p;
+  };
+  return {
+    name: 'netline',
+    prompt: () =>
+      pts.length
+        ? 'Кабель: следующая точка (Enter — готово):'
+        : `Кабель ${D.cable}: первая точка у устройства [cat6/cat5e/cat6a/оптика, высота ${D.z}]:`,
+    onInput(s) {
+      const t = s.trim().toLowerCase();
+      const c = { cat6: 'cat6', cat5e: 'cat5e', cat6a: 'cat6a', оптика: 'fiber', fiber: 'fiber' }[t];
+      if (c) {
+        D.cable = c;
+        return true;
+      }
+      if (/^\d+$/.test(t)) {
+        D.z = +t;
+        return true;
+      }
+      return false;
+    },
+    onPoint(p) {
+      pts.push(snap(p));
+    },
+    onEnter() {
+      if (pts.length > 1) {
+        ensureLayer('Слаботочка');
+        const e = { type: 'netline', pts: pts.slice(), cable: D.cable, z: D.z, layer: 'Слаботочка' };
+        tx('Сетевой кабель', t => t.add(e));
+        log(`Кабель: ${(netLineLen(e) / 1000).toFixed(1)} м`);
+      }
+      return 'end';
+    },
+    preview(cur) {
+      if (pts.length) drawEnt({ type: 'netline', pts: [...pts, cur], cable: D.cable, z: D.z }, 'ghost');
+    }
+  };
+}
+mkNetLine.D = { cable: 'cat6', z: Math.max(0, (S.ceil || 2700) - 150) };
+defineTools({
+  netline: {
+    command: { t: 'ЛАН', m: mkNetLine, a: ['netline', 'utp', 'лан', 'витаяпара', 'кабельсети'] },
+    title: 'Сетевой кабель: UTP между роутером, коммутатором и точками доступа · ЛАН',
+    icon: '<circle cx="4" cy="14" r="1.6"/><circle cx="16" cy="5" r="1.6"/><path d="M5.5 13l4-1 1-5 4.5-1.5" stroke-dasharray="3 2"/>',
+    help: 'Сетевой кабель: точки трассы по плану, Enter — готово. Концы прилипают к ближайшему устройству. [cat6/cat5e/cat6a/оптика], число — высота трассы. Нужен для PoE-точек доступа и для связи роутера с модемом / ONT.'
+  }
+});
+
+// ===== blocks/network/spec-network.js =====
+/**
+ * blocks/network/spec-network
+ *
+ * Specification section «Сеть и Wi-Fi»: the position of the table; the rows (equipment by model, UTP cable in metres, RJ45 connectors and sockets) come from XT.net.spec and XT.netline.spec.
+ */
+
+
+specSection('network', { order: 172, title: 'Сеть и Wi-Fi' });
+
+// ===== blocks/network/wifi-calc.js =====
+/**
+ * blocks/network/wifi-calc
+ *
+ * Wi-Fi coverage calculation (type 'wcalc', a zone over a room or the whole floor, like the lighting calculation): a grid of ~250 mm, for every cell the best signal of all the
+ * radios on the chosen band at the chosen height (wifi-model.js), a semi-transparent heat map with a legend and the signal classes, the best access point per cell on request.
+ * The result is cached by a signature of the inputs (walls, openings, devices, zone parameters), computed in slices (the plan shows what is ready) and never in every frame;
+ * wcalcRun() gives the complete answer at once for the panel, the checks and the tests. Entity: { type:'wcalc', pts, band ('2.4'|'5'|'6'), h, step, mode ('rssi'|'ap'), show }.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TN.wcalc = 'Покрытие Wi-Fi';
+/** Defaults of a new zone. */
+function wcalcDefaults() {
+  return { band: '5', h: 1000, step: 250, mode: 'rssi', show: true };
+}
+/** Band id of a zone ('2.4' | '5' | '6'), 5 GHz when unknown. */
+const bandOf = e => (BANDS[e.band] ? String(e.band) : '5');
+/** Current time in milliseconds (for the slices of a job). */
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const WCC = new Map();
+/** Cache key of a zone: signature of the scene + the zone's own parameters. */
+function wcalcKey(e) {
+  return sceneSig() + JSON.stringify([e.pts, e.band, e.h, e.step]);
+}
+/** Starts a calculation job: the cell centres inside the zone and the scene / sources frozen for it. */
+function startJob(e, key) {
+  const xs = e.pts.map(p => p.x),
+    ys = e.pts.map(p => p.y);
+  const bb = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  const A = Math.abs(polyArea(e.pts)) / 1e6;
+  let step = +e.step > 0 ? +e.step : 250;
+  step = Math.max(step, Math.sqrt((A * 1e6) / 9000));
+  const nx = Math.max(1, Math.round((bb.x1 - bb.x0) / step)),
+    ny = Math.max(1, Math.round((bb.y1 - bb.y0) / step));
+  const sx = (bb.x1 - bb.x0) / nx,
+    sy = (bb.y1 - bb.y0) / ny;
+  const cells = [];
+  for (let j = 0; j < ny; j++)
+    for (let i = 0; i < nx; i++) {
+      const x = bb.x0 + (i + 0.5) * sx,
+        y = bb.y0 + (j + 0.5) * sy;
+      if (inPoly(P(x, y), e.pts)) cells.push([x, y]);
+    }
+  const band = bandOf(e);
+  return {
+    key,
+    band,
+    h: +e.h || 1000,
+    step,
+    sx,
+    sy,
+    A,
+    cells,
+    i: 0,
+    pts: [],
+    scene: wifiScene(),
+    srcs: wifiSources(band).slice()
+  };
+}
+/** Computes cells of a job for `ms` milliseconds (Infinity — all of them); true when the job is done. */
+function stepJob(job, ms) {
+  const t0 = now();
+  while (job.i < job.cells.length) {
+    const [x, y] = job.cells[job.i++];
+    const r = bestAt(job.scene, job.srcs, job.band, x, y, job.h);
+    job.pts.push({ x, y, v: r.v, k: r.k, rep: !!(r.s && r.s.rep) });
+    if ((job.i & 15) === 0 && now() - t0 > ms) return job.i >= job.cells.length;
+  }
+  return true;
+}
+/** The finished result of a job: cells, signal classes, average / worst / best level and the sources. */
+function finishJob(job) {
+  const n = job.pts.length || 1;
+  const cls = [0, 0, 0, 0, 0];
+  let sum = 0,
+    min = 0,
+    max = -200,
+    rep = 0;
+  job.pts.forEach((q, i) => {
+    cls[coverClass(q.v)]++;
+    sum += q.v;
+    if (!i || q.v < min) min = q.v;
+    if (q.v > max) max = q.v;
+    if (q.rep) rep++;
+  });
+  return {
+    pts: job.pts,
+    sx: job.sx,
+    sy: job.sy,
+    step: job.step,
+    band: job.band,
+    h: job.h,
+    A: job.A,
+    srcs: job.srcs.map(s => ({ id: s.id, name: s.name, kind: s.kind, rep: s.rep, other: s.other })),
+    cls: cls.map(c => c / n),
+    avg: sum / n,
+    min,
+    max,
+    good: (cls[0] + cls[1]) / n,
+    rep: rep / n,
+    rooms: null
+  };
+}
+/** The complete result of a zone at once (cached by the key). */
+function wcalcRun(e) {
+  const key = wcalcKey(e);
+  const c = WCC.get(e.id);
+  if (c && c.key === key && c.r) return c.r;
+  const job = startJob(e, key);
+  stepJob(job, Infinity);
+  const r = finishJob(job);
+  WCC.set(e.id, { key, r });
+  return r;
+}
+/** For the plan: the cached result, or what is ready of the new one ({ partial, done }) while a job runs in slices. Never blocks a frame. */
+function wcalcPeek(e) {
+  const key = wcalcKey(e);
+  const c = WCC.get(e.id);
+  if (c && c.key === key && c.r) return c.r;
+  let job = c && c.job && c.job.key === key ? c.job : null;
+  if (!job) {
+    job = startJob(e, key);
+    WCC.set(e.id, { key, job, stale: c && (c.r || c.stale) });
+    const id = e.id;
+    const tick = () => {
+      const cc = WCC.get(id);
+      if (!cc || !cc.job || cc.job !== job) return;
+      if (stepJob(job, 10)) {
+        WCC.set(id, { key: job.key, r: finishJob(job) });
+        dirty();
+      } else {
+        dirty();
+        setTimeout(tick, 0);
+      }
+    };
+    setTimeout(tick, 0);
+  }
+  return { partial: true, done: job.i / Math.max(1, job.cells.length), job, stale: (WCC.get(e.id) || {}).stale };
+}
+/** Rooms of a zone with the share of cells below «good»: [{ name, pts, n, bad, share, avg, cells }] (a zone without floor zones is one room). */
+function wcalcRooms(e, r) {
+  if (r.rooms) return r.rooms;
+  const zs = query('floorz', z => z.pts && z.pts.length > 2 && inPoly(polyCentroid(z.pts), e.pts));
+  const rooms = (zs.length ? zs.map(z => ({ name: z.name || '', pts: z.pts })) : [{ name: '', pts: e.pts }]).map(o => ({
+    ...o,
+    n: 0,
+    bad: 0,
+    sum: 0,
+    cells: []
+  }));
+  for (const q of r.pts) {
+    const rm = rooms.find(o => inPoly(P(q.x, q.y), o.pts));
+    if (!rm) continue;
+    rm.n++;
+    rm.sum += q.v;
+    if (q.v < GOOD) rm.bad++;
+    rm.cells.push(q);
+  }
+  for (const rm of rooms) {
+    rm.share = rm.n ? rm.bad / rm.n : 0;
+    rm.avg = rm.n ? rm.sum / rm.n : -120;
+  }
+  r.rooms = rooms.filter(o => o.n);
+  return r.rooms;
+}
+/** A place for an access point / mesh node for a room with a dead zone: the nearest to the dead zone cell at a wall with a good signal ≥ −65 dBm: { p, v } or null. */
+function wcalcSuggest(e, r, room) {
+  const bad = room.cells.filter(q => q.v < GOOD);
+  if (!bad.length) return null;
+  const c = P(bad.reduce((a, q) => a + q.x, 0) / bad.length, bad.reduce((a, q) => a + q.y, 0) / bad.length);
+  const walls = wifiScene().walls;
+  const atWall = q => walls.some(w => dist(segPt(P(w.ax, w.ay), P(w.bx, w.by), q), q) - w.th / 2 < 450);
+  const good = r.pts.filter(q => q.v >= -65);
+  const near = good.filter(q => atWall(P(q.x, q.y)));
+  const pool = near.length ? near : good;
+  if (!pool.length) return null;
+  let best = pool[0],
+    bd = Infinity;
+  for (const q of pool) {
+    const d = dist(P(q.x, q.y), c);
+    if (d < bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  const sn = wallSnap(P(best.x, best.y), 600);
+  return { p: sn ? sn.p : P(best.x, best.y), v: best.v, from: c };
+}
+/** Colour of a level with alpha a (the classes of the legend). */
+function levelCol(v, a = 0.5) {
+  const c = COVER[coverClass(v)].col;
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+/** Level text with a true minus sign, rounded to dBm. */
+const dbm = v => String(Math.round(v)).replace('-', '−');
+/** Draws the legend box of a zone at the top right of its bbox on screen. */
+function drawLegend(e, R) {
+  const xs = e.pts.map(p => w2s(p).x),
+    ys = e.pts.map(p => w2s(p).y);
+  const x = Math.max(...xs) - 150,
+    y = Math.min(...ys) + 6;
+  ctx.fillStyle = 'rgba(15,17,20,.8)';
+  ctx.fillRect(x, y, 146, 16 + COVER.length * 14);
+  ctx.font = `10px ${TFONT}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#d9dde3';
+  ctx.fillText(`Wi-Fi ${BANDS[R.band].n}, дБм · ${R.h} мм`, x + 6, y + 9);
+  COVER.forEach((c, i) => {
+    ctx.fillStyle = `rgb(${c.col.join(',')})`;
+    ctx.fillRect(x + 6, y + 18 + i * 14, 12, 10);
+    ctx.fillStyle = '#d9dde3';
+    ctx.fillText(`${c.d} · ${R.partial ? '' : Math.round(R.cls[i] * 100) + ' %'}`, x + 24, y + 23 + i * 14);
+  });
+}
+XT.wcalc = {
+  layer: 'Покрытие Wi-Fi',
+  anno: true,
+  net: 'low',
+  prims: e => closedSegs(e.pts),
+  dist: (e, p) => areaPickDist(e.pts, p),
+  keys: e => e.pts.map(p => ({ p, k: 'end' })),
+  sample: e => e.pts,
+  map: (n, e, f) => {
+    n.pts = e.pts.map(f);
+  },
+  grips: (e, set) => e.pts.map((v, i) => ({ p: v, apply: set((n, p) => (n.pts[i] = p)) })),
+  draw(e, color, o, ghost) {
+    ctx.save();
+    if (!ghost && e.show !== false) {
+      const R0 = wcalcPeek(e);
+      const R = R0.partial
+        ? R0.stale || {
+            pts: R0.job.pts,
+            sx: R0.job.sx,
+            sy: R0.job.sy,
+            band: R0.job.band,
+            h: R0.job.h,
+            cls: [0, 0, 0, 0, 0],
+            partial: true,
+            srcs: R0.job.srcs
+          }
+        : R0;
+      ctx.save();
+      pathPoly(e.pts);
+      ctx.clip();
+      for (const q of R.pts) {
+        const a = w2s(P(q.x - R.sx / 2, q.y + R.sy / 2)),
+          b = w2s(P(q.x + R.sx / 2, q.y - R.sy / 2));
+        if (e.mode === 'ap' && q.k >= 0) {
+          const c = AP_COLS[q.k % AP_COLS.length];
+          ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${q.v >= GOOD ? 0.5 : 0.22})`;
+        } else ctx.fillStyle = levelCol(q.v, R0.partial ? 0.3 : 0.5);
+        ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x) + 0.6, Math.abs(b.y - a.y) + 0.6);
+        if (q.rep) {
+          ctx.strokeStyle = 'rgba(20,20,20,.45)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(Math.min(a.x, b.x), Math.max(a.y, b.y));
+          ctx.lineTo(Math.max(a.x, b.x), Math.min(a.y, b.y));
+          ctx.stroke();
+        }
+      }
+      const cell = Math.min(R.sx, R.sy) * view.k;
+      if (cell > 26 && !R0.partial) {
+        ctx.fillStyle = 'rgba(10,12,14,.85)';
+        ctx.font = `${Math.min(11, cell / 3)}px ${TFONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (const q of R.pts) {
+          const s = w2s(P(q.x, q.y));
+          ctx.fillText(dbm(q.v), s.x, s.y);
+        }
+      }
+      ctx.restore();
+      const g = w2s(polyCentroid(e.pts));
+      ctx.font = `600 12px ${TFONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      const txt = R0.partial
+        ? `Расчёт покрытия… ${Math.round(R0.done * 100)} %`
+        : `${BANDS[R.band].n}: хорошо и лучше ${Math.round(R.good * 100)} % · min ${dbm(R.min)} дБм`;
+      const tw = ctx.measureText(txt).width + 12;
+      ctx.fillStyle = 'rgba(15,17,20,.75)';
+      ctx.fillRect(g.x - tw / 2, g.y - 24, tw, 18);
+      ctx.fillStyle = R0.partial ? '#d9dde3' : R.good >= 0.9 ? '#7be08f' : '#ff8a7a';
+      ctx.fillText(txt, g.x, g.y - 11);
+      if (!R0.partial) {
+        const sw = view.k * Math.max(...e.pts.map(p => p.x)) - view.k * Math.min(...e.pts.map(p => p.x));
+        if (sw > 220 || (o && o.sel)) drawLegend(e, R);
+      }
+    }
+    ctx.strokeStyle = ghost ? C.ghost : o && o.sel ? C.sel : '#62c7f0';
+    ctx.setLineDash([8, 4]);
+    ctx.lineWidth = o && o.hover ? 2 : 1.2;
+    pathPoly(e.pts);
+    ctx.stroke();
+    ctx.restore();
+  },
+  k3: () => null,
+  group: e => `Покрытие Wi-Fi ${BANDS[bandOf(e)].n}`,
+  name: () => 'Покрытие Wi-Fi',
+  panel(e) {
+    const R = wcalcRun(e);
+    const rooms = wcalcRooms(e, R);
+    const cls = COVER.map((c, i) =>
+      cR(
+        `<span style="display:inline-block;width:10px;height:10px;background:rgb(${c.col.join(',')});margin-right:6px"></span>${c.n}`,
+        `${c.d} дБм · ${Math.round(R.cls[i] * 100)} % (${(R.cls[i] * R.A).toFixed(1).replace('.', ',')} м²)`
+      )
+    ).join('');
+    const res =
+      cR(
+        'Источники на диапазоне',
+        R.srcs.length
+          ? R.srcs.map(s => esc(s.name) + (s.rep ? ' (репитер)' : s.other ? ' (другой этаж)' : '')).join('; ')
+          : '<b class="bad">нет</b>'
+      ) +
+      cR('Средний / худший / лучший', `${dbm(R.avg)} / ${dbm(R.min)} / ${dbm(R.max)} дБм`) +
+      cR('Хорошо и лучше', `<b class="${R.good >= 0.9 ? 'ok' : 'bad'}">${Math.round(R.good * 100)} %</b> площади`) +
+      (R.rep > 0 ? cR('Обслуживает репитер', `${Math.round(R.rep * 100)} % (штриховка): скорость вдвое ниже`) : '') +
+      cls +
+      cR('Сетка', `${fmt(Math.round(R.step))} мм · ${R.pts.length} точек`) +
+      rooms
+        .map(rm =>
+          cR(
+            esc(rm.name || 'Зона'),
+            `<b class="${rm.share > 0.1 ? 'bad' : 'ok'}">${Math.round(rm.share * 100)} %</b> хуже «хорошо», среднее ${dbm(rm.avg)} дБм`
+          )
+        )
+        .join('') +
+      `<dt></dt><dd class="hint" style="text-align:left">Модель: потери по ITU-R P.1238 (жилые помещения) + затухание стен по материалам слоёв и толщине с учётом угла падения, двери и окна — в своих проёмах, перекрытие для точек другого этажа. Инженерная оценка для расстановки точек, не замер.</dd>`;
+    const bad = rooms.find(rm => rm.share > 0.1);
+    const sg = bad ? wcalcSuggest(e, R, bad) : null;
+    return (
+      xGroups(e, [
+        [
+          'Расчёт',
+          BANDS[R.band].n,
+          [
+            ['Диапазон', 'band', 's', Object.entries(BANDS).map(([k, v]) => [k, v.n])],
+            ['Высота расчёта, мм', 'h', 'n'],
+            ['Шаг сетки, мм', 'step', 'n'],
+            [
+              'Карта',
+              'mode',
+              's',
+              [
+                ['rssi', 'уровень сигнала'],
+                ['ap', 'лучшая точка доступа']
+              ]
+            ],
+            ['Показывать карту', 'show', 'b']
+          ]
+        ],
+        ['Результат', `${Math.round(R.good * 100)} %`, res]
+      ]) +
+      (sg
+        ? `<dt></dt><dd><button class="btn" data-xa="addmesh" title="Mesh-модуль на стене у границы хорошей зоны, ближайшей к мёртвой зоне">Поставить mesh-модуль в «${esc(bad.name || 'зоне')}»: рядом с ${fmt(Math.round(sg.p.x))}; ${fmt(Math.round(sg.p.y))}</button></dd>`
+        : '')
+    );
+  },
+  fields: () => [],
+  action(e, a) {
+    if (a !== 'addmesh') return;
+    const R = wcalcRun(e);
+    const bad = wcalcRooms(e, R).find(rm => rm.share > 0.1);
+    const sg = bad && wcalcSuggest(e, R, bad);
+    if (!sg) return;
+    const d = netDefaults('mesh');
+    const el = { ...d, ...netPlace('mesh', sg.p, 'wall', d.model) };
+    ensureLayer('Слаботочка');
+    tx('Mesh-модуль в мёртвую зону', t => t.add(el));
+  },
+  onSet(e) {
+    e.h = Math.max(0, +e.h || 1000);
+    e.step = Math.max(0, +e.step || 0);
+  }
+};
+
+/** Command ПОКРЫТИЕ: a click in a room — a zone over its outline; [Прямоугольник] — by two corners; [Этаж] — over the whole floor. */
+function mkWcalc() {
+  let a = null;
+  const add = pts => {
+    ensureLayer('Покрытие Wi-Fi');
+    tx('Покрытие Wi-Fi', t => t.add({ type: 'wcalc', pts, ...wcalcDefaults(), layer: 'Покрытие Wi-Fi' }));
+    return 'end';
+  };
+  return {
+    name: 'wcalc',
+    prompt: () =>
+      a === 'rect'
+        ? 'Первый угол зоны:'
+        : a
+          ? 'Второй угол зоны:'
+          : 'Покрытие Wi-Fi: щёлкните внутри помещения или [Прямоугольник/Этаж]:',
+    onInput(s) {
+      if (kw(s, 'п', 'прямоугольник', 'r')) {
+        a = 'rect';
+        return true;
+      }
+      if (kw(s, 'э', 'этаж', 'floor')) {
+        const f = wallsFootprint();
+        if (!f) {
+          log('Нет стен для контура этажа', true);
+          return true;
+        }
+        return add(f.map(p => P(p.x, p.y)));
+      }
+      return false;
+    },
+    onPoint(p) {
+      if (a && a !== 'rect') return add([a, P(p.x, a.y), p, P(a.x, p.y)]);
+      if (a === 'rect') {
+        a = p;
+        return;
+      }
+      const R = roomAt(p);
+      if (!R || !R.poly || R.poly.length < 3) {
+        log('Помещение не найдено — задайте зону прямоугольником (П)', true);
+        a = 'rect';
+        return;
+      }
+      return add(R.poly.map(q => P(q.x, q.y)));
+    },
+    preview(cur) {
+      if (a && a !== 'rect')
+        drawEnt({ type: 'wcalc', pts: [a, P(cur.x, a.y), cur, P(a.x, cur.y)], show: false }, 'ghost');
+    }
+  };
+}
+/** Sets one property of all the zones in one undo step. */
+function zonesSet(name, patch) {
+  const zs = query('wcalc');
+  if (zs.length) tx(name, t => zs.forEach(z => t.patch(z.id, patch(z))));
+}
+/** Starts the command, switching the plan to the electrical section. */
+function runCmd(key) {
+  if (sceneState.viewMode === '3d' || sceneState.viewMode === 'spec') setView('plan');
+  layerOn('Покрытие Wi-Fi');
+  const c = mkWcalc();
+  startCmd('wcalc', c);
+  if (key) c.onInput(key);
+}
+defineTools({
+  wcalc: {
+    command: { t: 'ПОКРЫТИЕ', m: mkWcalc, a: ['wcalc', 'wificalc', 'покрытие', 'покрытиеwifi'] },
+    title: 'Покрытие Wi-Fi: карта сигнала с учётом стен и перекрытий · ПОКРЫТИЕ',
+    icon: '<circle cx="10" cy="10" r="1.4"/><path d="M6.5 6.5a5 5 0 0 0 0 7M13.5 6.5a5 5 0 0 1 0 7M3.5 3.5a9 9 0 0 0 0 13M16.5 3.5a9 9 0 0 1 0 13"/>',
+    help: 'Покрытие Wi-Fi: щелчок в помещении — зона расчёта; [Этаж] — на весь этаж, [Прямоугольник] — по углам. Диапазон (2,4/5/6 ГГц) и высота — в свойствах или в меню кнопки. Цвета: отлично ≥ −55, хорошо −55…−67, удовлетворительно −67…−75, слабо −75…−85, нет связи < −85 дБм.',
+    fly: () => [
+      ['＋ Зона: щёлкнуть внутри помещения', () => runCmd()],
+      ['＋ Зона прямоугольником', () => runCmd('п')],
+      ['＋ Зона на весь этаж', () => runCmd('э')],
+      ...['2.4', '5', '6'].map(b => [
+        `Диапазон ${BANDS[b].n} — во всех зонах`,
+        () => zonesSet('Диапазон Wi-Fi', () => ({ band: b }))
+      ]),
+      [
+        'Карта: уровень сигнала / лучшая точка доступа',
+        () => zonesSet('Режим карты', z => ({ mode: z.mode === 'ap' ? 'rssi' : 'ap' }))
+      ],
+      ['Карты: показать / скрыть', () => zonesSet('Карты Wi-Fi', z => ({ show: z.show === false }))]
+    ]
+  }
+});
+
+// ===== blocks/network/wifi-model.js =====
+/**
+ * blocks/network/wifi-model
+ *
+ * Radio propagation model of the network block. The scene is the walls of the current level (layers of the wall type → attenuation, thickness along the ray, doors and windows
+ * in their openings), the sources are the radios of the net devices (the other levels count through the floor slab). Signal = EIRP − PL(d) − obstacles, where
+ * PL(d) = 20·log10(f MHz) + N·log10(d m) − 28 (ITU-R P.1238, residential). The scene is cached by a signature of its inputs (walls, openings, devices), not by a call.
+ */
+
+
+
+
+
+/** Attenuation of a wall type at 5 GHz as { A0: constant part, A1: part proportional to the path in the wall }, dB. */
+function layersLoss(w) {
+  const t = typeOf(w);
+  const layers = t ? computeType(t).layers : [{ cls: 'block', th: +w.th || 200 }];
+  let A0 = 0,
+    A1 = 0;
+  for (const l of layers) {
+    const L = LAYER_LOSS[l.cls] || LAYER_LOSS.block;
+    A0 += L.c + (l.frame ? FRAME_LOSS : 0);
+    A1 += L.k * (+l.th || 0);
+  }
+  return { A0, A1 };
+}
+/** Attenuation of a door / window / opening at 5 GHz, dB. */
+function openingLoss(o) {
+  const c = o.cfg || {};
+  const lowE = /i|И/.test(String(c.glass || ''));
+  const by = {
+    opening: () => 0,
+    door: () => (c.mode === 'entry' ? 14 : 3),
+    window: () => (c.kind === 'alu' ? 4 : 3) + (lowE ? 8 : 0)
+  };
+  return (by[o.type] || by.door)();
+}
+let SIG = { ver: -1, sig: '' };
+/** Signature of everything the signal depends on (memoised per document version). */
+function sceneSig() {
+  if (SIG.ver === documentState.docVer) return SIG.sig;
+  const walls = query('wall').map(w => [w.id, w.a.x, w.a.y, w.b.x, w.b.y, w.th, w.wt, w.z, w.h]);
+  const used = new Set(walls.map(w => w[6]));
+  const ops = query(['door', 'window', 'opening']).map(o => [
+    o.type,
+    o.host,
+    o.t,
+    o.w,
+    o.h,
+    o.sill,
+    o.cfg && [o.cfg.mode, o.cfg.glass, o.cfg.kind]
+  ]);
+  const lv =
+    S.x && S.x.lv && S.x.lv.list && S.x.lv.list.length > 1
+      ? [
+          S.x.lv.cur,
+          S.x.lv.list,
+          Object.entries(S.x.lv.ents || {}).map(([k, a]) => [k, a.filter(e => e.type === 'net')])
+        ]
+      : 0;
+  const sig = JSON.stringify([walls, ops, S.wtypes.filter(t => used.has(t.id)), query('net', e => visible(e)), lv]);
+  SIG = { ver: documentState.docVer, sig };
+  return sig;
+}
+let SC = null;
+/** The scene of the current level: [{ a, b, L, nx, ny, th, z0, z1, A0, A1, ops, bbox }]; cached by sceneSig. */
+function wifiScene() {
+  const sig = sceneSig();
+  if (SC && SC.sig === sig) return SC.scene;
+  const walls = [];
+  for (const w of query('wall')) {
+    if (!w.a || !w.b) continue;
+    const wi = wallInfo(w);
+    const L = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    if (L < 1) continue;
+    const z0 = +w.z || 0;
+    const { A0, A1 } = layersLoss(w);
+    walls.push({
+      id: w.id,
+      ax: w.a.x,
+      ay: w.a.y,
+      bx: w.b.x,
+      by: w.b.y,
+      L,
+      nx: -(w.b.y - w.a.y) / L,
+      ny: (w.b.x - w.a.x) / L,
+      th: +w.th || 100,
+      z0,
+      z1: z0 + (+w.h || S.ceil || 2700),
+      A0,
+      A1,
+      x0: Math.min(w.a.x, w.b.x) - 1,
+      x1: Math.max(w.a.x, w.b.x) + 1,
+      y0: Math.min(w.a.y, w.b.y) - 1,
+      y1: Math.max(w.a.y, w.b.y) + 1,
+      ops: wi.ops.map(({ o, s0, s1 }) => ({
+        s0,
+        s1,
+        z0: z0 + (+o.sill || 0),
+        z1: z0 + (+o.sill || 0) + (+o.h || 0),
+        L: openingLoss(o)
+      }))
+    });
+  }
+  const scene = { walls };
+  SC = { sig, scene };
+  return scene;
+}
+/** Elements `net` of other levels with their vertical offset: [{ e, dz (mm, + above), slabs (count), th (slab, mm) }]. */
+function otherLevels() {
+  const lv = S.x && S.x.lv;
+  if (!lv || !lv.list || lv.list.length < 2) return [];
+  const list = lv.list.slice().sort((a, b) => a.z - b.z);
+  const ci = list.findIndex(l => l.id === lv.cur);
+  const cur = list[ci];
+  const out = [];
+  list.forEach((l, i) => {
+    if (i === ci) return;
+    for (const e of (lv.ents && lv.ents[l.id]) || []) {
+      if (e.type !== 'net') continue;
+      out.push({ e, dz: l.z - cur.z, slabs: Math.abs(i - ci), th: +(i < ci ? l.slab : cur.slab) || 200 });
+    }
+  });
+  return out;
+}
+const srcCache = new Map();
+/** Radiating sources on a band: [{ id, name, kind, rep, x, y, z, eirp, extra (dB at 5 GHz), other }]; cached with the scene. */
+function wifiSources(band) {
+  const sig = sceneSig();
+  const c = srcCache.get(band);
+  if (c && c.sig === sig) return c.list;
+  const mk = (e, dz, extra, other) => ({
+    id: e.id,
+    name: e.label || netModel(e).n,
+    kind: e.kind,
+    rep: e.kind === 'repeater',
+    x: e.p.x,
+    y: e.p.y,
+    z: (+e.z || 0) + dz,
+    eirp: netEirp(e),
+    extra,
+    other
+  });
+  const list = [];
+  for (const e of query('net', e => visible(e) && e.p)) if (netBands(e).includes(band)) list.push(mk(e, 0, 0, false));
+  for (const o of otherLevels())
+    if (netBands(o.e).includes(band))
+      list.push(mk(o.e, o.dz, o.slabs * (SLAB_LOSS.c + SLAB_LOSS.k * o.th) + FLOOR_CLUTTER, true));
+  srcCache.set(band, { sig, list });
+  return list;
+}
+const HT = [],
+  HL = [],
+  HW = [],
+  HH = [];
+/** Obstacles between a point and a cell (dB at 5 GHz): walls crossed by the ray with the angle of incidence, openings instead of the wall where the ray passes them. */
+function obstacles(scene, sx, sy, sz, x, y, z) {
+  const dx = x - sx,
+    dy = y - sy,
+    len = Math.hypot(dx, dy);
+  if (len < 1) return 0;
+  const minx = Math.min(sx, x),
+    maxx = Math.max(sx, x),
+    miny = Math.min(sy, y),
+    maxy = Math.max(sy, y);
+  let n = 0;
+  for (const w of scene.walls) {
+    if (w.x1 < minx || w.x0 > maxx || w.y1 < miny || w.y0 > maxy) continue;
+    const ex = w.bx - w.ax,
+      ey = w.by - w.ay;
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const qx = w.ax - sx,
+      qy = w.ay - sy;
+    const t = (qx * ey - qy * ex) / den,
+      u = (qx * dy - qy * dx) / den;
+    if (t <= 0 || t >= 1 || u < 0 || u > 1) continue;
+    const zc = sz + (z - sz) * t;
+    if (zc < w.z0 || zc > w.z1) continue;
+    const s = u * w.L;
+    let L = -1;
+    for (const o of w.ops)
+      if (s >= o.s0 && s <= o.s1 && zc >= o.z0 && zc <= o.z1) {
+        L = o.L;
+        break;
+      }
+    if (L < 0) {
+      const cos = Math.abs(dx * w.nx + dy * w.ny) / len;
+      L = Math.min(WALL_MAX, w.A0 + w.A1 * Math.min(2, 1 / Math.max(cos, 0.5)));
+    }
+    HT[n] = t;
+    HL[n] = L;
+    HW[n] = w.id;
+    HH[n] = w.th;
+    n++;
+  }
+  // two walls meeting at a corner are crossed at one point: count the heavier one
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++)
+      if (HW[i] !== HW[j] && HL[i] > 0 && HL[j] > 0 && Math.abs(HT[i] - HT[j]) * len < Math.max(HH[i], HH[j]) * 0.6) {
+        if (HL[i] >= HL[j]) HL[j] = 0;
+        else HL[i] = 0;
+      }
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += HL[i];
+  return sum;
+}
+/** Signal (dBm) of one source at a point (x, y) of height z on a band. */
+function signalFrom(scene, s, band, x, y, z) {
+  const d = Math.hypot(x - s.x, y - s.y, z - s.z) / 1000;
+  const obs = s.other ? 0 : obstacles(scene, s.x, s.y, s.z, x, y, z);
+  return s.eirp - pathLoss(band, d) - (obs + s.extra) * BANDS[band].k;
+}
+/** The best signal at a point: { v (dBm), k (index in srcs), s (source) }; v = −120 when there is no source. */
+function bestAt(scene, srcs, band, x, y, z) {
+  let v = -120,
+    k = -1;
+  for (let i = 0; i < srcs.length; i++) {
+    const q = signalFrom(scene, srcs[i], band, x, y, z);
+    if (q > v) {
+      v = q;
+      k = i;
+    }
+  }
+  return { v, k, s: k >= 0 ? srcs[k] : null };
+}
+/** Signal that a device e gets from the other radios that are not repeaters (its uplink): { v, s, band } or null. Compared at 5 GHz when both can, else at 2,4. */
+function uplinkOf(e) {
+  const mine = netBands(e);
+  const band = mine.includes('5') ? '5' : mine.includes('2.4') ? '2.4' : mine[0];
+  if (!band) return null;
+  const scene = wifiScene();
+  const srcs = wifiSources(band).filter(s => s.id !== e.id && !s.rep);
+  if (!srcs.length) return null;
+  const r = bestAt(scene, srcs, band, e.p.x, e.p.y, +e.z || 0);
+  return { v: r.v, s: r.s, band };
 }
 
 // ===== blocks/plumbing/checks-plumbing.js =====
