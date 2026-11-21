@@ -8837,7 +8837,7 @@ html[data-form='tablet'] #app #status #views {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.79';
+const APP_VER = '59.80';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -12308,6 +12308,77 @@ function ribSweep(mb, pts, r, depth, pitch, col, seg = 8, k = 2) {
     }
   }
   mb.sweep(Q, R, col, seg);
+}
+/** A basis (e1, e2) across the unit axis u, right-handed with u (e1 × e2 = u): the rings of the sweeps below. */
+function ringBasis(u) {
+  const w = Math.abs(u[2]) < 0.9 ? [-u[1], u[0], 0] : [1, 0, 0];
+  const k = w[0] * u[0] + w[1] * u[1] + w[2] * u[2];
+  let e1 = [w[0] - u[0] * k, w[1] - u[1] * k, w[2] - u[2] * k];
+  const l = Math.hypot(e1[0], e1[1], e1[2]) || 1;
+  e1 = e1.map(x => x / l);
+  return [e1, [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2], u[0] * e1[1] - u[1] * e1[0]]];
+}
+/**
+ * A thin ring on a round pipe (a bead, a tape): a surface of revolution about the axis through c along the unit
+ * vector u with the profile prof = [[s, radius], …] (s along the axis from c), n sides, no caps. The radii are the
+ * ones of the circle; the polygon is circumscribed so its flats never sink under a round pipe. Smooth shading is the
+ * caller's (mb.smooth).
+ */
+function ringBand(mb, c, u, prof, col, n = 32) {
+  const [e1, e2] = ringBasis(u);
+  const k = 1 / Math.cos(Math.PI / n);
+  const R = prof.map(([s, r]) => {
+    const ring = [];
+    for (let j = 0; j < n; j++) {
+      const a = (TAU * j) / n,
+        ca = Math.cos(a) * r * k,
+        sa = Math.sin(a) * r * k;
+      ring.push([
+        c[0] + u[0] * s + e1[0] * ca + e2[0] * sa,
+        c[1] + u[1] * s + e1[1] * ca + e2[1] * sa,
+        c[2] + u[2] * s + e1[2] * ca + e2[2] * sa
+      ]);
+    }
+    return ring;
+  });
+  for (let i = 0; i + 1 < R.length; i++)
+    for (let j = 0; j < n; j++) {
+      const j2 = (j + 1) % n;
+      mb.tri3(col, R[i][j], R[i][j2], R[i + 1][j2]);
+      mb.tri3(col, R[i][j], R[i + 1][j2], R[i + 1][j]);
+    }
+}
+/**
+ * A raised helical strip on a round pipe (the spiral seam): from the distance t0 to t1 along the axis from a (unit
+ * u), one turn per pitch, n steps per turn, a ridge of width w and height h over the radius r (the ends taper to
+ * nothing over 25 mm). Four triangles per step.
+ */
+function helixRidge(mb, a, u, t0, t1, r, pitch, w, h, col, n = 14) {
+  if (!(t1 - t0 > 1)) return;
+  const [e1, e2] = ringBasis(u);
+  const N = Math.max(2, Math.ceil(((t1 - t0) / pitch) * n));
+  const k = 1 / Math.cos(Math.PI / n);
+  const at = (t, rad, ang) => [
+    a[0] + u[0] * t + (e1[0] * Math.cos(ang) + e2[0] * Math.sin(ang)) * rad,
+    a[1] + u[1] * t + (e1[1] * Math.cos(ang) + e2[1] * Math.sin(ang)) * rad,
+    a[2] + u[2] * t + (e1[2] * Math.cos(ang) + e2[2] * Math.sin(ang)) * rad
+  ];
+  const S = [];
+  for (let i = 0; i <= N; i++) {
+    const t = t0 + ((t1 - t0) * i) / N,
+      ang = (TAU * t) / pitch;
+    const f = Math.min(1, (t - t0) / 25, (t1 - t) / 25);
+    S.push([
+      at(t - w / 2, r - 0.3, ang),
+      at(t, r - 0.3 + ((r + h) * k - r + 0.3) * f, ang),
+      at(t + w / 2, r - 0.3, ang)
+    ]);
+  }
+  for (let i = 0; i < N; i++)
+    for (let m = 0; m < 2; m++) {
+      mb.tri3(col, S[i][m], S[i + 1][m], S[i + 1][m + 1]);
+      mb.tri3(col, S[i][m], S[i + 1][m + 1], S[i][m + 1]);
+    }
 }
 /**
  * A straight extrusion of a closed section along a line: map(s, x, y) gives the 3D point of section point (x, y) at
@@ -65230,6 +65301,120 @@ const VSNORM = {
     'Шахтная стена Кнауф: обшивка ГКЛО с одной стороны (изнутри шахты не обшить), EI 45–90 по составу; профили ПС/ПН 50.',
   def: 'Отдельный канал на каждое помещение (кухня, санузел, котельная); над кровлей — по СП 7.13130 / СП 60.13330, оголовок с зонтом.'
 };
+/**
+ * The bus-rail joint of two rectangular sections, one drawing for rectangular ducts and shaft sections: two thin
+ * L-section flanges (1.5 mm, 20 mm out from the wall up to a 1000 mm side, 30 mm above) pressed together with a
+ * 3.5 mm dark gasket between them; corner plates (3 mm, the side of the flange) with a bolt Ø8 and a nut; C-clips
+ * (90 mm, every 300 mm, not closer than 100 mm to a corner) on the sides. c — the centre, u — the axis (unit), sx — the
+ * direction of the width W (unit), H — the height; o: { col, tag, rail, fit }. The flanges, the gasket and the corner
+ * plates are always drawn, the fixings and the folded feet — only near the camera.
+ */
+function busJoint3(mb, c, u, sx, W, H, o = {}) {
+  const R = o.rail ?? (Math.max(W, H) <= 1000 ? 20 : 30),
+    fit = o.fit !== false && R >= 20,
+    t = R >= 20 ? 1.5 : 1,
+    g = R >= 20 ? 3.5 : 2,
+    col = o.col || '#aeb4bb';
+  const up = [u[1] * sx[2] - u[2] * sx[1], u[2] * sx[0] - u[0] * sx[2], u[0] * sx[1] - u[1] * sx[0]];
+  const P = (a, s, v) => [
+    c[0] + u[0] * a + sx[0] * s + up[0] * v,
+    c[1] + u[1] * a + sx[1] * s + up[1] * v,
+    c[2] + u[2] * a + sx[2] * s + up[2] * v
+  ];
+  // a slab by its axial, width and height ranges
+  const slab = (a0, a1, s0, s1, v0, v1, cc) =>
+    mb.obox(
+      P(a0, (s0 + s1) / 2, (v0 + v1) / 2),
+      P(a1, (s0 + s1) / 2, (v0 + v1) / 2),
+      s1 - s0,
+      v1 - v0,
+      cc,
+      undefined,
+      sx
+    );
+  // a rectangular ring around the duct wall, out by `out` mm, from a0 to a1 along the axis
+  const frame = (a0, a1, out, cc, inner = 0) => {
+    const hw = W / 2 + out,
+      hh = H / 2 + out,
+      iw = W / 2 + inner,
+      ih = H / 2 + inner;
+    slab(a0, a1, -hw, hw, ih, hh, cc);
+    slab(a0, a1, -hw, hw, -hh, -ih, cc);
+    slab(a0, a1, -hw, -iw, -ih, ih, cc);
+    slab(a0, a1, iw, hw, -ih, ih, cc);
+  };
+  const A1 = g / 2 + t,
+    hw = W / 2 + R,
+    hh = H / 2 + R;
+  mb.tag(o.tag || `Шина соединительная ${R} мм`);
+  frame(-A1, -g / 2, R, col);
+  frame(g / 2, A1, R, col);
+  mb.tag('Уплотнитель шинного соединения');
+  frame(-g / 2, g / 2, R, '#23272c');
+  if (fit) {
+    mb.tag('Уголки шинного соединения');
+    for (const sa of [-1, 1])
+      for (const sb of [-1, 1])
+        for (const sd of [-1, 1])
+          slab(
+            sd < 0 ? -A1 - 3 : A1,
+            sd < 0 ? -A1 : A1 + 3,
+            sa < 0 ? -hw : hw - R,
+            sa < 0 ? -hw + R : hw,
+            sb < 0 ? -hh : hh - R,
+            sb < 0 ? -hh + R : hh,
+            '#7d848c'
+          );
+  }
+  mb.lod('n');
+  // the feet of the flanges folded along the wall
+  mb.tag(o.tag || `Шина соединительная ${R} мм`);
+  for (const [a0, a1] of [
+    [-A1 - 14, -A1],
+    [A1, A1 + 14]
+  ]) {
+    slab(a0, a1, -W / 2 - t, W / 2 + t, H / 2, H / 2 + t, col);
+    slab(a0, a1, -W / 2 - t, W / 2 + t, -H / 2 - t, -H / 2, col);
+    slab(a0, a1, -W / 2 - t, -W / 2, -H / 2, H / 2, col);
+    slab(a0, a1, W / 2, W / 2 + t, -H / 2, H / 2, col);
+  }
+  if (fit) {
+    mb.tag('Болты и гайки шинного соединения');
+    for (const sa of [-1, 1])
+      for (const sb of [-1, 1]) {
+        const s = sa * (hw - R / 2),
+          v = sb * (hh - R / 2);
+        mb.tube(P(-A1 - 6, s, v), P(A1 + 10.5, s, v), 4, '#3c4046', 8);
+        mb.tube(P(A1 + 3, s, v), P(A1 + 8.5, s, v), 6.8, '#5b6168', 6);
+      }
+    mb.tag('Клипсы шинного соединения');
+    // the clips of one side: centres along the side, ≥ 100 mm from the corners, a step of ≤ 300 mm
+    const centres = side => {
+      const range = side - 290;
+      if (range < 0) return [];
+      const n = range > 0 ? Math.ceil(range / 300) + 1 : 1;
+      return Array.from({ length: n }, (_, i) => (n === 1 ? 0 : -range / 2 + (range * i) / (n - 1)));
+    };
+    const cw = A1 + 1.5,
+      L2 = 45;
+    const clip = (sc, b, alongW) => {
+      // alongW: a clip on the top / bottom side (runs along the width), else on a left / right side
+      const out = alongW ? hh : hw;
+      const [o0, o1] = b > 0 ? [out - 9, out + 1.5] : [-out - 1.5, -out + 9];
+      const [k0, k1] = b > 0 ? [out, out + 1.5] : [-out - 1.5, -out];
+      const sl = (a0, a1, q0, q1) =>
+        alongW ? slab(a0, a1, sc - L2, sc + L2, q0, q1, '#d5dade') : slab(a0, a1, q0, q1, sc - L2, sc + L2, '#d5dade');
+      sl(-cw, cw, k0, k1);
+      sl(-cw, -A1, o0, o1);
+      sl(A1, cw, o0, o1);
+    };
+    for (const b of [-1, 1]) {
+      for (const sc of centres(2 * hw)) clip(sc, b, true);
+      for (const sc of centres(2 * hh)) clip(sc, b, false);
+    }
+  }
+  mb.lod('');
+}
 /** 3D of a galvanised shaft: shell of bent sheets, partitions, section joints, brackets, insulation, GKL box. */
 function buildGalv(mb, e, L, z0, z1, parts) {
   const W = L.W,
@@ -65268,14 +65453,15 @@ function buildGalv(mb, e, L, z0, z1, parts) {
       [x1, y1]
     ])
       mb.box(x - 6, y - 6, z0, x + 6, y + 6, z1, seam);
-    mb.tag(GV_JOIN[e.join] || GV_JOIN.rail);
-    const f = e.join === 'falc' ? 6 : 20;
-    for (let z = z0 + GV_SEC; z < z1; z += GV_SEC) {
-      mb.box(x0 - f, y0 - f, z - 15, x1 + f, y0, z + 15, seam);
-      mb.box(x0 - f, y1, z - 15, x1 + f, y1 + f, z + 15, seam);
-      mb.box(x0 - f, y0, z - 15, x0, y1, z + 15, seam);
-      mb.box(x1, y0, z - 15, x1 + f, y1, z + 15, seam);
-    }
+    const cx = (x0 + x1) / 2,
+      cy = (y0 + y1) / 2;
+    for (let z = z0 + GV_SEC; z < z1; z += GV_SEC)
+      busJoint3(mb, [cx, cy, z], [0, 0, 1], [1, 0, 0], x1 - x0, y1 - y0, {
+        col: seam,
+        tag: GV_JOIN[e.join] || GV_JOIN.rail,
+        rail: e.join === 'falc' ? 6 : undefined,
+        fit: e.join !== 'falc'
+      });
     if (parts && ti) {
       mb.tag(GV_INS[e.ins]);
       mb.box(-W / 2, 0, z0, W / 2, D, z1, '#dcdcd6', 0.25);
@@ -133348,6 +133534,7 @@ checkRule('hvu-ducts', {
 
 
 
+
 const DLIB = {
   // galvanised: only 45° and 90° elbows, level and vertical (a combination — two elbows); a gentle slope is no turn
   galv: { t: 'rigid', n: 'оцинкованная сталь', ang: [45, 90], vang: [45, 90] },
@@ -133438,7 +133625,7 @@ function elbowLeg(e, vertical) {
 /**
  * The layout of a duct along its 3D path: per straight piece the free part between the elbows (where the straight
  * duct goes), the joints between the bars, the ends of the elbows. { bars, joints: [{ c, u }], fitEnds: [{ c, u }],
- * straightL }.
+ * runs: [{ c, u, len, cuts, e0, e1 }] (the free parts, for the spiral seam), straightL }.
  */
 function ductLayout(e) {
   const S_ = ductSys(e);
@@ -133457,7 +133644,7 @@ function ductLayout(e) {
       vert: Math.abs(b[2] - a[2]) > 0.7 * L
     });
   }
-  const out = { bars: 0, joints: [], fitEnds: [], straightL: 0, elbows: 0 };
+  const out = { bars: 0, joints: [], fitEnds: [], runs: [], straightL: 0, elbows: 0 };
   if (!S_) return out;
   const at = (s, t) => [s.a[0] + s.u[0] * t, s.a[1] + s.u[1] * t, s.a[2] + s.u[2] * t];
   for (let i = 0; i < segs.length; i++) {
@@ -133483,6 +133670,15 @@ function ductLayout(e) {
     const n = Math.max(1, Math.ceil(free / S_.bar - 1e-9));
     out.bars += n;
     for (let k = 1; k < n; k++) out.joints.push({ c: at(s, l0 + k * S_.bar), u: s.u });
+    // the free part of the piece: its start, axis, length, where the bars meet and whether an elbow joins each end
+    out.runs.push({
+      c: at(s, l0),
+      u: s.u,
+      len: free,
+      cuts: Array.from({ length: n - 1 }, (_, k) => (k + 1) * S_.bar),
+      e0: l0 > 0,
+      e1: l1 > 0
+    });
   }
   return out;
 }
@@ -133690,53 +133886,121 @@ function ductDetails3(mb, e, W, H, col, dark) {
     if (round) mb.tube(A, B, W / 2 + grow, cc, 24);
     else mb.obox(A, B, W + 2 * grow, H + 2 * grow, cc, undefined, Math.abs(u[2]) > 0.7 ? vside(c) : undefined);
   };
-  // a galvanised rectangular joint is the bus joint of a shaft: the rail (20 mm), four corner pieces, clips on the sides
-  const bus = (c, u) => {
-    const sv = Math.abs(u[2]) > 0.7 ? vside(c) : undefined;
-    let sx = sv || (Math.abs(u[2]) > 0.9 ? [1, 0, 0] : [-u[1], u[0], 0]);
-    const sl = Math.hypot(...sx);
-    sx = sx.map(x => x / sl);
-    const up = dv3.cross(u, sx);
-    const rail = 20,
-      hw = W / 2 + rail,
-      hh = H / 2 + rail;
-    const at = (a, b) => dv3.add(c, dv3.add(dv3.mul(sx, a), dv3.mul(up, b)));
-    const seg = (cc, w, h, len, col) =>
-      mb.obox(dv3.sub(cc, dv3.mul(u, len / 2)), dv3.add(cc, dv3.mul(u, len / 2)), w, h, col, undefined, sv);
-    mb.tag('Шина соединительная 20 мм');
-    seg(c, W + 2 * rail, H + 2 * rail, 30, dark);
-    mb.tag('Уголки шинного соединения');
-    for (const [a, b] of [
-      [-1, -1],
-      [1, -1],
-      [1, 1],
-      [-1, 1]
-    ])
-      seg(at(a * (hw + 4), b * (hh + 4)), 48, 48, 40, '#555b63');
-    mb.tag('Клипсы шинного соединения');
-    const nW = Math.max(1, Math.round(W / 400)),
-      nH = Math.max(1, Math.round(H / 400));
-    for (let i = 0; i < nW; i++)
-      for (const b of [-1, 1]) seg(at(-W / 2 + (W * (i + 0.5)) / nW, b * (hh + 2)), 44, 26, 44, '#c9ced4');
-    for (let i = 0; i < nH; i++)
-      for (const a of [-1, 1]) seg(at(a * (hw + 2), -H / 2 + (H * (i + 0.5)) / nH), 26, 44, 44, '#c9ced4');
-  };
   if (S_ === DSYS.galvRect) {
+    // the bus joint of a shaft section (vent-shafts.js): flanges, gasket, corner plates, bolts, clips
+    const bus = (c, u) => {
+      const sv = Math.abs(u[2]) > 0.7 ? vside(c) : undefined;
+      let sx = sv || (Math.abs(u[2]) > 0.9 ? [1, 0, 0] : [-u[1], u[0], 0]);
+      const sl = Math.hypot(...sx);
+      sx = sx.map(x => x / sl);
+      busJoint3(mb, c, u, sx, W, H, { col: dark });
+    };
     for (const j of L.joints) bus(j.c, j.u);
     for (const f of L.fitEnds) bus(f.c, f.u);
     return;
   }
-  mb.tag(S_.jn);
-  const jl = S_.jt === 'flange' ? 16 : S_.jt === 'ring' ? 80 : 50;
-  const jg = S_.jt === 'flange' ? 8 : S_.jt === 'ring' ? 2.5 : 3;
-  for (const j of L.joints) {
-    band(j.c, j.u, jl, jg, S_.jt === 'sleeve' ? '#e4e6e8' : dark);
-    // a nipple: the sleeve over the seam with a sealing tape across the middle
-    if (S_.jt === 'ring') band(j.c, j.u, 14, jg + 2.5, '#aab0b7');
+  if (S_ === DSYS.galvRound) {
+    roundJoints3(mb, e, L, W / 2, col, dark);
+    return;
   }
-  mb.tag(S_.jt === 'flange' ? 'Фланцы колен' : 'Концы колен (раструбы)');
-  for (const f of L.fitEnds)
-    band(f.c, f.u, S_.jt === 'flange' ? 16 : 24, S_.jt === 'flange' ? 8 : 2, S_.jt === 'sleeve' ? '#dcdfe2' : dark);
+  mb.tag(S_.jn);
+  for (const j of L.joints) band(j.c, j.u, 50, 3, '#e4e6e8');
+  mb.tag('Концы колен (раструбы)');
+  for (const f of L.fitEnds) band(f.c, f.u, 24, 2, '#dcdfe2');
+}
+/**
+ * A rolled joint of a spiral-wound round duct, as it is seen outside: the ends of the two pipes with a 3 mm dark slit
+ * over the stop bead of the nipple (6 mm wide, 2.5 mm high), two thin rolled beads (1.75 mm) on each pipe 25 mm and
+ * 50 mm from the end, a 45 mm aluminium sealing tape almost flush (0.5 mm). The spiral seam (a ridge of 1.5 mm, a
+ * pitch of 137 mm up to Ø315, larger beyond) runs along the straight parts. The slit, the bead and the tape are
+ * always drawn, the rest — only near the camera.
+ */
+function roundJoints3(mb, e, L, r, col, dark) {
+  const bare = !(+e.ins > 0); // an insulated duct shows its jacket: no beads, no seam
+  const n = Math.max(24, Math.min(64, Math.round(24 + r / 8)));
+  const bead = hvShade(col, -0.12);
+  const ring = (c, u) => {
+    mb.tag('Ниппель');
+    mb.smooth(true);
+    if (bare) {
+      ringBand(
+        mb,
+        c,
+        u,
+        [
+          [-3, r - 0.4],
+          [-2, r + 2.5],
+          [2, r + 2.5],
+          [3, r - 0.4]
+        ],
+        bead,
+        n
+      );
+      ringBand(
+        mb,
+        c,
+        u,
+        [
+          [-22.5, r + 0.5],
+          [22.5, r + 0.5]
+        ],
+        '#c4cacf',
+        n
+      );
+    }
+    ringBand(
+      mb,
+      c,
+      u,
+      [
+        [-1.5, r + (bare ? 2.9 : 0.5)],
+        [1.5, r + (bare ? 2.9 : 0.5)]
+      ],
+      '#23272c',
+      n
+    );
+    mb.smooth(false);
+    if (!bare) return;
+    mb.lod('n');
+    mb.tag('Зиги вальцовки');
+    mb.smooth(true);
+    for (const s of [-51.5, -26.5, 26.5, 51.5])
+      ringBand(
+        mb,
+        c,
+        u,
+        [
+          [s - 2.5, r - 0.4],
+          [s, r + 1.75],
+          [s + 2.5, r - 0.4]
+        ],
+        bead,
+        n
+      );
+    mb.smooth(false);
+    mb.lod('');
+  };
+  for (const j of L.joints) ring(j.c, j.u);
+  for (const f of L.fitEnds) ring(f.c, f.u);
+  if (!bare) return;
+  // the spiral seam along each straight part, off the joints
+  mb.lod('n');
+  mb.tag('Спиральный фальцевый шов');
+  mb.smooth(true);
+  const d = 2 * r;
+  const pitch = d <= 315 ? 137 : Math.round(137 + (d - 315) * 0.35);
+  const ns = Math.max(12, Math.min(32, Math.ceil(Math.PI / Math.acos(r / (r + 1.2)))));
+  const seam = hvShade(col, 0.16);
+  for (const run of L.runs) {
+    const cuts = [0, ...run.cuts, run.len];
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const t0 = cuts[i] + (i === 0 ? (run.e0 ? 60 : 10) : 60),
+        t1 = cuts[i + 1] - (i + 2 === cuts.length ? (run.e1 ? 60 : 10) : 60);
+      helixRidge(mb, run.c, run.u, t0, t1, r, pitch, 10, 1.5, seam, ns);
+    }
+  }
+  mb.smooth(false);
+  mb.lod('');
 }
 
 // ===== blocks/hvac/duct-joints.js =====
