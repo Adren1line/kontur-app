@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.74';
+const APP_VER = '59.75';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -10766,12 +10766,14 @@ function MB(xf) {
   const T = xf || ((x, y, z) => [x, y, z]);
   let TAG = '',
     SM = false,
+    RIB = false,
     LOD = '';
   const g = (col, op, sm) => {
     op = op ?? 1;
     const S_ = SM || !!sm;
-    const k = col + '|' + op + '|' + TAG + (S_ ? '|s' : '') + (LOD ? '|L' + LOD : '');
-    if (!G.has(k)) G.set(k, { c: Array.isArray(col) ? col : hex2rgb(col), op, p: [], tag: TAG, sm: S_, lod: LOD });
+    const k = col + '|' + op + '|' + TAG + (S_ ? '|s' : '') + (RIB ? '|r' : '') + (LOD ? '|L' + LOD : '');
+    if (!G.has(k))
+      G.set(k, { c: Array.isArray(col) ? col : hex2rgb(col), op, p: [], tag: TAG, sm: S_, lod: LOD, rib: RIB });
     return G.get(k).p;
   };
   const tri = (a, p, q, r) => {
@@ -10881,6 +10883,10 @@ function MB(xf) {
     },
     smooth(v) {
       SM = !!v;
+    },
+    /** Ribbed surface (a corrugated hose): smooth shading keeps the creases between the ribs (what follows). */
+    ribbed(v) {
+      RIB = !!v;
     },
     /** Level of detail of what follows: 'n' — only near the camera (small details), 'f' — only from afar (their
        simple stand-ins), '' — always. */
@@ -11081,6 +11087,7 @@ function MB(xf) {
           const m = { pos: new Float32Array(v.p), color: v.c, op: v.op };
           if (v.tag) m.tag = v.tag;
           if (v.sm) m.smooth = true;
+          if (v.rib) m.crease = 0.9;
           if (v.lod) m.lod = v.lod;
           return m;
         });
@@ -18387,7 +18394,7 @@ function faceNormals(pos) {
   return fn;
 }
 /** Smooth normals of a triangle soup: faces meeting at a vertex within ~57° are averaged (either winding). */
-function smoothNormals(pos) {
+function smoothNormals(pos, minDot = 0.55) {
   const nT = (pos.length / 9) | 0,
     nV = nT * 3,
     fn = faceNormals(pos);
@@ -18421,7 +18428,7 @@ function smoothNormals(pos) {
         g2 = -g2;
         d = -d;
       }
-      if (d > 0.55) {
+      if (d > minDot) {
         sx += g0;
         sy += g1;
         sz += g2;
@@ -18596,7 +18603,7 @@ function meshGroup(meshes, opts = {}) {
     if (!geo) {
       geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(m.pos, 3));
-      if (m.smooth) geo.setAttribute('normal', new THREE.BufferAttribute(smoothNormals(m.pos), 3));
+      if (m.smooth) geo.setAttribute('normal', new THREE.BufferAttribute(smoothNormals(m.pos, m.crease), 3));
       else geo.computeVertexNormals();
       if (opts.shared) opts.shared.set(m, geo);
     }
@@ -19411,24 +19418,6 @@ function buildDuct3(e, trans = []) {
     penetrationMesh(mb, e);
   } catch (err) {
     console.error(err);
-  }
-  if (e.tap && pts.length > 1) {
-    // the saddle on the main and the rolled (beaded) joint at the spigot of a rigid connection
-    const ring = (a, b, s0, s1, r) => {
-      const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
-      const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
-      mb.tube(
-        [a[0] + u[0] * s0, a[1] + u[1] * s0, a[2] + u[2] * s0],
-        [a[0] + u[0] * s1, a[1] + u[1] * s1, a[2] + u[2] * s1],
-        r,
-        '#8b939d',
-        24
-      );
-    };
-    mb.tag('Врезка в магистраль');
-    ring(pts[pts.length - 1], pts[pts.length - 2], 40, 70, rr + 6);
-    mb.tag('Вальцовка');
-    ring(pts[0], pts[1], 14, 22, rr + 3);
   }
   return meshGroup(mb.meshes(), { edges: e.shape === 'rect' });
 }
@@ -65435,49 +65424,6 @@ function flexMinR(e) {
   }
   return m;
 }
-/** Builds a flexible duct: a coiled sleeve along the rounded path. */
-function flexBuild(e, mb, col) {
-  const r = ductW(e) / 2 + (+e.ins || 0);
-  const path = roundPath(ductPath3(e), flexRoundR(e)).pts;
-  // resample with a step, radius alternating — the wire coils
-  const step = 22;
-  const pts = [],
-    rs = [];
-  let k = 0;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1],
-      b = path[i];
-    const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-    const n = Math.max(1, Math.round(l / (step / 2)));
-    for (let j = i === 1 ? 0 : 1; j <= n; j++) {
-      const t = j / n;
-      pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
-      rs.push(k++ % 2 ? r * 0.93 : r);
-    }
-  }
-  mb.tag(`Гибкий воздуховод ø${ductW(e)}${e.ins ? ' в изоляции' : ''}`);
-  mb.smooth(true);
-  mb.sweep(pts, rs, col, 18);
-  mb.smooth(false);
-  mb.tag('Хомуты');
-  for (const [i, j] of [
-    [0, 1],
-    [path.length - 1, path.length - 2]
-  ]) {
-    const a = path[i],
-      b = path[j];
-    if (!a || !b) continue;
-    const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
-    const u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
-    mb.tube(
-      [a[0] + u[0] * 20, a[1] + u[1] * 20, a[2] + u[2] * 20],
-      [a[0] + u[0] * 34, a[1] + u[1] * 34, a[2] + u[2] * 34],
-      r + 2,
-      '#8b939d',
-      20
-    );
-  }
-}
 /** Rigid duct: rings (round) or flanges (rectangular) at the joints of the 1250 mm sections. */
 function ductJoints(e, mb, col, W, Hh) {
   const q = ductPath3(e);
@@ -66378,7 +66324,11 @@ function ductPorts(m) {
         const u = l > 1e-6 ? dist(a, c) / l : 0;
         const za = a.z != null ? +a.z : +m.z || 0,
           zb = b.z != null ? +b.z : +m.z || 0;
-        if (dd < 8 && Math.abs(z - (za + (zb - za) * u)) < 40 && (!best || dd < best.dd))
+        if (
+          dd < 8 &&
+          (Math.abs(z - (za + (zb - za) * u)) < 40 || Math.abs(z - axisZAt(m, c)) < 40) &&
+          (!best || dd < best.dd)
+        )
           best = { d: t, i, seg: k, u, dd };
       }
     }
@@ -66393,10 +66343,25 @@ function ductFollow(m, links) {
     if (k < 1) continue;
     const a = m.pts[k - 1],
       b = m.pts[k];
-    const za = a.z != null ? +a.z : +m.z || 0,
-      zb = b.z != null ? +b.z : +m.z || 0;
-    moveDuctEnd(d, i, [a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, za + (zb - za) * u]);
+    const x = a.x + (b.x - a.x) * u,
+      y = a.y + (b.y - a.y) * u;
+    moveDuctEnd(d, i, [x, y, axisZAt(m, { x, y })]);
   }
+}
+/** The height of the drawn axis of a duct (its 3D path with the detours under beams) at the plan point c. */
+function axisZAt(d, c) {
+  const q = ductPath3(d);
+  let best = null;
+  for (let i = 1; i < q.length; i++) {
+    const a = q[i - 1],
+      b = q[i],
+      lh = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (lh < 1) continue;
+    const t = Math.max(0, Math.min(1, ((c.x - a[0]) * (b[0] - a[0]) + (c.y - a[1]) * (b[1] - a[1])) / (lh * lh)));
+    const dd = Math.hypot(a[0] + (b[0] - a[0]) * t - c.x, a[1] + (b[1] - a[1]) * t - c.y);
+    if (!best || dd < best.dd - 0.5) best = { dd, z: a[2] + (b[2] - a[2]) * t };
+  }
+  return best ? best.z : q[0][2];
 }
 /** The nearest point on the rigid ducts of a system (or any, if the system has none near). */
 function nearMain(q, sys, maxD = 6000, skip) {
@@ -66404,12 +66369,9 @@ function nearMain(q, sys, maxD = 6000, skip) {
   for (const d of S.ents) {
     if (d.type !== 'duct' || d.flex || d.tap || d.link || !visible(d) || d.pts.length < 2) continue;
     if (skip && skip.has(d)) continue;
-    const zs = ductPath3(d);
     for (let i = 1; i < d.pts.length; i++) {
       const c = segPt(d.pts[i - 1], d.pts[i], P(q.p[0], q.p[1]));
-      const l = dist(d.pts[i - 1], d.pts[i]);
-      const t = l > 1e-6 ? dist(d.pts[i - 1], c) / l : 0;
-      const z = zs[i - 1][2] + (zs[i][2] - zs[i - 1][2]) * t;
+      const z = axisZAt(d, c);
       const dd = Math.hypot(c.x - q.p[0], c.y - q.p[1]);
       if (dd > maxD) continue;
       // not behind the spigot
@@ -66508,7 +66470,7 @@ function flexConnect(e, main, opt = {}) {
       for (let i = 1; i < main.pts.length; i++) {
         const c = segPt(main.pts[i - 1], main.pts[i], P(q.p[0], q.p[1]));
         const dd = dist(c, P(q.p[0], q.p[1]));
-        if (!m || dd < m.dd) m = { d: main, c, z: ductPath3(main)[i][2], dd, rank: dd };
+        if (!m || dd < m.dd) m = { d: main, c, z: axisZAt(main, c), dd, rank: dd };
       }
     } else m = nearMain(q, q.sys, maxD, made);
     // a free spigot of other equipment, if nearer
@@ -130452,6 +130414,7 @@ checkRule('hvu-ducts', {
 
 
 
+
 const DLIB = {
   galv: { t: 'rigid', n: 'оцинкованная сталь', ang: [15, 30, 45, 60, 90] },
   pvcRound: { t: 'rigid', n: 'ПВХ круглый', ang: [15, 30, 45, 90] },
@@ -130699,9 +130662,11 @@ function rectDuctBody(mb, q, W, H, col) {
 }
 /**
  * Details of a rigid duct: the joints between the straight bars (nipple rings, flanges, PVC sleeves) and the ends of
- * the elbows (the fitting's collar / flange) — the duct reads as the parts it is made of.
+ * the elbows (the fitting's collar / flange) — the duct reads as the parts it is made of; a tap gets its saddle on the
+ * wall of the main and the rolled joint at the spigot (duct-joints.js).
  */
 function ductDetails3(mb, e, W, H, col, dark) {
+  tapRings(mb, e, W / 2);
   const S_ = ductSys(e);
   if (!S_) return;
   const L = ductLayout(e);
@@ -130737,6 +130702,237 @@ function ductDetails3(mb, e, W, H, col, dark) {
   mb.tag(S_.jt === 'flange' ? 'Фланцы колен' : 'Концы колен (раструбы)');
   for (const f of L.fitEnds)
     band(f.c, f.u, S_.jt === 'flange' ? 16 : 24, S_.jt === 'flange' ? 8 : 2, S_.jt === 'sleeve' ? '#dcdfe2' : dark);
+}
+
+// ===== blocks/hvac/duct-joints.js =====
+/**
+ * blocks/hvac/duct-joints
+ *
+ * Joints of a flexible duct (and the saddle of a rigid tap) with what it is joined to, so that nothing is left open:
+ * the hose slips over a spigot with an overlap and the clamp sits on the overlap; a tap into a main duct is a visible
+ * collar from the wall of the main to the start of the hose (the hose slips over the collar, the clamp sits on the
+ * overlap). The module also owns the 3D route of a flexible duct (the drawn route with the detours, rounded like on the
+ * plan: flexRoundR) and builds its mesh (flexBuild); the collisions (hvac-clash) take the same route.
+ */
+
+
+
+
+
+const JT_OV = 40, // mm: the hose over a spigot / a collar
+  JT_VIS = 35, // mm: the collar seen between the wall of the main and the start of the hose
+  JT_XY = 8, // mm: an end this close (plan) to a spigot is joined to it
+  JT_Z = 40, // mm: and this close in height
+  JT_IN = 6; // mm: an end this close to the body of a main duct is on it
+const GREY = '#8b939d';
+const jv = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  len: a => Math.hypot(a[0], a[1], a[2]),
+  unit: a => {
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    return [a[0] / l, a[1] / l, a[2] / l];
+  },
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+};
+
+/** The 3D route of a flexible duct as the model draws it: the route with the detours, rounded with flexRoundR. */
+const flexTrace = e => roundPath(ductPath3(e), flexRoundR(e)).pts;
+
+let SPG = { v: -1, l: [] };
+/** The spigots of the model, once per document version. */
+function spigotsNow() {
+  if (SPG.v !== documentState.docVer) SPG = { v: documentState.docVer, l: allSpigots() };
+  return SPG.l;
+}
+/** Closest point of the 3D segment a–b to p: { c, d, u (unit along the segment), t (0..1) }. */
+function closestOn(a, b, p) {
+  const ab = jv.sub(b, a),
+    l2 = jv.dot(ab, ab);
+  const t = l2 > 1e-9 ? Math.max(0, Math.min(1, jv.dot(jv.sub(p, a), ab) / l2)) : 0;
+  const c = jv.add(a, jv.mul(ab, t));
+  return { c, d: jv.len(jv.sub(p, c)), u: jv.unit(ab), t };
+}
+/** The half sizes of the section of a main with its insulation: { hw, hh, round }. */
+function mainHalf(M) {
+  const ins = +M.ins || 0,
+    round = M.shape !== 'rect';
+  return { hw: ductW(M) / 2 + ins, hh: (round ? +M.d : +M.hh) / 2 + ins, round };
+}
+/**
+ * The joint of end i of a duct (0 — the first point, 1 — the last) with what stands there, or null:
+ * { kind: 'spigot', q, u } — at a spigot of a unit; { kind: 'end', M, u } — at the open end of a rigid duct;
+ * { kind: 'main', M, u, t } — on the axis of a rigid main, t is the distance along u from the axis to the wall of the
+ * main. u is the unit vector from the joint into the route.
+ */
+function jointAt(e, i) {
+  const q = ductPath3(e);
+  const end = i === 0 ? q[0] : q[q.length - 1];
+  const seq = i === 0 ? q.slice(1) : q.slice(0, -1).reverse();
+  const nb = seq.find(n => jv.len(jv.sub(n, end)) > 5);
+  if (!nb) return null;
+  const u = jv.unit(jv.sub(nb, end));
+  const sp = spigotsNow().find(
+    s => Math.hypot(end[0] - s.p[0], end[1] - s.p[1]) < JT_XY && Math.abs(end[2] - s.p[2]) < JT_Z
+  );
+  if (sp) return { kind: 'spigot', q: sp, u };
+  let best = null;
+  for (const M of S.ents) {
+    if (M === e || M.type !== 'duct' || M.flex || M.tap || M.link || !M.pts || M.pts.length < 2 || !visible(M))
+      continue;
+    const mq = ductPath3(M),
+      h = mainHalf(M);
+    for (let k = 1; k < mq.length; k++) {
+      const c = closestOn(mq[k - 1], mq[k], end);
+      let inside = c.d <= Math.max(h.hw, h.hh) + JT_IN;
+      if (inside && !h.round) {
+        const n = Math.abs(c.u[2]) > 0.95 ? [1, 0, 0] : jv.unit(jv.cross(c.u, [0, 0, 1])),
+          d = jv.sub(end, c.c);
+        inside = Math.abs(jv.dot(d, n)) <= h.hw + JT_IN && Math.abs(jv.dot(d, jv.cross(n, c.u))) <= h.hh + JT_IN;
+      }
+      if (inside && (!best || c.d < best.c.d)) best = { M, c, h, k, last: mq.length };
+    }
+  }
+  if (!best) return null;
+  const { M, c, h } = best,
+    m = c.u;
+  const onEnd = (best.k === 1 && c.t < 1e-6) || (best.k === best.last - 1 && c.t > 1 - 1e-6);
+  const along = jv.dot(u, m);
+  if (onEnd && Math.abs(along) >= 0.9) return { kind: 'end', M, u };
+  const lat = jv.sub(u, jv.mul(m, along)),
+    s = jv.len(lat);
+  if (s < 0.35) return null;
+  let t;
+  if (h.round) t = Math.max(h.hw, h.hh) / s;
+  else {
+    const n = Math.abs(m[2]) > 0.95 ? [1, 0, 0] : jv.unit(jv.cross(m, [0, 0, 1])),
+      vv = jv.cross(n, m);
+    const un = Math.abs(jv.dot(u, n)),
+      uv = Math.abs(jv.dot(u, vv));
+    t = Math.min(un > 1e-6 ? h.hw / un : Infinity, uv > 1e-6 ? h.hh / uv : Infinity);
+  }
+  return { kind: 'main', M, u, t: Math.min(t, 3 * Math.max(h.hw, h.hh)) };
+}
+const JT_MEMO = new WeakMap();
+/** The joints of both ends of a flexible duct or a rigid tap: [joint | null, joint | null]; once per document version. */
+function ductJoints3(e) {
+  if (!(e.flex || e.tap) || !e.pts || e.pts.length < 2) return [null, null];
+  const k = [documentState.docVer, JSON.stringify(e.pts), e.z, e.d, e.ins].join('|');
+  const m = JT_MEMO.get(e);
+  if (m && m.k === k) return m.v;
+  const v = [jointAt(e, 0), jointAt(e, 1)];
+  JT_MEMO.set(e, { k, v });
+  return v;
+}
+/** The joints as a plain key for the 3D cache: what each end is joined to and the collar length. */
+const ductJointsKey = e =>
+  JSON.stringify(
+    ductJoints3(e).map(j =>
+      j ? [j.kind, Math.round(j.t || 0), j.q ? j.q.e.id : j.M ? j.M.id : 0, j.M ? j.M.d : 0] : 0
+    )
+  );
+
+/** The polyline from arc length s on (the part before s is dropped). */
+function cutFrom(path, s) {
+  let left = s;
+  for (let i = 1; i < path.length; i++) {
+    const l = jv.len(jv.sub(path[i], path[i - 1]));
+    if (left < l) return [jv.add(path[i - 1], jv.mul(jv.unit(jv.sub(path[i], path[i - 1])), left)), ...path.slice(i)];
+    left -= l;
+  }
+  return path.slice(-2);
+}
+/**
+ * One end of a flexible duct, the path starting at the joint. Returns the path with the end made ready, the clamp
+ * { a, b, r }, the extra parts [{ a, b, r, tag }] and ext — the length of the overlap segment put in front of the path.
+ * A spigot or an open end: the hose goes back over it by JT_OV, the clamp is on the overlap. A main duct: the hose
+ * starts JT_VIS beyond the wall, a collar runs from inside the main to JT_OV under the hose, the clamp is on it.
+ * No joint (a free end): the clamp near the end.
+ */
+function prepEnd(path, j, r, rc) {
+  const a = path[0],
+    l = jv.len(jv.sub(path[1], a)),
+    u = jv.unit(jv.sub(path[1], a));
+  const at = s => jv.add(a, jv.mul(u, s));
+  const free = { path, ext: 0, clamp: { a: at(20), b: at(34), r: r + 2 }, parts: [] };
+  if (!j || l < 1) return free;
+  if (j.kind === 'spigot' || j.kind === 'end')
+    return { path: [at(-JT_OV), ...path], ext: JT_OV, clamp: { a: at(-14), b: at(-28), r: r + 6 }, parts: [] };
+  const s = j.t + JT_VIS;
+  if (s + JT_OV + 10 > l) return free;
+  const c = at(s);
+  return {
+    path: [c, ...path.slice(1)],
+    ext: 0,
+    clamp: { a: at(s + 10), b: at(s + 24), r: r + 3 },
+    parts: [
+      { a: at(j.t - 25), b: at(s + JT_OV), r: rc, tag: 'Врезка в магистраль: патрубок' },
+      { a: at(j.t - 3), b: at(j.t + 9), r: rc + 7, tag: 'Врезка в магистраль: хомут' }
+    ]
+  };
+}
+/** Builds a flexible duct: a coiled sleeve along the rounded path, put over the spigots and the collars with clamps. */
+function flexBuild(e, mb, col) {
+  const r = ductW(e) / 2 + (+e.ins || 0),
+    rc = (ductW(e) / 2) * 0.9;
+  const J = ductJoints3(e);
+  const e0 = prepEnd(flexTrace(e), J[0], r, rc);
+  const e1 = prepEnd(e0.path.slice().reverse(), J[1], r, rc);
+  const path = e1.path.slice().reverse();
+  // resample with a step, radius alternating — the wire coils; the overlap over a spigot is a little wider
+  const step = 22,
+    rib = Math.min(r * 0.2, Math.max(4.5, r * 0.07)); // depth of the corrugation, mm
+  const pts = [],
+    rs = [];
+  let k = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1],
+      b = path[i];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const n = Math.max(1, Math.round(l / (step / 2)));
+    const over = (i === 1 && e0.ext > 0) || (i === path.length - 1 && e1.ext > 0);
+    for (let j = i === 1 ? 0 : 1; j <= n; j++) {
+      const t = j / n;
+      pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+      rs.push(over ? r + 4 : k++ % 2 ? r - rib : r);
+    }
+  }
+  mb.tag(`Гибкий воздуховод ø${ductW(e)}${e.ins ? ' в изоляции' : ''}`);
+  mb.smooth(true);
+  mb.ribbed(true);
+  mb.sweep(pts, rs, col, 18);
+  mb.ribbed(false);
+  mb.smooth(false);
+  for (const p of [...e0.parts, ...e1.parts]) {
+    mb.tag(p.tag);
+    mb.tube(p.a, p.b, p.r, GREY, 24);
+  }
+  mb.tag('Хомуты');
+  for (const c of [e0.clamp, e1.clamp]) mb.tube(c.a, c.b, c.r, '#8b939d', 20);
+}
+/**
+ * The saddle on the main and the rolled (beaded) joint at the spigot of a rigid tap (XT.duct.build3 → ductDetails3).
+ * The saddle sits on the wall of the main (the main is found under the end), not inside it.
+ */
+function tapRings(mb, e, rr) {
+  const pts = ductPath3(e);
+  if (!e.tap || pts.length < 2) return;
+  const J = ductJoints3(e),
+    n = pts.length - 1;
+  const mi = J[1] && J[1].kind === 'main' ? 1 : J[0] && J[0].kind === 'main' ? 0 : 1;
+  const ring = (a, b, s0, s1, r) => {
+    const u = jv.unit(jv.sub(b, a));
+    mb.tube(jv.add(a, jv.mul(u, s0)), jv.add(a, jv.mul(u, s1)), r, GREY, 24);
+  };
+  const jm = J[mi] && J[mi].kind === 'main' ? J[mi] : null;
+  mb.tag('Врезка в магистраль');
+  if (mi === 1) ring(pts[n], pts[n - 1], jm ? jm.t - 3 : 40, jm ? jm.t + 9 : 70, rr + 6);
+  else ring(pts[0], pts[1], jm ? jm.t - 3 : 40, jm ? jm.t + 9 : 70, rr + 6);
+  mb.tag('Вальцовка');
+  if (mi === 1) ring(pts[0], pts[1], 14, 22, rr + 3);
+  else ring(pts[n], pts[n - 1], 14, 22, rr + 3);
 }
 
 // ===== blocks/hvac/duct-penetrations.js =====
@@ -130926,6 +131122,7 @@ function penetrationMesh(mb, e) {
 
 
 
+
 /**
  * The outline of a duct in plan: the left and the right side (offset by half the width plus insulation) and the two
  * end faces. Shared by the snaps and the cutting edges.
@@ -131023,7 +131220,8 @@ XT.duct = {
       e.group != null ? groupOf(e.group).col : 0,
       e.sys ? sysOf(e.sys).col : 0,
       zs,
-      JSON.stringify(ductTransitions(e).map(t => [t.i, t.d2]))
+      JSON.stringify(ductTransitions(e).map(t => [t.i, t.d2])),
+      ductJointsKey(e)
     ];
   },
   build3: e => buildDuct3(e, ductTransitions(e)),
@@ -131179,12 +131377,15 @@ function ductFields(e) {
 
 
 
+
 const HC_TOL = 2, // mm: overlap up to this is touching
   HC_SOFT = 50, // mm: assembly clearance
   HC_JOIN = 30, // mm: ends closer than this are a connection
-  HC_CONN = 150; // mm: a duct end this close to a unit is its connection
+  HC_CONN = 150, // mm: a duct end this close to a unit is its connection
+  HC_FLEX = 5; // mm: a hose bends away: only a contact (not the assembly clearance; its own detour under a beam keeps ~11 mm at the edge) is a remark
 const HC_NAME = {
   duct: ['воздуховод', 'воздуховода'],
+  fduct: ['гибкий воздуховод', 'гибкого воздуховода'],
   pipe: ['трубу', 'трубы'],
   freon: ['линию фреона', 'линии фреона'],
   drain: ['дренаж кондиционера', 'дренажа кондиционера'],
@@ -131240,23 +131441,62 @@ const hcDev = id => {
   const d = id != null ? byId(id) : null;
   return d && d.type === 'dev' ? d : null;
 };
-/** Axis segments of a duct, including the vertical drops to linked terminals (as build3 draws them). */
+/**
+ * Axis segments of a duct, including the vertical drops to linked terminals (as build3 draws them). A flexible duct
+ * goes by its real 3D route: with the heights of its points and the detours, rounded like in the model and on the plan.
+ */
 function hcDuctSegs(e) {
   const z = e.z || 0,
     segs = [];
-  for (let i = 1; i < e.pts.length; i++) segs.push({ a: hcV(e.pts[i - 1], z), b: hcV(e.pts[i], z) });
-  for (const [id, p] of [
-    [e.from, e.pts[0]],
-    [e.to, e.pts[e.pts.length - 1]]
-  ]) {
+  let ends = [z, z];
+  if (e.flex) {
+    const q = flexTrace(e);
+    for (let i = 1; i < q.length; i++) segs.push({ a: q[i - 1], b: q[i] });
+    ends = [q[0][2], q[q.length - 1][2]];
+  } else for (let i = 1; i < e.pts.length; i++) segs.push({ a: hcV(e.pts[i - 1], z), b: hcV(e.pts[i], z) });
+  [
+    [e.from, e.pts[0], ends[0]],
+    [e.to, e.pts[e.pts.length - 1], ends[1]]
+  ].forEach(([id, p, zp]) => {
     const d = hcDev(id);
-    if (d && Math.abs((d.z || 0) - z) > 1) segs.push({ a: hcV(p, z), b: hcV(p, (d.z || 0) - 15), drop: true });
-  }
+    if (d && Math.abs((d.z || 0) - zp) > 1) segs.push({ a: hcV(p, zp), b: hcV(p, (d.z || 0) - 15), drop: true });
+  });
   return segs;
+}
+/**
+ * Where a flexible duct is joined to a unit or to a main duct: [{ p (3D), R, main: id, unit: id }]. A closest approach
+ * inside such a zone is the joint itself (the hose on its spigot, the tap on its main, the neighbours at one unit).
+ */
+function hcZones(e, h) {
+  if (!e.flex) return [];
+  const q = flexTrace(e),
+    R0 = Math.max(h.hw, h.hh);
+  const out = [];
+  ductJoints3(e).forEach((j, i) => {
+    if (!j) return;
+    const p = i === 0 ? q[0] : q[q.length - 1];
+    if (j.kind === 'spigot') out.push({ p, R: 3 * R0 + HC_JOIN, main: null, unit: j.q.e.id });
+    else {
+      const M = hcHalf(j.M);
+      out.push({ p, R: Math.max(M.hw, M.hh) + 2 * R0 + HC_JOIN, main: j.M.id, unit: null });
+    }
+  });
+  return out;
+}
+/** The closest approach r of bodies A and B lies in a joint zone of a flexible duct: not a collision. */
+function hcInJoint(A, B, r) {
+  const d3 = (a, b) => Math.hypot(...hcSub(a, b));
+  const za = A.zones || [],
+    zb = B.zones || [];
+  return (
+    za.some(z => z.main === B.e.id && d3(r.c1, z.p) < z.R) ||
+    zb.some(z => z.main === A.e.id && d3(r.c2, z.p) < z.R) ||
+    za.some(a => a.unit != null && zb.some(b => b.unit === a.unit && d3(r.c1, a.p) < a.R && d3(r.c2, b.p) < b.R))
+  );
 }
 const hcSecName = e => `${e.sys || ''} ${secTxt(e)}`.trim();
 
-/** Linear bodies: ducts, pipes and AC lines as { e, kind, label, segs, hw, hh, devs }. */
+/** Linear bodies: ducts, pipes and AC lines as { e, kind, label, segs, hw, hh, flex, zones, devs }. */
 function hcBodies(vis) {
   const out = { ducts: [], other: [] };
   for (const e of vis) {
@@ -131268,6 +131508,7 @@ function hcBodies(vis) {
         label: hcSecName(e),
         segs: hcDuctSegs(e),
         ...hcHalf(e),
+        flex: !!e.flex,
         devs: new Set([e.from, e.to])
       });
     else if (e.type === 'pipe' || e.type === 'acl') {
@@ -131283,6 +131524,7 @@ function hcBodies(vis) {
       });
     }
   }
+  for (const D of out.ducts) D.zones = hcZones(D.e, D);
   return out;
 }
 /** Box obstacles: beams, columns, indoor AC units, ventilation units and fans. */
@@ -131329,7 +131571,7 @@ function hcGap(r, A, B) {
     ext = h => z * h.hh + Math.sqrt(1 - z * z) * h.hw;
   return r.d - ext(A) - ext(B);
 }
-/** Worst (smallest) gap of a moving section to a box obstacle, sampled along the segment. */
+/** Worst (smallest) gap of a moving section (round for a hose) to a box obstacle, sampled along the segment. */
 function hcBoxGap(seg, A, bx) {
   const L = Math.hypot(...hcSub(seg.b, seg.a)),
     n = clamp(Math.ceil(L / 25), 1, 400);
@@ -131337,9 +131579,20 @@ function hcBoxGap(seg, A, bx) {
   for (let i = 0; i <= n; i++) {
     const q = seg.a.map((v, k) => v + ((seg.b[k] - v) * i) / n),
       p = P(q[0], q[1]);
-    const gp = (inPoly(p, bx.poly) ? 0 : hcPolyDist(p, bx.poly)) - A.hw,
-      gz = Math.max(bx.z0 - q[2], q[2] - bx.z1, 0) - A.hh;
-    const gap = gp < 0 && gz < 0 ? Math.max(gp, gz) : Math.hypot(Math.max(gp, 0), Math.max(gz, 0));
+    let gap;
+    if (A.flex) {
+      // a hose is a round section on a sloped axis: the distance from the axis point to the box minus the radius
+      const dp = inPoly(p, bx.poly) ? 0 : hcPolyDist(p, bx.poly),
+        dz = Math.max(bx.z0 - q[2], q[2] - bx.z1, 0);
+      gap =
+        dp > 0 || dz > 0
+          ? Math.hypot(dp, dz) - A.hw
+          : -Math.min(hcPolyDist(p, bx.poly), q[2] - bx.z0, bx.z1 - q[2]) - A.hw;
+    } else {
+      const gp = (inPoly(p, bx.poly) ? 0 : hcPolyDist(p, bx.poly)) - A.hw,
+        gz = Math.max(bx.z0 - q[2], q[2] - bx.z1, 0) - A.hh;
+      gap = gp < 0 && gz < 0 ? Math.max(gp, gz) : Math.hypot(Math.max(gp, 0), Math.max(gz, 0));
+    }
     if (!best || gap < best.gap) best = { gap, p, z: q[2] };
   }
   return best;
@@ -131364,16 +131617,19 @@ function hcWallFlags(w) {
     ext: w.ext != null ? !!w.ext : k !== 'gkl' && k !== 'other' && th >= 180
   };
 }
-/** Rough opening (door, window, shaped opening) of wall w that contains plan point p at heights z0..z1. */
+/** Rough opening (door, window, shaped opening) of wall w that contains plan point p at heights z0..z1 (z0 null: any height). */
 function hcInOpening(w, p, z0, z1) {
   for (const o of query(['door', 'window', 'opening'])) {
     if (o.host !== w.id) continue;
     const I = opInfo(o);
-    if (I && inPoly(p, I.rect) && z0 >= (o.sill || 0) - HC_TOL && z1 <= (o.sill || 0) + o.h + HC_TOL) return true;
+    if (I && inPoly(p, I.rect) && (z0 == null || (z0 >= (o.sill || 0) - HC_TOL && z1 <= (o.sill || 0) + o.h + HC_TOL)))
+      return true;
   }
   return false;
 }
 
+/** The word for a duct in a message: hose or duct. */
+const hcWho = A => (A.flex ? 'Гибкий воздуховод' : 'Воздуховод');
 function hcFind() {
   const out = [],
     vis = S.ents.filter(visible),
@@ -131400,10 +131656,12 @@ function hcFind() {
       if (B.kind === 'duct' && viaPart.has(A.e.id + ':' + B.e.id)) continue;
       for (const sa of A.segs)
         for (const sb of B.segs) {
-          if (B.kind === 'duct' && hcConnected(sa, sb, A, B)) continue;
+          // a rigid pair meets at an end; a flexible duct is exempt only inside its own joint (hcZones)
+          if (B.kind === 'duct' && !A.flex && !B.flex && hcConnected(sa, sb, A, B)) continue;
           const r = hcClosest(sa.a, sa.b, sb.a, sb.b),
             gap = hcGap(r, A, B);
-          if (gap < HC_SOFT) cand.push({ A, B, gap, m: mid3(r.c1, r.c2) });
+          if (gap < (A.flex || B.flex ? HC_FLEX : HC_SOFT) && !((A.flex || B.flex) && hcInJoint(A, B, r)))
+            cand.push({ A, B, gap, m: mid3(r.c1, r.c2) });
         }
     }
   // duct against boxes
@@ -131423,7 +131681,8 @@ function hcFind() {
         const g = hcBoxGap(sg, A, bx);
         if (!best || g.gap < best.gap) best = g;
       }
-      if (best && best.gap < HC_SOFT) cand.push({ A, B: bx, gap: best.gap, m: [best.p.x, best.p.y, best.z] });
+      if (best && best.gap < (A.flex ? HC_FLEX : HC_SOFT))
+        cand.push({ A, B: bx, gap: best.gap, m: [best.p.x, best.p.y, best.z] });
     }
   cand.sort((a, b) => a.gap - b.gap);
   const seen = [];
@@ -131432,12 +131691,12 @@ function hcFind() {
     if (seen.some(s => s.a === c.A.e.id && s.b === bid && Math.hypot(s.x - c.m[0], s.y - c.m[1]) < 300)) continue;
     seen.push({ a: c.A.e.id, b: bid, x: c.m[0], y: c.m[1] });
     const hard = c.gap < -HC_TOL,
-      bk = c.B.kind,
+      bk = c.B.kind === 'duct' && c.B.e.flex ? 'fduct' : c.B.kind,
       nm = HC_NAME[bk],
       lab = c.B.label != null && c.B.label !== '' ? ' ' + c.B.label : c.B.label === '' ? '' : ' №' + bid;
     const msg = hard
-      ? `Воздуховод ${c.A.label} пересекает ${nm[0]}${lab} (на ${Math.round(-c.gap)} мм)`
-      : `Воздуховод ${c.A.label}: зазор до ${nm[1]}${lab} ${Math.round(Math.max(0, c.gap))} мм, нужно не менее ${HC_SOFT}`;
+      ? `${hcWho(c.A)} ${c.A.label} пересекает ${nm[0]}${lab} (на ${Math.round(-c.gap)} мм)`
+      : `${hcWho(c.A)} ${c.A.label}: зазор до ${nm[1]}${lab} ${Math.round(Math.max(0, c.gap))} мм, нужно не менее ${c.A.flex || bk === 'fduct' ? HC_FLEX : HC_SOFT}`;
     out.push({
       kind: hard ? 'hard' : 'soft',
       lvl: hard ? 'bad' : 'warn',
@@ -131451,13 +131710,11 @@ function hcFind() {
   const walls = query('wall', e => e.a && e.b, vis);
   for (const A of ducts) {
     const e = A.e,
-      z = e.z || 0,
-      top = z + A.hh,
-      bot = z - A.hh,
-      hor = A.segs.filter(s => !s.drop);
+      hor = A.segs.filter(s => !s.drop),
+      top = Math.max(...hor.map(s => Math.max(s.a[2], s.b[2]))) + A.hh;
     // slab
     if (top > slabZ + HC_TOL) {
-      const s = hor[0];
+      const s = hor.reduce((m, t) => (Math.max(t.a[2], t.b[2]) > Math.max(m.a[2], m.b[2]) + 1e-9 ? t : m), hor[0]);
       out.push({
         kind: 'slab',
         lvl: 'bad',
@@ -131465,7 +131722,7 @@ function hcFind() {
         b: null,
         p: P((s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2),
         z: Math.round(top),
-        msg: `Воздуховод ${A.label}: верх +${Math.round(top)} выше низа плиты +${Math.round(slabZ)} (на ${Math.round(top - slabZ)} мм)`
+        msg: `${hcWho(A)} ${A.label}: верх +${Math.round(top)} выше низа плиты +${Math.round(slabZ)} (на ${Math.round(top - slabZ)} мм)`
       });
     }
     // false ceiling: lowest ceiling over the sample point (avFc: drawn ceiling or default drop below the slab), skipping the terminal ends
@@ -131481,11 +131738,12 @@ function hcFind() {
       for (let i = 0; i <= n; i++) {
         const p = P(s.a[0] + ((s.b[0] - s.a[0]) * i) / n, s.a[1] + ((s.b[1] - s.a[1]) * i) / n);
         if (endPts.some(([q]) => dist(p, q) < 150)) continue;
+        const bot = s.a[2] + ((s.b[2] - s.a[2]) * i) / n - A.hh;
         // where the project has drawn ceilings, a point between them lies over a wall: no ceiling to clash with
         const ch = anyCeil ? avFcDrawn(p) : avFc(p);
         if (ch == null) continue;
         const depth = ch - bot;
-        if (depth > HC_TOL && (!worst || depth > worst.depth)) worst = { depth, p, ch };
+        if (depth > HC_TOL && (!worst || depth > worst.depth)) worst = { depth, p, ch, bot };
       }
     }
     if (worst)
@@ -131495,8 +131753,8 @@ function hcFind() {
         a: e.id,
         b: null,
         p: worst.p,
-        z: Math.round(bot),
-        msg: `Воздуховод ${A.label}: низ +${Math.round(bot)} ниже потолка +${Math.round(worst.ch)} на ${Math.round(worst.depth)} мм`
+        z: Math.round(worst.bot),
+        msg: `${hcWho(A)} ${A.label}: низ +${Math.round(worst.bot)} ниже потолка +${Math.round(worst.ch)} на ${Math.round(worst.depth)} мм`
       });
     // walls: one sleeve per crossing
     const g = 2 * ((e.ins || 0) + 25),
@@ -131505,22 +131763,47 @@ function hcFind() {
     for (const w of walls) {
       const w0 = w.z || 0,
         w1 = w0 + (w.h || S.ceil || 2700);
-      if (Math.min(top, w1) - Math.max(bot, w0) <= 0) continue;
       for (const s of hor) {
         const p = segSeg(P(s.a[0], s.a[1]), P(s.b[0], s.b[1]), w.a, w.b);
-        if (!p || done.some(d => d.w === w.id && dist(d.p, p) < 150) || hcInOpening(w, p, bot, top)) continue;
+        if (!p) continue;
+        // the axis height where the duct crosses the wall (a flexible duct goes at a slope)
+        const lh = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]),
+          zc = s.a[2] + (s.b[2] - s.a[2]) * (lh > 1e-6 ? Math.hypot(p.x - s.a[0], p.y - s.a[1]) / lh : 0),
+          lo = zc - A.hh,
+          hi = zc + A.hh;
+        if (Math.min(hi, w1) - Math.max(lo, w0) <= 0) continue;
+        if (done.some(d => d.w === w.id && dist(d.p, p) < 150) || hcInOpening(w, p, lo, hi)) continue;
         done.push({ w: w.id, p });
         const f = hcWallFlags(w),
           warn = f.load || f.ext;
+        // a flexible duct through a wall where no pass (hole, foam) is made: a remark of its own
+        // (the pass module leaves out a crossing in the plan area of an opening whatever the height: not judged here)
+        if (
+          e.flex &&
+          !ductWallCrossings(e).some(c => c.w === w && dist(c.p, p) < 150) &&
+          !hcInOpening(w, p, null, null)
+        ) {
+          out.push({
+            kind: 'wall',
+            lvl: 'warn',
+            a: e.id,
+            b: w.id,
+            p,
+            z: Math.round(zc),
+            hole,
+            msg: `${hcWho(A)} ${A.label} пересекает стену №${w.id} без проходки (участок круче 60° к стене): отверстие не предусмотрено`
+          });
+          continue;
+        }
         out.push({
           kind: 'wall',
           lvl: warn ? 'warn' : 'info',
           a: e.id,
           b: w.id,
           p,
-          z: Math.round(z),
+          z: Math.round(zc),
           hole,
-          msg: `Воздуховод ${A.label} проходит через ${warn ? (f.load ? 'несущую' : 'наружную') + ' стену' : 'стену'} №${w.id}: ${wallPassKind(w) === 'frame' ? 'обход в каркасе' : e.shape === 'rect' ? 'вырезка проёма' : 'алмазное бурение'} ${hole}${warn ? ', отверстие согласовать с конструктором' : ''}`
+          msg: `${hcWho(A)} ${A.label} проходит через ${warn ? (f.load ? 'несущую' : 'наружную') + ' стену' : 'стену'} №${w.id}: ${wallPassKind(w) === 'frame' ? 'обход в каркасе' : e.shape === 'rect' ? 'вырезка проёма' : 'алмазное бурение'} ${hole}${warn ? ', отверстие согласовать с конструктором' : ''}`
         });
       }
     }
