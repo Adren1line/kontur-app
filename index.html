@@ -7181,7 +7181,7 @@ html[data-form='phone'] .modal table.cards td::before {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.76';
+const APP_VER = '59.77';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -14628,6 +14628,15 @@ function mkDuct(opt = {}) {
     sys = S.vent.cur || S.vent.systems[0].id,
     flow = mkDuct.flow || 100,
     ask = null;
+  // a rigid duct goes straight out of / into a spigot for 100–150 mm before it turns (half the way ahead, within that)
+  const exitLen = ahead => Math.max(100, Math.min(150, Math.max(0, ahead) * 0.5));
+  // the height of a point put next on a slope, mm: higher / lower by this part of the leg (% in mkDuct.slope, 0 — level)
+  const slopeZ = p => {
+    const k = mkDuct.slope || 0,
+      last = pts[pts.length - 1];
+    if (flex || !k || !last) return z;
+    return Math.round(((last.z != null ? last.z : z) + (k / 100) * dist(p, last)) * 10) / 10;
+  };
   const full = () => ({ shape: sec.shape, d: sec.d || 160, w: sec.w || 200, hh: sec.hh || 100 });
   // the next leg turns only by what the elbows of the material make (one elbow or two in a row)
   const ductSnap = p => {
@@ -14690,19 +14699,34 @@ function mkDuct(opt = {}) {
         ? `Сечение: диаметр (160) или ширина×высота (200x100) <${secTxt(full())}>:`
         : ask === 'z'
           ? `Отметка оси, мм <${z}>:`
-          : ask === 'q'
-            ? `Расход, м³/ч <${flow}>:`
-            : ask === 's'
-              ? `Система (${S.vent.systems.map(s => s.id).join(', ')}) <${sys}>:`
-              : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${Math.round(z)}) или [Сечение/Высота (подъём, опуск)/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}/${mkDuct.pvc ? 'Металл' : 'ПВХ'}${pts.length ? '/Отменить' : ''}]:`,
-    hasValue: () => ask === 'z' || ask === 'q',
+          : ask === 'sl'
+            ? `Уклон, % (0 — без уклона, до ±5; плюс — вверх по ходу) <${mkDuct.slope || 0}>:`
+            : ask === 'q'
+              ? `Расход, м³/ч <${flow}>:`
+              : ask === 's'
+                ? `Система (${S.vent.systems.map(s => s.id).join(', ')}) <${sys}>:`
+                : `${!pts.length ? (flex ? 'Гибкая подводка: щелчок по патрубку или точка' : 'Начало воздуховода: точка или патрубок') : 'Следующая точка или патрубок'} (${sys}, ${secTxt(full())}${flex ? ' гибкий' : ''}, ${flow} м³/ч, ось ${Math.round(z)}${!flex && mkDuct.slope ? `, уклон ${mkDuct.slope} %` : ''}${!flex && mkDuct.rise45 ? ', подъём под 45°' : ''}) или [Сечение/Высота (подъём, опуск)/Уклон/45/Система/Расход/${flex ? 'Жёсткий' : 'Гибкий'}/${mkDuct.pvc ? 'Металл' : 'ПВХ'}${pts.length ? '/Отменить' : ''}]:`,
+    hasValue: () => ask === 'z' || ask === 'q' || ask === 'sl',
     onValue(v) {
+      if (ask === 'sl') {
+        mkDuct.slope = Math.max(-5, Math.min(5, Math.round(v * 10) / 10));
+        if (Math.abs(v) > 5) log('Уклон до 5 %: больше — это поворот отводом (команда «Высота»), не уклон', true);
+      }
       if (ask === 'z') {
         // a new height in the middle of a run: a rigid duct makes a vertical step at the last point, a flexible one
         // goes on with a slope to the next point
         if (pts.length && Math.abs(v - z) > 1) {
           if (flex) log(`Следующая точка на отметке ${Math.round(v)} — гибкий пойдёт к ней плавным уклоном`);
-          else {
+          else if (mkDuct.rise45 && pts.length >= 2) {
+            // a change of height by two 45° elbows: a sloped run at 45° (as long in plan as it rises), then level again
+            const last = pts[pts.length - 1],
+              a = pts[pts.length - 2],
+              u = nrm(sub(last, a)),
+              L = Math.abs(v - z);
+            put(last, z);
+            put(add(last, mul(u, L)), v);
+            log(`${v > z ? 'Подъём' : 'Опуск'} под 45° на ${Math.round(L)} мм: отвод 45°, косой участок, отвод 45°`);
+          } else {
             put(pts[pts.length - 1], v);
             log(
               `${v > z ? 'Подъём' : 'Опуск'} на ${Math.abs(Math.round(v - z))} мм в этой точке — дальше на отметке ${Math.round(v)}`
@@ -14725,6 +14749,15 @@ function mkDuct(opt = {}) {
           sec = mkDuct.sec = { shape: 'rect', w: 100, hh: 50 };
         log(
           'Плоский канал ПВХ ' + secTxt(full()) + ': каналы по 2 м, соединители, колена, переходники — в спецификации'
+        );
+        return true;
+      }
+      if (!ask && /^45$/.test(s.trim())) {
+        mkDuct.rise45 = !mkDuct.rise45;
+        log(
+          mkDuct.rise45
+            ? 'Подъём и опуск — под 45° (два отвода 45°)'
+            : 'Подъём и опуск — вертикальным участком (два отвода 90°)'
         );
         return true;
       }
@@ -14753,6 +14786,10 @@ function mkDuct(opt = {}) {
       }
       if (kw(s, 'с', 'сечение')) {
         ask = 'sec';
+        return true;
+      }
+      if (kw(s, 'у', 'уклон', 'slope')) {
+        ask = 'sl';
         return true;
       }
       if (kw(s, 'г', 'гибкий')) {
@@ -14824,10 +14861,33 @@ function mkDuct(opt = {}) {
           put(pts[pts.length - 1], z);
         }
         if (vert || Math.abs(zs - z) > 1) put(q, z);
+        else if (!vert && pts.length) {
+          // onto a level spigot the duct comes along its axis: the last 100–150 mm are straight
+          const d2 = nrm(P(sp.dir[0], sp.dir[1])),
+            last = pts[pts.length - 1],
+            v = sub(last, q),
+            al = dot(v, d2);
+          if (Math.abs(v.x * d2.y - v.y * d2.x) > Math.max(1, Math.abs(al)) * 0.052)
+            put(add(q, mul(d2, exitLen(al))), z);
+        }
         put(q, zs);
         return fin();
       }
-      if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) put(ductSnap(p), z);
+      if (!pts.length || dist(p, pts[pts.length - 1]) > 1e-6) {
+        // out of a level spigot a rigid duct goes straight along its axis for 100–150 mm, then it turns
+        if (startSp && pts.length === 1 && !flex && Math.abs(startSp.dir[2]) <= 0.5) {
+          const d2 = nrm(P(startSp.dir[0], startSp.dir[1])),
+            v = sub(p, pts[0]),
+            al = dot(v, d2);
+          if (Math.abs(v.x * d2.y - v.y * d2.x) > Math.max(1, Math.abs(al)) * 0.052) {
+            const ex = exitLen(al);
+            put(add(pts[0], mul(d2, ex)), pts[0].z);
+          }
+        }
+        const q = ductSnap(p);
+        put(q, slopeZ(q));
+        if (!flex && mkDuct.slope) z = pts[pts.length - 1].z;
+      }
     },
     onEnter() {
       if (ask) {
@@ -17056,7 +17116,7 @@ function drawDuct(e, color, o = {}) {
       n = P(-u.y, u.x),
       a = P(t.p[0], t.p[1]),
       b = add(a, mul(u, t.len * pl)),
-      r2 = t.d2 / 2;
+      r2 = (t.w2 != null ? t.w2 : t.d2) / 2;
     pathPoly([add(a, mul(n, r2)), add(b, mul(n, hw)), sub(b, mul(n, hw)), sub(a, mul(n, r2))]);
     ctx.fillStyle = hexA(sy.col, 0.55);
     ctx.fill();
@@ -19369,8 +19429,35 @@ function buildDuct3(e, trans = []) {
     return meshGroup(mb.meshes(), {});
   }
   const pts = ductPath3(e);
+  // a transition at an end (a spigot of another section): a short cone / loft instead of the first part of the duct
+  const body = pts.map(p => p.slice());
+  for (const t of trans) {
+    const i = t.i === 0 ? 0 : body.length - 1,
+      n = body[t.i === 0 ? 1 : body.length - 2];
+    if (!n) continue;
+    const a = body[i],
+      l = Math.hypot(n[0] - a[0], n[1] - a[1], n[2] - a[2]) || 1;
+    const k = Math.min(t.len, l * 0.9) / l;
+    const b = [a[0] + (n[0] - a[0]) * k, a[1] + (n[1] - a[1]) * k, a[2] + (n[2] - a[2]) * k];
+    mb.tag(`Переход ${t.name}`);
+    const dark = rgbHex(hex2rgb(col).map(c => c * 0.75));
+    if (t.s1.shape === 'round' && t.s2.shape === 'round') {
+      mb.smooth(true);
+      mb.sweep([a, b], [t.d2 / 2, rr], dark, 24);
+      mb.smooth(false);
+    } else
+      t.loft(
+        mb,
+        a,
+        b,
+        t.s2,
+        e.shape === 'rect' ? { shape: 'rect', w: W, hh: Hh } : { shape: 'round', d: 2 * rr },
+        dark
+      );
+    body[i] = b;
+  }
   // a rectangular duct: one body with mitred corners (nothing past the elbows)
-  if (e.shape === 'rect') rectDuctBody(mb, pts, W, Hh, col);
+  if (e.shape === 'rect') rectDuctBody(mb, body, W, Hh, col);
   if (e.shape !== 'rect') {
     const ends = [
       [e.from, 0],
@@ -19379,24 +19466,8 @@ function buildDuct3(e, trans = []) {
       const d = id != null ? byId(id) : null;
       return d && d.type === 'dev' && Math.abs(d.z - z) > 1 ? [pts[i][0], pts[i][1], d.z - 15] : null;
     });
-    // a transition at an end (a spigot of another Ø): a short cone instead of the first part of the duct
-    const sw = pts.map(p => p.slice());
-    for (const t of trans) {
-      const i = t.i === 0 ? 0 : sw.length - 1,
-        n = sw[t.i === 0 ? 1 : sw.length - 2];
-      if (!n) continue;
-      const a = sw[i],
-        l = Math.hypot(n[0] - a[0], n[1] - a[1], n[2] - a[2]) || 1;
-      const k = Math.min(t.len, l * 0.9) / l;
-      const b = [a[0] + (n[0] - a[0]) * k, a[1] + (n[1] - a[1]) * k, a[2] + (n[2] - a[2]) * k];
-      mb.tag(`Переход Ø${Math.max(t.d1, t.d2)}/Ø${Math.min(t.d1, t.d2)}`);
-      mb.smooth(true);
-      mb.sweep([a, b], [t.d2 / 2, rr], rgbHex(hex2rgb(col).map(c => c * 0.75)), 24);
-      mb.smooth(false);
-      sw[i] = b;
-    }
     mb.sweep(
-      roundPath([...(ends[0] ? [ends[0]] : []), ...sw, ...(ends[1] ? [ends[1]] : [])], rr * 1.5).pts,
+      roundPath([...(ends[0] ? [ends[0]] : []), ...body, ...(ends[1] ? [ends[1]] : [])], rr * 1.5).pts,
       rr,
       col,
       18
@@ -25619,7 +25690,7 @@ const CMDHELP = {
   socket: 'Розетка: точка у стены. Рамка, механизмы и подрозетник — в свойствах блока.',
   switch: 'Выключатель: точка у стены. Блок настраивается в свойствах.',
   wire: 'Трасса: от устройства или щита к устройству, можно начать от другой трассы (ответвление). Провод к светильнику привязывается к ближайшему выключателю; клавиша и группа — [Клавиша], [Группа] или в свойствах.',
-  duct: 'Воздуховод: точки трассы. [Сечение]/[Высота]/[Система]/[Расход].',
+  duct: 'Воздуховод: точки трассы. Повороты — только 45° и 90°, [Уклон] даёт наклонный прямой участок; у патрубка — прямой выход 100–150 мм. [Сечение]/[Высота]/[Уклон]/[Система]/[Расход].',
   line: 'Отрезок: первая точка, затем следующие точки. [Отменить] — убрать последнюю; Esc — выход.',
   rect: 'Прямоугольник: первый угол, затем второй угол (число или @dx,dy).',
   circle: 'Круг: центр, затем радиус числом или точкой; [Диаметр] — ввести диаметр.',
@@ -62910,10 +62981,40 @@ const GV_SEC = 1250; // section height = sheet width, mm
 function gvSheet(e) {
   if (e.sheet && e.sheet !== 'auto') return +e.sheet;
   const L = vsLayout(e);
-  const side = Math.max(L.W, L.D);
-  let t = side <= 250 ? 0.5 : side <= 1000 ? 0.7 : side <= 2000 ? 0.9 : 1.2;
-  if (e.ins === 'fire') t = Math.max(t, 0.8);
-  return t;
+  return gvSheetBySide(Math.max(L.W, L.D), e.ins === 'fire');
+}
+/** Sheet thickness, mm, of a galvanised channel by its larger side (a shaft and a rigid duct alike); ≥ 0,8 when fire-rated. */
+function gvSheetBySide(side, fire) {
+  const t = side <= 250 ? 0.5 : side <= 1000 ? 0.7 : side <= 2000 ? 0.9 : 1.2;
+  return fire ? Math.max(t, 0.8) : t;
+}
+/**
+ * Rows of the joints between sections of a galvanised channel with the perimeter P_ (m) and the given number of
+ * joints, as in a shaft: the bus joint (rail 20 + corner pieces + clips), the angle flanges, or the seam; plus the
+ * sealant. [{ k, name, u, q }] — the shaft and the rigid rectangular duct count them the same way.
+ */
+function gvJointRows(P_, joints, join) {
+  const rows = [];
+  const R = x => Math.round(x * 10) / 10;
+  if (join === 'rail' || !join) {
+    rows.push({
+      k: 'gvrail',
+      name: 'Шина (рейка) соединительная 20 мм для воздуховодов',
+      u: 'м',
+      q: R(2 * P_ * joints)
+    });
+    rows.push({ k: 'gvcorn', name: 'Уголок для шины 20 мм с болтом М8', u: 'шт', q: 8 * joints });
+    rows.push({
+      k: 'gvclip',
+      name: 'Скоба (клипса) для шинного соединения',
+      u: 'шт',
+      q: Math.ceil((P_ / 0.3) * joints)
+    });
+  } else if (join === 'angle') {
+    rows.push({ k: 'gvang', name: 'Уголок 25×25×3 (фланцы секций), ГОСТ 8509', u: 'м', q: R(2 * P_ * joints) });
+    rows.push({ k: 'gvbolt', name: 'Болт М6×20 с гайкой (фланцы)', u: 'шт', q: Math.ceil((P_ / 0.15) * joints) });
+  }
+  return rows;
 }
 var VSROLE = {
   collector: 'сборный канал',
@@ -63473,29 +63574,11 @@ function galvSpec(e, L, H, put, S_) {
       r.ids.push(e.id);
     }
   );
-  if (e.join === 'rail' || !e.join) {
-    put(S_, 'gvrail', { name: 'Шина (рейка) соединительная 20 мм для воздуховодов', u: 'м' }, r => {
-      r.q = Math.round((r.q + 2 * P_ * joints) * 10) / 10;
-      r.ids.push(e.id);
+  for (const r of gvJointRows(P_, joints, e.join))
+    put(S_, r.k, { name: r.name, u: r.u }, x => {
+      x.q = r.u === 'м' ? Math.round((x.q + r.q) * 10) / 10 : x.q + r.q;
+      x.ids.push(e.id);
     });
-    put(S_, 'gvcorn', { name: 'Уголок для шины 20 мм с болтом М8', u: 'шт' }, r => {
-      r.q += 8 * joints;
-      r.ids.push(e.id);
-    });
-    put(S_, 'gvclip', { name: 'Скоба (клипса) для шинного соединения', u: 'шт' }, r => {
-      r.q += Math.ceil((P_ / 0.3) * joints);
-      r.ids.push(e.id);
-    });
-  } else if (e.join === 'angle') {
-    put(S_, 'gvang', { name: 'Уголок 25×25×3 (фланцы секций), ГОСТ 8509', u: 'м' }, r => {
-      r.q = Math.round((r.q + 2 * P_ * joints) * 10) / 10;
-      r.ids.push(e.id);
-    });
-    put(S_, 'gvbolt', { name: 'Болт М6×20 с гайкой (фланцы)', u: 'шт' }, r => {
-      r.q += Math.ceil((P_ / 0.15) * joints);
-      r.ids.push(e.id);
-    });
-  }
   put(S_, 'gvriv', { name: 'Заклёпка вытяжная 4×10 / саморез с буром (фальцы, перегородки)', u: 'шт' }, r => {
     r.q += Math.ceil(((4 + 2 * (e.ch.length - 1)) * Hm * 1000) / 150);
     r.ids.push(e.id);
@@ -64792,6 +64875,7 @@ function dbSpigotFlows(e) {
  * The same module labels the systems (leaders with text taken from the model) and makes the album sheet with the
  * axonometric scheme and the 3D view with the walls.
  */
+
 
 
 
@@ -66223,6 +66307,28 @@ function moveDuctEnd(d, i, T, opt = {}) {
       d.pts[k].y += end.y - oy;
       k += st;
     }
+    // the straight exit out of a level spigot (the next point on the old axis within 400 mm) goes with the end when the
+    // unit is only moved, so that the exit before the turn keeps its length and direction
+    const ex = d.pts[k],
+      { old: so, dir: sd } = opt;
+    if (
+      so &&
+      sd &&
+      ex &&
+      k > 0 &&
+      k < d.pts.length - 1 &&
+      Math.abs(sd[2]) < 0.5 &&
+      so.dir[0] * sd[0] + so.dir[1] * sd[1] > 0.99
+    ) {
+      const vx = ex.x - so.p[0],
+        vy = ex.y - so.p[1],
+        s = vx * so.dir[0] + vy * so.dir[1];
+      if (s > 0 && s <= 400 && Math.abs(vx * so.dir[1] - vy * so.dir[0]) < 15) {
+        ex.x += end.x - ox;
+        ex.y += end.y - oy;
+        k += st;
+      }
+    }
     const top = d.pts[k - st],
       nb = d.pts[k];
     const tx = top === end ? ox : top.x - (end.x - ox),
@@ -66289,18 +66395,19 @@ let SPC = { v: -1, l: [] };
  * it is drawn as a short cone at the end, counted in the specification and noted by the checks. Per document version.
  */
 function ductTransitions(e) {
-  if (e.flex || e.shape === 'rect' || !e.pts || e.pts.length < 2) return [];
-  const k = documentState.docVer + '|' + JSON.stringify(e.pts) + '|' + e.z + '|' + e.d;
+  if (e.flex || !e.pts || e.pts.length < 2) return [];
+  const k =
+    documentState.docVer + '|' + JSON.stringify(e.pts) + '|' + e.z + '|' + e.shape + e.d + '|' + e.w + '|' + e.hh;
   const m = TRANS.get(e);
   if (m && m.k === k) return m.v;
-  if (SPC.v !== documentState.docVer)
-    SPC = { v: documentState.docVer, l: allSpigots().filter(q => q.shape !== 'rect') };
+  if (SPC.v !== documentState.docVer) SPC = { v: documentState.docVer, l: allSpigots() };
   const v = [];
+  const s1 = trSec(e);
   for (const i of [0, e.pts.length - 1]) {
     const p = e.pts[i],
       z = p.z != null ? +p.z : +e.z || 0;
     const q = SPC.l.find(
-      q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 && Math.abs(z - q.p[2]) < 40 && Math.abs(q.d - e.d) > 0.5
+      q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 && Math.abs(z - q.p[2]) < 40 && trDiff(s1, trSec(q))
     );
     if (!q) continue;
     // towards the first point that is further than a few millimetres (not the 1 mm point of a vertical step)
@@ -66310,10 +66417,47 @@ function ductTransitions(e) {
     if (!nb) continue;
     const w = w3(nb),
       l = Math.hypot(...w);
-    v.push({ i, d1: +e.d, d2: +q.d, p: [p.x, p.y, z], u: w.map(c => c / l), len: Math.min(TRANS_LEN, l * 0.9) });
+    const s2 = trSec(q);
+    const t = {
+      i,
+      d1: +e.d,
+      d2: +q.d,
+      s1,
+      s2,
+      w1: s1.shape === 'rect' ? s1.w : s1.d,
+      w2: s2.shape === 'rect' ? s2.w : s2.d,
+      p: [p.x, p.y, z],
+      u: w.map(c => c / l),
+      len: Math.min(TRANS_LEN, l * 0.9),
+      loft: ductTransition3
+    };
+    t.name = trName(t);
+    v.push(t);
   }
   TRANS.set(e, { k, v });
   return v;
+}
+/** Section of a duct or a spigot for the transitions: { shape: 'round', d } or { shape: 'rect', w, hh }. */
+function trSec(o) {
+  return o.shape === 'rect' ? { shape: 'rect', w: +o.w, hh: +o.hh } : { shape: 'round', d: +o.d };
+}
+/** Whether two sections differ (a transition is needed between them). */
+function trDiff(a, b) {
+  if (a.shape !== b.shape) return true;
+  return a.shape === 'rect' ? Math.abs(a.w - b.w) > 0.5 || Math.abs(a.hh - b.hh) > 0.5 : Math.abs(a.d - b.d) > 0.5;
+}
+/** The name of a section: «Ø160» or «400×200». */
+function trLabel(s) {
+  return s.shape === 'rect' ? `${s.w}×${s.hh}` : `Ø${s.d}`;
+}
+/** The name of a transition between two sections: round–round «Ø200/Ø160» (larger first), otherwise «400×200/Ø160». */
+function trName(t) {
+  const a = t.s1,
+    b = t.s2;
+  if (a.shape === 'round' && b.shape === 'round') return `Ø${Math.max(a.d, b.d)}/Ø${Math.min(a.d, b.d)}`;
+  const ar = s => (s.shape === 'rect' ? s.w * s.hh : Math.PI * (s.d / 2) ** 2);
+  const [x, y] = a.shape !== b.shape ? (a.shape === 'rect' ? [a, b] : [b, a]) : ar(a) >= ar(b) ? [a, b] : [b, a];
+  return `${trLabel(x)}/${trLabel(y)}`;
 }
 /* ---------- taps follow their main ---------- */
 /**
@@ -66398,6 +66542,8 @@ function nearMain(q, sys, maxD = 6000, skip) {
   }
   return best;
 }
+/** The straight exit of a rigid duct out of a spigot before it turns, mm: 100–150, half the way ahead within that. */
+const rigidExit = ahead => Math.max(100, Math.min(150, ahead * 0.5));
 /** The flexible duct path from a spigot to a point on the main: out of the spigot, then to the main's axis. */
 function flexPath(q, m, rigid) {
   const T = q.p;
@@ -66413,7 +66559,7 @@ function flexPath(q, m, rigid) {
   }
   // straight out of the spigot first, but not past the main when it lies ahead
   const ahead = (m.c.x - T[0]) * q.dir[0] + (m.c.y - T[1]) * q.dir[1] + (m.z - T[2]) * q.dir[2];
-  const out = ahead > 60 ? Math.min(120 + q.d * 0.5, ahead * 0.5) : 120 + q.d * 0.5;
+  const out = rigidExit(ahead > 60 ? ahead : Infinity);
   const A = [T[0] + q.dir[0] * out, T[1] + q.dir[1] * out, T[2] + q.dir[2] * out];
   const pts = [T, A];
   if (Math.abs(q.dir[2]) > 0.5) {
@@ -66434,14 +66580,14 @@ function flexPath(q, m, rigid) {
 }
 /** Runs one flexible duct to every free spigot of the unit. Returns how many were made. */
 /** Free spigots of other equipment a connection may go to (not the street side of an air handling unit). */
-function freeSpigots(except) {
+function freeSpigots(except, rigid) {
   return allSpigots().filter(
-    q => q.e !== except && !q.shape && q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q)
+    q => q.e !== except && (rigid || !q.shape) && q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q)
   );
 }
 /** The path between two spigots: out of each along its axis; a rigid run keeps to the axes of the plan. */
 function spigotPath(a, b, rigid) {
-  const o = q => 100 + q.d * 0.4;
+  const o = q => (rigid ? rigidExit(Infinity) : 100 + q.d * 0.4);
   const A1 = [a.p[0] + a.dir[0] * o(a), a.p[1] + a.dir[1] * o(a), a.p[2] + a.dir[2] * o(a)],
     B1 = [b.p[0] + b.dir[0] * o(b), b.p[1] + b.dir[1] * o(b), b.p[2] + b.dir[2] * o(b)];
   const pts = [a.p, A1];
@@ -66463,18 +66609,18 @@ function spigotPath(a, b, rigid) {
  */
 function flexConnect(e, main, opt = {}) {
   const all = (e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e)).filter(q => q.role !== 'oda' && q.role !== 'eha');
-  const round = all.filter(q => !q.shape);
+  const round = all.filter(q => opt.rigid || !q.shape);
   const sp = round.filter(q => !spigotLinked(q));
   flexConnect.why = !all.length
     ? 'У оборудования нет патрубков: выберите камеру с патрубками в свойствах'
     : !round.length
-      ? 'Патрубки прямоугольные — ведите от них прямоугольный воздуховод командой «Воздуховод»'
+      ? 'Патрубки прямоугольные — подведите жёсткими (прямоугольный воздуховод) или командой «Воздуховод»'
       : !sp.length
         ? 'Все патрубки уже подключены'
         : 'Рядом (до 6 м) нет ни воздуховода, ни свободного патрубка другого оборудования';
   if (!sp.length) return 0;
   const maxD = 6000;
-  const others = main ? [] : freeSpigots(e);
+  const others = main ? [] : freeSpigots(e, opt.rigid);
   const used = new Set(),
     made = new Set();
   let n = 0;
@@ -66533,10 +66679,10 @@ function flexConnect(e, main, opt = {}) {
       ...(opt.rigid ? { rigid: true } : { flex: true }),
       ...(t ? { link: true } : { tap: true }),
       pts,
-      shape: 'round',
-      d: q.d,
-      w: q.d,
-      hh: q.d,
+      // a rigid duct takes the section of the spigot: round Ø or rectangular W × H
+      ...(q.shape === 'rect' && opt.rigid
+        ? { shape: 'rect', d: q.d, w: q.w, hh: q.hh }
+        : { shape: 'round', d: q.d, w: q.d, hh: q.d }),
       z: pts[0].z,
       sys,
       flow: Math.round((+e.flow || (m && +m.d.flow) || 0) / Math.max(1, sp.length)),
@@ -67249,8 +67395,11 @@ const AC_SIDE = {
   grille: 'встроенный короб с решёткой',
   free: 'свободно, из запотолочного пространства'
 };
-const acSup = e => (AC_SIDE[e.supply] && e.supply !== 'free' ? e.supply : 'cam');
-const acRet = e => (AC_SIDE[e.ret] ? e.ret : 'cam');
+/** The unit was set up with chambers (their count, Ø or depth is in the project): it keeps them; a new unit has none. */
+const acCams = e => ['cn', 'cd', 'rn', 'rd', 'ch', 'rch'].some(k => e[k] != null);
+/** The spigot of a side: the flange of the unit as the model has it (rect) unless chambers were chosen or set up. */
+const acSup = e => (AC_SIDE[e.supply] && e.supply !== 'free' ? e.supply : acCams(e) ? 'cam' : 'rect');
+const acRet = e => (AC_SIDE[e.ret] ? e.ret : acCams(e) ? 'cam' : 'rect');
 /** The system of a side of the unit: its own, else the project's system of that kind (made when the project has none). */
 function acSysOf(e, k) {
   if (e[k]) return e[k];
@@ -130396,7 +130545,9 @@ checkRule('hvu-ducts', {
           add_(
             e,
             'warn',
-            `Ø воздуховода ${t.d1} ≠ Ø патрубка ${t.d2} — нужен переход ${t.d1}/${t.d2}`,
+            t.s1.shape === 'round' && t.s2.shape === 'round'
+              ? `Ø воздуховода ${t.d1} ≠ Ø патрубка ${t.d2} — нужен переход ${t.d1}/${t.d2}`
+              : `Сечение воздуховода ${trLabel(t.s1)} ≠ сечению патрубка ${trLabel(t.s2)} — нужен переход ${trName(t)}`,
             P(t.p[0], t.p[1])
           );
       // a rigid duct turns only by its elbows
@@ -130429,8 +130580,10 @@ checkRule('hvu-ducts', {
 
 
 
+
 const DLIB = {
-  galv: { t: 'rigid', n: 'оцинкованная сталь', ang: [15, 30, 45, 60, 90] },
+  // galvanised: only 45° and 90° elbows, level and vertical (a combination — two elbows); a gentle slope is no turn
+  galv: { t: 'rigid', n: 'оцинкованная сталь', ang: [45, 90], vang: [45, 90] },
   pvcRound: { t: 'rigid', n: 'ПВХ круглый', ang: [15, 30, 45, 90] },
   pvcFlat: { t: 'rigid', n: 'ПВХ плоский канал', ang: [45, 90], vang: [90] },
   flex: { t: 'flex', n: 'гибкий', ang: [90] }
@@ -130566,17 +130719,30 @@ function ductLayout(e) {
   }
   return out;
 }
-/** Specification rows of the straight parts and joints of a rigid duct (PVC flat channels have their own). */
+/**
+ * Specification rows of the straight parts and joints of a rigid duct (PVC flat channels have their own):
+ * [{ k, name, q, u? }]. A galvanised duct is counted like the galvanised shaft: the bars with the sheet thickness, the
+ * joints — a round one by nipples with sealant, a rectangular one by the bus joint (rail, corner pieces, clips).
+ */
 function ductSysRows(e) {
   const S_ = ductSys(e);
   if (!S_ || S_ === DSYS.pvcFlat) return [];
   const st = e.shape === 'rect' ? `${e.w}×${e.hh}` : `Ø${e.d}`;
   const L = ductLayout(e);
   const rows = [];
-  if (L.bars) rows.push({ k: 'b' + st, name: `${S_.bn} ${st}, L = ${S_.bar} мм (с подрезкой)`, q: L.bars });
+  const galv = S_ === DSYS.galvRound || S_ === DSYS.galvRect;
+  const t = galv
+    ? ` t=${String(gvSheetBySide(e.shape === 'rect' ? Math.max(+e.w, +e.hh) : +e.d)).replace('.', ',')} мм`
+    : '';
+  if (L.bars) rows.push({ k: 'b' + st, name: `${S_.bn} ${st}, L = ${S_.bar} мм${t} (с подрезкой)`, q: L.bars });
   // joints: between the bars; a flanged system also at both ends of every elbow
   const nj = L.joints.length + (S_.fitJ ? L.fitEnds.length : 0);
-  if (nj) rows.push({ k: 'j' + st, name: `${S_.jn} ${st}`, q: nj });
+  if (nj && S_ === DSYS.galvRect) {
+    const P_ = (2 * (+e.w + +e.hh)) / 1000;
+    for (const r of gvJointRows(P_, nj, 'rail')) rows.push({ k: r.k + st, name: `${r.name} ${st}`, q: r.q, u: r.u });
+  } else if (nj) rows.push({ k: 'j' + st, name: `${S_.jn} ${st}`, q: nj });
+  if (nj && S_ === DSYS.galvRound)
+    rows.push({ k: 'js' + st, name: `Герметик (лента) для ниппельных соединений ${st}`, q: nj });
   return rows;
 }
 
@@ -130600,6 +130766,54 @@ function rotAB(x, a, b) {
   if (s < 1e-9) return c > 0 ? x.slice() : dv3.mul(x, -1);
   const n = dv3.mul(k, 1 / s);
   return dv3.add(dv3.add(dv3.mul(x, c), dv3.mul(dv3.cross(n, x), s)), dv3.mul(n, dv3.dot(n, x) * (1 - c)));
+}
+/**
+ * A transition between two sections (round or rectangular) along the straight a→b: a loft whose rings are cut at the
+ * same angles (the corners of the rectangles included), so rectangle → circle, circle → rectangle and
+ * rectangle → rectangle all close without gaps. sa is the section at a, sb at b: { shape, d | w, hh }.
+ */
+function ductTransition3(mb, a, b, sa, sb, col) {
+  const u = dv3.nrm(dv3.sub(b, a));
+  const s = Math.hypot(u[0], u[1]) < 1e-6 ? [1, 0, 0] : dv3.nrm([-u[1], u[0], 0]);
+  let v = dv3.cross(s, u);
+  if (v[2] < 0 && Math.hypot(u[0], u[1]) > 1e-6) v = dv3.mul(v, -1);
+  const TAU2 = Math.PI * 2;
+  const ang = [];
+  for (let k = 0; k < 32; k++) ang.push((TAU2 * k) / 32);
+  for (const q of [sa, sb])
+    if (q.shape === 'rect') {
+      const c = Math.atan2(q.hh, q.w);
+      ang.push(c, Math.PI - c, Math.PI + c, TAU2 - c);
+    }
+  ang.sort((x, y) => x - y);
+  const pt = (q, th, o) => {
+    const cx = Math.cos(th),
+      sx = Math.sin(th);
+    let x, y;
+    if (q.shape === 'rect') {
+      const t = Math.min(
+        Math.abs(cx) > 1e-9 ? q.w / 2 / Math.abs(cx) : Infinity,
+        Math.abs(sx) > 1e-9 ? q.hh / 2 / Math.abs(sx) : Infinity
+      );
+      x = t * cx;
+      y = t * sx;
+    } else {
+      x = (q.d / 2) * cx;
+      y = (q.d / 2) * sx;
+    }
+    return dv3.add(o, dv3.add(dv3.mul(s, x), dv3.mul(v, y)));
+  };
+  for (let k = 0; k < ang.length; k++) {
+    const t0 = ang[k],
+      t1 = k + 1 < ang.length ? ang[k + 1] : ang[0] + TAU2;
+    if (t1 - t0 < 1e-6) continue;
+    const A0 = pt(sa, t0, a),
+      A1 = pt(sa, t1, a),
+      B0 = pt(sb, t0, b),
+      B1 = pt(sb, t1, b);
+    mb.tri3(col, A0, A1, B1);
+    mb.tri3(col, A0, B1, B0);
+  }
 }
 /**
  * A rectangular duct body along a 3D polyline with mitred corners: the section (width across the run, height up
@@ -130709,10 +130923,50 @@ function ductDetails3(mb, e, W, H, col, dark) {
     if (round) mb.tube(A, B, W / 2 + grow, cc, 24);
     else mb.obox(A, B, W + 2 * grow, H + 2 * grow, cc, undefined, Math.abs(u[2]) > 0.7 ? vside(c) : undefined);
   };
+  // a galvanised rectangular joint is the bus joint of a shaft: the rail (20 mm), four corner pieces, clips on the sides
+  const bus = (c, u) => {
+    const sv = Math.abs(u[2]) > 0.7 ? vside(c) : undefined;
+    let sx = sv || (Math.abs(u[2]) > 0.9 ? [1, 0, 0] : [-u[1], u[0], 0]);
+    const sl = Math.hypot(...sx);
+    sx = sx.map(x => x / sl);
+    const up = dv3.cross(u, sx);
+    const rail = 20,
+      hw = W / 2 + rail,
+      hh = H / 2 + rail;
+    const at = (a, b) => dv3.add(c, dv3.add(dv3.mul(sx, a), dv3.mul(up, b)));
+    const seg = (cc, w, h, len, col) =>
+      mb.obox(dv3.sub(cc, dv3.mul(u, len / 2)), dv3.add(cc, dv3.mul(u, len / 2)), w, h, col, undefined, sv);
+    mb.tag('Шина соединительная 20 мм');
+    seg(c, W + 2 * rail, H + 2 * rail, 30, dark);
+    mb.tag('Уголки шинного соединения');
+    for (const [a, b] of [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1]
+    ])
+      seg(at(a * (hw + 4), b * (hh + 4)), 48, 48, 40, '#555b63');
+    mb.tag('Клипсы шинного соединения');
+    const nW = Math.max(1, Math.round(W / 400)),
+      nH = Math.max(1, Math.round(H / 400));
+    for (let i = 0; i < nW; i++)
+      for (const b of [-1, 1]) seg(at(-W / 2 + (W * (i + 0.5)) / nW, b * (hh + 2)), 44, 26, 44, '#c9ced4');
+    for (let i = 0; i < nH; i++)
+      for (const a of [-1, 1]) seg(at(a * (hw + 2), -H / 2 + (H * (i + 0.5)) / nH), 26, 44, 44, '#c9ced4');
+  };
+  if (S_ === DSYS.galvRect) {
+    for (const j of L.joints) bus(j.c, j.u);
+    for (const f of L.fitEnds) bus(f.c, f.u);
+    return;
+  }
   mb.tag(S_.jn);
-  const jl = S_.jt === 'flange' ? 16 : S_.jt === 'ring' ? 30 : 50;
+  const jl = S_.jt === 'flange' ? 16 : S_.jt === 'ring' ? 80 : 50;
   const jg = S_.jt === 'flange' ? 8 : S_.jt === 'ring' ? 2.5 : 3;
-  for (const j of L.joints) band(j.c, j.u, jl, jg, S_.jt === 'sleeve' ? '#e4e6e8' : dark);
+  for (const j of L.joints) {
+    band(j.c, j.u, jl, jg, S_.jt === 'sleeve' ? '#e4e6e8' : dark);
+    // a nipple: the sleeve over the seam with a sealing tape across the middle
+    if (S_.jt === 'ring') band(j.c, j.u, 14, jg + 2.5, '#aab0b7');
+  }
   mb.tag(S_.jt === 'flange' ? 'Фланцы колен' : 'Концы колен (раструбы)');
   for (const f of L.fitEnds)
     band(f.c, f.u, S_.jt === 'flange' ? 16 : 24, S_.jt === 'flange' ? 8 : 2, S_.jt === 'sleeve' ? '#dcdfe2' : dark);
@@ -131234,7 +131488,7 @@ XT.duct = {
       e.group != null ? groupOf(e.group).col : 0,
       e.sys ? sysOf(e.sys).col : 0,
       zs,
-      JSON.stringify(ductTransitions(e).map(t => [t.i, t.d2])),
+      JSON.stringify(ductTransitions(e).map(t => [t.i, t.d2, t.w2, t.s2.shape])),
       ductJointsKey(e)
     ];
   },
@@ -131296,9 +131550,8 @@ XT.duct = {
       );
       // a transition where the end stands at a spigot of another Ø
       for (const t of ductTransitions(e)) {
-        const hi = Math.max(t.d1, t.d2),
-          lo = Math.min(t.d1, t.d2);
-        put(S_, 'b:trn' + hi + 'x' + lo, { name: `Переход Ø${hi}/Ø${lo} · ${e.sys}`, u: 'шт', base: true }, r => {
+        const nm = trName(t);
+        put(S_, 'b:trn' + nm, { name: `Переход ${nm} · ${e.sys}`, u: 'шт', base: true }, r => {
           r.q++;
           r.ids.push(e.id);
         });
@@ -131310,8 +131563,8 @@ XT.duct = {
         });
       // the straight bars and their joints (nipples, flanges, sleeves)
       for (const r of ductSysRows(e))
-        put(S_, 'b:ds' + e.mat + r.k, { name: `${r.name} · ${e.sys}`, u: 'шт', base: true }, x => {
-          x.q += r.q;
+        put(S_, 'b:ds' + e.mat + r.k, { name: `${r.name} · ${e.sys}`, u: r.u || 'шт', base: true }, x => {
+          x.q = Math.round((x.q + r.q) * 10) / 10;
           x.ids.push(e.id);
         });
       // every turn made of the real elbows of the material
