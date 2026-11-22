@@ -8837,7 +8837,7 @@ html[data-form='tablet'] #app #status #views {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.80';
+const APP_VER = '59.81';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -27318,6 +27318,7 @@ const WSDEF = [
       ['Расчёт', ['avcalc', 'acalc']],
       ['Оборудование', ['ahu', 'silencer', 'plenum']],
       ['Детали', ['reducer', 'ductee', 'distbox', 'flexconn']],
+      ['Прямоугольные детали', ['rred', 'rrc', 'rjog', 'rbend', 'rtee', 'rcap', 'rflg']],
       ['Кондиционеры', ['ac', 'acfreon', 'acdrain']],
       ['Схемы', ['ventlabel', 'ventsheet']]
     ]
@@ -27458,6 +27459,13 @@ const TLBL = {
   flexconn: 'Подводка',
   reducer: 'Переход',
   ductee: 'Тройник',
+  rred: 'Пер. прям.',
+  rrc: 'Пер. круг',
+  rjog: 'Утка',
+  rbend: 'Отвод прям.',
+  rtee: 'Врезка прям.',
+  rcap: 'Заглушка прям.',
+  rflg: 'Адаптер-фланец',
   ventlabel: 'Подписать',
   ventsheet: 'Листы схем',
   acalc: 'Воздух',
@@ -65591,6 +65599,7 @@ function galvSpec(e, L, H, put, S_) {
 
 
 
+
 /** Default norms (the ТЗ of the customer: living 30–60 m³/h per person, kitchen 100–150, bathrooms 50–100). */
 const AV_NORM = {
   person: 60, // m³/h per person in living rooms
@@ -65685,6 +65694,10 @@ function avSlabU() {
   return (lv.h || (S.ceil || 2700) + 300) + (lv.top || 0) - (lv.slab || 200);
 }
 /** Late hooks set by the air units module (a direct import would make a cycle). */
+/** ζ of an inline part (a silencer, an adapter, a rectangular fitting by its kind and sizes). */
+function partZeta(u) {
+  return afZetaPart(u.kind, isRF(u.kind) ? { ...u, ...rfAreas(u) } : u);
+}
 const hvHooksAv = { spigots: null, acSpigots: null };
 /** Machine of a network source: { q, pa, qmax, curve, setQ } — nominal point from the catalogue, the set flow. */
 function avMachine(u) {
@@ -66032,7 +66045,7 @@ function avNet(sysId) {
     return best;
   };
   for (const u of S.ents) {
-    if (u.type !== 'hvu' || !visible(u) || !['sil', 'red', 'tee'].includes(u.kind)) continue;
+    if (u.type !== 'hvu' || !visible(u) || !['sil', 'red', 'tee', ...Object.keys(RF_KIND)].includes(u.kind)) continue;
     const sp = (hvHooksAv.spigots ? hvHooksAv.spigots(u) : []).map(q => endK(P(q.p[0], q.p[1]))).filter(Boolean);
     if (sp.length < 2) continue;
     for (let i = 1; i < sp.length; i++)
@@ -66243,7 +66256,13 @@ function avNet(sysId) {
   // sections of the pieces (a part counts as a short duct of its own Ø)
   for (const pc of res.pieces) {
     const pd_ = pc.part ? +pc.part.d || 200 : 250;
-    pc.e = pc.d || { shape: 'round', d: pd_, w: pd_, hh: pd_, ins: 0 };
+    // a rectangular fitting counts as a short duct of the section of its inlet
+    const q0 = pc.part && isRF(pc.part.kind) && hvHooksAv.spigots ? hvHooksAv.spigots(pc.part)[0] : null;
+    pc.e =
+      pc.d ||
+      (q0 && q0.shape === 'rect'
+        ? { shape: 'rect', d: q0.w, w: q0.w, hh: q0.hh, ins: 0 }
+        : { shape: 'round', d: pd_, w: pd_, hh: pd_, ins: 0 });
     pc.F = afArea(pc.e);
   }
   // design flows: the sum of the project flows of the terminals below; where none is set the flow of the parent is
@@ -66286,10 +66305,12 @@ function avNet(sysId) {
     pc.isMain = pc === main;
     let zb = 0;
     for (const a of ductBends({ pts: pc.pts })) zb += afZetaBend(e, a);
-    if (pc.part) zb += afZetaPart(pc.part.kind);
+    if (pc.part) zb += partZeta(pc.part);
     pc.zFix = pc.chamber ? 0 : zb;
     pc.zTrans = 0;
-    if (pc.sibs.length === 1 && pc.parent && !pc.chamber) {
+    // the ζ of a rectangular reducer is the part's own: the change of the section next to it is not counted twice
+    const viaRed = pc.parent && pc.parent.part && ['rred', 'rrc', 'rflg'].includes(pc.parent.part.kind);
+    if (pc.sibs.length === 1 && pc.parent && !pc.chamber && !viaRed) {
       const z0 = afZetaReducer(pc.parent.F, pc.F, 0.3);
       pc.zTrans = pc.F > pc.parent.F ? z0 * Math.pow(pc.F / pc.parent.F, 2) : z0;
     }
@@ -66325,7 +66346,7 @@ function avNet(sysId) {
     let s = 0;
     for (const pc of legs) {
       const f = afSeg(pc.e, Q);
-      let z = pc.part ? afZetaPart(pc.part.kind) : 0;
+      let z = pc.part ? partZeta(pc.part) : 0;
       for (const a of ductBends({ pts: pc.pts })) z += afZetaBend(pc.e, a);
       s += f.R * pc.L + z * f.pd;
     }
@@ -66987,6 +67008,555 @@ function dbSpigotFlows(e) {
   return m;
 }
 
+// ===== blocks/hvac/rect-fittings.js =====
+/**
+ * blocks/hvac/rect-fittings
+ *
+ * Fittings of rectangular ducts as separate parts (type 'hvu', kinds rred, rrc, rjog, rbend, rtee, rcap, rflg): a
+ * rectangular reducer (concentric or one-sided), a rectangle–round reducer, a rectangular jog, a rectangular elbow
+ * (90° / 45°, level or vertical), a tee with a round or rectangular branch, a cap and the flange adapter of a machine
+ * spigot. The module is pure geometry and data: the size of the part, its spigots in the local frame (the same records
+ * as the units have: x, y, z, dir, d, shape, w, hh, role, n), the outline on the plan, the 3D mesh, the label and the
+ * specification row, the rows of the properties. air-units.js dispatches to it by the kind; rect-parts.js owns the
+ * commands. The run of a part is along the local x, the width of a rectangular section across it (y), the height up (z).
+ */
+
+
+
+
+/** The names of the kinds of rectangular fittings. */
+const RF_KIND = {
+  rred: 'Переход прямоугольный',
+  rrc: 'Переход прямоугольник–круг',
+  rjog: 'Утка прямоугольная',
+  rbend: 'Отвод прямоугольный',
+  rtee: 'Врезка / тройник прямоугольный',
+  rcap: 'Заглушка прямоугольная',
+  rflg: 'Адаптер-фланец патрубка'
+};
+/** Whether the kind is one of the rectangular fittings. */
+const isRF = kind => Object.prototype.hasOwnProperty.call(RF_KIND, kind);
+/** The part of a spigot beyond the body of the part, mm (the stub the duct joins). */
+const EXT = 40;
+const SQ = Math.SQRT1_2;
+const ECC = [
+  ['', 'концентрический'],
+  ['bot', 'односторонний (плоский низ)'],
+  ['top', 'односторонний (плоский верх)'],
+  ['side', 'односторонний (плоская сторона)']
+];
+/** A positive size in whole millimetres, else the default. */
+const num = (v, d) => (+v > 0 ? Math.round(+v) : d);
+/** Section of the inlet of a part: { shape: 'rect', w, hh } or { shape: 'round', d }. */
+function rfSecA(e) {
+  return e.kind === 'rflg'
+    ? { shape: 'round', d: num(e.d, 250) }
+    : { shape: 'rect', w: num(e.w, 400), hh: num(e.hh, 200) };
+}
+/** Section of the outlet of a part (the second size of a reducer, the round of a rectangle–round one). */
+function rfSecB(e) {
+  if (e.kind === 'rred') return { shape: 'rect', w: num(e.w2, 300), hh: num(e.hh2, 150) };
+  if (e.kind === 'rrc') return { shape: 'round', d: num(e.d, 250) };
+  return { shape: 'rect', w: num(e.w, 400), hh: num(e.hh, 200) };
+}
+/** Section of the branch of a tee: round Ø or rectangular W × H. */
+function rfSecBr(e) {
+  return e.br === 'rect'
+    ? { shape: 'rect', w: num(e.bw, 300), hh: num(e.bh, 150) }
+    : { shape: 'round', d: num(e.d2, 160) };
+}
+/** Width of a section across the run (Ø of a round one), mm. */
+const secW = s => (s.shape === 'rect' ? s.w : s.d);
+/** Height of a section (Ø of a round one), mm. */
+const secH = s => (s.shape === 'rect' ? s.hh : s.d);
+/** Spigot fields of a section: round { d }, rectangular { d: w, shape: 'rect', w, hh }. */
+const sf = s => (s.shape === 'rect' ? { d: s.w, shape: 'rect', w: s.w, hh: s.hh } : { d: s.d });
+/** The text of a section: «Ø160» or «400×200». */
+const st = s => (s.shape === 'rect' ? `${s.w}×${s.hh}` : `Ø${s.d}`);
+/** Offset of the outlet axis against the inlet axis of a reducer: { y, z } by the one-sided flat (ecc). */
+function rfShift(e) {
+  const a = rfSecA(e),
+    b = rfSecB(e);
+  if (e.kind !== 'rred' && e.kind !== 'rrc') return { y: 0, z: 0 };
+  if (e.ecc === 'bot') return { y: 0, z: (secH(b) - secH(a)) / 2 };
+  if (e.ecc === 'top') return { y: 0, z: (secH(a) - secH(b)) / 2 };
+  if (e.ecc === 'side') return { y: (secW(b) - secW(a)) / 2, z: 0 };
+  return { y: 0, z: 0 };
+}
+/** Leg of a rectangular elbow: from the corner to the end of the body, mm. */
+const bendLeg = e => Math.round((e.plane === 'v' ? num(e.hh, 200) : num(e.w, 400)) / 2 + 100);
+/** Length of the body of the part along the run (the part between the stubs), mm. */
+function rfLen(e) {
+  const a = rfSecA(e),
+    b = rfSecB(e);
+  switch (e.kind) {
+    case 'rred':
+      return Math.max(250, Math.round(2 * Math.max(Math.abs(a.w - b.w), Math.abs(a.hh - b.hh))));
+    case 'rrc':
+      return Math.max(250, Math.round(1.5 * Math.abs(Math.max(a.w, a.hh) - b.d)));
+    case 'rflg':
+      return 120;
+    case 'rjog':
+      return Math.max(400, Math.abs(Math.round(+e.off || 200)) + 300);
+    case 'rbend':
+      return 2 * bendLeg(e);
+    case 'rtee':
+      return Math.max(300, secW(rfSecBr(e)) + 120);
+    default:
+      return 100;
+  }
+}
+/** Distance from the point of the part to its inlet spigot (along −x), mm. */
+function rfInOff(e) {
+  return (e.kind === 'rbend' ? bendLeg(e) : rfLen(e) / 2) + EXT;
+}
+/** Body size in the local frame for the units' contract: [length, depth in the plan, height]. */
+function rfDim(e) {
+  const a = rfSecA(e),
+    b = rfSecB(e);
+  if (e.kind === 'rbend') {
+    const lg = bendLeg(e);
+    return [2 * lg, e.plane === 'v' ? a.w : Math.round(2 * lg), a.hh];
+  }
+  if (e.kind === 'rtee') return [rfLen(e), a.w + 2 * (secW(rfSecBr(e)) + 150), a.hh];
+  if (e.kind === 'rjog') return [rfLen(e), a.w + (e.plane === 'v' ? 0 : Math.abs(+e.off || 200)), a.hh];
+  return [rfLen(e), Math.max(secW(a), secW(b)), Math.max(secH(a), secH(b))];
+}
+/** The direction (unit) and the position of the outlet of an elbow / jog in the local frame. */
+function outVec(e) {
+  const s = +e.sgn < 0 ? -1 : 1,
+    c = +e.ang === 45 ? SQ : 0,
+    sn = +e.ang === 45 ? SQ : 1;
+  return e.plane === 'v' ? [c, 0, s * sn] : [c, s * sn, 0];
+}
+/** Spigots of a part in the local frame: { x, y, z, dir, d, shape?, w?, hh?, role, sys, n }. */
+function rfSpigotsL(e) {
+  const sys = e.sys || null,
+    a = rfSecA(e),
+    b = rfSecB(e),
+    L = rfLen(e);
+  const sp = (x, y, z, dir, s, role, n) => ({ x, y, z, dir, ...sf(s), role, sys, n });
+  if (e.kind === 'rbend') {
+    const lg = bendLeg(e) + EXT,
+      o = outVec(e);
+    return [sp(-lg, 0, 0, [-1, 0, 0], a, 'in', 'Вход'), sp(o[0] * lg, o[1] * lg, o[2] * lg, o, a, 'out', 'Выход')];
+  }
+  if (e.kind === 'rcap') return [sp(-L / 2 - EXT, 0, 0, [-1, 0, 0], a, 'in', 'Вход')];
+  if (e.kind === 'rtee') {
+    const br = rfSecBr(e),
+      bl = secW(br) / 2 + 150,
+      s = +e.sgn < 0 ? -1 : 1;
+    const top = e.side === 'top';
+    const dir = top ? [0, 0, s] : +e.ang === 45 ? [SQ, s * SQ, 0] : [0, s, 0];
+    const k = top ? a.hh / 2 + bl : (a.w / 2 + bl) * (+e.ang === 45 ? 1.3 : 1);
+    return [
+      sp(-L / 2 - EXT, 0, 0, [-1, 0, 0], a, 'in', 'Вход'),
+      sp(L / 2 + EXT, 0, 0, [1, 0, 0], a, 'out', 'Проход'),
+      sp(dir[0] * k, dir[1] * k, dir[2] * k, dir, br, 'br', 'Ответвление')
+    ];
+  }
+  const sh = rfShift(e);
+  let oy = sh.y,
+    oz = sh.z;
+  if (e.kind === 'rjog') {
+    const off = Math.round(+e.off || 200);
+    if (e.plane === 'v') oz = off;
+    else oy = off;
+  }
+  return [
+    sp(-L / 2 - EXT, 0, 0, [-1, 0, 0], a, 'in', e.kind === 'rflg' ? 'Со стороны машины' : 'Вход'),
+    sp(L / 2 + EXT, oy, oz, [1, 0, 0], b, 'out', e.kind === 'rflg' ? 'Воздуховод' : 'Выход')
+  ];
+}
+/** A closed outline of a polyline thickened by hw on both sides, the corners mitred: [[x, y], …]. */
+function ribbon(c, hw) {
+  const nrm = (a, b) => {
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [-(b[1] - a[1]) / l, (b[0] - a[0]) / l];
+  };
+  const L = [],
+    R = [];
+  c.forEach((p, i) => {
+    const n0 = i > 0 ? nrm(c[i - 1], p) : nrm(p, c[i + 1]),
+      n1 = i < c.length - 1 ? nrm(p, c[i + 1]) : n0;
+    let m = [n0[0] + n1[0], n0[1] + n1[1]];
+    const ml = Math.hypot(m[0], m[1]) || 1;
+    m = [m[0] / ml, m[1] / ml];
+    const k = hw / Math.max(0.3, m[0] * n0[0] + m[1] * n0[1]);
+    L.push([p[0] + m[0] * k, p[1] + m[1] * k]);
+    R.push([p[0] - m[0] * k, p[1] - m[1] * k]);
+  });
+  return [...L, ...R.reverse()];
+}
+/** Outline of a part on the plan, a closed polygon in the local frame: [[x, y], …]. */
+function rfPoly(e) {
+  const a = rfSecA(e),
+    b = rfSecB(e),
+    L = rfLen(e);
+  const hw = a.w ? a.w / 2 : a.d / 2;
+  if (e.kind === 'rbend') {
+    const lg = bendLeg(e);
+    if (e.plane === 'v')
+      return [
+        [-lg, -hw],
+        [a.hh / 2, -hw],
+        [a.hh / 2, hw],
+        [-lg, hw]
+      ];
+    return ribbon(
+      [
+        [-lg, 0],
+        [0, 0],
+        [outVec(e)[0] * lg, outVec(e)[1] * lg]
+      ],
+      hw
+    );
+  }
+  if (e.kind === 'rjog') {
+    const off = e.plane === 'v' ? 0 : Math.round(+e.off || 200);
+    return ribbon(
+      [
+        [-L / 2, 0],
+        [-L / 2 + 150, 0],
+        [L / 2 - 150, off],
+        [L / 2, off]
+      ],
+      hw
+    );
+  }
+  if (e.kind === 'rtee') {
+    const br = rfSecBr(e),
+      bw = secW(br) / 2,
+      s = +e.sgn < 0 ? -1 : 1,
+      bl = bw + 150;
+    if (e.side === 'top')
+      return [
+        [-L / 2, -hw],
+        [L / 2, -hw],
+        [L / 2, hw],
+        [-L / 2, hw]
+      ];
+    const y1 = s * (a.w / 2 + bl) * (+e.ang === 45 ? 1.3 : 1),
+      y0 = s * hw;
+    return s > 0
+      ? [
+          [-L / 2, -hw],
+          [L / 2, -hw],
+          [L / 2, hw],
+          [bw, hw],
+          [bw, y1],
+          [-bw, y1],
+          [-bw, hw],
+          [-L / 2, hw]
+        ]
+      : [
+          [-L / 2, hw],
+          [L / 2, hw],
+          [L / 2, -hw],
+          [bw, y0],
+          [bw, y1],
+          [-bw, y1],
+          [-bw, y0],
+          [-L / 2, -hw]
+        ];
+  }
+  const sh = rfShift(e);
+  const wa = secW(a) / 2,
+    wb = secW(b) / 2;
+  return [
+    [-L / 2, -wa],
+    [L / 2, sh.y - wb],
+    [L / 2, sh.y + wb],
+    [-L / 2, wa]
+  ];
+}
+/** The label of a part: the name and the sections. */
+function rfLabel(e) {
+  const a = rfSecA(e),
+    b = rfSecB(e);
+  switch (e.kind) {
+    case 'rred':
+      return `Переход ${st(a)}/${st(b)}${e.ecc ? ' одностор.' : ''}`;
+    case 'rrc':
+      return `Переход ${st(a)}/${st(b)}${e.ecc ? ' одностор.' : ''}`;
+    case 'rflg':
+      return `Адаптер-фланец ${st(a)}/${st(b)}`;
+    case 'rjog':
+      return `Утка ${st(a)}, смещение ${Math.abs(Math.round(+e.off || 200))} (${e.plane === 'v' ? 'верт.' : 'гориз.'})`;
+    case 'rbend':
+      return `Отвод ${+e.ang === 45 ? 45 : 90}° ${st(a)} (${e.plane === 'v' ? 'вертикальный' : 'горизонтальный'})`;
+    case 'rtee':
+      return `${e.side === 'top' ? 'Врезка' : 'Тройник'} ${st(a)} / ответвление ${st(rfSecBr(e))}${+e.ang === 45 ? ' 45°' : ''}`;
+    default:
+      return `Заглушка ${st(a)}`;
+  }
+}
+/** The row of the specification: { k (key), name, u }. */
+function rfSpec(e) {
+  const nm = rfLabel(e);
+  return { k: `hvrf${e.kind}${nm}`, name: `${nm}, оцинкованная сталь, фланцы на шинорейке`, u: 'шт' };
+}
+/** The short text on the plan under the part. */
+const rfMark = e => rfLabel(e);
+/** The ζ-sizing data of a part for the flow calculation: the areas of its sections, m², and the length, m. */
+function rfAreas(e) {
+  const A = s => (s.shape === 'rect' ? (s.w * s.hh) / 1e6 : (Math.PI * s.d * s.d) / 4e6);
+  return { F1: A(rfSecA(e)), F2: A(rfSecB(e)), len: rfLen(e) / 1000 };
+}
+/** Defaults of a new part of a kind (o — what the command remembers: sizes). */
+function rfDefaults(kind, o = {}) {
+  const w = o.w || 400,
+    hh = o.hh || 200;
+  switch (kind) {
+    case 'rred':
+      return {
+        w,
+        hh,
+        w2: o.w2 || Math.round((w * 0.75) / 50) * 50,
+        hh2: o.hh2 || Math.round((hh * 0.75) / 50) * 50,
+        ecc: ''
+      };
+    case 'rrc':
+      return { w, hh, d: o.d || 250, ecc: '' };
+    case 'rflg':
+      return { d: o.d || 250, w, hh };
+    case 'rjog':
+      return { w, hh, off: o.off || 200, plane: 'h' };
+    case 'rbend':
+      return { w, hh, ang: o.ang || 90, plane: 'h', sgn: 1 };
+    case 'rtee':
+      return { w, hh, br: 'round', d2: o.d2 || 160, bw: 300, bh: 150, ang: 90, side: 'side', sgn: 1 };
+    default:
+      return { w, hh };
+  }
+}
+/** Rows of the properties of a part: [[label, key, type, options?]]. */
+function rfRows(e, sysOpts) {
+  const pl = [
+    ['h', 'горизонтальный (в плане)'],
+    ['v', 'вертикальный (вверх / вниз)']
+  ];
+  const sg =
+    e.plane === 'v'
+      ? [
+          [1, 'вверх'],
+          [-1, 'вниз']
+        ]
+      : [
+          [1, 'влево'],
+          [-1, 'вправо']
+        ];
+  const A = [
+    ['Ширина, мм', 'w', 'n'],
+    ['Высота, мм', 'hh', 'n']
+  ];
+  const tail = [
+    ['Система', 'sys', 's', sysOpts],
+    ['Отметка оси, мм', 'z', 'n'],
+    ['Поворот, °', 'rotd', 'n']
+  ];
+  let r;
+  if (e.kind === 'rred')
+    r = [
+      ['Ширина входа, мм', 'w', 'n'],
+      ['Высота входа, мм', 'hh', 'n'],
+      ['Ширина выхода, мм', 'w2', 'n'],
+      ['Высота выхода, мм', 'hh2', 'n'],
+      ['Исполнение', 'ecc', 's', ECC]
+    ];
+  else if (e.kind === 'rrc')
+    r = [
+      ['Ширина, мм', 'w', 'n'],
+      ['Высота, мм', 'hh', 'n'],
+      ['Ø круглого, мм', 'd', 'n'],
+      ['Исполнение', 'ecc', 's', ECC]
+    ];
+  else if (e.kind === 'rflg')
+    r = [
+      ['Ø патрубка машины, мм', 'd', 'n'],
+      ['Ширина фланца, мм', 'w', 'n'],
+      ['Высота фланца, мм', 'hh', 'n']
+    ];
+  else if (e.kind === 'rjog')
+    r = [...A, ['Смещение, мм (знак — сторона)', 'off', 'n'], ['Плоскость', 'plane', 's', pl]];
+  else if (e.kind === 'rbend')
+    r = [
+      ...A,
+      [
+        'Угол',
+        'ang',
+        's',
+        [
+          [90, '90°'],
+          [45, '45°']
+        ]
+      ],
+      ['Плоскость', 'plane', 's', pl],
+      ['Поворот', 'sgn', 's', sg]
+    ];
+  else if (e.kind === 'rtee')
+    r = [
+      ...A,
+      [
+        'Ответвление',
+        'br',
+        's',
+        [
+          ['round', 'круглое Ø'],
+          ['rect', 'прямоугольное Ш×В']
+        ]
+      ],
+      ...(e.br === 'rect'
+        ? [
+            ['Ширина ответвления, мм', 'bw', 'n'],
+            ['Высота ответвления, мм', 'bh', 'n']
+          ]
+        : [['Ø ответвления, мм', 'd2', 'n']]),
+      [
+        'Врезка',
+        'side',
+        's',
+        [
+          ['side', 'сбоку'],
+          ['top', 'сверху / снизу']
+        ]
+      ],
+      [
+        'Сторона',
+        'sgn',
+        's',
+        e.side === 'top'
+          ? [
+              [1, 'сверху'],
+              [-1, 'снизу']
+            ]
+          : [
+              [1, 'влево'],
+              [-1, 'вправо']
+            ]
+      ],
+      ...(e.side === 'top'
+        ? []
+        : [
+            [
+              'Угол ответвления',
+              'ang',
+              's',
+              [
+                [90, '90°'],
+                [45, '45°']
+              ]
+            ]
+          ])
+    ];
+  else r = A;
+  return [...r, ...tail];
+}
+/** A flange of a rectangular spigot: the bus rail (busJoint3) at the end of the stub, across the run. */
+function rfFlange(mb, tip, dir, w, hh, col) {
+  const u = dir[2] ? [0, 0, Math.sign(dir[2])] : dir,
+    sx = Math.abs(dir[2]) > 0.9 ? [1, 0, 0] : [-dir[1], dir[0], 0];
+  const l = Math.hypot(sx[0], sx[1], sx[2]) || 1;
+  busJoint3(
+    mb,
+    [tip[0] - u[0] * 14, tip[1] - u[1] * 14, tip[2] - u[2] * 14],
+    u,
+    [sx[0] / l, sx[1] / l, sx[2] / l],
+    w,
+    hh,
+    {
+      col,
+      fit: false,
+      tag: 'Фланец патрубка (шинорейка)'
+    }
+  );
+}
+/** A stub of a spigot from the base to the tip: a box (rectangular) or a tube (round), with its flange or bead. */
+function stub(mb, q, base, col, dark) {
+  const tip = [q.x, q.y, q.z];
+  if (q.shape === 'rect') {
+    mb.obox(base, tip, q.w, q.hh, col);
+    rfFlange(mb, tip, q.dir, q.w, q.hh, dark);
+  } else {
+    mb.smooth(true);
+    mb.tube(base, tip, q.d / 2, col, 24);
+    mb.tube(
+      [tip[0] - q.dir[0] * 26, tip[1] - q.dir[1] * 26, tip[2] - q.dir[2] * 26],
+      [tip[0] - q.dir[0] * 18, tip[1] - q.dir[1] * 18, tip[2] - q.dir[2] * 18],
+      q.d / 2 + 3,
+      dark,
+      24
+    );
+    mb.smooth(false);
+  }
+}
+const FR = { s: [0, 1, 0], v: [0, 0, 1] };
+/** 3D of a part in its local frame (the axis at z = 0): the body, the stubs, the flanges on the rectangular ends. */
+function rfBuild(mb, e, col, dark) {
+  const a = rfSecA(e),
+    b = rfSecB(e),
+    L = rfLen(e),
+    SP = rfSpigotsL(e);
+  mb.tag(rfLabel(e));
+  if (e.kind === 'rbend' || e.kind === 'rjog') {
+    const [i, o] = SP;
+    const path =
+      e.kind === 'rbend'
+        ? [
+            [i.x, i.y, i.z],
+            [0, 0, 0],
+            [o.x, o.y, o.z]
+          ]
+        : [
+            [i.x, i.y, i.z],
+            [-L / 2 + 150, 0, 0],
+            [L / 2 - 150, o.y, o.z],
+            [o.x, o.y, o.z]
+          ];
+    rectDuctBody(mb, path, a.w, a.hh, col);
+    for (const q of SP) rfFlange(mb, [q.x, q.y, q.z], q.dir, q.w, q.hh, dark);
+    return;
+  }
+  if (e.kind === 'rcap') {
+    const q = SP[0];
+    mb.obox([q.x, 0, 0], [L / 2, 0, 0], a.w, a.hh, col);
+    rfFlange(mb, [q.x, q.y, q.z], q.dir, a.w, a.hh, dark);
+    mb.tag('Заглушка: пластина');
+    mb.obox([L / 2 - 4, 0, 0], [L / 2 + 2, 0, 0], a.w + 10, a.hh + 10, dark);
+    return;
+  }
+  if (e.kind === 'rtee') {
+    const [i, o, br] = SP;
+    rectDuctBody(
+      mb,
+      [
+        [i.x, 0, 0],
+        [o.x, 0, 0]
+      ],
+      a.w,
+      a.hh,
+      col
+    );
+    for (const q of [i, o]) rfFlange(mb, [q.x, 0, 0], q.dir, a.w, a.hh, dark);
+    mb.tag('Ответвление');
+    const wall = br.dir[2] ? (a.hh / 2) * Math.sign(br.dir[2]) : (a.w / 2) * (br.dir[1] >= 0 ? 1 : -1);
+    const from = br.dir[2] ? [0, 0, wall - br.dir[2] * 20] : [0, wall - br.dir[1] * 20 * 1, 0];
+    stub(mb, br, from, col, dark);
+    return;
+  }
+  // reducers and the adapter: a loft between the sections, a stub with a flange at each end
+  const sh = rfShift(e);
+  ductTransition3(mb, [-L / 2, 0, 0], [L / 2, sh.y, sh.z], a, b, col, FR);
+  for (const q of SP) {
+    const base = [q.x - q.dir[0] * EXT, q.y - q.dir[1] * EXT, q.z - q.dir[2] * EXT];
+    stub(mb, q, base, col, dark);
+  }
+}
+/** A short text of the sections of a part for the specification of the spigots: «400×200». */
+const rfSecText = st;
+/** Label helper for others: number with thin spaces. */
+const rfFmt = fmt;
+
 // ===== blocks/hvac/air-units.js =====
 /**
  * blocks/hvac/air-units
@@ -67002,6 +67572,7 @@ function dbSpigotFlows(e) {
  * The same module labels the systems (leaders with text taken from the model) and makes the album sheet with the
  * axonometric scheme and the 3D view with the walls.
  */
+
 
 
 
@@ -67067,7 +67638,32 @@ const AHU_CAT = {
     mount: 'floor'
   },
   'brz-900re': { n: 'Breezart 900 Lux RE', L: 950, W: 887, H: 460, d: 200, q: 550, qmax: 700, pa: 150, mount: 'ceil' },
-  'brz-500rp': { n: 'Breezart 500 Lux RP', L: 1195, W: 787, H: 369, d: 160, q: 400, qmax: 500, pa: 150, mount: 'ceil' }
+  'brz-500rp': { n: 'Breezart 500 Lux RP', L: 1195, W: 787, H: 369, d: 160, q: 400, qmax: 500, pa: 150, mount: 'ceil' },
+  // typical units with flanged rectangular spigots (sizes are typical of the class, not a passport)
+  'typ-rec1000': {
+    n: 'Рекуператор канальный, прямоугольные фланцы 500×250 (типовой), 1000 м³/ч',
+    L: 1500,
+    W: 900,
+    H: 450,
+    d: 250,
+    sec: '500×250',
+    q: 1000,
+    qmax: 1250,
+    pa: 150,
+    mount: 'ceil'
+  },
+  'typ-rec2000': {
+    n: 'Рекуператор канальный, прямоугольные фланцы 700×400 (типовой), 2000 м³/ч',
+    L: 1900,
+    W: 1100,
+    H: 600,
+    d: 315,
+    sec: '700×400',
+    q: 2000,
+    qmax: 2400,
+    pa: 200,
+    mount: 'ceil'
+  }
 };
 /** Silencers: the round CSR series — connection Ø, length, outer Ø. */
 const SIL_D = [100, 125, 160, 200, 250, 315];
@@ -67081,7 +67677,8 @@ const HV_KIND = {
   red: 'Переход диаметров',
   tee: 'Тройник',
   plen: 'Адаптер решётки',
-  dbox: 'Распределительный короб'
+  dbox: 'Распределительный короб',
+  ...RF_KIND
 };
 
 /* ---------- geometry ---------- */
@@ -67109,17 +67706,27 @@ function hvZ(e) {
   return Math.round(Math.min(ceil + 150, slab - H / 2 - 30));
 }
 /** Body size in the local frame: [length along x, depth along y, height]. */
+/** The name of a silencer: round CSR Ø/L or rectangular W×H/L. */
+const silName = e => {
+  const s = hvSec(e, 'io', 'Ø' + (+e.d || 160));
+  return s.shape === 'rect'
+    ? `Шумоглушитель прямоугольный ${s.w}×${s.h}/${+e.L || 900}`
+    : `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`;
+};
 /** A reducer: the length of the cone by the difference of the diameters; a tee: the branch plus the collars. */
 const redLen = e => Math.max(100, Math.round(Math.abs((+e.d || 200) - (+e.d2 || 160)) * 1.2 + 80));
 const teeLen = e => Math.round((+e.d2 || 160) * (+e.ang === 45 ? 1.5 : 1) + 120);
 function hvDim(e) {
   if (e.kind === 'dbox') return dbDim(e);
+  if (isRF(e.kind)) return rfDim(e);
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
     // standing: the long side is vertical, the spigots are on top
     return ahuVert(e) ? [a.W, a.H, a.L] : [a.L, a.W, a.H];
   }
   if (e.kind === 'sil') {
+    const rs = hvSec(e, 'io', 'Ø' + (+e.d || 160));
+    if (rs.shape === 'rect') return [+e.L || 900, rs.w + 100, rs.h + 100];
     const D = silOuter(+e.d || 160);
     return [+e.L || 900, D, D];
   }
@@ -67133,11 +67740,45 @@ function hvDim(e) {
   }
   return [+e.L || 1000, +e.W || 150, +e.H || 250];
 }
+/** The section of a spigot kind of a unit from its own setting (e.sp[key].sec) or the default text: { shape, d | w, h, txt }. */
+function hvSec(e, key, def) {
+  return dbSec((e.sp && e.sp[key] && e.sp[key].sec) || def);
+}
+/** The key of the section setting of a spigot: the role of an air handling unit, io of a silencer, conn of a plenum. */
+function hvSpKey(e, q) {
+  return e.kind === 'ahu' ? q.role : e.kind === 'sil' ? 'io' : e.kind === 'plen' ? 'conn' : null;
+}
+/** The section a spigot has by the model / the round Ø of the unit, as text: «Ø250» or the catalogue's «500×250». */
+function hvSecDef(e, key) {
+  return e.kind === 'ahu' ? ahuOf(e).sec || 'Ø' + ahuOf(e).d : 'Ø' + (+e.d || (e.kind === 'sil' ? 160 : 125));
+}
 /**
- * Spigots in the local frame: { x, y, z, dir:[dx,dy,dz], d, role, sys, n }. Roles: sup / eta / oda / eha for an
- * air handling unit, in / out for a silencer, conn for a plenum.
+ * Spigots in the local frame: { x, y, z, dir:[dx,dy,dz], d, role, sys, n }; a rectangular one also shape: 'rect', w, hh.
+ * The form and the size come from the unit's own setting (e.sp), else from the catalogue model. Roles: sup / eta /
+ * oda / eha for an air handling unit, in / out for a silencer, conn for a plenum.
  */
 function hvSpigotsL(e) {
+  if (isRF(e.kind)) return rfSpigotsL(e);
+  const raw = hvSpigotsRaw(e);
+  if (e.kind === 'dbox') return raw;
+  return raw.map(q => {
+    const key = hvSpKey(e, q);
+    if (!key) return q;
+    const s = hvSec(e, key, hvSecDef(e, key));
+    if (s.shape !== 'rect') return s.d === q.d ? q : { ...q, d: s.d };
+    let { x, y } = q;
+    if (e.kind === 'ahu') {
+      // wide flanges keep apart: the spigots spread out to the sides of the body
+      if (q.dir[2]) {
+        x = Math.sign(x) * Math.max(Math.abs(x), s.w / 2 + 15);
+        y = Math.sign(y) * Math.max(Math.abs(y), s.h / 2 + 15);
+      } else y = Math.sign(y) * Math.max(Math.abs(y), s.w / 2 + 15);
+    }
+    return { ...q, x, y, d: s.w, shape: 'rect', w: s.w, hh: s.h };
+  });
+}
+/** The spigots of a unit as the model and the round Ø of the catalogue make them (before the unit's own sections). */
+function hvSpigotsRaw(e) {
   if (e.kind === 'dbox') return dbSpigotsL(e);
   const [L, W, H] = hvDim(e);
   const out = [];
@@ -67233,6 +67874,7 @@ function hvSpigots(e) {
 hvHooksAv.spigots = e => hvSpigots(e);
 /** Plan outline of the body. */
 function hvPoly(e) {
+  if (isRF(e.kind)) return rfPoly(e).map(([x, y]) => LP(e, x, y));
   const [L, W, H] = hvDim(e);
   // on a wall: the box stands behind the face (in the bulkhead), the grille looks into the room
   if (e.kind === 'plen' && e.mount === 'wall')
@@ -67275,13 +67917,14 @@ function hvMark(e) {
  */
 function hvLabel(e, short) {
   if (e.kind === 'dbox') return dbLabel(e, short);
+  if (isRF(e.kind)) return rfLabel(e);
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
     const q = `L=${fmt(+e.flow || a.q)} м³/ч`;
     if (short) return `${hvMark(e)}\n${q}`;
     return `${e.name ? e.name + ' · ' : ''}${a.n}\n${q}`;
   }
-  if (e.kind === 'sil') return `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`;
+  if (e.kind === 'sil') return silName(e);
   if (e.kind === 'red') return `Переход ø${+e.d || 200}/ø${+e.d2 || 160}`;
   if (e.kind === 'tee')
     return `${e.cross ? 'Крестовина' : 'Тройник'} ø${+e.d || 200}/ø${+e.d2 || 160}${+e.ang === 45 ? ' 45°' : ''}`;
@@ -67322,6 +67965,12 @@ function arrow(mb, x, y, z, ux, uy, len, w, col) {
   tri(q(b, -w / 2), q(b, w / 2), t);
 }
 function spigotTube(mb, q, col, dark) {
+  if (q.shape === 'rect') {
+    // a rectangular spigot: a short box with the bus-rail flange at its end
+    mb.obox([q.x - q.dir[0] * 90, q.y - q.dir[1] * 90, q.z - q.dir[2] * 60], [q.x, q.y, q.z], q.w, q.hh, col);
+    rfFlange(mb, [q.x, q.y, q.z], q.dir, q.w, q.hh, dark);
+    return;
+  }
   const r = q.d / 2;
   const base = [q.x - q.dir[0] * 90, q.y - q.dir[1] * 90, q.z - q.dir[2] * 60];
   mb.smooth(true);
@@ -67343,6 +67992,11 @@ function hvBuild(e, mb) {
   }
   const [L, W, H] = hvDim(e);
   const SP = hvSpigotsL(e);
+  if (isRF(e.kind)) {
+    const c = sysOf(e.sys || '').col;
+    rfBuild(mb, e, hvShade(c, 0.15), hvShade(c, -0.25));
+    return;
+  }
   if (e.kind === 'ahu') {
     const a = ahuOf(e);
     mb.tag(`${a.n}: корпус`);
@@ -67417,10 +68071,15 @@ function hvBuild(e, mb) {
         24
       );
     mb.smooth(false);
+  } else if (e.kind === 'sil' && SP[0].shape === 'rect') {
+    const col = sysOf(e.sys || '').col;
+    mb.tag(silName(e));
+    mb.obox([-L / 2, 0, 0], [L / 2, 0, 0], W, H, hvShade(col, 0.15));
+    for (const q of SP) spigotTube(mb, q, hvShade(col, 0.15), hvShade(col, -0.25));
   } else if (e.kind === 'sil') {
     const col = sysOf(e.sys || '').col;
     const D = W;
-    mb.tag(`Шумоглушитель CSR ${+e.d || 160}/${L}`);
+    mb.tag(silName(e));
     mb.smooth(true);
     mb.tube([-L / 2, 0, 0], [L / 2, 0, 0], D / 2, hvShade(col, 0.15), 32);
     for (const x of [-L / 2, L / 2]) mb.tube([x - 8, 0, 0], [x + 8, 0, 0], D / 2 + 3, hvShade(col, -0.25), 32);
@@ -67726,6 +68385,17 @@ function hvDraw(e, color, o, ghost) {
         LP(e, b[0] - nx * r, b[1] - ny * r)
       ]);
       ctx.stroke();
+      if (q.shape === 'rect') {
+        // the bus-rail flange across the end of a rectangular spigot
+        const f = [q.x - ax * 14, q.y - ay * 14];
+        pathPoly([
+          LP(e, f[0] + nx * (r + 20), f[1] + ny * (r + 20)),
+          LP(e, q.x + nx * (r + 20), q.y + ny * (r + 20)),
+          LP(e, q.x - nx * (r + 20), q.y - ny * (r + 20)),
+          LP(e, f[0] - nx * (r + 20), f[1] - ny * (r + 20))
+        ]);
+        ctx.stroke();
+      }
     } else if (q.shape === 'rect') {
       pathPoly([
         LP(e, q.x - q.w / 2, q.y - q.hh / 2),
@@ -67823,15 +68493,17 @@ function hvDraw(e, color, o, ghost) {
     const t =
       e.kind === 'ahu'
         ? hvMark(e)
-        : e.kind === 'sil'
-          ? `CSR ${+e.d || 160}/${L}`
-          : e.kind === 'red'
-            ? `ø${+e.d || 200}/ø${+e.d2 || 160}`
-            : e.kind === 'tee'
-              ? `${e.cross ? '✚' : 'T'} ø${+e.d || 200}/ø${+e.d2 || 160}`
-              : e.kind === 'dbox'
-                ? `${e.sys ? e.sys + ' · ' : ''}${fmt(L)}×${fmt(W)}×${fmt(hvDim(e)[2])}`
-                : `${fmt(L)}×${fmt(W)}`;
+        : isRF(e.kind)
+          ? rfMark(e)
+          : e.kind === 'sil'
+            ? silName(e).replace('Шумоглушитель ', '')
+            : e.kind === 'red'
+              ? `ø${+e.d || 200}/ø${+e.d2 || 160}`
+              : e.kind === 'tee'
+                ? `${e.cross ? '✚' : 'T'} ø${+e.d || 200}/ø${+e.d2 || 160}`
+                : e.kind === 'dbox'
+                  ? `${e.sys ? e.sys + ' · ' : ''}${fmt(L)}×${fmt(W)}×${fmt(hvDim(e)[2])}`
+                  : `${fmt(L)}×${fmt(W)}`;
     ctx.fillText(t, s.x, s.y);
   }
   ctx.restore();
@@ -68005,19 +68677,22 @@ XT.hvu = {
     e.kind === 'ahu'
       ? ahuOf(e).n
       : e.kind === 'sil'
-        ? `Шумоглушитель CSR ${+e.d || 160}/${+e.L || 900}`
-        : e.kind === 'red' || e.kind === 'tee'
-          ? hvLabel(e)
-          : e.kind === 'dbox'
-            ? `Распределительный короб ${dbDim(e).map(fmt).join('×')}`
-            : 'Адаптер решётки',
+        ? silName(e)
+        : isRF(e.kind)
+          ? rfLabel(e)
+          : e.kind === 'red' || e.kind === 'tee'
+            ? hvLabel(e)
+            : e.kind === 'dbox'
+              ? `Распределительный короб ${dbDim(e).map(fmt).join('×')}`
+              : 'Адаптер решётки',
   label: hvLabel,
   checks: hvChecks,
   panel(e) {
     const sysOpts = [['', '—'], ...S.vent.systems.map(s => [s.id, `${s.id} · ${s.name}`])];
     if (e.kind === 'dbox') return dbPanel(e, sysOpts);
-    const rows =
-      e.kind === 'ahu'
+    const rows = isRF(e.kind)
+      ? rfRows(e, sysOpts)
+      : e.kind === 'ahu'
         ? [
             ['Модель', 'model', 's', Object.entries(AHU_CAT).map(([k, v]) => [k, v.n])],
             ['Расход, м³/ч', 'flow', 'n'],
@@ -68102,6 +68777,7 @@ XT.hvu = {
     const chk = hvChecks(e);
     return xGroups(e, [
       [HV_KIND[e.kind], esc(XT.hvu.group(e)), rows],
+      ...(hvSecRows(e) ? [['Сечения патрубков', 'круглое Ø / прямоугольное Ш×В', hvSecRows(e)]] : []),
       ...(e.kind === 'ahu' ? [['Питание', powerNear(e) ? 'есть' : 'нет', powerRows(e)]] : []),
       [
         'Патрубки',
@@ -68110,7 +68786,7 @@ XT.hvu = {
           .map(q =>
             cR(
               q.n,
-              `ø${q.d}${q.sys ? ' · ' + esc(q.sys) : ''}${q.sys !== null && !spigotLinked(q) ? ' · свободен' : ''}`
+              `${q.shape === 'rect' ? `${q.w}×${q.hh}` : 'ø' + q.d}${q.sys ? ' · ' + esc(q.sys) : ''}${q.sys !== null && !spigotLinked(q) ? ' · свободен' : ''}`
             )
           )
           .join('')
@@ -68126,10 +68802,14 @@ XT.hvu = {
   },
   onSet(e, p, v) {
     if (e.kind === 'dbox') dbOnSet(e, p, v);
+    hvSecOnSet(e, p, v);
+    if (p === 'sgn' || p === 'ang' || p === 'off') e[p] = +v;
     if (p === 'model') {
       const a = AHU_CAT[v];
       if (a) e.flow = a.q;
       delete e.z;
+      // the spigots of another model: its own forms and sizes
+      delete e.sp;
     }
     if (p === 'vert') {
       delete e.z;
@@ -68160,11 +68840,21 @@ XT.hvu = {
       const a = ahuOf(e);
       one('hvahu' + e.model, `Приточно-вытяжная установка с рекуператором ${a.n}, ${fmt(a.q)} м³/ч`);
       if (a.mount !== 'floor') one('hvahang', 'Подвес установки: шпилька М8 + виброизолятор, комплект', 'компл');
-      one('hvavib', `Вставка гибкая (антивибрационная) ø${a.d}`, 'шт', 4);
+      for (const q of hvSpigotsL(e)) {
+        const t = q.shape === 'rect' ? `${q.w}×${q.hh}` : `ø${q.d}`;
+        one(t === `ø${a.d}` ? 'hvavib' : 'hvavib' + t, `Вставка гибкая (антивибрационная) ${t}`);
+      }
+    } else if (isRF(e.kind)) {
+      const r = rfSpec(e);
+      one(r.k, r.name);
     } else if (e.kind === 'red' || e.kind === 'tee')
       one(`hvfit${e.kind}${e.d}-${e.d2}-${e.ang || 90}-${e.cross ? 1 : 0}`, hvLabel(e) + ', оцинкованная сталь');
-    else if (e.kind === 'sil') one(`hvsil${e.d}-${e.L}`, `Шумоглушитель круглый CSR ${+e.d || 160}/${+e.L || 900}`);
-    else if (e.kind === 'dbox') {
+    else if (e.kind === 'sil') {
+      const rs = hvSec(e, 'io', 'Ø' + (+e.d || 160));
+      if (rs.shape === 'rect')
+        one(`hvsil${rs.w}x${rs.h}-${e.L}`, `Шумоглушитель прямоугольный ${rs.w}×${rs.h}/${+e.L || 900}`);
+      else one(`hvsil${e.d}-${e.L}`, `Шумоглушитель круглый CSR ${+e.d || 160}/${+e.L || 900}`);
+    } else if (e.kind === 'dbox') {
       const nm = dbSpecName(e);
       one('hvdb' + nm, nm);
       one('hvdbhang', 'Подвес короба: шпилька М8 + уголок, комплект', 'компл');
@@ -68189,6 +68879,50 @@ XT.hvu = {
 };
 
 /* ---------- distribution box: properties ---------- */
+/** Rows of the form and size of the spigots of a unit (an air handling unit: each role, a silencer, a plenum: one). */
+function hvSecRows(e) {
+  if (e.kind !== 'ahu' && e.kind !== 'sil' && e.kind !== 'plen') return '';
+  const roles =
+    e.kind === 'ahu'
+      ? [
+          ['sup', 'Приток'],
+          ['eta', 'Вытяжка'],
+          ['oda', 'Наружный воздух'],
+          ['eha', 'Выброс']
+        ]
+      : e.kind === 'sil'
+        ? [['io', 'Вход и выход']]
+        : [['conn', 'Патрубки']];
+  return roles.map(([k, n]) => cR(n, dbSecInputs(`sp.${k}`, hvSec(e, k, hvSecDef(e, k)).txt))).join('');
+}
+/**
+ * After a field of the spigot sections changed (sp.<key>.shape | d | w | h): the section is kept as one text in
+ * e.sp[key].sec; a silencer and a plenum keep their round Ø in d (a rectangular one only in sp).
+ */
+function hvSecOnSet(e, p, v) {
+  const m = p.match(/^sp\.(\w+)\.(shape|d|w|h)$/);
+  if (!m || !e.sp || !e.sp[m[1]]) return;
+  const key = m[1],
+    k = m[2],
+    o = e.sp[key];
+  const q = hvSec(e, key, hvSecDef(e, key));
+  delete o[k];
+  const n = Math.round(+v);
+  let t = q.txt;
+  if (k === 'shape' && v === 'round' && q.shape === 'rect') {
+    const de = Math.sqrt((4 * q.w * q.h) / Math.PI);
+    t = 'Ø' + DB_D.reduce((a, d) => (Math.abs(d - de) < Math.abs(a - de) ? d : a), DB_D[0]);
+  } else if (k === 'shape' && v === 'rect' && q.shape === 'round')
+    t = `${q.d * 2}×${Math.max(100, Math.round(q.d / 2 / 10) * 10)}`;
+  else if (k === 'd' && n > 0) t = 'Ø' + n;
+  else if (k === 'w' && n > 0) t = `${n}×${q.h}`;
+  else if (k === 'h' && n > 0) t = `${q.w}×${n}`;
+  const r = dbSec(t);
+  if (r.shape === 'round' && (e.kind === 'sil' || e.kind === 'plen')) {
+    e.d = r.d;
+    delete e.sp[key];
+  } else o.sec = r.txt;
+}
 const DB_SIDE_OPTS = Object.entries(DB_SIDES).map(([k, v]) => [k, v.n]);
 const dbSel = (path, v, opts) =>
   `<select data-x="${path}">${opts.map(([a, b]) => `<option value="${esc(a)}" ${String(a) === String(v) ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>`;
@@ -68495,7 +69229,7 @@ function moveDuctEnd(d, i, T, opt = {}) {
   }
 }
 /** The fittings that stand in a duct line: their ducts always have the Ø of the fitting. */
-const INLINE_KINDS = ['red', 'tee', 'sil'];
+const INLINE_KINDS = ['red', 'tee', 'sil', ...Object.keys(RF_KIND)];
 /**
  * After a unit changed (height, turn, size), the duct ends that stood at its spigots go with them (moveDuctEnd).
  * The section: a flexible duct is put on the spigot, so it takes the Ø of a round spigot. A rigid duct keeps its Ø,
@@ -68510,10 +69244,19 @@ function hvFollow(e, links) {
     // a stub is judged by its route as it was (the move may add a turn or a step to it)
     const takes = d.flex || d.pts.length <= 2 || (e.type === 'hvu' && INLINE_KINDS.includes(e.kind));
     moveDuctEnd(d, i, q.p, { old, dir: q.dir });
-    if (q.shape !== 'rect' && d.shape !== 'rect' && takes && Math.abs((+d.d || 0) - q.d) > 0.5) d.d = d.w = d.hh = q.d;
-    if (q.shape === 'rect' && d.shape === 'rect' && q.w && q.hh && (d.w !== q.w || d.hh !== q.hh)) {
+    if (d.flex) {
+      // a hose is round: a round spigot gives it its Ø, a rectangular one gets the adapter «rectangle → round»
+      if (q.shape !== 'rect' && Math.abs((+d.d || 0) - q.d) > 0.5) d.d = d.w = d.hh = q.d;
+    } else if (takes && (q.shape === 'rect') !== (d.shape === 'rect')) {
+      // the form of the spigot changed: the stub takes the new section
+      if (q.shape === 'rect') Object.assign(d, { shape: 'rect', d: q.d, w: q.w, hh: q.hh });
+      else Object.assign(d, { shape: 'round', d: q.d, w: q.d, hh: q.d });
+    } else if (q.shape !== 'rect' && d.shape !== 'rect' && takes && Math.abs((+d.d || 0) - q.d) > 0.5)
+      d.d = d.w = d.hh = q.d;
+    else if (q.shape === 'rect' && d.shape === 'rect' && q.w && q.hh && (d.w !== q.w || d.hh !== q.hh)) {
       d.w = q.w;
       d.hh = q.hh;
+      d.d = q.d;
     }
   }
 }
@@ -68527,7 +69270,7 @@ let SPC = { v: -1, l: [] };
  * it is drawn as a short cone at the end, counted in the specification and noted by the checks. Per document version.
  */
 function ductTransitions(e) {
-  if (e.flex || !e.pts || e.pts.length < 2) return [];
+  if (!e.pts || e.pts.length < 2) return [];
   const k =
     documentState.docVer + '|' + JSON.stringify(e.pts) + '|' + e.z + '|' + e.shape + e.d + '|' + e.w + '|' + e.hh;
   const m = TRANS.get(e);
@@ -68539,7 +69282,11 @@ function ductTransitions(e) {
     const p = e.pts[i],
       z = p.z != null ? +p.z : +e.z || 0;
     const q = SPC.l.find(
-      q => Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 && Math.abs(z - q.p[2]) < 40 && trDiff(s1, trSec(q))
+      q =>
+        Math.hypot(p.x - q.p[0], p.y - q.p[1]) < 8 &&
+        Math.abs(z - q.p[2]) < 40 &&
+        // a hose on a rectangular spigot always has the adapter «rectangle → round»
+        (e.flex ? q.shape === 'rect' : trDiff(s1, trSec(q)))
     );
     if (!q) continue;
     // towards the first point that is further than a few millimetres (not the 1 mm point of a vertical step)
@@ -68559,6 +69306,7 @@ function ductTransitions(e) {
       w1: s1.shape === 'rect' ? s1.w : s1.d,
       w2: s2.shape === 'rect' ? s2.w : s2.d,
       p: [p.x, p.y, z],
+      flex: !!e.flex,
       u: w.map(c => c / l),
       len: Math.min(TRANS_LEN, l * 0.9),
       loft: ductTransition3
@@ -68682,7 +69430,7 @@ function flexPath(q, m, rigid) {
   if (!rigid) {
     // flexible: straight out of the spigot (long enough for a bend of radius ≥ Ø), then one smooth bend to the main
     const ahead = (m.c.x - T[0]) * q.dir[0] + (m.c.y - T[1]) * q.dir[1] + (m.z - T[2]) * q.dir[2];
-    const want = 2 * q.d + 20;
+    const want = (q.shape === 'rect' ? TRANS_LEN : 0) + 2 * flexD(q) + 20;
     // a main close ahead: out up to its level, then one bend (the whole height gives the bend its room)
     const out = ahead > 60 ? Math.min(want, ahead) : want;
     const A = [T[0] + q.dir[0] * out, T[1] + q.dir[1] * out, T[2] + q.dir[2] * out];
@@ -68711,15 +69459,19 @@ function flexPath(q, m, rigid) {
   return o;
 }
 /** Runs one flexible duct to every free spigot of the unit. Returns how many were made. */
+/** The Ø of a hose put on a spigot: the spigot's own, for a rectangular one the standard Ø of about the same area. */
+function flexD(q) {
+  if (q.shape !== 'rect') return q.d;
+  const de = Math.sqrt((4 * q.w * q.hh) / Math.PI);
+  return DB_D.reduce((a, d) => (Math.abs(d - de) < Math.abs(a - de) ? d : a), DB_D[0]);
+}
 /** Free spigots of other equipment a connection may go to (not the street side of an air handling unit). */
 function freeSpigots(except, rigid) {
-  return allSpigots().filter(
-    q => q.e !== except && (rigid || !q.shape) && q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q)
-  );
+  return allSpigots().filter(q => q.e !== except && q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q));
 }
 /** The path between two spigots: out of each along its axis; a rigid run keeps to the axes of the plan. */
 function spigotPath(a, b, rigid) {
-  const o = q => (rigid ? rigidExit(Infinity) : 100 + q.d * 0.4);
+  const o = q => (rigid ? rigidExit(Infinity) : (q.shape === 'rect' ? TRANS_LEN : 0) + 100 + flexD(q) * 0.4);
   const A1 = [a.p[0] + a.dir[0] * o(a), a.p[1] + a.dir[1] * o(a), a.p[2] + a.dir[2] * o(a)],
     B1 = [b.p[0] + b.dir[0] * o(b), b.p[1] + b.dir[1] * o(b), b.p[2] + b.dir[2] * o(b)];
   const pts = [a.p, A1];
@@ -68741,15 +69493,13 @@ function spigotPath(a, b, rigid) {
  */
 function flexConnect(e, main, opt = {}) {
   const all = (e.type === 'hvu' ? hvSpigots(e) : uiSpigots(e)).filter(q => q.role !== 'oda' && q.role !== 'eha');
-  const round = all.filter(q => opt.rigid || !q.shape);
+  const round = all;
   const sp = round.filter(q => !spigotLinked(q));
   flexConnect.why = !all.length
     ? 'У оборудования нет патрубков: выберите камеру с патрубками в свойствах'
-    : !round.length
-      ? 'Патрубки прямоугольные — подведите жёсткими (прямоугольный воздуховод) или командой «Воздуховод»'
-      : !sp.length
-        ? 'Все патрубки уже подключены'
-        : 'Рядом (до 6 м) нет ни воздуховода, ни свободного патрубка другого оборудования';
+    : !sp.length
+      ? 'Все патрубки уже подключены'
+      : 'Рядом (до 6 м) нет ни воздуховода, ни свободного патрубка другого оборудования';
   if (!sp.length) return 0;
   const maxD = 6000;
   const others = main ? [] : freeSpigots(e, opt.rigid);
@@ -68814,7 +69564,7 @@ function flexConnect(e, main, opt = {}) {
       // a rigid duct takes the section of the spigot: round Ø or rectangular W × H
       ...(q.shape === 'rect' && opt.rigid
         ? { shape: 'rect', d: q.d, w: q.w, hh: q.hh }
-        : { shape: 'round', d: q.d, w: q.d, hh: q.d }),
+        : { shape: 'round', d: flexD(q), w: flexD(q), hh: flexD(q) }),
       z: pts[0].z,
       sys,
       flow: Math.round((+e.flow || (m && +m.d.flow) || 0) / Math.max(1, sp.length)),
@@ -68985,6 +69735,7 @@ function ventIds() {
 }
 
 /* ---------- commands ---------- */
+/** The command of an equipment part: «kind» is ahu, sil, red, tee, plen, dbox or one of the rectangular fittings. */
 function mkHvu(kind0) {
   const kind = kind0 || 'ahu';
   let rot = mkHvu['r' + kind] || 0,
@@ -69005,29 +69756,31 @@ function mkHvu(kind0) {
             sysS: S.vent.systems.find(s => /прит/i.test(s.kind))?.id || '',
             sysE: S.vent.systems.find(s => /выт/i.test(s.kind))?.id || ''
           }
-        : kind === 'dbox'
-          ? { ...dbDefaults(), ...(o.L ? { L: o.L } : {}), sys: S.vent.cur || S.vent.systems[0].id }
-          : kind === 'red' || kind === 'tee'
-            ? {
-                d: o.d || 200,
-                d2: o.d2 || 160,
-                ...(kind === 'tee' ? { ang: 90 } : {}),
-                sys: S.vent.cur || S.vent.systems[0].id
-              }
-            : kind === 'sil'
-              ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
-              : {
-                  L: o.L || 1000,
-                  W: 150,
-                  H: 250,
-                  n: 2,
-                  d: 125,
-                  conn: 'top',
-                  slots: 2,
-                  sw: 30,
-                  flow: 200,
+        : isRF(kind)
+          ? { ...rfDefaults(kind, o), sys: S.vent.cur || S.vent.systems[0].id }
+          : kind === 'dbox'
+            ? { ...dbDefaults(), ...(o.L ? { L: o.L } : {}), sys: S.vent.cur || S.vent.systems[0].id }
+            : kind === 'red' || kind === 'tee'
+              ? {
+                  d: o.d || 200,
+                  d2: o.d2 || 160,
+                  ...(kind === 'tee' ? { ang: 90 } : {}),
                   sys: S.vent.cur || S.vent.systems[0].id
-                })
+                }
+              : kind === 'sil'
+                ? { d: o.d || 250, L: o.L || 900, sys: S.vent.cur || S.vent.systems[0].id }
+                : {
+                    L: o.L || 1000,
+                    W: 150,
+                    H: 250,
+                    n: 2,
+                    d: 125,
+                    conn: 'top',
+                    slots: 2,
+                    sw: 30,
+                    flow: 200,
+                    sys: S.vent.cur || S.vent.systems[0].id
+                  })
     };
     return e;
   };
@@ -69036,7 +69789,7 @@ function mkHvu(kind0) {
     let best = null;
     onDuct.flexHit = false;
     for (const d of S.ents) {
-      if (d.type !== 'duct' || !visible(d) || d.shape === 'rect') continue;
+      if (d.type !== 'duct' || !visible(d) || (d.shape === 'rect') !== isRF(kind)) continue;
       for (let i = 1; i < d.pts.length; i++) {
         const c = segPt(d.pts[i - 1], d.pts[i], p);
         const dd = dist(c, p);
@@ -69063,17 +69816,22 @@ function mkHvu(kind0) {
     prompt: () =>
       kind === 'red' || kind === 'tee'
         ? `${kind === 'red' ? 'Переход' : 'Тройник'} ø${o.d || 200}/ø${o.d2 || 160}: щелчок по воздуховоду — встанет в разрыв (Ø магистрали — от воздуховода), или свободное место [Ø/Второй Ø/Повернуть/Зеркально]:`
-        : kind === 'sil'
-          ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
-          : kind === 'dbox'
-            ? 'Распределительный короб: место (вход слева, выходы спереди — грани, сечения и расходы в свойствах) [Повернуть/Длина/Высота]:'
-            : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
+        : isRF(kind)
+          ? `${HV_KIND[kind]}: щелчок по концу или по прямоугольному воздуховоду — встанет на него (сечение берётся с воздуховода), или свободное место [Ширина/Высота/Смещение/Повернуть/Зеркально]:`
+          : kind === 'sil'
+            ? `Шумоглушитель CSR ${o.d || 250}/${o.L || 900}: щелчок по воздуховоду — разрежет его и встанет в разрыв [Длина/Ø]:`
+            : kind === 'dbox'
+              ? 'Распределительный короб: место (вход слева, выходы спереди — грани, сечения и расходы в свойствах) [Повернуть/Длина/Высота]:'
+              : `${HV_KIND[kind]}: место${kind === 'plen' ? ' на потолке или у стены (встанет настенной решёткой)' : ''} [Повернуть${kind === 'ahu' ? '/Модель' : '/Длина'}]:`,
     hasValue: () => dk != null,
     onValue(v) {
       if (dk === 'L' && v > 100) o.L = v;
       if (dk === 'z') o.z = v;
       if (dk === 'd' && v > 50) o.d = v;
       if (dk === 'd2' && v > 50) o.d2 = v;
+      if (dk === 'w' && v > 50) o.w = v;
+      if (dk === 'hh' && v > 50) o.hh = v;
+      if (dk === 'off' && v) o.off = v;
       mkHvu['o' + kind] = o;
       dk = null;
     },
@@ -69093,6 +69851,9 @@ function mkHvu(kind0) {
       }
       if (kind !== 'ahu' && kind !== 'plen' && kw(s, 'ø', 'диаметр', 'd')) return !!(dk = 'd');
       if ((kind === 'red' || kind === 'tee') && kw(s, 'в', 'второй', 'd2')) return !!(dk = 'd2');
+      if (isRF(kind) && kw(s, 'ш', 'ширина', 'w')) return !!(dk = 'w');
+      if (isRF(kind) && kw(s, 'вы', 'высота сечения', 'hh')) return !!(dk = 'hh');
+      if (kind === 'rjog' && kw(s, 'см', 'смещение', 'off')) return !!(dk = 'off');
       if (kw(s, 'з', 'зеркально', 'm')) {
         rot += Math.PI;
         mkHvu['r' + kind] = rot;
@@ -69108,7 +69869,7 @@ function mkHvu(kind0) {
       return false;
     },
     onPoint(p) {
-      if (kind === 'sil' || kind === 'red' || kind === 'tee') {
+      if (kind === 'sil' || kind === 'red' || kind === 'tee' || isRF(kind)) {
         const at = attachAtEnd(kind, p, o);
         if (at) return 'end';
         const h = onDuct(p);
@@ -69156,7 +69917,7 @@ function ductEndAt(p, tol) {
  */
 function attachAtEnd(kind, p, o = {}) {
   const h = ductEndAt(p);
-  if (!h || h.d.shape === 'rect') return null;
+  if (!h || (h.d.shape === 'rect') !== isRF(kind)) return null;
   const nb = h.i === 0 ? h.d.pts[1] : h.d.pts[h.d.pts.length - 2];
   const zs = ductPath3(h.d);
   const zn = zs[h.i === 0 ? 1 : zs.length - 2][2];
@@ -69165,22 +69926,25 @@ function attachAtEnd(kind, p, o = {}) {
     return null;
   }
   const dd = +h.d.d || 160;
-  const part =
-    kind === 'sil'
+  const part = isRF(kind)
+    ? rfFit(kind, h.d, o)
+    : kind === 'sil'
       ? { d: SIL_SNAP(dd), L: +o.L || 900 }
       : kind === 'red'
         ? { d: dd, d2: +o.d2 && +o.d2 < dd ? +o.d2 : FIT_D.filter(x => x < dd).pop() || Math.max(100, dd - 40) }
         : { d: dd, d2: Math.min(dd, +o.d2 || 160), ang: +o.ang || 90 };
   const L = hvDim({ kind, ...part })[0];
-  const off = L / 2 + (kind === 'sil' ? 50 : 40);
+  const off = isRF(kind) ? rfInOff({ kind, ...part }) : L / 2 + (kind === 'sil' ? 50 : 40);
   pushUndo();
   const end = h.d.pts[h.i];
   const u = Object.keys(h).length ? h.u : P(1, 0);
+  // the adapter of a machine spigot has the rectangle towards the duct: it is turned end for end
+  const flip = kind === 'rflg' ? Math.PI : 0;
   const e = addEnt({
     type: 'hvu',
     kind,
-    p: add(end, mul(u, off)),
-    rot: Math.atan2(u.y, u.x),
+    p: add(end, mul(u, kind === 'rflg' ? L / 2 + 40 : off)),
+    rot: Math.atan2(u.y, u.x) + flip,
     ...part,
     sys: h.d.sys,
     z: Math.round(h.z),
@@ -69198,8 +69962,9 @@ const insertSilencer = (d, i, c, o = {}) => insertInline('sil', d, i, c, o);
  */
 function insertInline(kind, d, i, c, o = {}) {
   const dd = kind === 'sil' ? SIL_SNAP(d.d || 160) : +d.d || 160;
-  const part =
-    kind === 'sil'
+  const part = isRF(kind)
+    ? rfFit(kind, d, o)
+    : kind === 'sil'
       ? { d: dd, L: +o.L || 900 }
       : kind === 'red'
         ? { d: dd, d2: +o.d2 && +o.d2 < dd ? +o.d2 : FIT_D.filter(x => x < dd).pop() || Math.max(100, dd - 40) }
@@ -69209,6 +69974,10 @@ function insertInline(kind, d, i, c, o = {}) {
     b = d.pts[i];
   const u = nrm(sub(b, a));
   const half = L / 2 + (kind === 'sil' ? 50 : 40);
+  if (isRF(kind) && !['rred', 'rrc', 'rtee'].includes(kind)) {
+    log('Эту деталь ставят на конец воздуховода (щелчок по концу), а не в разрыв', true);
+    return null;
+  }
   const p0 = sub(c, mul(u, half)),
     p1 = add(c, mul(u, half));
   // the part must lie on the straight run with both its ends (measured along the run, not as distances — an end
@@ -69246,6 +70015,9 @@ function insertInline(kind, d, i, c, o = {}) {
   if (kind === 'red') {
     tail.d = tail.w = tail.hh = part.d2;
   }
+  // after a rectangular reducer the run takes the second section; after the rectangle–round one it is round
+  if (kind === 'rred') Object.assign(tail, { d: part.w2, w: part.w2, hh: part.hh2 });
+  if (kind === 'rrc') Object.assign(tail, { shape: 'round', d: part.d, w: part.d, hh: part.d });
   const rot = Math.atan2(u.y, u.x) + (o.flip ? Math.PI : 0);
   const s = addEnt({
     type: 'hvu',
@@ -69259,6 +70031,18 @@ function insertInline(kind, d, i, c, o = {}) {
   });
   changed();
   return s;
+}
+/** A rectangular part sized for a duct: its section (a rectangular duct's W × H) and what the command remembers. */
+function rfFit(kind, d, o) {
+  const w = +d.w || 400,
+    hh = +d.hh || 200,
+    f = rfDefaults(kind, { ...o, w, hh });
+  // a reducer goes down by one step of the section
+  if (kind === 'rred') {
+    f.w2 = +o.w2 && +o.w2 < w ? +o.w2 : Math.max(100, Math.round((w * 0.75) / 50) * 50);
+    f.hh2 = +o.hh2 && +o.hh2 < hh ? +o.hh2 : Math.max(100, Math.round((hh * 0.75) / 50) * 50);
+  }
+  return f;
 }
 const SIL_SNAP = d => SIL_D.reduce((a, x) => (Math.abs(x - d) < Math.abs(a - d) ? x : a), 160);
 /** «Подводки»: a main duct, then a unit (plenum, silencer, ducted air conditioner). */
@@ -69491,23 +70275,136 @@ var ACP = {
 /**
  * Ducted indoor units by model (sources: Midea MTI(U) 2025 leaflet, Haier, Gree, Hisense datasheets — see
  * docs/hvac-catalog-sources.md): cooling kW, airflow m³/h (high speed), max external static pressure Pa,
- * body W × D × H mm.
+ * body W × D × H mm; sup / ret — typical size of the rectangular flange of the supply / return outlet, W × H mm
+ * (typical values of the class, not passport figures: the passport of the chosen model is the last word).
  */
 const AC_CAT = {
-  'midea-mtiu12': { n: 'Midea MTIU-12HW1FNXP', cap: 3.52, q: 600, esp: 60, dim: [700, 506, 200] },
-  'midea-mtiu18': { n: 'Midea MTIU-18HW1FNXP', cap: 5.28, q: 911, esp: 100, dim: [880, 674, 210] },
-  'midea-mti24': { n: 'Midea MTI-24HW1FNXP', cap: 7.03, q: 1229, esp: 160, dim: [1100, 774, 249] },
-  'midea-mti36': { n: 'Midea MTI-36HW1FNXP', cap: 10.55, q: 2100, esp: 160, dim: [1360, 774, 249] },
-  'midea-mti48': { n: 'Midea MTI-48HW1FNXP', cap: 14.07, q: 2400, esp: 160, dim: [1200, 874, 300] },
-  'midea-mti55': { n: 'Midea MTI-55HW1FNXP', cap: 16.12, q: 2600, esp: 160, dim: [1200, 874, 300] },
-  'midea-mtb09': { n: 'Midea MTBI-09 (низконапорный)', cap: 2.64, q: 530, esp: 40, dim: [700, 635, 210] },
-  'haier-ad12': { n: 'Haier AD12MS1ERA', cap: 3.5, q: 550, esp: 100, dim: [720, 650, 270] },
-  'haier-ad24': { n: 'Haier AD24MS1ERA', cap: 7.1, q: 1050, esp: 100, dim: [950, 650, 270] },
-  'haier-ad36': { n: 'Haier AD36NS1ERA', cap: 9.9, q: 2090, esp: 150, dim: [1135, 742, 270] },
-  'gree-gfh12': { n: 'Gree GFH12EAK3DNA1A', cap: 3.5, q: 550, esp: 0, dim: [700, 615, 200] },
-  'gree-gfh24': { n: 'Gree GFH24EAK3DNA1A', cap: 7.1, q: 1000, esp: 0, dim: [1100, 615, 200] },
-  'hisense-aud24': { n: 'Hisense AUD24HX4SLH1', cap: 7.05, q: 1250, esp: 80, dim: [900, 720, 270] },
-  'hisense-aud36': { n: 'Hisense AUD36HX4SHH1', cap: 10.55, q: 1800, esp: 80, dim: [1386, 800, 350] }
+  'midea-mtiu12': {
+    n: 'Midea MTIU-12HW1FNXP',
+    cap: 3.52,
+    q: 600,
+    esp: 60,
+    dim: [700, 506, 200],
+    sup: [520, 140],
+    ret: [520, 150]
+  },
+  'midea-mtiu18': {
+    n: 'Midea MTIU-18HW1FNXP',
+    cap: 5.28,
+    q: 911,
+    esp: 100,
+    dim: [880, 674, 210],
+    sup: [700, 150],
+    ret: [700, 160]
+  },
+  'midea-mti24': {
+    n: 'Midea MTI-24HW1FNXP',
+    cap: 7.03,
+    q: 1229,
+    esp: 160,
+    dim: [1100, 774, 249],
+    sup: [900, 160],
+    ret: [900, 170]
+  },
+  'midea-mti36': {
+    n: 'Midea MTI-36HW1FNXP',
+    cap: 10.55,
+    q: 2100,
+    esp: 160,
+    dim: [1360, 774, 249],
+    sup: [1150, 170],
+    ret: [1150, 180]
+  },
+  'midea-mti48': {
+    n: 'Midea MTI-48HW1FNXP',
+    cap: 14.07,
+    q: 2400,
+    esp: 160,
+    dim: [1200, 874, 300],
+    sup: [1000, 200],
+    ret: [1000, 210]
+  },
+  'midea-mti55': {
+    n: 'Midea MTI-55HW1FNXP',
+    cap: 16.12,
+    q: 2600,
+    esp: 160,
+    dim: [1200, 874, 300],
+    sup: [1000, 200],
+    ret: [1000, 210]
+  },
+  'midea-mtb09': {
+    n: 'Midea MTBI-09 (низконапорный)',
+    cap: 2.64,
+    q: 530,
+    esp: 40,
+    dim: [700, 635, 210],
+    sup: [540, 150],
+    ret: [540, 160]
+  },
+  'haier-ad12': {
+    n: 'Haier AD12MS1ERA',
+    cap: 3.5,
+    q: 550,
+    esp: 100,
+    dim: [720, 650, 270],
+    sup: [560, 170],
+    ret: [560, 180]
+  },
+  'haier-ad24': {
+    n: 'Haier AD24MS1ERA',
+    cap: 7.1,
+    q: 1050,
+    esp: 100,
+    dim: [950, 650, 270],
+    sup: [780, 170],
+    ret: [780, 180]
+  },
+  'haier-ad36': {
+    n: 'Haier AD36NS1ERA',
+    cap: 9.9,
+    q: 2090,
+    esp: 150,
+    dim: [1135, 742, 270],
+    sup: [940, 180],
+    ret: [940, 190]
+  },
+  'gree-gfh12': {
+    n: 'Gree GFH12EAK3DNA1A',
+    cap: 3.5,
+    q: 550,
+    esp: 0,
+    dim: [700, 615, 200],
+    sup: [540, 140],
+    ret: [540, 150]
+  },
+  'gree-gfh24': {
+    n: 'Gree GFH24EAK3DNA1A',
+    cap: 7.1,
+    q: 1000,
+    esp: 0,
+    dim: [1100, 615, 200],
+    sup: [900, 140],
+    ret: [900, 150]
+  },
+  'hisense-aud24': {
+    n: 'Hisense AUD24HX4SLH1',
+    cap: 7.05,
+    q: 1250,
+    esp: 80,
+    dim: [900, 720, 270],
+    sup: [760, 180],
+    ret: [760, 190]
+  },
+  'hisense-aud36': {
+    n: 'Hisense AUD36HX4SHH1',
+    cap: 10.55,
+    q: 1800,
+    esp: 80,
+    dim: [1386, 800, 350],
+    sup: [1200, 220],
+    ret: [1200, 230]
+  }
 };
 const acModel = e => (e.kind === 'duct' && e.model && AC_CAT[e.model]) || null;
 const acCap = e => {
@@ -69528,8 +70425,8 @@ const acDim = e => (acModel(e) ? acModel(e).dim : ACD[e.kind][acCap(e)] || ACD.s
  */
 /** How the air leaves and enters a ducted unit: each side on its own. */
 const AC_SIDE = {
-  cam: 'камера с круглыми патрубками',
-  rect: 'прямоугольный воздуховод от фланца',
+  cam: 'круглые патрубки Ø (камера)',
+  rect: 'прямоугольный фланец Ш×В (как в паспорте)',
   grille: 'встроенный короб с решёткой',
   free: 'свободно, из запотолочного пространства'
 };
@@ -69555,6 +70452,15 @@ function acSysOf(e, k) {
 }
 /** Depth of the chamber of a side. */
 const acCH = (e, side) => Math.max(120, +(side === 'sup' ? e.ch : e.rch) || 260);
+/** Size of the rectangular flange of a side, mm [W, H]: set in the project, else the model's catalogue figure, else by the body. */
+function acFlange(e, role) {
+  const [w, , h] = acDim(e),
+    m = acModel(e),
+    c = m && m[role];
+  const sw = +(role === 'sup' ? e.sw : e.rw),
+    sh = +(role === 'sup' ? e.sh : e.rh);
+  return [Math.min(w - 40, sw || (c ? c[0] : w - 120)), Math.min(h - 10, sh || (c ? c[1] : h - 50))];
+}
 function acSpigotsL(e) {
   if (e.kind !== 'duct') return [];
   const [w, d, h] = acDim(e);
@@ -69576,8 +70482,7 @@ function acSpigotsL(e) {
           n: `${nm} ${i + 1}`
         });
     } else if (mode === 'rect') {
-      const rw = Math.min(w - 40, +(role === 'sup' ? e.sw : e.rw) || w - 120),
-        rh = Math.min(h - 10, +(role === 'sup' ? e.sh : e.rh) || h - 50);
+      const [rw, rh] = acFlange(e, role);
       out.push({
         x: 0,
         y: y0 + dy * 80,
@@ -70101,6 +71006,15 @@ XT.ac = {
   group: e => `${ACK[e.kind]} ${String(acCap(e)).replace('.', ',')} кВт`,
   panel(e) {
     if (e.z == null) e.z = Math.round(acZ(e));
+    // the flange sizes the model has are shown in the fields (the catalogue figure until they are set)
+    if (e.kind === 'duct') {
+      const s_ = acFlange(e, 'sup'),
+        r_ = acFlange(e, 'ret');
+      if (e.sw == null) e.sw = s_[0];
+      if (e.sh == null) e.sh = s_[1];
+      if (e.rw == null) e.rw = r_[0];
+      if (e.rh == null) e.rh = r_[1];
+    }
     return xGroups(e, [
       [
         'Кондиционер',
@@ -70165,8 +71079,8 @@ XT.ac = {
                     ]
                   : acSup(e) === 'rect'
                     ? [
-                        ['· ширина, мм', 'sw', 'n'],
-                        ['· высота, мм', 'sh', 'n']
+                        ['· ширина фланца, мм', 'sw', 'n'],
+                        ['· высота фланца, мм', 'sh', 'n']
                       ]
                     : [
                         ['· до решётки, мм', 'sdist', 'n'],
@@ -70182,8 +71096,8 @@ XT.ac = {
                     ]
                   : acRet(e) === 'rect'
                     ? [
-                        ['· ширина, мм ', 'rw', 'n'],
-                        ['· высота, мм ', 'rh', 'n']
+                        ['· ширина фланца, мм ', 'rw', 'n'],
+                        ['· высота фланца, мм ', 'rh', 'n']
                       ]
                     : []),
                 ...(acRet(e) === 'cam' || acRet(e) === 'rect'
@@ -70271,6 +71185,8 @@ XT.ac = {
     if (p === 'model' && AC_CAT[v]) {
       e.cap = AC_CAT[v].cap;
       e.flow = AC_CAT[v].q;
+      // the outlets of another model: its own flange sizes
+      for (const k of ['sw', 'sh', 'rw', 'rh']) delete e[k];
     }
     for (const k of ['supply', 'ret', 'sysS', 'sysR', 'model']) if (p === k && v === '') delete e[k];
   },
@@ -111928,8 +112844,26 @@ const BUILD = {
     for (const sx of [-1, 1]) mb.cyl(sx * (s.w / 2 - 40), 0, zt, z, 5, VD, 10);
   },
   vfan(mb, e, z) {
-    const r = Math.max(70, sizeOf(e).d / 2),
+    const sz = sizeOf(e),
+      r = Math.max(70, sz.d / 2),
       zc = z - 300;
+    if (/[x×х*]/i.test(String(e.size || ''))) {
+      // a rectangular duct fan: a box body, flanges on the bus rail, rectangular stubs
+      mb.tag('Вентилятор канальный прямоугольный: корпус');
+      mb.obox([-170, 0, zc], [170, 0, zc], sz.w + 60, sz.h + 60, '#9aa1a9');
+      mb.tag('Патрубки (шинорейка)');
+      for (const sx of [-1, 1]) {
+        mb.obox([sx * 170, 0, zc], [sx * 260, 0, zc], sz.w, sz.h, '#c9ced4');
+        mb.obox([sx * 246, 0, zc], [sx * 260, 0, zc], sz.w + 40, sz.h + 40, '#868d95');
+      }
+      mb.lod('n');
+      mb.tag('Клеммная коробка');
+      mb.rbox(-50, -sz.w / 2 - 80, zc - 40, 50, -sz.w / 2 - 40, zc + 40, 4, '#5d646c', 2);
+      mb.lod('');
+      mb.tag('Подвес');
+      mb.cyl(0, 0, zc + sz.h / 2 + 30, z, 6, VD, 10);
+      return;
+    }
     mb.tag('Вентилятор: корпус');
     mb.tube([-170, 0, zc], [170, 0, zc], r + 40, '#9aa1a9', 40);
     mb.tag('Фланцы');
@@ -133312,8 +134246,23 @@ function afZetaTerm(t) {
   const k = (t && t.kind) || '';
   return { vdiff: 3, vgrille: 3, vwall: 3.5, vvalve: 5, plen: 3 }[k] || 3;
 }
-/** ζ of an inline part: silencer 2, adapter 0.3, a reducer / tee are counted by their sections (0 here). */
-const afZetaPart = kind => ({ sil: 2, adp: 0.3 })[kind] || 0;
+/**
+ * ζ of an inline part: silencer 2, adapter 0.3; a round reducer / tee are counted by their sections (0 here). The
+ * rectangular fittings (part p — the element, for its sizes): an elbow 0.4 per 90° (a vertical one 0.5), a jog two
+ * 45° elbows, a reducer by the areas (F1 → F2, at least 0.05), rectangle–round and the flange adapter at least 0.1,
+ * a tee / tap 0.15 over the junction logic of the network, a cap 0 (a dead end).
+ */
+function afZetaPart(kind, p) {
+  const k = { sil: 2, adp: 0.3, rtee: 0.15, rcap: 0 }[kind];
+  if (k != null) return k;
+  if (kind === 'rbend') return (p && p.plane === 'v' ? 0.5 : 0.4) * ((p && +p.ang === 45 ? 45 : 90) / 90);
+  if (kind === 'rjog') return p && p.plane === 'v' ? 0.5 : 0.4;
+  if (kind === 'rred' || kind === 'rrc' || kind === 'rflg') {
+    const z = p && p.F1 > 0 ? afZetaReducer(p.F1, p.F2, p.len) : 0;
+    return Math.max(z, kind === 'rred' ? 0.05 : 0.1);
+  }
+  return 0;
+}
 
 /** Section for a flow at a velocity limit within a height limit, from the standard rows: { shape:'round', d } | { shape:'rect', w, hh }. */
 function afRecSection(flow, vmax, hmax, shape) {
@@ -133733,13 +134682,19 @@ function rotAB(x, a, b) {
 /**
  * A transition between two sections (round or rectangular) along the straight a→b: a loft whose rings are cut at the
  * same angles (the corners of the rectangles included), so rectangle → circle, circle → rectangle and
- * rectangle → rectangle all close without gaps. sa is the section at a, sb at b: { shape, d | w, hh }.
+ * rectangle → rectangle all close without gaps. sa is the section at a, sb at b: { shape, d | w, hh }; fr — optional
+ * fixed frame { s, v } of the sections.
  */
-function ductTransition3(mb, a, b, sa, sb, col) {
+function ductTransition3(mb, a, b, sa, sb, col, fr) {
   const u = dv3.nrm(dv3.sub(b, a));
-  const s = Math.hypot(u[0], u[1]) < 1e-6 ? [1, 0, 0] : dv3.nrm([-u[1], u[0], 0]);
+  let s = Math.hypot(u[0], u[1]) < 1e-6 ? [1, 0, 0] : dv3.nrm([-u[1], u[0], 0]);
   let v = dv3.cross(s, u);
   if (v[2] < 0 && Math.hypot(u[0], u[1]) > 1e-6) v = dv3.mul(v, -1);
+  // fr — a fixed frame { s (width), v (height) }: a one-sided reducer keeps its flanges square to the run
+  if (fr) {
+    s = fr.s;
+    v = fr.v;
+  }
   const TAU2 = Math.PI * 2;
   const ang = [];
   for (let k = 0; k < 32; k++) ang.push((TAU2 * k) / 32);
@@ -133857,7 +134812,7 @@ function rectDuctBody(mb, q, W, H, col) {
  * wall of the main and the rolled joint at the spigot (duct-joints.js).
  */
 function ductDetails3(mb, e, W, H, col, dark) {
-  tapRings(mb, e, W / 2);
+  tapRings(mb, e, W / 2, H);
   const S_ = ductSys(e);
   if (!S_) return;
   const L = ductLayout(e);
@@ -134018,11 +134973,13 @@ function roundJoints3(mb, e, L, r, col, dark) {
 
 
 
+
 const JT_OV = 40, // mm: the hose over a spigot / a collar
   JT_VIS = 35, // mm: the collar seen between the wall of the main and the start of the hose
   JT_XY = 8, // mm: an end this close (plan) to a spigot is joined to it
   JT_Z = 40, // mm: and this close in height
-  JT_IN = 6; // mm: an end this close to the body of a main duct is on it
+  JT_IN = 6, // mm: an end this close to the body of a main duct is on it
+  JT_TR = 175; // mm: the adapter «rectangle → round» of a hose on a rectangular spigot
 const GREY = '#8b939d';
 const jv = {
   sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
@@ -134129,7 +135086,15 @@ function ductJoints3(e) {
 const ductJointsKey = e =>
   JSON.stringify(
     ductJoints3(e).map(j =>
-      j ? [j.kind, Math.round(j.t || 0), j.q ? j.q.e.id : j.M ? j.M.id : 0, j.M ? j.M.d : 0] : 0
+      j
+        ? [
+            j.kind,
+            Math.round(j.t || 0),
+            j.q ? j.q.e.id : j.M ? j.M.id : 0,
+            j.M ? j.M.d : 0,
+            j.q && j.q.shape === 'rect' ? j.q.w + 'x' + j.q.hh : 0
+          ]
+        : 0
     )
   );
 
@@ -134157,6 +135122,16 @@ function prepEnd(path, j, r, rc) {
   const at = s => jv.add(a, jv.mul(u, s));
   const free = { path, ext: 0, clamp: { a: at(20), b: at(34), r: r + 2 }, parts: [] };
   if (!j || l < 1) return free;
+  if (j.kind === 'spigot' && j.q.shape === 'rect') {
+    // a rectangular spigot: the adapter «rectangle → round» (a loft) first, the hose slips over its round end
+    const len = Math.min(JT_TR, l * 0.9),
+      b = at(len);
+    const o = prepEnd([b, ...path.slice(1)], { kind: 'end' }, r, rc);
+    return {
+      ...o,
+      loft: [a, b, { shape: 'rect', w: j.q.w, hh: j.q.hh }, { shape: 'round', d: 2 * r }]
+    };
+  }
   if (j.kind === 'spigot' || j.kind === 'end')
     return { path: [at(-JT_OV), ...path], ext: JT_OV, clamp: { a: at(-14), b: at(-28), r: r + 6 }, parts: [] };
   const s = j.t + JT_VIS;
@@ -134208,6 +135183,11 @@ function flexBuild(e, mb, col) {
     mb.tag(p.tag);
     mb.tube(p.a, p.b, p.r, GREY, 24);
   }
+  for (const L of [e0.loft, e1.loft])
+    if (L) {
+      mb.tag('Переходник «прямоугольник → круг» на патрубке');
+      ductTransition3(mb, L[0], L[1], L[2], L[3], '#6e757d');
+    }
   mb.tag('Хомуты');
   for (const c of [e0.clamp, e1.clamp]) mb.tube(c.a, c.b, c.r, '#8b939d', 20);
 }
@@ -134215,20 +135195,26 @@ function flexBuild(e, mb, col) {
  * The saddle on the main and the rolled (beaded) joint at the spigot of a rigid tap (XT.duct.build3 → ductDetails3).
  * The saddle sits on the wall of the main (the main is found under the end), not inside it.
  */
-function tapRings(mb, e, rr) {
+function tapRings(mb, e, rr, hh) {
   const pts = ductPath3(e);
   if (!e.tap || pts.length < 2) return;
   const J = ductJoints3(e),
     n = pts.length - 1;
   const mi = J[1] && J[1].kind === 'main' ? 1 : J[0] && J[0].kind === 'main' ? 0 : 1;
+  const rect = e.shape === 'rect';
+  // a rectangular tap: a flat frame (saddle collar) around the section instead of a round ring (r - the half-width + margin)
   const ring = (a, b, s0, s1, r) => {
     const u = jv.unit(jv.sub(b, a));
-    mb.tube(jv.add(a, jv.mul(u, s0)), jv.add(a, jv.mul(u, s1)), r, GREY, 24);
+    const A = jv.add(a, jv.mul(u, s0)),
+      B = jv.add(a, jv.mul(u, s1));
+    if (rect) mb.obox(A, B, 2 * (r - 6) + 12, hh + 12, GREY);
+    else mb.tube(A, B, r, GREY, 24);
   };
   const jm = J[mi] && J[mi].kind === 'main' ? J[mi] : null;
   mb.tag('Врезка в магистраль');
   if (mi === 1) ring(pts[n], pts[n - 1], jm ? jm.t - 3 : 40, jm ? jm.t + 9 : 70, rr + 6);
   else ring(pts[0], pts[1], jm ? jm.t - 3 : 40, jm ? jm.t + 9 : 70, rr + 6);
+  if (rect) return; // the rolled bead is for round ducts; a rectangular one has flanges (ductDetails3)
   mb.tag('Вальцовка');
   if (mi === 1) ring(pts[0], pts[1], 14, 22, rr + 3);
   else ring(pts[n], pts[n - 1], 14, 22, rr + 3);
@@ -134556,6 +135542,12 @@ XT.duct = {
         r.q += 2;
         r.ids.push(e.id);
       });
+      // a hose on a rectangular spigot: the adapter «rectangle → round» on it
+      for (const t of ductTransitions(e))
+        put(S_, 'b:trn' + trName(t), { name: `Переход ${trName(t)} · ${e.sys}`, u: 'шт', base: true }, r => {
+          r.q++;
+          r.ids.push(e.id);
+        });
     } else if (isPvc(e)) {
       // the flat PVC system: channels of 2 m, connectors, elbows, adapters, valves, holders
       for (const r of pvcSpec(e))
@@ -134685,6 +135677,7 @@ function ductFields(e) {
  * from the same geometry (fittings, insulation, hangers, wall penetrations, flexible connectors).
  * Duct z is the AXIS height (build3 draws the section centred on z); units are mm.
  */
+
 
 
 
@@ -134963,7 +135956,7 @@ function hcFind() {
   const viaPart = new Set();
   if (hvHooksAv.spigots)
     for (const u of vis) {
-      if (u.type !== 'hvu' || !['sil', 'red', 'tee'].includes(u.kind)) continue;
+      if (u.type !== 'hvu' || !['sil', 'red', 'tee', ...Object.keys(RF_KIND)].includes(u.kind)) continue;
       const sp = hvHooksAv.spigots(u);
       const at = ducts
         .filter(D => [D.e.pts[0], D.e.pts[D.e.pts.length - 1]].some(p => sp.some(q => dist(p, P(q.p[0], q.p[1])) < 80)))
@@ -135395,6 +136388,67 @@ function pvcSpec(e) {
   add('hold' + st, `Держатель канала ПВХ ${st} (шаг 1 м)`, Math.max(1, Math.ceil(L / 1000)));
   return rows;
 }
+
+// ===== blocks/hvac/rect-parts.js =====
+/**
+ * blocks/hvac/rect-parts
+ *
+ * The commands of the rectangular duct fittings (rect-fittings.js): a reducer, a rectangle–round reducer, a jog, an
+ * elbow, a tee / tap, a cap and the flange adapter of a machine spigot. Each is the equipment command of air-units.js
+ * (mkHvu) for its kind: a click at the free end of a rectangular duct puts the part on it with the section of the duct,
+ * a click on a duct puts a reducer or a tee into the run, a click elsewhere puts it on free ground.
+ */
+
+
+
+defineTools({
+  rred: {
+    command: { t: 'ПЕРЕХОДПРЯМ', m: () => mkHvu('rred'), a: ['переходпрямоугольный', 'переходпрям', 'rectreducer'] },
+    title: 'Переход прямоугольный · ПЕРЕХОДПРЯМ',
+    icon: '<path d="M2 4v12M2 4l9 2.5v7L2 16M11 6.5h7v7h-7"/>',
+    help: 'Переход прямоугольного воздуховода на другое сечение: щелчок по концу воздуховода — встанет на него, по воздуховоду — в разрыв (участок после него получит второе сечение). Концентрический или односторонний (плоский низ, верх, сторона) — в свойствах. [Ширина], [Высота сечения].'
+  },
+  rrc: {
+    command: { t: 'ПЕРЕХОДКРУГ', m: () => mkHvu('rrc'), a: ['переходкруг', 'прямоугольникккругу', 'rectround'] },
+    title: 'Переход прямоугольник–круг · ПЕРЕХОДКРУГ',
+    icon: '<path d="M2 5h5v10H2zM7 5l5 2.5v5L7 15"/><circle cx="15" cy="10" r="3"/>',
+    help: 'Переход с прямоугольного воздуховода на круглый: щелчок по концу воздуховода или по воздуховоду — встанет в разрыв, участок после него станет круглым. Ø круглого и исполнение — в свойствах.'
+  },
+  rjog: {
+    command: { t: 'УТКА', m: () => mkHvu('rjog'), a: ['утка', 'смещение', 'jog'] },
+    title: 'Утка прямоугольная (смещение) · УТКА',
+    icon: '<path d="M2 6h5l6 6h5M2 10h4l6 6h6"/>',
+    help: 'Утка — смещение оси прямоугольного воздуховода: щелчок по концу воздуховода. Смещение (знак — сторона) и плоскость (горизонтальная или вертикальная) — в свойствах. [Смещение].'
+  },
+  rbend: {
+    command: { t: 'ОТВОДПРЯМ', m: () => mkHvu('rbend'), a: ['отводпрямоугольный', 'отводпрям', 'колено', 'rectbend'] },
+    title: 'Отвод прямоугольный 90°/45° · ОТВОДПРЯМ',
+    icon: '<path d="M3 6h9a4 4 0 014 4v8M3 11h6a2 2 0 012 2v5"/>',
+    help: 'Отвод прямоугольного воздуховода 90° или 45°, горизонтальный (в плане) или вертикальный (вверх / вниз): щелчок по концу воздуховода — встанет на него. Угол, плоскость и сторона — в свойствах.'
+  },
+  rtee: {
+    command: {
+      t: 'ВРЕЗКАПРЯМ',
+      m: () => mkHvu('rtee'),
+      a: ['врезкапрямоугольная', 'тройникпрям', 'врезкапрям', 'recttee']
+    },
+    title: 'Тройник / врезка прямоугольная · ВРЕЗКАПРЯМ',
+    icon: '<path d="M2 7h16M2 13h6M12 13h6M8 13v5M12 13v5"/>',
+    help: 'Тройник или врезка в прямоугольный воздуховод с круглым или прямоугольным ответвлением: щелчок по воздуховоду — встанет в разрыв, ответвление остаётся свободным патрубком. Форма и размеры ответвления, сторона, угол — в свойствах.'
+  },
+  rcap: {
+    command: { t: 'ЗАГЛУШКАПРЯМ', m: () => mkHvu('rcap'), a: ['заглушкапрямоугольная', 'заглушкапрям', 'rectcap'] },
+    title: 'Заглушка прямоугольная · ЗАГЛУШКАПРЯМ',
+    icon: '<path d="M2 6h10v8H2zM12 4v12M14 4v12"/>',
+    help: 'Заглушка на свободный конец прямоугольного воздуховода или патрубка: щелчок по концу воздуховода.'
+  },
+  rflg: {
+    command: { t: 'АДАПТЕРФЛАНЕЦ', m: () => mkHvu('rflg'), a: ['адаптерфланец', 'фланецпатрубка', 'rectflange'] },
+    title: 'Адаптер-фланец патрубка машины · АДАПТЕРФЛАНЕЦ',
+    icon: '<circle cx="4.5" cy="10" r="2.5"/><path d="M7 7.5h3v5H7M10 6h7v8h-7"/>',
+    help: 'Адаптер с круглого патрубка машины на прямоугольный фланец воздуховода: щелчок по концу прямоугольного воздуховода — адаптер встанет на него прямоугольной стороной, круглая сторона смотрит на патрубок. Ø и размеры — в свойствах.'
+  }
+});
 
 // ===== blocks/hvac/spec-hvac.js =====
 /**
