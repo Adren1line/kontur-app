@@ -8848,7 +8848,7 @@ html[data-form='tablet'] #app #status #views {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.84';
+const APP_VER = '59.85';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -20698,8 +20698,10 @@ function cats3() {
 /**
  * view3d/cutaway.js
  *
- * 3D cutaway (walls between camera and view centre drop to a low stub).
+ * 3D cutaway (walls between camera and view centre drop to a low stub; columns and beams across the cut are clipped and capped,
+ * a beam wholly above the cut is hidden).
  */
+
 
 
 
@@ -20782,12 +20784,21 @@ function cutPlan() {
   const sd = p => (p.x - T.x) * dx + (p.y - T.y) * dy;
   const lvz = S.x.lv ? lvCur().z || 0 : 0;
   for (const e of S.ents) {
-    if (e.type === 'wall' || e.type === 'col') {
+    const sb = (XT[e.type] || {}).cutSpan ? XT[e.type].cutSpan(e) : null;
+    if (sb) {
+      // columns and beams: the part above the cut is clipped and the section is capped by the stencil (renderCut); a body that
+      // lies wholly above the cut (a beam under the floor above) is hidden — in the cut area, and while the camera is above it
+      const near = C.mode === 'low' || (!flat && C.mode === 'cut' && Math.min(...sb.pts.map(sd)) < -150);
+      if (sb.z1 <= C.h + 1) continue;
+      if (sb.z0 >= C.h - 1) {
+        if (near || flat || cam.z > lvz + sb.z1) res.set(e.id, 'hide');
+      } else if (near) res.set(e.id, C.h / sb.z1);
+    } else if (e.type === 'wall') {
       const h = e.h || S.ceil || 2700;
       if (h <= C.h + 1) continue;
       let cut = C.mode === 'low';
       if (C.mode === 'cut' && !flat) {
-        if (e.type === 'wall') {
+        {
           const ux = e.b.x - e.a.x,
             uy = e.b.y - e.a.y,
             ul = Math.hypot(ux, uy) || 1,
@@ -20807,7 +20818,7 @@ function cutPlan() {
             (V3.cam.aspect || 1.5) *
             1.2;
           cut = sep && Math.max(la, lb) > -hw && Math.min(la, lb) < hw;
-        } else cut = sd(e.p) < -150;
+        }
       }
       if (cut) res.set(e.id, C.h / h);
     } else if (e.type === 'ceil') {
@@ -20859,7 +20870,7 @@ function applyCut(X) {
     topLabels();
   }
 }
-// section caps on cut walls: every layer of the wall in its own colour (darker), openings and niches respected
+// section caps on cut walls (the other cut elements — columns, beams — are capped by the stencil in renderCut): every layer of the wall in its own colour (darker), openings and niches respected
 function cutCaps(ids, h) {
   const key = documentState.docVer + '|' + h + '|' + [...ids].join(',');
   if (V3.capKey === key && V3.caps) return V3.caps;
@@ -20949,7 +20960,15 @@ function renderCut(extra) {
     r.autoClear = false;
     r.shadowMap.autoUpdate = false;
     r.clippingPlanes = [...(cp || []), new THREE.Plane(new THREE.Vector3(0, 0, -1), h)];
-    r.render(V3.scene, V3.cam);
+    // the cut columns and beams are closed solids: stencil caps in the colour of their material (the walls have their own caps,
+    // the other elements are not capped here)
+    renderScene(r, V3.scene, V3.cam, {
+      mode: 'mat',
+      skip: own => {
+        const e = byId(idOf(own));
+        return !e || !(XT[e.type] || {}).cutSpan;
+      }
+    });
   } finally {
     V3.scene.background = bg;
     r.autoClear = ac;
@@ -30218,6 +30237,7 @@ function placeOnCol(p) {
 XT.col = {
   layer: 'Конструкции',
   struct: true,
+  cutSpan: e => ({ pts: [e.p], ...structSpan(e) }),
   cut: e => colPoly(e),
   prims: e => closedSegs(colPoly(e)),
   dist: e => null,
@@ -30568,6 +30588,7 @@ function steelSpec(e, sec, Lmm, put, what) {
 XT.beam = {
   layer: 'Конструкции',
   struct: true,
+  cutSpan: e => ({ pts: [e.a, e.b], ...structSpan(e) }),
   poly: e => {
     const u = nrm(sub(e.b, e.a)),
       n = P(-u.y, u.x),
@@ -30753,6 +30774,11 @@ function beamMB(e) {
     o = e.a,
     zc = e.zt - e.h / 2;
   return MB((x, y, z) => [o.x + n.x * x + u.x * z, o.y + n.y * x + u.y * z, zc + y]);
+}
+/** Height range { z0, z1 } of a column or beam: what the cutaway of the 3D view compares with the cut height (XT.<type>.cutSpan). */
+function structSpan(e) {
+  const b = structBox(e);
+  return { z0: b.z0, z1: b.z1 };
 }
 /** Plan footprint and height range of a structural element (for clash checks). */
 function structBox(e) {
@@ -59563,8 +59589,17 @@ function isConvex2(p) {
   }
   return true;
 }
-// extrude any simple 2D polygon (profile coords a,b) between t0..t1; map(a,b,t) → [x,y,z]
+/** Extrudes any simple 2D polygon (profile coords a, b; either winding) between t0..t1; map(a, b, t) → [x, y, z]. A closed body: no open edges. */
 function prismPoly(mb, poly, map, t0, t1, col, op) {
+  // the caps come from triPolyXY (always counter-clockwise): a clockwise outline is turned over, or its sides would be wound
+  // against the caps and the body would not be closed (open edges: no section cap)
+  let A = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i],
+      b = poly[(i + 1) % poly.length];
+    A += a[0] * b[1] - b[0] * a[1];
+  }
+  if (A < 0) poly = poly.slice().reverse();
   const T = triPolyXY(poly);
   for (const [i, j, k] of T) {
     mb.tri3(col, map(...poly[i], t0), map(...poly[k], t0), map(...poly[j], t0), op);
@@ -149950,8 +149985,9 @@ function ownerOf(o) {
 /**
  * Solid meshes of the scene as capping items: { mesh, ok, fill, box }. Transparent and ghost materials and edge lines are left out.
  * 'black' — one fill; 'mat' — the colour of the layer for layered objects (userData.capLayers), otherwise the dominant colour of the element.
+ * skip(owner) — elements that bring their own caps (the cut walls of the cutaway) are left out.
  */
-function capItems(scene, mode) {
+function capItems(scene, mode, skip) {
   const list = [];
   scene.traverseVisible(o => {
     if (!o.isMesh || !o.geometry || o.userData.edge || o.userData.noCap) return;
@@ -149959,6 +149995,7 @@ function capItems(scene, mode) {
     if (!m || (m.transparent && m.opacity < 0.5)) return;
     const own = ownerOf(o);
     if (!own) return; // only elements are solids (the ground, grids and helpers are not)
+    if (skip && skip(own)) return;
     const lb = localBox(o.geometry);
     if (!lb) return;
     const w = worldFn(o);
@@ -150141,8 +150178,10 @@ const partOf = m => {
   return { pos: g.attributes.position.array, index: g.index ? g.index.array : null, w: worldFn(m) };
 };
 /**
- * The meshes of an element that may be counted by the stencil: all when the element is a closed solid as a whole, otherwise only the
- * meshes that are closed themselves (open sheets and shells would fill whole areas). Cached per element.
+ * The meshes of an element that may be counted by the stencil, split by winding (pos — outward, neg — inverted): every mesh that is
+ * closed itself counts by its own sign (parts of one element may be wound differently — a stair, a column on a mirrored frame);
+ * the open ones count only together, when they close each other (a body cut into several meshes by colour). Open sheets and
+ * shells would fill whole areas and are left out. Cached per element.
  */
 function capSolidMeshes(own, meshes) {
   const sig = meshes.length + ':' + meshes.reduce((s, m) => s + m.geometry.attributes.position.array.length, 0);
@@ -150153,9 +150192,13 @@ function capSolidMeshes(own, meshes) {
   const put = (ms, info) => {
     if (info.open === 0) for (const m of ms) (info.vol < 0 ? neg : pos).add(m);
   };
-  const whole = capSolidInfo(meshes.map(partOf));
-  if (whole.open === 0) put(meshes, whole);
-  else for (const m of meshes) put([m], capSolidInfo([partOf(m)]));
+  const rest = [];
+  for (const m of meshes) {
+    const info = capSolidInfo([partOf(m)]);
+    if (info.open === 0) put([m], info);
+    else rest.push(m);
+  }
+  if (rest.length) put(rest, capSolidInfo(rest.map(partOf)));
   const r = { sig, pos, neg };
   CAP.solid.set(own, r);
   return r;
@@ -150208,17 +150251,26 @@ function quadMat(fill, srgb) {
   CAP.mats.set(k, m);
   return m;
 }
-/** A big quad lying in the plane around the box. */
+/** A quad lying in the plane that just covers the projection of the box (a few centimetres of margin): a huge quad would reach behind the camera. */
 function planeQuad(pl, box) {
   const c = [(box[0] + box[3]) / 2, (box[1] + box[4]) / 2, (box[2] + box[5]) / 2];
   const t = c[0] * pl.n[0] + c[1] * pl.n[1] + c[2] * pl.n[2] + pl.d;
   const o = [c[0] - pl.n[0] * t, c[1] - pl.n[1] * t, c[2] - pl.n[2] * t];
-  const R = Math.hypot(box[3] - box[0], box[4] - box[1], box[5] - box[2]) / 2 + 200;
   const a = Math.abs(pl.n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
   let u = [pl.n[1] * a[2] - pl.n[2] * a[1], pl.n[2] * a[0] - pl.n[0] * a[2], pl.n[0] * a[1] - pl.n[1] * a[0]];
   const ul = Math.hypot(...u) || 1;
   u = u.map(v => v / ul);
   const v = [pl.n[1] * u[2] - pl.n[2] * u[1], pl.n[2] * u[0] - pl.n[0] * u[2], pl.n[0] * u[1] - pl.n[1] * u[0]];
+  // extents of the box corners along u and v (centred on o)
+  let su = 1,
+    sv = 1;
+  for (let i = 0; i < 8; i++) {
+    const d = [(i & 1 ? box[3] : box[0]) - o[0], (i & 2 ? box[4] : box[1]) - o[1], (i & 4 ? box[5] : box[2]) - o[2]];
+    su = Math.max(su, Math.abs(d[0] * u[0] + d[1] * u[1] + d[2] * u[2]));
+    sv = Math.max(sv, Math.abs(d[0] * v[0] + d[1] * v[1] + d[2] * v[2]));
+  }
+  su += 50;
+  sv += 50;
   const P = [];
   for (const [s, r] of [
     [-1, -1],
@@ -150226,7 +150278,7 @@ function planeQuad(pl, box) {
     [1, 1],
     [-1, 1]
   ])
-    for (let k = 0; k < 3; k++) P.push(o[k] + (u[k] * s + v[k] * r) * R);
+    for (let k = 0; k < 3; k++) P.push(o[k] + u[k] * s * su + v[k] * r * sv);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
   geo.setIndex([0, 1, 2, 0, 2, 3]);
@@ -150236,7 +150288,7 @@ function planeQuad(pl, box) {
 }
 /**
  * Renders the scene clipped by `planes` (THREE.Plane[], keep the side the normals point to) and closes the cuts with section caps.
- * o.mode — 'black' | 'mat' (capFillRule). Returns what was done ({ mode, planes, groups, passes, lines }), also in capState.last.
+ * o.mode — 'black' | 'mat' (capFillRule); o.skip(owner) — elements that are not capped. Returns what was done ({ mode, planes, groups, passes, lines }), also in capState.last.
  */
 function renderCapped(r, scene, cam, planes, o = {}) {
   const mode = o.mode === 'mat' ? 'mat' : 'black';
@@ -150250,7 +150302,7 @@ function renderCapped(r, scene, cam, planes, o = {}) {
   capState.last = info;
   try {
     scene.updateMatrixWorld && scene.updateMatrixWorld(true);
-    const items = capItems(scene, mode);
+    const items = capItems(scene, mode, o.skip);
     const pls = planes.map(p => ({ n: plN(p), d: p.constant }));
     const passes = capsPlan(items, pls);
     if (!passes.length) return info;
@@ -150283,6 +150335,7 @@ function renderCapped(r, scene, cam, planes, o = {}) {
         const tgt = posSet.has(src) ? sc : negSet.has(src) ? sn : null;
         if (!tgt) continue;
         const p = new THREE.Mesh(src.geometry, dummyMat());
+        p.frustumCulled = false;
         if (src.matrixWorld && p.matrix) {
           p.matrixAutoUpdate = false;
           p.matrix.copy(src.matrixWorld);
