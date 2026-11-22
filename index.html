@@ -8848,7 +8848,7 @@ html[data-form='tablet'] #app #status #views {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.83';
+const APP_VER = '59.84';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -9397,7 +9397,8 @@ const WS_SEC = {
 /** Workspaces an element belongs to as an engineering one: null — always shown. */
 function entSection(e) {
   if (e.type === 'dev') return e.layer === 'Вентиляция' ? 'hvac' : 'elec';
-  if (e.type === 'pipe') return e.sys === 'ot' || e.sys === 'otr' ? 'plumb hvac' : 'plumb';
+  if (e.type === 'pipe')
+    return e.sys === 'ot' || e.sys === 'otr' || e.sys === 'chs' || e.sys === 'chr' ? 'plumb hvac' : 'plumb';
   if (e.type === 'note' && e.target != null) {
     const t = S.ents.find(x => x.id === e.target);
     return t && t !== e && t.type !== 'note' ? entSection(t) : null;
@@ -10449,6 +10450,8 @@ const ductArea = e => (e.shape === 'rect' ? (e.w * e.hh) / 1e6 : (Math.PI * e.d 
 const ductPerim = e => (e.shape === 'rect' ? (2 * (e.w + e.hh)) / 1000 : (Math.PI * e.d) / 1000);
 /** Calculated state of a duct, set by the hvac block (the flow of a duct is never typed): flowHooks.duct(e) → { flow, v, vmax, ratio } | null. */
 const flowHooks = { duct: null };
+/** Wi-Fi level (dBm, −120 — no signal) at a point, set by the network block: climHooks.wifiAt(x, y, z) → number | null (null — no radios in the project). */
+const climHooks = { wifiAt: null };
 /** Calculated state of a duct: { flow, v, vmax, ratio } or null outside a network. */
 const ductCalc = e => (flowHooks.duct ? flowHooks.duct(e) : null);
 /** Calculated flow of a duct, m³/h (0 outside a network). */
@@ -33915,7 +33918,9 @@ const PSYS = {
   gvc: { n: 'Т4', full: 'Циркуляция ГВС', col: '#e89a4f', g: 'gvs', kind: 'water' },
   k: { n: 'К1', full: 'Канализация бытовая', col: '#a08060', g: 'k', kind: 'sewer' },
   ot: { n: 'Т1', full: 'Отопление, подача', col: '#d36ac9', g: 'ot', kind: 'heat' },
-  otr: { n: 'Т2', full: 'Отопление, обратка', col: '#8f6ad3', g: 'ot', kind: 'heat' }
+  otr: { n: 'Т2', full: 'Отопление, обратка', col: '#8f6ad3', g: 'ot', kind: 'heat' },
+  chs: { n: 'Т11', full: 'Холодоснабжение, подача', col: '#2fb4d8', g: 'ch', kind: 'heat' },
+  chr: { n: 'Т21', full: 'Холодоснабжение, обратка', col: '#2a7fa6', g: 'ch', kind: 'heat' }
 };
 const PMAT = {
   water: ['PPR PN20 армированный', 'PEX-a сшитый полиэтилен', 'Металлопластик PE-Al-PE', 'Нержавеющая гофра'],
@@ -34198,6 +34203,14 @@ function pipeFittingsBase(e) {
   if (isW) for (const r of M.runs) for (const _ of r.joints) out.push({ key: 'm' + e.d, name: `Муфта Ø${e.d}` });
   for (const en of pipeEnds(e)) {
     const q = portAt(en.p, 30);
+    if (q && !q.fix) {
+      // a port of the equipment of another block (a fan coil, an air handling unit): the connection of the hose to its thread
+      out.push({
+        key: 'eqc' + q.s + q.d,
+        name: `Подключение к оборудованию Ø${q.d || e.d}: гибкая подводка с накидной гайкой`
+      });
+      continue;
+    }
     if (q) {
       const src = FIXK[q.fix.kind] && FIXK[q.fix.kind].src;
       if (q.fix.kind === 'manifold') {
@@ -44382,7 +44395,7 @@ function pipeNet() {
     if (!adj.has(id)) adj.set(id, new Set());
     for (const en of pipeEnds(e)) {
       const q = portAt(en.p, 30, g);
-      if (q) {
+      if (q && q.fix) {
         const f = q.fix,
           K = FIXK[f.kind];
         const fid = `f${f.id}:${f.kind === 'manifold' ? g : q.s}`;
@@ -44492,10 +44505,10 @@ function sewerChecks(e) {
   const out = [],
     zs = pipeZ(e);
   const Q = pipeEnds(e).map(en => portAt(en.p, 30, 'k'));
-  const both = Q[0] && Q[1] && !isRiserF(Q[0].fix) && !isRiserF(Q[1].fix);
+  const both = Q[0] && Q[1] && Q[0].fix && Q[1].fix && !isRiserF(Q[0].fix) && !isRiserF(Q[1].fix);
   for (const en of pipeEnds(e)) {
     const q = Q[en.i === 0 ? 0 : 1];
-    if (!q || isRiserF(q.fix)) continue;
+    if (!q || !q.fix || isRiserF(q.fix)) continue;
     if (q.d > e.d)
       out.push({
         lvl: 'bad',
@@ -67930,6 +67943,8 @@ const rfFmt = fmt;
 
 
 
+
+
 /* ---------- catalogue ---------- */
 /** Air handling units with heat recovery: body L × W × H (mm), spigot Ø, nominal / max flow m³/h, pressure Pa at the nominal flow. */
 const AHU_CAT = {
@@ -68368,6 +68383,7 @@ function hvBuild(e, mb) {
       const x0 = q.x - q.dir[0] * (inward ? 60 : 280);
       arrow(mb, x0, q.y, H + 2, ux, 0, 200, Math.min(160, q.d), colOf(q));
     }
+    ahuDetail(e, mb, SP);
     if (a.mount !== 'floor' && !ahuVert(e)) {
       mb.tag('Подвесы');
       for (const [x, y] of [
@@ -68937,6 +68953,7 @@ function hvChecks(e) {
       out.push(['warn', `Скорость в щелях ${n1(s.v)} м/с — выше 3 м/с: шумно. Добавьте щель или удлините решётку.`]);
   }
   if (e.kind === 'dbox') out.push(...dbChecks(e));
+  if (e.kind === 'ahu') out.push(...climChecks(e));
   const free = hvSpigots(e).filter(q => q.role !== 'oda' && q.role !== 'eha' && !spigotLinked(q));
   if (free.length && e.kind !== 'ahu') out.push(['info', `Свободных патрубков: ${free.length}.`]);
   return out;
@@ -69004,7 +69021,10 @@ XT.hvu = {
       })
     }
   ],
-  draw: hvDraw,
+  draw(e, ...a) {
+    hvDraw(e, ...a);
+    if (e.kind === 'ahu') climDrawPorts(e, a[2]);
+  },
   portsOf: hvPorts,
   followPorts: hvFollow,
   k3: e => [hvZ(e), sysOf(e.sys || e.sysS || '').col, sysOf(e.sysE || '').col, S.ceil],
@@ -69119,6 +69139,16 @@ XT.hvu = {
       [HV_KIND[e.kind], esc(XT.hvu.group(e)), rows],
       ...(hvSecRows(e) ? [['Сечения патрубков', 'круглое Ø / прямоугольное Ш×В', hvSecRows(e)]] : []),
       ...(e.kind === 'ahu' ? [['Питание', powerNear(e) ? 'есть' : 'нет', powerRows(e)]] : []),
+      ...(e.kind === 'ahu'
+        ? [
+            [
+              'Управление',
+              climCtlSummary(e),
+              (e.tsens == null && (e.tsens = true),
+              xRows(e, [['Канальный датчик Т притока', 'tsens', 'b']]) + climCtlRows(e))
+            ]
+          ]
+        : []),
       [
         'Патрубки',
         `${sp.length}`,
@@ -69151,6 +69181,7 @@ XT.hvu = {
       // the spigots of another model: its own forms and sizes
       delete e.sp;
     }
+    if (p.startsWith('ctl.')) climSync(e);
     if (p === 'vert') {
       delete e.z;
       if (v === '') delete e.vert;
@@ -69179,6 +69210,9 @@ XT.hvu = {
     if (e.kind === 'ahu') {
       const a = ahuOf(e);
       one('hvahu' + e.model, `Приточно-вытяжная установка с рекуператором ${a.n}, ${fmt(a.q)} м³/ч`);
+      climSpec(e, put);
+      if (e.tsens !== false) one('hvtsens', 'Датчик температуры канальный (приточный воздух)');
+      one('hvahdr', 'Сифон дренажный Ø32 для конденсата рекуператора, комплект', 'компл');
       if (a.mount !== 'floor') one('hvahang', 'Подвес установки: шпилька М8 + виброизолятор, комплект', 'компл');
       for (const q of hvSpigotsL(e)) {
         const t = q.shape === 'rect' ? `${q.w}×${q.hh}` : `ø${q.d}`;
@@ -70592,6 +70626,8 @@ defineTools({
 
 
 
+
+
 /* кондиционеры: настенный сплит, канальный (с камерой статического давления, щелевыми решётками, возвратом с фильтром, помпой), кассетный;
    наружный блок (фасад/балкон/корзина), трасса: фреон (медь в изоляции), дренаж, межблочный кабель */
 var ACK = {
@@ -71071,8 +71107,10 @@ function acBuild(e, mb) {
     mb.tag('Решётка забора с фильтром');
     box(-pn * 0.28, -pn * 0.28 + d / 2, z - 21, pn * 0.28, pn * 0.28 + d / 2, z - 20.5, '#e4e6e9');
   }
+  acDetail(e, mb, box, L_, z);
   // outdoor unit
   const O = acOutF(e);
+  let ob_ = null;
   if (O) {
     const [ow, od, oh] = ACD.out[cap];
     const Lo = (x, y, zz) => {
@@ -71081,6 +71119,7 @@ function acBuild(e, mb) {
     };
     const ob = (x0, y0, z0, x1, y1, z1, col) =>
       prism3(mb, [Lo(x0, y0, z0), Lo(x1, y0, z0), Lo(x1, y1, z0), Lo(x0, y1, z0)], [0, 0, z1 - z0], col);
+    ob_ = ob;
     mb.tag(`Наружный блок ${cap} кВт`);
     ob(-ow / 2, -od - 120, O.z, ow / 2, -120, O.z + oh, '#eceef0');
     mb.tag('Решётка вентилятора');
@@ -71100,6 +71139,7 @@ function acBuild(e, mb) {
       for (const x of [-ow / 2 + 80, ow / 2 - 80]) ob(x - 20, -od - 160, O.z - 40, x + 20, 0, O.z, '#5d646c');
     }
   }
+  if (O) acOutDetail(e, mb, ob_);
   // line set
   const R = acRoute(e);
   const sepF = acHasLine(e, 'freon'),
@@ -71177,6 +71217,7 @@ function acChecks(e) {
       e.kind === 'split' ? 'info' : 'warn',
       `Нет питания внутреннего блока (≈ ${unitPower(e)} Вт на систему): электровывод или розетка рядом, либо кабель от щита (C16 для 2,5–3,5 кВт, C20–C25 для 5–7 кВт).`
     ]);
+  out.push(...climChecks(e));
   return out;
 }
 XT.ac = {
@@ -71336,6 +71377,7 @@ XT.ac = {
       );
     }
     ctx.restore();
+    climDrawPorts(e, ghost);
   },
   k3: e => [S.ceil, lvCur().h],
   build3(e) {
@@ -71370,6 +71412,32 @@ XT.ac = {
               ['water', 'фанкойл (вода: охлаждение и нагрев)']
             ]
           ],
+          ...(e.fc === 'water'
+            ? [
+                [
+                  'Трубы',
+                  'fcp',
+                  's',
+                  [
+                    ['', '2-трубный (один контур)'],
+                    ['4', '4-трубный (отопление Т1/Т2 + холод Т11/Т21)']
+                  ]
+                ],
+                ...(e.fcp === '4'
+                  ? []
+                  : [
+                      [
+                        'Контур 2-трубного',
+                        'fcc',
+                        's',
+                        [
+                          ['', 'отопление Т1/Т2'],
+                          ['cool', 'холод Т11/Т21']
+                        ]
+                      ]
+                    ])
+              ]
+            : []),
           ['Мощность охлаждения', 'cap', 's', ACCAP.map(c => [c, String(c).replace('.', ',') + ' кВт'])],
           ['Нагрев, кВт (пусто — по типу)', 'heat', 't'],
           [
@@ -71502,6 +71570,7 @@ XT.ac = {
           )}<dt></dt><dd><button class="btn" data-xa="acpt">+ Точка трассы</button> <button class="btn" data-xa="acclr">Прямая трасса</button></dd><dt></dt><dd><button class="btn" data-xa="acsplit" title="Отдельные трассы: фреон (медь в изоляции, кабель) и дренаж с уклоном до гидрозатвора">Развести фреон и дренаж отдельно</button></dd>`
       ],
       ['Питание', powerNear(e) ? 'есть' : 'нет', powerRows(e)],
+      ['Управление', climCtlSummary(e), climCtlRows(e)],
       [
         'Проверки',
         '',
@@ -71519,6 +71588,9 @@ XT.ac = {
       if (v !== 'split' && !e.drain) e.drain = 'pump';
     }
     if (p === 'mnt') e.z = v === 'floor' ? 100 : null;
+    if (p === 'fcp' && v === '') delete e.fcp;
+    if (p === 'fcc' && v === '') delete e.fcc;
+    if (p.startsWith('ctl.')) climSync(e);
     if (p === 'fc' && v === 'water' && e.out) e.outOld = e.out;
     if (p === 'fc' && v === 'water') e.out = null;
     if (p === 'fc' && v === '' && e.outOld) e.out = e.outOld;
@@ -71572,16 +71644,7 @@ XT.ac = {
         r.ids.push(e.id);
       }
     );
-    if (e.fc === 'water')
-      put(
-        S_,
-        'acfcnode',
-        { name: 'Узел обвязки фанкойла (клапаны, балансировочный, гибкие подводки)', u: 'компл' },
-        r => {
-          r.q++;
-          r.ids.push(e.id);
-        }
-      );
+    climSpec(e, put);
     if (!acHasLine(e, 'freon') && e.fc !== 'water') {
       put(S_, 'acp' + pp[0] + pp[1], { name: `Медная труба ${pp[0]} + ${pp[1]} в изоляции 9 мм, м`, u: 'м' }, r => {
         r.q = Math.round((r.q + L) * 10) / 10;
@@ -76207,10 +76270,18 @@ function assetPortsOf(e) {
     port: true
   }));
 }
-/** Ports of all visible instances (for the pipe snapping). */
+/** Providers of connection ports of other element types (a block adds `() => [{ k, n, s, d, p, z, dir, inst, port }]`): the pipe command and the plan snaps see them like the ports of catalogue instances. */
+const portHooks = { ext: [] };
+/** Ports of all visible instances (for the pipe snapping), then those the blocks bring through `portHooks.ext`. */
 function allInstPorts() {
   const out = [];
   for (const e of S.ents) if (e.type === 'inst' && visible(e)) out.push(...assetPortsOf(e));
+  for (const f of portHooks.ext)
+    try {
+      out.push(...f());
+    } catch (err) {
+      console.warn('portHooks', err);
+    }
   return out;
 }
 function drawInstPorts(e) {
@@ -134937,6 +135008,817 @@ checkRule('hvu-ducts', {
   }
 });
 
+// ===== blocks/hvac/clim-detail.js =====
+/**
+ * blocks/hvac/clim-detail
+ *
+ * Details of the 3D models of the climate machines (to the catalogue sizes, few polygons; small parts are drawn only near the camera, `mb.lod('n')`):
+ * an air conditioner — control board with terminals, drain spigot, revision hatch of the filter, service valves of the outdoor unit; a fan coil — heat
+ * exchanger, air vent, drain pan and the piping of every circuit (ball valves, strainer, 2/3-way valve with an actuator, balancing valve);
+ * an air handling unit — service panels with handles and locks, hinges, marked flows, board, supply-air sensor, condensate spigot with a trap.
+ * The stubs of all pipes stand at the ports of `clim-ports`, so what is seen is what the pipes connect to.
+ */
+
+
+
+
+
+const CL_BRASS = '#c9a24a',
+  CL_STEEL = '#aeb4bb',
+  CL_DARK = '#3d4248',
+  CL_GRAY = '#7d848c';
+/** World point of a port, lifted by dz. */
+const P3 = (q, dz = 0) => [q.p.x, q.p.y, q.z + dz];
+/** Point k mm back from a port against its direction (inside the machine), lifted by dz. */
+const OFF = (q, k, dz = 0) => [q.p.x - q.dir[0] * k, q.p.y - q.dir[1] * k, q.z - q.dir[2] * k + dz];
+/** Colour of the stub of a kind of port. */
+const STUB = {
+  wsup: '#d36ac9',
+  wret: '#8f6ad3',
+  csup: '#2fb4d8',
+  cret: '#2a7fa6',
+  drain: '#e6e0b0',
+  liq: CL_BRASS,
+  gas: '#b87a3a',
+  link: CL_DARK
+};
+
+/** Stubs of the pipes at the ports of a machine (a short pipe with a nut): the indoor ones, or with `outer` the service valves of the outdoor unit. */
+function stubs(e, mb, outer) {
+  const ps = climPorts(e);
+  for (const q of ps) {
+    if (!STUB[q.k] || !!q.out !== !!outer) continue;
+    const r = Math.max(5, (q.d || 10) / 2);
+    mb.tag(
+      q.out
+        ? `Сервисный клапан: ${q.n}`
+        : q.k === 'drain'
+          ? 'Слив конденсата (дренажный патрубок)'
+          : q.k === 'link'
+            ? 'Клеммы межблочного кабеля'
+            : `Патрубок: ${q.n}`
+    );
+    const a = OFF(q, q.out ? 40 : 70),
+      b = P3(q);
+    mb.smooth(true);
+    mb.tube(a, b, r, STUB[q.k], 14);
+    mb.smooth(false);
+    if (q.out || q.k === 'liq' || q.k === 'gas') {
+      mb.lod('n');
+      mb.tube(OFF(q, 30), OFF(q, 18), r + 5, q.out ? CL_BRASS : CL_STEEL, 8);
+      if (q.out) mb.box(q.p.x - 16, q.p.y - 16, q.z + r, q.p.x + 16, q.p.y + 16, q.z + r + 22, CL_BRASS);
+      mb.lod('');
+    }
+  }
+}
+/** Piping of a fan coil: for every circuit — ball valve, strainer on the supply, balancing valve and the 3-way valve with the actuator on the return, an air vent on top. */
+function fcPiping(e, mb) {
+  const ps = climPorts(e);
+  mb.tag('Узел обвязки фанкойла');
+  for (const c of fcCircuits(e)) {
+    const sup = ps.find(q => q.k === (c === 'heat' ? 'wsup' : 'csup')),
+      ret = ps.find(q => q.k === (c === 'heat' ? 'wret' : 'cret'));
+    if (!sup || !ret) continue;
+    const r = Math.max(8, sup.d / 2);
+    const col = STUB[sup.k];
+    for (const q of [sup, ret]) {
+      mb.smooth(true);
+      mb.tube(P3(q), OFF(q, -230), r, col, 12);
+      mb.smooth(false);
+    }
+    // supply: ball valve (body + lever), strainer
+    mb.tag('Кран шаровой');
+    mb.tube(OFF(sup, -70), OFF(sup, -120), r + 6, CL_BRASS, 12);
+    mb.lod('n');
+    mb.box(
+      sup.p.x - sup.dir[0] * -95 - 3,
+      sup.p.y - sup.dir[1] * -95 - 36,
+      sup.z + r + 6,
+      sup.p.x - sup.dir[0] * -95 + 3,
+      sup.p.y - sup.dir[1] * -95 + 36,
+      sup.z + r + 12,
+      '#d94a3d'
+    );
+    mb.lod('');
+    mb.tag('Фильтр сетчатый');
+    mb.tube(OFF(sup, -135), OFF(sup, -195), r + 7, CL_BRASS, 12);
+    mb.tube(
+      [sup.p.x - sup.dir[0] * -165, sup.p.y - sup.dir[1] * -165, sup.z],
+      [sup.p.x - sup.dir[0] * -165, sup.p.y - sup.dir[1] * -165, sup.z - 45],
+      r - 1,
+      CL_STEEL,
+      10
+    );
+    // return: balancing valve, 3-way valve with the actuator
+    mb.tag('Клапан балансировочный');
+    mb.tube(OFF(ret, -70), OFF(ret, -125), r + 6, '#3f7fb8', 12);
+    mb.tag('Клапан 3-ходовой с сервоприводом');
+    mb.tube(OFF(ret, -140), OFF(ret, -200), r + 6, CL_BRASS, 12);
+    const A = OFF(ret, -170, r + 8),
+      B = OFF(ret, -170, r + 80);
+    mb.obox(A, B, 46, 46, '#e9ebed');
+    mb.lod('n');
+    mb.tag('Воздухоотводчик');
+    const v = OFF(ret, -40);
+    mb.tube([v[0], v[1], ret.z + r], [v[0], v[1], ret.z + r + 50], 8, CL_BRASS, 8);
+    mb.lod('');
+  }
+}
+/** Details of an indoor machine (air conditioner or fan coil) in the local frame helpers of acBuild: `box(x0,y0,z0,x1,y1,z1,col)`, `L_(x,y,z)`. */
+function acDetail(e, mb, box, L_, z) {
+  const [w, d, h] = acDim(e);
+  const fc = e.fc === 'water';
+  const y0 = e.kind === 'cassette' ? -w / 2 + d / 2 : 0,
+    y1 = e.kind === 'cassette' ? w / 2 + d / 2 : d;
+  const zb = e.kind === 'split' ? z + 40 : z;
+  const yc = (y0 + y1) / 2;
+  mb.tag('Щиток управления (клеммник)');
+  box(w / 2, yc - 55, zb + h * 0.3, w / 2 + 16, yc + 55, zb + h * 0.7, '#e1e4e8');
+  mb.lod('n');
+  mb.tag('Клеммник питания и управления');
+  box(w / 2 + 16, yc - 40, zb + h * 0.38, w / 2 + 19, yc + 40, zb + h * 0.62, CL_DARK);
+  for (let i = 0; i < 6; i++)
+    box(w / 2 + 19, yc - 36 + i * 13, zb + h * 0.44, w / 2 + 22, yc - 28 + i * 13, zb + h * 0.56, CL_STEEL);
+  mb.lod('');
+  if (e.kind === 'duct' || e.kind === 'cassette') {
+    mb.tag('Ревизионный люк фильтра');
+    box(-w * 0.3, yc - d * 0.3, zb - 8, w * 0.3, yc + d * 0.3, zb, '#dfe2e6');
+    mb.lod('n');
+    mb.tag('Замки люка');
+    for (const sx of [-1, 1]) box(sx * w * 0.3 - 14, yc - 10, zb - 14, sx * w * 0.3 + 14, yc + 10, zb - 8, CL_GRAY);
+    mb.lod('');
+  }
+  if (e.kind === 'split' && e.mnt !== 'floor') {
+    mb.tag('Нижняя решётка');
+    box(-w / 2 + 30, d - 70, z + 36, w / 2 - 30, d - 36, z + 42, CL_DARK);
+    mb.tag('Выход трассы (проходка в стене)');
+    box(-w / 2 + 40, -6, zb + 30, -w / 2 + 130, 0, zb + 100, CL_STEEL);
+  }
+  if (e.kind === 'split' && e.mnt === 'floor') {
+    mb.tag('Напольно-потолочный блок: цоколь');
+    box(-w / 2 + 20, 20, z - 40, w / 2 - 20, d - 20, z + 40, '#9aa1a9');
+  }
+  if (fc) {
+    mb.tag('Теплообменник (змеевик с рёбрами)');
+    box(-w / 2 + 20, y0 + 40, zb + 20, -w / 2 + 70, y1 - 40, zb + h - 20, '#b87a3a');
+    mb.lod('n');
+    for (let i = 0; i < 10; i++)
+      box(
+        -w / 2 + 20,
+        y0 + 50 + i * ((y1 - y0 - 100) / 10),
+        zb + 22,
+        -w / 2 + 70,
+        y0 + 52 + i * ((y1 - y0 - 100) / 10),
+        zb + h - 22,
+        '#d8dde2'
+      );
+    mb.lod('');
+    mb.tag('Поддон конденсата (дренажный поддон)');
+    box(-w / 2 + 10, y0 + 20, zb - 22, w / 2 - 10, y1 - 20, zb, '#e3e6ea');
+    mb.tag('Слив конденсата (дренажный патрубок поддона)');
+    box(-w / 2 - 28, y0 + (y1 - y0) * 0.85 - 10, zb - 20, -w / 2 + 10, y0 + (y1 - y0) * 0.85 + 10, zb - 4, CL_STEEL);
+    fcPiping(e, mb);
+  } else if (e.kind === 'duct' && (e.drain === 'pump' || !e.drain)) {
+    // the pump of the drain is drawn by acBuild; here its spigot
+    mb.tag('Слив конденсата (дренажный патрубок помпы)');
+    box(w / 2 - 110, d - 80, z - 120, w / 2 - 90, d - 60, z - 88, '#e6e0b0');
+  }
+  stubs(e, mb, false);
+}
+/** Details of the outdoor unit: grille wires, service valves with caps, the terminal cover. Called with the local frame of the unit `ob(x0,y0,z0,x1,y1,z1,col)`. */
+function acOutDetail(e, mb, ob) {
+  const cap = acCap(e);
+  const [ow, od, oh] = ACD.out[cap];
+  const OZ = acOutF(e).z;
+  mb.lod('n');
+  mb.tag('Решётка вентилятора: ребра');
+  for (let i = 0; i < 6; i++)
+    ob(
+      -ow * 0.12 - 70 + i * 28,
+      -od - 124,
+      oh * 0.18 + OZ,
+      -ow * 0.12 - 66 + i * 28,
+      -od - 121,
+      oh * 0.82 + OZ,
+      CL_DARK
+    );
+  mb.lod('');
+  mb.tag('Крышка клеммника (под ней межблочный кабель)');
+  ob(ow / 2 - 12, -120 - od * 0.85, OZ + oh * 0.4, ow / 2, -120 - od * 0.55, OZ + oh * 0.7, '#d5d9de');
+  stubs(e, mb, true);
+}
+/** Details of an air handling unit in its local frame (x along the length, the service side at y = −W/2): panels, handles, locks, hinges, marks of the flows, board, sensor, condensate. */
+function ahuDetail(e, mb, SP) {
+  const [L, W, H] = hvDim(e);
+  const sv = -W / 2;
+  mb.tag('Панели обслуживания: ручки');
+  mb.lod('n');
+  for (const [x, zz] of [
+    [-L / 2 + 70, H * 0.5],
+    [L / 2 - 70, H * 0.5]
+  ])
+    mb.rbox(x - 7, sv - 26, zz - 70, x + 7, sv - 3, zz + 70, 3, CL_DARK);
+  mb.tag('Панели обслуживания: замки');
+  for (const x of [-L / 2 + 70, L / 2 - 70])
+    mb.box(x + 14, sv - 10, H * 0.5 - 30, x + 34, sv - 3, H * 0.5 - 10, CL_STEEL);
+  mb.tag('Панели обслуживания: петли');
+  for (const zz of [60, H - 60])
+    for (const x of [-L / 4 - 60, L / 4 + 60]) mb.box(x - 8, sv - 4, zz - 20, x + 8, sv, zz + 20, CL_GRAY);
+  mb.lod('');
+  mb.tag('Блок автоматики: дверца');
+  mb.box(-L / 4 + 6, sv - 72, H / 2 - 82, L / 8 - 6, sv - 70, H / 2 + 82, '#4b5159');
+  mb.lod('n');
+  mb.tag('Блок автоматики: индикатор и замок');
+  mb.box(-L / 4 + 30, sv - 74, H / 2 + 40, -L / 4 + 60, sv - 72, H / 2 + 56, '#3fbf6a');
+  mb.box(L / 8 - 32, sv - 78, H / 2 - 6, L / 8 - 16, sv - 72, H / 2 + 6, CL_STEEL);
+  mb.lod('');
+  mb.tag('Маркировка потоков');
+  const NM = {
+    oda: 'свежий воздух (улица)',
+    eha: 'удаляемый воздух (улица)',
+    sup: 'приток (в помещения)',
+    eta: 'вытяжка (из помещений)'
+  };
+  for (const q of SP) {
+    const col = q.role === 'sup' || q.role === 'oda' ? sysOf(e.sysS || '').col : sysOf(e.sysE || '').col;
+    mb.tag(`Маркировка: ${NM[q.role] || q.role}`);
+    const a = [q.x - q.dir[0] * 30, q.y - q.dir[1] * 30, q.z - q.dir[2] * 30],
+      b = [q.x - q.dir[0] * 44, q.y - q.dir[1] * 44, q.z - q.dir[2] * 44];
+    mb.tube(a, b, q.d / 2 + 7, q.role === 'oda' || q.role === 'eha' ? '#8a9199' : col, 24);
+  }
+  const ts = SP.find(q => q.role === 'sup');
+  if (e.tsens !== false && ts) {
+    mb.tag('Канальный датчик температуры притока');
+    const bx = ts.x + ts.dir[0] * 140,
+      by = ts.y + ts.dir[1] * 140,
+      bz = ts.z + ts.dir[2] * 140;
+    mb.lod('n');
+    mb.box(bx - 14, by - 14, bz + ts.d / 2, bx + 14, by + 14, bz + ts.d / 2 + 30, '#e9ebed');
+    mb.tube([bx, by, bz + ts.d / 2], [bx, by, bz - ts.d * 0.3], 3, CL_STEEL, 6);
+    mb.lod('');
+  }
+  mb.tag('Слив конденсата Ø32 (дренажный патрубок с сифоном, рекуператор)');
+  const dx = -L / 2 + 160,
+    dy = sv + 120;
+  mb.smooth(true);
+  mb.tube([dx, dy, 0], [dx, dy, -70], 16, '#e6e0b0', 12);
+  mb.tube([dx, dy, -70], [dx + 50, dy, -110], 16, '#e6e0b0', 12);
+  mb.tube([dx + 50, dy, -110], [dx + 100, dy, -70], 16, '#e6e0b0', 12);
+  mb.smooth(false);
+  mb.tag('Присоединительный клеммник питания и пульта');
+  mb.lod('n');
+  mb.box(L / 4 - 40, sv - 5, H * 0.2 - 30, L / 4 + 220, sv, H * 0.2 + 30, '#e1e4e8');
+  mb.lod('');
+  if (climCtl(e).wired) {
+    mb.tag('Кабель пульта');
+    mb.tube([L / 4 + 160, sv - 4, H * 0.2], [L / 4 + 160, sv - 120, H * 0.2], 4, CL_DARK, 6);
+  }
+}
+
+// ===== blocks/hvac/clim-ports.js =====
+/**
+ * blocks/hvac/clim-ports
+ *
+ * Connection points of the climate machines and their control: ports (water supply / return of a fan coil — heating T1/T2 and
+ * cooling T11/T21, freon liquid / gas, condensate drain, power, control cable, inter-unit cable, supply-air sensor of an air handling unit), the
+ * status «connected / not» of each one, plan marks, the «Управление» group (wired panel, IR remote, phone, BMS), the wired panel as a
+ * device of kind `acrc`, the specification rows (piping of a fan coil, breaker and cable, remotes, Wi-Fi module, control cable) and the checks.
+ *
+ * The pipe command and the plan snaps see the ports through `portHooks.ext` of the routing block (as the ports of catalogue
+ * instances), so the pipes of the plumbing block connect to them without this block importing it; the Wi-Fi coverage comes
+ * through `climHooks.wifiAt`, set by the network block.
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** Pipe system → group of the system (a pipe connects to a port of its own group). */
+const PIPE_G = { ot: 'ot', otr: 'ot', chs: 'ch', chr: 'ch', k: 'k' };
+/** Colour and short name of a kind of port. */
+const CL_PK = {
+  wsup: { c: '#d36ac9' },
+  wret: { c: '#8f6ad3' },
+  csup: { c: '#2fb4d8' },
+  cret: { c: '#2a7fa6' },
+  drain: { c: '#58b88f', n: 'Др' },
+  liq: { c: '#e6b800', n: 'Ж' },
+  gas: { c: '#c9843a', n: 'Г' },
+  link: { c: '#5d646c', n: 'МБ' },
+  pwr: { c: '#c97cf0', n: '230 В' },
+  ctl: { c: '#62c7f0', n: 'Упр' },
+  sens: { c: '#9aa1a9', n: 'Д°' }
+};
+/** The catalogue of wired control panels: name, size of the face, whether it is a fan coil thermostat. */
+const CTL_CAT = {
+  w86: { n: 'Проводной пульт 86×86 (ЖК, 4 кнопки)', w: 86 },
+  w120: { n: 'Проводной пульт 120×120 (сенсорный, таймер)', w: 120 },
+  t86: { n: 'Термостат фанкойла 86×86 (3 скорости, лето/зима)', w: 86, fc: true }
+};
+/** Flags of the control of a machine: { wired, ir, wifi, bms, model } (empty object — nothing chosen). */
+const climCtl = e => e.ctl || {};
+/** Whether the air conditioner entity is a fan coil (water). */
+const isFc = e => e.type === 'ac' && e.fc === 'water';
+/** Number of water circuits of a fan coil: 4-pipe — heating and cooling, otherwise one. */
+const fcCircuits = e =>
+  isFc(e) ? (e.fcp === '4' ? ['heat', 'cool'] : [e.fcc === 'cool' ? 'cool' : 'heat']) : [];
+/** Nominal pipe Ø of the water connections of a fan coil by its cooling power. */
+const fcD = e => (acCap(e) >= 5 ? 20 : 16);
+/** Breaker and cable of a unit by its power: { A, brk: 'C10', cab: 'ВВГнг(А)-LS 3×1,5' } (breaker ≥ 1,25 × current, cable holds the breaker). */
+function climSupply(e) {
+  const I = unitPower(e) / (230 * 0.9);
+  // a compressor starts with a surge: an air conditioner takes C16 at least (as the check of the power point says)
+  const A =
+    [6, 10, 16, 20, 25, 32].find(a => a >= I * 1.25 && (a >= 16 || !(e.type === 'ac' && e.fc !== 'water'))) || 32;
+  const mm =
+    Object.keys(CABLE_MAXA)
+      .sort((x, y) => x - y)
+      .find(m => CABLE_MAXA[m] >= A) || '6';
+  return { A, brk: 'C' + A, cab: `ВВГнг(А)-LS 3×${String(mm).replace('.', ',')}` };
+}
+
+/** Box of an indoor machine in its local frame with a helper to take the point at fractions along y and z. */
+function acBox(e) {
+  const D = acDim(e),
+    z = acZ(e),
+    [w, d, h] = D;
+  let y0 = 0,
+    y1 = d,
+    z0 = z;
+  if (e.kind === 'split') z0 = z + 40;
+  if (e.kind === 'cassette') {
+    y0 = -w / 2 + d / 2;
+    y1 = w / 2 + d / 2;
+  }
+  const z1 = z + h;
+  return { w, d, h, y0, y1, z0, z1, at: (fy, fz) => [y0 + (y1 - y0) * fy, z0 + (z1 - z0) * fz] };
+}
+/** World direction of a local direction (dx, dy) of a unit, with the vertical part dz. */
+function dirW(e, dx, dy, dz) {
+  const o = LP(e, 0, 0),
+    q = LP(e, dx, dy);
+  return [q.x - o.x, q.y - o.y, dz];
+}
+/** One port: kind, system of pipe, Ø, point, height, direction, label. */
+function mkPort(e, k, o) {
+  const K = CL_PK[k] || {};
+  const p = o.p || LP(e, o.x, o.y);
+  const n = o.n || K.n || k;
+  return {
+    k,
+    n,
+    s: o.s || null,
+    d: o.d || 0,
+    p: P(p.x, p.y),
+    z: o.z,
+    dir: o.dir || [0, 0, 0],
+    req: !!o.req,
+    out: !!o.out,
+    inst: e,
+    port: true
+  };
+}
+/** Water, drain, power and control ports of a fan coil, in the world. */
+function fcPorts(e) {
+  const B = acBox(e),
+    out = [],
+    d = fcD(e),
+    circ = fcCircuits(e);
+  const xL = -B.w / 2 - 40,
+    xR = B.w / 2 + 10;
+  const sys4 = { heat: ['ot', 'otr', 'wsup', 'wret'], cool: ['chs', 'chr', 'csup', 'cret'] };
+  circ.forEach((c, i) => {
+    const [s1, s2] = sys4[c];
+    const fy = e.fcp === '4' ? (c === 'heat' ? 0.22 : 0.55) : 0.3;
+    const k1 = e.fcp === '4' ? sys4[c][2] : 'wsup',
+      k2 = e.fcp === '4' ? sys4[c][3] : 'wret';
+    const [y, zl] = B.at(fy, 0.22),
+      [, zh] = B.at(fy, 0.72);
+    const yr = y + 50; // the return stands 50 mm aside of the supply: different points on the plan
+    const nm = (s, t) => `${{ ot: 'Т1', otr: 'Т2', chs: 'Т11', chr: 'Т21' }[s]} ${t} Ø${d}`;
+    out.push(
+      mkPort(e, k1, { x: xL, y, z: zl, s: s1, d, n: nm(s1, 'подача'), dir: dirW(e, -1, 0, 0), req: true }),
+      mkPort(e, k2, { x: xL, y: yr, z: zh, s: s2, d, n: nm(s2, 'обратка'), dir: dirW(e, -1, 0, 0), req: true })
+    );
+  });
+  const [yd, zd] = B.at(0.85, 0.06);
+  out.push(
+    mkPort(e, 'drain', {
+      x: xL,
+      y: yd,
+      z: zd,
+      s: 'k',
+      d: 20,
+      n: 'Др Ø20 (поддон)',
+      dir: dirW(e, -1, 0, 0),
+      req: e.drain !== 'pump'
+    })
+  );
+  const [yp, zp] = B.at(0.5, 0.5),
+    [, zc] = B.at(0.5, 0.25);
+  out.push(mkPort(e, 'pwr', { x: xR, y: yp, z: zp, n: '230 В (клеммник)', dir: dirW(e, 1, 0, 0), req: true }));
+  out.push(
+    mkPort(e, 'ctl', {
+      x: xR,
+      y: yp + 90,
+      z: zc,
+      n: 'Кабель управления',
+      dir: dirW(e, 1, 0, 0),
+      req: !!climCtl(e).wired
+    })
+  );
+  return out;
+}
+/** Freon, drain, inter-unit cable, power and control ports of an indoor air conditioner and the valves of the outdoor unit. */
+function acIndoorPorts(e) {
+  const B = acBox(e),
+    out = [],
+    AP = acPorts(e),
+    pp = ACP[acCap(e)];
+  const f = AP.freon;
+  const at = (dy, dz) => {
+    const o = LP(e, 0, 0),
+      q = LP(e, 0, dy);
+    return { p: P(f.p.x + (q.x - o.x), f.p.y + (q.y - o.y)), z: f.z + dz };
+  };
+  const dr = dirW(e, -1, 0, 0);
+  out.push(
+    mkPort(e, 'liq', { ...at(-22, 0), d: pp[2], n: `Ж ${pp[0]}`, dir: dr, req: true }),
+    mkPort(e, 'gas', { ...at(22, 0), d: pp[3], n: `Г ${pp[1]}`, dir: dr, req: true }),
+    mkPort(e, 'link', { ...at(48, -18), n: 'МБ кабель', dir: dr, req: true }),
+    mkPort(e, 'drain', {
+      p: AP.drain.p,
+      z: AP.drain.z,
+      s: 'k',
+      d: 16,
+      n: 'Др Ø16',
+      dir: [0, 0, -1],
+      req: e.drain !== 'pump'
+    })
+  );
+  const [yp, zp] = B.at(0.5, 0.5),
+    [, zc] = B.at(0.5, 0.25);
+  out.push(
+    mkPort(e, 'pwr', { x: B.w / 2 + 10, y: yp, z: zp, n: '230 В (клеммник)', dir: dirW(e, 1, 0, 0), req: true })
+  );
+  out.push(
+    mkPort(e, 'ctl', {
+      x: B.w / 2 + 10,
+      y: yp + 90,
+      z: zc,
+      n: 'Кабель управления',
+      dir: dirW(e, 1, 0, 0),
+      req: !!climCtl(e).wired
+    })
+  );
+  const O = acOutF(e);
+  if (O) {
+    const [ow, od, oh] = ACD.out[acCap(e)];
+    const w = (x, y, z) => ({ p: P(O.p.x + O.s.x * x + O.f.x * y, O.p.y + O.s.y * x + O.f.y * y), z: O.z + z });
+    const dirO = [O.s.x, O.s.y, 0];
+    out.push(
+      mkPort(e, 'liq', {
+        ...w(ow / 2 + 10, -120 - od * 0.25, 140),
+        d: pp[2],
+        n: `Ж ${pp[0]} (клапан)`,
+        dir: dirO,
+        out: true
+      }),
+      mkPort(e, 'gas', {
+        ...w(ow / 2 + 10, -120 - od * 0.25, 195),
+        d: pp[3],
+        n: `Г ${pp[1]} (клапан)`,
+        dir: dirO,
+        out: true
+      }),
+      mkPort(e, 'link', { ...w(ow / 2 + 10, -120 - od * 0.7, oh * 0.55), n: 'МБ клеммник', dir: dirO, out: true })
+    );
+  }
+  return out;
+}
+/** Power, control, sensor and condensate ports of an air handling unit (service side of the body). */
+function ahuPorts(e) {
+  const [L, W, H] = hvDim(e),
+    z = hvZ(e),
+    out = [];
+  const sv = dirW(e, 0, -1, 0);
+  out.push(
+    mkPort(e, 'pwr', { x: L / 4, y: -W / 2 - 4, z: z + H * 0.2, n: '230 В (автоматика)', dir: sv, req: true }),
+    mkPort(e, 'ctl', {
+      x: L / 4 + 160,
+      y: -W / 2 - 4,
+      z: z + H * 0.2,
+      n: 'Кабель пульта',
+      dir: sv,
+      req: !!climCtl(e).wired
+    }),
+    mkPort(e, 'sens', { x: -L / 4, y: -W / 2 - 4, z: z + H * 0.2, n: 'Датчик Т притока', dir: sv, req: false }),
+    mkPort(e, 'drain', {
+      x: -L / 2 + 160,
+      y: -W / 2 + 120,
+      z,
+      s: 'k',
+      d: 32,
+      n: 'Др Ø32 (рекуператор)',
+      dir: [0, 0, -1],
+      req: true
+    })
+  );
+  return out;
+}
+/** The ports of a climate machine (a fan coil, an air conditioner with its outdoor unit, an air handling unit): [{ k, n, s, d, p, z, dir, req, out, inst, port }]; [] for anything else. */
+function climPorts(e) {
+  try {
+    if (e.type === 'ac') return isFc(e) ? fcPorts(e) : acIndoorPorts(e);
+    if (e.type === 'hvu' && e.kind === 'ahu') return ahuPorts(e);
+  } catch (err) {
+    console.warn('climPorts', err);
+  }
+  return [];
+}
+/** Whether a point is at an end of a pipe of the group: returns { pipe } for an exact system, { wrong } for a pipe of another system of the same group of use. */
+function pipeAt(q) {
+  const g = PIPE_G[q.s];
+  let wrong = null;
+  for (const p of S.ents.filter(x => x.pts && PIPE_G[x.sys] === g)) {
+    const a = p.pts[0],
+      b = p.pts[p.pts.length - 1];
+    if (!((a && dist(a, q.p) < 35) || (b && dist(b, q.p) < 35))) continue;
+    if (p.sys === q.s) return { pipe: p };
+    wrong = p;
+  }
+  return { wrong };
+}
+/** Whether a line (freon, drain) of the air conditioner `acl` type ends at the port. */
+function aclAt(e, kind, q) {
+  return query('acl', l => l.ac === e.id && l.kind === kind).some(l => {
+    const a = l.pts[0],
+      b = l.pts[l.pts.length - 1];
+    return (a && dist(a, q.p) < 160) || (b && dist(b, q.p) < 160);
+  });
+}
+/** The wired panel of a machine (a device of kind acrc), or undefined. */
+const climPanelOf = e => S.ents.find(d => d.kind === 'acrc' && d.acu === e.id);
+/**
+ * Status of every port: [{ port, ok, why }] — ok where something is connected (a pipe of its system, a line of the machine, a built-in line
+ * set, the power point, the panel), why — the text of what is wrong for a required port.
+ */
+function climPortStatus(e) {
+  const out = [];
+  const sepF = query('acl', l => l.ac === e.id && l.kind === 'freon').length > 0;
+  for (const q of climPorts(e)) {
+    let ok = true,
+      why = '';
+    if (q.k === 'wsup' || q.k === 'wret' || q.k === 'csup' || q.k === 'cret') {
+      const r = pipeAt(q);
+      ok = !!r.pipe;
+      if (!ok) why = r.wrong ? `${q.n}: подключена труба другой системы` : `Не подключено: ${q.n}`;
+    } else if (q.k === 'drain') {
+      ok = !!pipeAt(q).pipe || aclAt(e, 'drain', q) || (!isFc(e) && e.type === 'ac');
+      if (!ok) why = `Не подключено: ${q.n}`;
+    } else if (q.k === 'liq' || q.k === 'gas' || q.k === 'link') {
+      ok = !sepF || aclAt(e, 'freon', q) || !!q.out;
+      if (!ok) why = `Не подключено: ${q.n} (линия фреона не доходит до патрубка)`;
+    } else if (q.k === 'pwr') {
+      ok = !!powerNear(e);
+      if (!ok) why = `Не подключено: ${q.n}`;
+    } else if (q.k === 'ctl') {
+      ok = !climCtl(e).wired || !!climPanelOf(e);
+      if (!ok) why = `Не подключено: ${q.n} (нет пульта)`;
+    }
+    out.push({ port: q, ok, why });
+  }
+  return out;
+}
+/** Ports of every visible climate machine for the routing block (snaps, pipe command). */
+function allClimPorts() {
+  const out = [];
+  for (const e of S.ents)
+    if ((e.type === 'ac' || (e.type === 'hvu' && e.kind === 'ahu')) && !e.hidden) out.push(...climPorts(e));
+  return out;
+}
+portHooks.ext.push(allClimPorts);
+
+/* ---------- plan ---------- */
+/** Marks of the ports on the plan: a dot of the colour of the port (red ring where a required one is not connected) and the label when close. */
+function climDrawPorts(e, ghost) {
+  if (ghost || view.k < 0.03) return;
+  const st = climPortStatus(e);
+  ctx.save();
+  ctx.font = `9px ${TFONT}`;
+  ctx.textAlign = 'left';
+  for (const { port: q, ok } of st) {
+    const K = CL_PK[q.k] || { c: '#999' };
+    const s = w2s(q.p);
+    ctx.fillStyle = K.c;
+    ctx.strokeStyle = !ok && q.req ? '#e8584f' : '#fff';
+    ctx.lineWidth = !ok && q.req ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (view.k > 0.09) ctx.fillText(q.n, s.x + 5, s.y - 4);
+  }
+  ctx.restore();
+}
+
+/* ---------- checks ---------- */
+/** Wi-Fi level at the machine for the phone module: { v } or null when the network block is not asked. */
+function wifiLevel(e) {
+  if (!climHooks.wifiAt) return null;
+  const v = climHooks.wifiAt(e.p.x, e.p.y, (e.type === 'ac' ? acZ(e) : hvZ(e)) || 2000);
+  return { v };
+}
+/** Checks of the ports and of the control of a machine: [[level, text]] — not connected water / drain / freon / control ports and the Wi-Fi coverage. */
+function climChecks(e) {
+  const out = [];
+  for (const s of climPortStatus(e))
+    if (!s.ok && s.why && s.port.req && s.port.k !== 'pwr')
+      out.push([isFc(e) && s.port.s && s.port.k !== 'drain' ? 'warn' : 'info', s.why]);
+  const c = climCtl(e);
+  if (c.wifi) {
+    const w = wifiLevel(e);
+    if (w && (w.v == null || w.v < -75))
+      out.push([
+        'warn',
+        'Управление с телефона: в месте блока нет уверенного Wi-Fi (< −75 дБм) — поставьте точку доступа (блок «Сеть»).'
+      ]);
+    else if (!w) out.push(['info', 'Управление с телефона: проверьте покрытие Wi-Fi в месте блока (блок «Сеть»).']);
+  }
+  return out;
+}
+
+/* ---------- control: group of the properties and the wired panel ---------- */
+/** Short text of the chosen ways of control for the head of the group. */
+function climCtlSummary(e) {
+  const c = climCtl(e),
+    t = [c.wired && 'пульт', c.ir && 'ИК', c.wifi && 'телефон', c.bms && 'BMS'].filter(Boolean);
+  return t.length ? t.join(', ') : 'нет';
+}
+/** Rows of the «Управление» group: wired panel, IR remote, phone, BMS, the model of the panel, the state of the panel and the cable. */
+function climCtlRows(e) {
+  const c = climCtl(e),
+    pa = climPanelOf(e);
+  const mods = Object.entries(CTL_CAT)
+    .filter(([, m]) => !m.fc || isFc(e))
+    .map(([k, m]) => [k, m.n]);
+  const hint = t => `<dt></dt><dd class="hint" style="text-align:left">${esc(t)}</dd>`;
+  return (
+    xRows(e, [
+      ['Проводной пульт (настенный)', 'ctl.wired', 'b'],
+      ...(c.wired ? [['· модель пульта', 'ctl.model', 's', mods]] : []),
+      ['ИК-пульт (дистанционный)', 'ctl.ir', 'b'],
+      ['Управление с телефона (Wi‑Fi модуль)', 'ctl.wifi', 'b'],
+      ['Центральный пульт / BMS (шлюз)', 'ctl.bms', 'b']
+    ]) +
+    (c.wired
+      ? pa
+        ? cR('Пульт', `на стене, кабель ${climCtlCable(e, pa).toFixed(1).replace('.', ',')} м`)
+        : hint('Пульт не найден — снимите и поставьте галочку заново.')
+      : '') +
+    (c.wifi ? hint('Wi‑Fi модуль: строка спецификации; покрытие проверяется по блоку «Сеть».') : '')
+  );
+}
+/** Length of the control cable between the machine and its wired panel, m (with 15 % and 1 m for the ends). */
+function climCtlCable(e, pa) {
+  const z0 = e.type === 'ac' ? acZ(e) : hvZ(e);
+  const L = Math.hypot(dist(e.p, pa.p), (pa.z || 1500) - z0) * 1.15 + 1000;
+  return Math.round(L / 100) / 10;
+}
+/** After the «Управление» flags changed: puts the wired panel on the nearest wall (a device `acrc` bound to the machine) or removes it; returns the panel or null. */
+function climSync(e) {
+  const want = !!climCtl(e).wired;
+  const have = S.ents.filter(d => d.kind === 'acrc' && d.acu === e.id);
+  if (!want) {
+    if (have.length) eraseIds(have.map(d => d.id));
+    return null;
+  }
+  const mdl = CTL_CAT[climCtl(e).model] ? climCtl(e).model : isFc(e) ? 't86' : 'w86';
+  if (have.length) {
+    have[0].mdl = mdl;
+    return have[0];
+  }
+  const pl = placeOnWall(P(e.p.x + 700, e.p.y), 'wall');
+  return addEnt({
+    type: 'dev',
+    kind: 'acrc',
+    p: pl.p,
+    rot: pl.rot,
+    z: 1500,
+    host: pl.host,
+    acu: e.id,
+    mdl,
+    layer: ensureLayer('Кондиционирование'),
+    meta: { note: 'Пульт управления: ' + (e.name || (e.type === 'ac' ? 'кондиционер' : 'установка')) }
+  });
+}
+
+/* ---------- specification ---------- */
+/** Rows of the climate machine's specification that come from its ports and control (the piping of a fan coil, breaker and cable, remotes, modules, control cable). */
+function climSpec(e, put) {
+  const S_ = e.type === 'hvu' ? 'Вентиляция' : 'Кондиционирование';
+  const one = (k, name, u = 'шт', q = 1) =>
+    put(S_, k, { name, u }, r => {
+      r.q = Math.round((r.q + q) * 10) / 10;
+      r.ids.push(e.id);
+    });
+  if (isFc(e)) {
+    const d = fcD(e),
+      n = fcCircuits(e).length;
+    one('fcball' + d, `Узел обвязки фанкойла: кран шаровой Ø${d} (отсечной, на подаче и обратке)`, 'шт', 2 * n);
+    one('fcstr' + d, `Узел обвязки фанкойла: фильтр сетчатый Ø${d} (на подаче)`, 'шт', n);
+    one('fc3w' + d, `Узел обвязки фанкойла: клапан 3-ходовой Ø${d} с сервоприводом 230 В`, 'шт', n);
+    one('fcbal' + d, `Узел обвязки фанкойла: клапан балансировочный Ø${d} (на обратке)`, 'шт', n);
+    one('fchose' + d, `Узел обвязки фанкойла: подводка гибкая Ø${d} (нержавеющая, 0,5 м)`, 'шт', 2 * n);
+    one('fcvent', 'Узел обвязки фанкойла: воздухоотводчик автоматический ½″', 'шт', n);
+  }
+  const sp = climSupply(e);
+  one(
+    'clsup' + sp.brk + sp.cab,
+    `Автомат ${sp.brk} (1P) и кабель питания ${sp.cab} — на блок ≈ ${unitPower(e)} Вт`,
+    'компл'
+  );
+  const c = climCtl(e);
+  if (c.ir) one('clir', 'Пульт ИК (дистанционный)');
+  if (c.wifi)
+    one(
+      'clwifi',
+      isFc(e) ? 'Wi‑Fi модуль / шлюз управления фанкойлом с телефона' : 'Wi‑Fi модуль управления с телефона'
+    );
+  if (c.bms) one('clbms', 'Шлюз BMS (Modbus / KNX) для центрального управления');
+  const pa = c.wired ? climPanelOf(e) : null;
+  if (pa) one('clctlcab', 'Кабель управления пульта, экранированный 2×0,75, м', 'м', climCtlCable(e, pa));
+}
+
+/* ---------- the wired panel: a device kind ---------- */
+/** Name of a wired panel by its model. */
+const panelName = e => (CTL_CAT[e.mdl] || CTL_CAT.w86).n;
+/** 3D model of the wired panel in the local frame of a wall device (the wall at y = 0, the face towards −y). */
+function climPanelMesh(e) {
+  const m = CTL_CAT[e.mdl] || CTL_CAT.w86,
+    w = m.w,
+    z = +e.z || 1500;
+  const mb = MB();
+  mb.tag('Пульт: подрозетник');
+  mb.rbox(-w / 2 - 4, -8, z - w / 2 - 4, w / 2 + 4, 0, z + w / 2 + 4, 3, '#e9ebed');
+  mb.tag(`Пульт: ${m.n}`);
+  mb.rbox(-w / 2, -17, z - w / 2, w / 2, -8, z + w / 2, 4, '#f4f5f6');
+  mb.tag('Пульт: дисплей');
+  mb.box(-w * 0.34, -17.6, z + w * 0.02, w * 0.34, -17, z + w * 0.38, '#1f3a5c');
+  mb.lod('n');
+  mb.tag('Пульт: кнопки');
+  for (let i = 0; i < 4; i++)
+    mb.box(
+      -w * 0.34 + i * w * 0.18,
+      -17.5,
+      z - w * 0.38,
+      -w * 0.34 + i * w * 0.18 + w * 0.14,
+      -17,
+      z - w * 0.2,
+      '#b9bec4'
+    );
+  mb.lod('');
+  return meshGroup(mb.meshes(), { edges: true });
+}
+/** Plan symbol of the wired panel: a small square with «ПУ». */
+function panelDraw(e, G) {
+  const { r, L, col } = G;
+  ctx.strokeStyle = col;
+  ctx.fillStyle = col;
+  pathPoly([L(-0.55 * r, 0), L(0.55 * r, 0), L(0.55 * r, 1.1 * r), L(-0.55 * r, 1.1 * r)]);
+  ctx.stroke();
+  const s = w2s(L(0, 0.55 * r));
+  ctx.font = `${Math.max(7, Math.min(10, r * view.k * 0.8))}px ${TFONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('ПУ', s.x, s.y);
+}
+FAMS.cctl = { n: 'Пульт климата', cat: 'Кондиционирование' };
+DEVK.acrc = {
+  f: 'cctl',
+  n: 'Пульт управления климатом (проводной)',
+  kw: 'Пульт',
+  mount: 'wall',
+  z: 1500,
+  pw: 0,
+  box: 1,
+  weak: true,
+  specName: e => `${panelName(e)}, подрозетник`,
+  mesh: climPanelMesh,
+  draw: panelDraw,
+  k3: e => [e.mdl, e.z]
+};
+
 // ===== blocks/hvac/duct-fittings.js =====
 /**
  * blocks/hvac/duct-fittings
@@ -146029,6 +146911,7 @@ defineTools({
 
 
 
+
 /** Attenuation of a wall type at 5 GHz as { A0: constant part, A1: part proportional to the path in the wall }, dB. */
 function layersLoss(w) {
   const t = typeOf(w);
@@ -146253,6 +147136,11 @@ function uplinkOf(e) {
   const r = bestAt(scene, srcs, band, e.p.x, e.p.y, +e.z || 0);
   return { v: r.v, s: r.s, band };
 }
+/** Wi-Fi level at a point for the climate machines (2,4 GHz — their modules): dBm, or null when the project has no radios (routing: climHooks.wifiAt). */
+climHooks.wifiAt = (x, y, z) => {
+  const srcs = wifiSources('2.4');
+  return srcs.length ? bestAt(wifiScene(), srcs, '2.4', x, y, z).v : null;
+};
 
 // ===== blocks/plumbing/checks-plumbing.js =====
 /**
