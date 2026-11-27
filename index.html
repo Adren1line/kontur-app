@@ -7741,15 +7741,15 @@ html #app .dsh .dot {
 }
 html #app #sceneTools .tgrid {
   display: grid;
-  grid-template-columns: repeat(3, 32px);
-  gap: 4px;
+  grid-template-columns: repeat(4, 24px);
+  gap: 3px;
   padding: 0;
   border: 0;
   margin: 0;
 }
 html #app #sceneTools .tool {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -8592,6 +8592,29 @@ html[data-form='tablet'] #app #status #views {
   padding-left: 8px;
   z-index: 2;
 }
+
+/* ---------- plaque «Скрыто: N» over the field (ui/screen-hide.js) ---------- */
+html #app #hideBadge {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--fy) + 46px);
+  transform: translateX(-50%);
+  z-index: 23;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--dock);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+html #app #hideBadge[hidden] {
+  display: none;
+}
+html #app #hideBadge:hover {
+  background: var(--chip2);
+}
 </style>
 
 <div id="app">
@@ -8848,7 +8871,7 @@ html[data-form='tablet'] #app #status #views {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.85';
+const APP_VER = '59.86';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -9405,6 +9428,62 @@ function entSection(e) {
   }
   return WS_SEC[e.type] || null;
 }
+/**
+ * On-screen visibility of single objects (buttons «Скрыть выделенное», «Скрыть остальное», «Скрыть всё»): not a part of
+ * the document S, not in the history, not in sheets, prints and exports. hid — objects that are not drawn and not picked;
+ * dim — objects drawn faded (as a dimmed layer) and not picked. Both map element id → element type (an id of a deleted
+ * element, or of another project, no longer matches its type and is ignored). skip > 0 while a sheet, an export or a
+ * 3D view for a sheet is drawn: everything is shown then.
+ */
+const hideState = { hid: new Map(), dim: new Map(), skip: 0 };
+/** True while the element is hidden on the screen by the visibility buttons. */
+const scrHidden = e => hideState.skip === 0 && hideState.hid.size > 0 && hideState.hid.get(e.id) === e.type;
+/** True while the element is faded and not selectable on the screen by the visibility buttons. */
+const scrDimmed = e => hideState.skip === 0 && hideState.dim.size > 0 && hideState.dim.get(e.id) === e.type;
+/** Hides the given elements and the openings hosted on them; returns how many elements were added. */
+function hideAdd(ents) {
+  const ids = new Set(ents.map(e => e.id));
+  let n = 0;
+  for (const e of S.ents)
+    if (e.vp == null && (ids.has(e.id) || (e.host != null && ids.has(e.host))) && hideState.hid.get(e.id) !== e.type) {
+      hideState.hid.set(e.id, e.type);
+      hideState.dim.delete(e.id);
+      n++;
+    }
+  return n;
+}
+/** Fades every model element of the current level except the given ones (and the openings hosted on them). */
+function hideDimOthers(keep) {
+  const ids = new Set(keep.map(e => e.id));
+  hideState.dim.clear();
+  for (const e of S.ents) {
+    if (e.vp != null || ids.has(e.id) || (e.host != null && ids.has(e.host)) || hideState.hid.get(e.id) === e.type)
+      continue;
+    hideState.dim.set(e.id, e.type);
+  }
+}
+/** Forgets everything hidden or faded on the screen. */
+function hideReset() {
+  hideState.hid.clear();
+  hideState.dim.clear();
+}
+/** How many existing elements (of this and the other levels) are hidden and faded: { hidden, dimmed }. */
+function hideCounts() {
+  const c = { hidden: 0, dimmed: 0 };
+  if (!hideState.hid.size && !hideState.dim.size) return c;
+  const lists = [S.ents];
+  const lv = S.x && S.x.lv && S.x.lv.ents;
+  if (lv) for (const k of Object.keys(lv)) if (Array.isArray(lv[k]) && lv[k] !== S.ents) lists.push(lv[k]);
+  const seen = new Set();
+  for (const a of lists)
+    for (const e of a) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      if (hideState.hid.get(e.id) === e.type) c.hidden++;
+      else if (hideState.dim.get(e.id) === e.type) c.dimmed++;
+    }
+  return c;
+}
 /** Switches a layer on (creating it when needed). */
 function layerOn(name) {
   ensureLayer(name);
@@ -9417,7 +9496,8 @@ const wsHide = e => {
   return !!sec && !sec.split(' ').includes(wsView.ws);
 };
 /** Drawn / picked / snapped in the current 2D context (in paper space the model is not there). */
-const in2d = e => (typeof docView.vp === 'string' ? e.vp === docView.vp : vpVis(e) && !wsHide(e));
+const in2d = e =>
+  typeof docView.vp === 'string' ? e.vp === docView.vp : vpVis(e) && !wsHide(e) && !scrHidden(e);
 /** A ventilation system switched off in the list of systems hides its ducts and units. */
 const sysOff = e => {
   const V = S.vent;
@@ -9434,7 +9514,7 @@ const visible = e => {
 const hasLeader = e => S.ents.some(n => n.type === 'note' && n.target === e.id && visible(n));
 const pickable = e => {
   const L = layerOf(e);
-  return !!(L && L.on && !L.lock) && in2d(e);
+  return !!(L && L.on && !L.lock) && in2d(e) && !scrDimmed(e);
 };
 /** drafting entities that belong to the viewport they were drawn in (dimensions, texts, leaders, lines) */
 const ANN_TYPES = new Set([
@@ -14791,6 +14871,7 @@ function sample(kind) {
   // the regression tests start from their own fixture project
   if (typeof window !== 'undefined' && window.__legacySample && typeof window.__sampleFixture === 'function')
     return window.__sampleFixture();
+  hideReset();
   layersSet(defaultLayers());
   curSet('Стены');
   entsSet([]);
@@ -14851,10 +14932,10 @@ function resize() {
   cv.height = Math.max(1, Math.round(H * DPR));
   dirty();
 }
-function zoomExtents() {
-  // only finite points: a broken element (empty body, NaN coordinates) must not break the view
+/** Finite points of the elements (a broken element — empty body, NaN coordinates — must not break the view). */
+function finitePts(ents) {
   const pts = [];
-  for (const e of S.ents.filter(visible)) {
+  for (const e of ents) {
     let ps = [];
     try {
       ps = samplePts(e) || [];
@@ -14863,13 +14944,14 @@ function zoomExtents() {
     }
     for (const p of ps) if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) pts.push(p);
   }
-  if (!pts.length || !W) {
-    view.x = 0;
-    view.y = 0;
-    view.k = 0.1;
-    dirty();
-    return;
-  }
+  return pts;
+}
+/**
+ * Centres and scales the plan on the points: the box of the points with a margin, inside the area that the panels
+ * floating over the field (uiHooks.fitInsets, ui/layout.js) leave free; minSpan (mm) keeps a tiny object from being
+ * enlarged to the whole screen.
+ */
+function fitPts(pts, minSpan = 1) {
   let x0 = Infinity,
     y0 = Infinity,
     x1 = -Infinity,
@@ -14880,7 +14962,6 @@ function zoomExtents() {
     x1 = Math.max(x1, p.x);
     y1 = Math.max(y1, p.y);
   }
-  // panels floating over the field (uiHooks.fitInsets, ui/layout.js) take their share: the plan fits the free area
   const ins = (uiHooks.fitInsets && uiHooks.fitInsets()) || {};
   const iT = ins.top || 0,
     iB = ins.bottom || 0,
@@ -14888,11 +14969,30 @@ function zoomExtents() {
     iR = ins.right || 0;
   view.k = Math.max(
     1e-4,
-    Math.min((W - 80 - iL - iR) / Math.max(x1 - x0, 1), (H - 80 - iT - iB) / Math.max(y1 - y0, 1))
+    Math.min((W - 80 - iL - iR) / Math.max(x1 - x0, minSpan), (H - 80 - iT - iB) / Math.max(y1 - y0, minSpan))
   );
   view.x = (x0 + x1) / 2 - (iL - iR) / 2 / view.k;
   view.y = (y0 + y1) / 2 + (iT - iB) / 2 / view.k;
   dirty();
+}
+/** Fits the plan to all visible elements of the level (empty plan: the origin at a default scale). */
+function zoomExtents() {
+  const pts = finitePts(S.ents.filter(visible));
+  if (!pts.length || !W) {
+    view.x = 0;
+    view.y = 0;
+    view.k = 0.1;
+    dirty();
+    return;
+  }
+  fitPts(pts);
+}
+/** Fits the plan to the given elements (a selection, a group) with a margin; false when they have no points. */
+function zoomToEnts(ents) {
+  const pts = finitePts(ents);
+  if (!pts.length || !W) return false;
+  fitPts(pts, 1000);
+  return true;
 }
 function zoomAt(sx, sy, f) {
   const b = s2w(sx, sy);
@@ -17068,6 +17168,29 @@ function resolveCmd(s) {
     for (const [k, v] of Object.entries(CMDS)) if (v.a.includes(t) || (v.t && v.t.toLowerCase() === t)) return k;
   return null;
 }
+/** Instant commands (view, undo, dialogs, screen visibility): they are neither repeated by Enter nor counted as recent tools. */
+const NO_REPEAT = [
+  'undo',
+  'redo',
+  'v3d',
+  'vplan',
+  'vspec',
+  'zoomext',
+  'zoomsel',
+  'hidesel',
+  'hideoth',
+  'hideall',
+  'hideoff',
+  'catalog',
+  'import',
+  'walltypes',
+  'mep',
+  'profiles',
+  'panel',
+  'coll',
+  'nv',
+  'views'
+];
 function startCmd(name, inst) {
   // a toolbar group id (not a command): start its first tool
   if (!inst && !CMDS[name] && typeof GRP !== 'undefined' && GRP[name]) {
@@ -17081,47 +17204,8 @@ function startCmd(name, inst) {
   if (commandsState.cmd) endCmd(true);
   const def = CMDS[name] || { t: 'ВСТАВИТЬ' };
   log('Команда: ' + def.t);
-  if (
-    CMDS[name] &&
-    ![
-      'undo',
-      'redo',
-      'v3d',
-      'vplan',
-      'vspec',
-      'zoomext',
-      'catalog',
-      'import',
-      'walltypes',
-      'mep',
-      'profiles',
-      'panel',
-      'coll',
-      'nv',
-      'views'
-    ].includes(name)
-  )
-    lastCmd = name;
-  if (
-    ![
-      'undo',
-      'redo',
-      'v3d',
-      'vplan',
-      'vspec',
-      'zoomext',
-      'catalog',
-      'import',
-      'walltypes',
-      'mep',
-      'profiles',
-      'panel',
-      'coll',
-      'nv',
-      'views'
-    ].includes(name)
-  )
-    noteRun(name, inst);
+  if (CMDS[name] && !NO_REPEAT.includes(name)) lastCmd = name;
+  if (!NO_REPEAT.includes(name)) noteRun(name, inst);
   const c = inst || (def.m ? def.m() : null);
   if (c) {
     commandsState.cmd = c;
@@ -18054,7 +18138,7 @@ function drawOpening(o, color, opt = {}) {
   ctx.save();
   if (!ghost && o.layer) {
     const Ld = layerOf(o);
-    if (Ld && Ld.dim) ctx.globalAlpha = 0.25;
+    if ((Ld && Ld.dim) || scrDimmed(o)) ctx.globalAlpha = 0.25;
   }
   if (!ghost) {
     ctx.fillStyle = C.canvas;
@@ -19043,6 +19127,7 @@ function drawEnt(e, color, o = {}) {
     if (!ghost) {
       const Ld = layerOf(e);
       if (Ld && Ld.dim) ctx.globalAlpha *= 0.22;
+      if (scrDimmed(e)) ctx.globalAlpha *= 0.22;
     }
     // demolition / mounting plans: the elements of that phase drawn simplified in its colour, the rest faded
     const phx = !ghost && uiHooks.phaseDraw ? uiHooks.phaseDraw(e, o) : null;
@@ -19369,10 +19454,12 @@ function drawModel(o = {}) {
   // a sheet viewport or an export draws every section; the working plan — the section of the workspace
   if (o.plain) {
     wsView.skip++;
+    hideState.skip++;
     try {
       return drawModel0(o);
     } finally {
       wsView.skip--;
+      hideState.skip--;
     }
   }
   return drawModel0(o);
@@ -19503,7 +19590,7 @@ function drawModel0(o) {
       const L = layerOf(w);
       ctx.strokeStyle = inkC(L.color);
       ctx.lineWidth = 2;
-      ctx.globalAlpha = (L.lock ? 0.4 : 1) * (L.dim ? 0.25 : 1);
+      ctx.globalAlpha = (L.lock ? 0.4 : 1) * (L.dim || scrDimmed(w) ? 0.25 : 1);
       pathPoly(wallInfo(w).poly);
       ctx.stroke();
     }
@@ -19565,7 +19652,7 @@ function drawModel0(o) {
         const L = layerOf(w);
         ctx.strokeStyle = inkC(L.color);
         ctx.lineWidth = 2;
-        ctx.globalAlpha = (L.lock ? 0.4 : 1) * (L.dim ? 0.25 : 1);
+        ctx.globalAlpha = (L.lock ? 0.4 : 1) * (L.dim || scrDimmed(w) ? 0.25 : 1);
         pathPoly(wallInfo(w).poly);
         ctx.stroke();
       }
@@ -20850,7 +20937,7 @@ function applyCut(X) {
       }
     } else if (o.cutHid) {
       const L = layerOf(e);
-      o.obj.visible = !!(L && L.on && netShown(e));
+      o.obj.visible = !!(L && L.on && netShown(e)) && !scrHidden(e);
       o.cutHid = false;
     }
   }
@@ -20996,7 +21083,7 @@ function cutReset() {
     cutSet(o.obj, 1, 0);
     if (o.cutHid && e) {
       const L = layerOf(e);
-      o.obj.visible = !!(L && L.on && netShown(e));
+      o.obj.visible = !!(L && L.on && netShown(e)) && !scrHidden(e);
       o.cutHid = false;
     }
   }
@@ -21835,13 +21922,26 @@ function sync3DPass0(budget, tok, t0) {
       console.error(err);
     }
 }
+/**
+ * Materials of the 3D objects by selection, dimmed layers and the on-screen visibility buttons: the selected ones in the
+ * selection material, the faded ones ghost, the hidden ones invisible (nothing is rebuilt). Objects that stopped being
+ * hidden get their visibility back through a normal sync.
+ */
 function applySel3D() {
   if (!V3.inited) return;
+  let unhid = false;
   for (const [id, o] of V3.objs) {
     const sel = S.sel.has(id);
     const en = byId(id) || (o.lv != null && S.x.lv && o.lv !== S.x.lv.cur ? lvEntById(o.lv, id) : null);
     const Ld = en && layerOf(en);
-    const gh = (NV.on && !o.net) || !!(Ld && Ld.dim);
+    if (en && scrHidden(en)) {
+      o.obj.visible = false;
+      o.hid3 = true;
+    } else if (o.hid3) {
+      o.hid3 = false;
+      unhid = true;
+    }
+    const gh = (NV.on && !o.net) || !!(Ld && Ld.dim) || !!(en && scrDimmed(en));
     const ph = en && uiHooks.phaseMat3 ? uiHooks.phaseMat3(en) : null;
     o.obj.traverse(m => {
       if (m.isMesh && m.userData.base)
@@ -21849,6 +21949,7 @@ function applySel3D() {
       if (m.userData.edge) m.visible = V3.edges && !gh && lodOk(m);
     });
   }
+  if (unhid && !hideState.skip) sync3D();
   const es = selEnts();
   const one = es.length === 1 && es[0].type === 'inst' ? V3.objs.get(es[0].id) : null;
   if (one && V3.gizmo) {
@@ -21859,6 +21960,21 @@ function applySel3D() {
     V3.tc.showZ = true;
   } else V3.tc.detach();
   req3();
+}
+/** Shows everything for a moment (a 3D view for a sheet): hidden objects visible, faded ones in their own material. */
+function hide3Pause() {
+  hideState.skip++;
+  for (const o of V3.objs.values())
+    if (o.hid3) {
+      o.obj.visible = true;
+      o.hid3 = false;
+    }
+  applySel3D();
+}
+/** Ends hide3Pause: the on-screen visibility buttons act again. */
+function hide3Resume() {
+  hideState.skip--;
+  applySel3D();
 }
 function sceneBox() {
   const b = new THREE.Box3();
@@ -22586,6 +22702,7 @@ function initPointerRest() {
     } else if (a === 'undo') undo();
     else if (a === 'redo') redo();
     else if (a === 'zoom') zoomExtents();
+    else if (a.startsWith('scr:')) startCmd(a.slice(4));
     else if (a === 'repeat' && lastCmd) startCmd(lastCmd);
     cin.focus({ preventScroll: true });
     dirty();
@@ -22790,6 +22907,9 @@ function showCtx(x, y, at) {
       B('rotate', 'Повернуть…', '');
       B('array', 'Массив…', '');
       HR();
+      B('scr:zoomsel', 'Показать выделенное', '');
+      B('scr:hidesel', 'Скрыть выделенное', '');
+      B('scr:hideoth', 'Скрыть всё, кроме выделенного', '');
       B('similar', 'Выбрать подобные', '');
       if (n === 1) B('props', 'Параметры объекта…', '');
       B('del', 'Удалить', 'Del');
@@ -22803,6 +22923,7 @@ function showCtx(x, y, at) {
     B('undo', 'Отменить', 'Ctrl+Z', !documentState.undoS.length);
     B('redo', 'Вернуть', 'Ctrl+Y', !documentState.redoS.length);
     B('zoom', 'Показать всё', '');
+    if (hideState.hid.size || hideState.dim.size) B('scr:hideoff', 'Вернуть всё скрытое', '');
     if (lastCmd && CMDS[lastCmd]) B('repeat', 'Повторить: ' + CMDS[lastCmd].t.toLowerCase(), '');
   }
   m.innerHTML = it.join('');
@@ -23568,6 +23689,12 @@ const MENUS = [
       { n: 'Спецификация', a: () => setView('spec'), c: () => sceneState.viewMode === 'spec' },
       '-',
       { n: 'Показать всё', k: '2×СКМ', a: () => zoomExtents() },
+      { n: 'Показать выделенное', a: () => startCmd('zoomsel') },
+      { n: 'Скрыть выделенное', a: () => startCmd('hidesel') },
+      { n: 'Скрыть всё, кроме выделенного', a: () => startCmd('hideoth') },
+      { n: 'Скрыть всё', a: () => startCmd('hideall') },
+      { n: 'Вернуть всё', a: () => startCmd('hideoff') },
+      '-',
       { n: 'Сетка', k: 'F7', a: () => toggleMode('grid'), c: () => modes.grid },
       { n: 'Вид инженерных сетей', a: () => setNV(!NV.on), c: () => NV.on },
       { n: 'Правая панель', a: () => clickId('sideTog'), c: () => !$('#app').classList.contains('sidehide') },
@@ -24587,6 +24714,7 @@ function initToolbar() {
     }
     if (f === 'new') {
       pushUndo();
+      hideReset();
       entsSet([]);
       if (!S.elec) elecSet(defaultElec());
       if (!S.vent) ventSet(defaultVent());
@@ -27522,7 +27650,12 @@ const TLBL = {
   rotate: 'Повернуть',
   erase: 'Стереть',
   pan: 'Панорама',
-  zoomext: 'Всё'
+  zoomext: 'Всё',
+  zoomsel: 'Выбранное',
+  hidesel: 'Скрыть',
+  hideoth: 'Остальное',
+  hideall: 'Скрыть всё',
+  hideoff: 'Вернуть'
 };
 const HELP = {
   draft:
@@ -29712,6 +29845,7 @@ async function openKontur(f) {
     for (const a of o.assets) ASSETS.set(a.id, a);
     if (o.assets.length) await idb.putMany('assets', o.assets);
     pushUndo();
+    hideReset();
     restore(o.proj);
     changed();
     zoomExtents();
@@ -29736,6 +29870,7 @@ async function openJson(f) {
     await idb.putMany('assets', assets);
     if (o.format === 'kontur-project') {
       pushUndo();
+      hideReset();
       restore(JSON.stringify(o.project));
       changed();
       zoomExtents();
@@ -51809,6 +51944,8 @@ function withScene(X, layOn, fn) {
     cutReset();
     if (X) X.extra.children.forEach(g => cutSet(g, 1, 0));
   } catch (err) {}
+  // the views of sheets show the whole model: the screen-only hiding of objects is suspended meanwhile
+  hide3Pause();
   const vis = [];
   for (const [id, o] of V3.objs) {
     const en = byId(id);
@@ -51832,6 +51969,7 @@ function withScene(X, layOn, fn) {
     V3.grid.visible = gv;
     V3.tc.visible = tcv;
     vis.forEach(([o, v]) => (o.visible = v));
+    hide3Resume();
   }
 }
 function orthoShot(r, ww, hh, cam, planes, X, layOn, bg, fill) {
@@ -54450,6 +54588,8 @@ function xRenderOverlay() {
   const L = issuesNow();
   for (const i of L) {
     if (i.lvl === 'info') continue;
+    // the mark of an object hidden on the screen is hidden with it (the check itself stays)
+    if (hideState.skip === 0 && hideState.hid.has(i.id)) continue;
     const s = w2s(i.p);
     ctx.save();
     ctx.fillStyle = i.lvl === 'bad' ? '#ef5f5f' : '#f0b45e';
@@ -92901,7 +93041,20 @@ function renderTools() {
   lab.className = 'tlab';
   lab.textContent = 'Общие';
   fix.appendChild(lab);
-  for (const t of ['move', 'copy', 'rotate', 'erase', 'pan', 'zoomext']) fix.appendChild(toolBtn(t));
+  for (const t of [
+    'move',
+    'copy',
+    'rotate',
+    'erase',
+    'pan',
+    'zoomext',
+    'zoomsel',
+    'hidesel',
+    'hideoth',
+    'hideall',
+    'hideoff'
+  ])
+    fix.appendChild(toolBtn(t));
   // the section plaque and the common tools live in their own places of the frame (docs/UI-LAYOUT.md)
   const plaque = $('#wsPlaque'),
     scene = $('#sceneTools');
@@ -114987,6 +115140,147 @@ function palUsed(ents) {
   return M;
 }
 
+// ===== ui/screen-hide.js =====
+/**
+ * ui/screen-hide.js
+ *
+ * On-screen visibility of single objects: «Скрыть выделенное», «Скрыть остальное», «Скрыть всё», «Вернуть всё» and
+ * «Показать выделенное» (zoom to the selection) as commands, buttons of the «Сцена» tile and the context menu, plus the
+ * plaque «Скрыто: N · Приглушено: M» over the field. The state itself is core/document.js (hideState): it is not in the
+ * document S, not in the history, and sheets, prints and exports do not see it. Hidden objects are neither drawn nor
+ * picked; the faded ones are drawn like a dimmed layer (plan: transparent, 3D: x-ray) and are not picked either.
+ */
+
+
+
+
+
+
+
+
+
+/** Shows what the buttons changed: selection without hidden objects, plan, 3D, plaque. */
+function hideRefresh() {
+  const keep = [...S.sel].filter(id => {
+    const e = S.ents.find(x => x.id === id);
+    return !e || hideState.hid.get(id) !== e.type;
+  });
+  if (keep.length !== S.sel.size) selSet(keep);
+  selChanged();
+  hideBadge();
+}
+/** Updates the plaque over the field: counts of hidden and faded objects; hidden when there are none. */
+function hideBadge() {
+  const b = $('#hideBadge');
+  if (!b) return;
+  const c = hideCounts();
+  const t = [];
+  if (c.hidden) t.push('Скрыто: ' + c.hidden);
+  if (c.dimmed) t.push('Приглушено: ' + c.dimmed);
+  b.textContent = t.join(' · ');
+  b.hidden = !t.length;
+}
+/** «Скрыть выделенное»: the selected objects (and the openings in them) are neither drawn nor picked. */
+function hideSelected() {
+  const es = selEnts();
+  if (!es.length) return log('Сначала выберите объекты', true);
+  const n = hideAdd(es);
+  hideRefresh();
+  log(`Скрыто: ${n}. «Вернуть всё» показывает их снова`);
+}
+/** «Скрыть всё, кроме выделенного»: the rest is faded and cannot be picked; the selection stays as it is. */
+function hideOthers() {
+  const es = selEnts();
+  if (!es.length) return log('Сначала выберите объекты', true);
+  hideDimOthers(es);
+  hideRefresh();
+  log(`Приглушено: ${hideCounts().dimmed}. «Вернуть всё» снимает приглушение`);
+}
+/** «Скрыть всё»: every model object of the level is hidden, the field is empty. */
+function hideEverything() {
+  const n = hideAdd(S.ents.filter(e => e.vp == null));
+  hideRefresh();
+  log(`Скрыто: ${n}. «Вернуть всё» показывает их снова`);
+}
+/** «Вернуть всё»: everything hidden or faded by these buttons is shown as it was. */
+function hideRestore() {
+  const c = hideCounts();
+  if (!c.hidden && !c.dimmed && !hideState.hid.size && !hideState.dim.size) return log('Нечего возвращать');
+  hideReset();
+  hideRefresh();
+  log('Всё снова на месте');
+}
+/** «Показать выделенное»: the plan and the 3D camera are fitted to the selection (nothing happens on a sheet). */
+function showSelected() {
+  const es = selEnts();
+  if (!es.length) return log('Сначала выберите объекты', true);
+  if (renderHooks.sheet && renderHooks.sheet.on()) return;
+  const mode = sceneState.viewMode;
+  if (mode === 'spec') return;
+  if (mode !== '3d') zoomToEnts(es);
+  if (is3D() && V3.inited) camTo('sel');
+}
+/** Command that runs fn at once and starts nothing to wait for. */
+const instant = (t, a, fn) => ({
+  t,
+  a,
+  m: () => {
+    fn();
+    return null;
+  }
+});
+defineTools({
+  hidesel: {
+    command: instant('СКРЫТЬ', ['hide', 'скрыть', 'скрытьвыделенное'], hideSelected),
+    title:
+      'Скрыть выделенное: объекты не рисуются и не выбираются, только на экране (в листы, печать и экспорт не попадает) · СКРЫТЬ',
+    icon: '<rect x="4" y="5" width="12" height="10" stroke-dasharray="2.4 2"/><path d="M3 17L17 3"/>',
+    help: 'Скрыть выделенное: выбранные объекты (и проёмы в них) пропадают с плана и из 3D и не выбираются. Слои не меняются, документ тоже; «Вернуть всё» показывает всё снова.'
+  },
+  hideoth: {
+    command: instant('СКРЫТЬОСТАЛЬНОЕ', ['hideothers', 'isolate', 'скрытьостальное', 'скрытьостал'], hideOthers),
+    title: 'Скрыть всё, кроме выделенного: остальное тусклое и не выбирается, выделенное как есть · СКРЫТЬОСТАЛЬНОЕ',
+    icon: '<rect class="t" x="3" y="3" width="14" height="14" stroke-dasharray="2 2"/><rect x="7" y="7" width="6" height="6"/>',
+    help: 'Скрыть всё, кроме выделенного: остальные объекты этажа тусклые (как приглушённый слой) и не выбираются. «Вернуть всё» снимает приглушение.'
+  },
+  hideall: {
+    command: instant('СКРЫТЬВСЁ', ['hideall', 'скрытьвсё', 'скрытьвсе'], hideEverything),
+    title: 'Скрыть всё: поле пустое, только на экране · СКРЫТЬВСЁ',
+    icon: '<rect x="3" y="3" width="14" height="14" stroke-dasharray="2 2.2"/><path d="M7.5 10h5"/>',
+    help: 'Скрыть всё: все объекты этажа пропадают с экрана (документ, листы, спецификация и проверки не меняются). «Вернуть всё» показывает их снова.'
+  },
+  hideoff: {
+    command: instant('ВЕРНУТЬВСЁ', ['unhide', 'showall', 'вернутьвсё', 'вернутьвсе'], hideRestore),
+    title: 'Вернуть всё: снять скрытие и приглушение, сделанные кнопками видимости · ВЕРНУТЬВСЁ',
+    icon: '<rect x="4" y="4" width="12" height="12"/><path d="M7.5 10.5l2 2 3.5-4.5"/>',
+    help: 'Вернуть всё: показывает скрытое и снимает приглушение кнопок «Скрыть…». Слои, документ и история не затрагиваются.'
+  },
+  zoomsel: {
+    command: instant('ПОКАЗАТЬВЫДЕЛЕННОЕ', ['zoomsel', 'zs', 'показатьвыделенное'], showSelected),
+    title:
+      'Показать выделенное: масштаб и центр по выбранному объекту или группе; в 3D камера нацеливается на него · ПОКАЗАТЬВЫДЕЛЕННОЕ',
+    icon: '<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><circle cx="10" cy="10" r="2.6"/>',
+    help: 'Показать выделенное: план вписывает выбранное с отступом (с учётом панелей над полем), 3D нацеливает камеру на него. На листе пока ничего не делает.'
+  }
+});
+
+/** Plaque «Скрыто: N» over the field; a click returns everything. Called once by app/boot.js. */
+function initScreenHide() {
+  const stage = $('#stage');
+  if (stage && !$('#hideBadge')) {
+    const b = document.createElement('button');
+    b.id = 'hideBadge';
+    b.hidden = true;
+    b.title = 'Вернуть всё: показать скрытое и снять приглушение';
+    b.onclick = () => hideRestore();
+    stage.appendChild(b);
+  }
+  afterChange(() => {
+    const b = $('#hideBadge');
+    if (hideState.hid.size || hideState.dim.size || (b && !b.hidden)) hideBadge();
+  }, 60);
+}
+
 // ===== ui/short-labels.js =====
 /**
  * ui/short-labels.js
@@ -117835,6 +118129,7 @@ defineTools({
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -118169,6 +118464,7 @@ initMenubar();
 initKeyboard();
 initHeating();
 initLayerSwitch();
+initScreenHide();
 initToolbar();
 initResponsive();
 initLayout();
@@ -138277,6 +138573,8 @@ function planBox() {
     y0 = Infinity,
     x1 = -Infinity,
     y1 = -Infinity;
+  // the export draws the whole model: what the visibility buttons hide on the screen counts too
+  hideState.skip++;
   for (const e of S.ents) {
     if (!visible(e) || (!in2d(e) && !(wsHide(e) && typeof docView.vp !== 'string'))) continue;
     let ps = [];
@@ -138291,6 +138589,7 @@ function planBox() {
         y1 = Math.max(y1, p.y);
       }
   }
+  hideState.skip--;
   return x0 <= x1 ? { x0, y0, x1, y1 } : null;
 }
 /**
