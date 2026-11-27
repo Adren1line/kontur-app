@@ -71,12 +71,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#uidlg .mbody,
-#helpdlg .mbody,
-#aboutdlg .mbody {
-  padding: 14px 16px;
-  overflow: auto;
-}
 #mbmenu kbd {
   font: 11px var(--f-mono);
   color: var(--muted);
@@ -6954,6 +6948,380 @@ html[data-form='phone'] .modal table.cards td::before {
   font-family: var(--f-ui);
 }
 
+/* ===== Inner windows: the common frame built by uikit/window.js (docs/UI-LAYOUT.md, «Внутренние окна»).
+   Sizes — four classes; colours — only theme variables (--win-bg, --win-head, --win-shadow, --ok, --warn, --scene are set per theme
+   by ui/theme.js, the values below are the fallback); layers — --z-win, --z-win2, --z-pop. Loaded after zz-touch.css. ===== */
+:root {
+  --win-bg: #1e2227;
+  --win-head: #2b3037;
+  --win-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --ok: #7fd6a5;
+  --warn: #e0a84a;
+  --scene: #14171c;
+  --z-win: 40;
+  --z-win2: 62;
+  --z-pop: 80;
+}
+.btn.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 14%, var(--panel2));
+}
+html .modal.win {
+  z-index: var(--z-win);
+}
+html .modal.win.win-over {
+  z-index: var(--z-win2);
+}
+html .modal.win > .win-dlg {
+  --ww: 680px;
+  width: min(var(--ww), 100%);
+  height: auto;
+  max-height: min(92vh, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--win-bg);
+  box-shadow: var(--win-shadow);
+}
+html .modal.win > .win-s {
+  --ww: 520px;
+}
+html .modal.win > .win-m {
+  --ww: 680px;
+}
+html .modal.win > .win-l {
+  --ww: 1060px;
+}
+html .modal.win > .win-xl {
+  --ww: 1400px;
+  height: min(900px, 100%);
+}
+html .modal.win > .win-panes {
+  height: min(760px, 100%);
+}
+.win-head {
+  background: var(--win-head);
+  flex: none;
+  flex-wrap: nowrap;
+}
+.win-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.win-titles .win-sub:empty {
+  display: none;
+}
+.win-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.win-acts {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: none;
+}
+.win-head .x {
+  margin-left: 0;
+  flex: none;
+}
+.win-head .win-menu {
+  position: absolute;
+  right: 14px;
+  top: calc(100% - 4px);
+  z-index: var(--z-pop);
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--win-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--win-shadow);
+}
+.win-head {
+  position: relative;
+}
+.win-menu .win-mi {
+  text-align: left;
+  border: 0;
+  background: none;
+}
+.win-menu .win-mi:hover {
+  background: var(--panel2);
+}
+.win-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 16px 0;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.win-tabs button {
+  padding: 6px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  flex: none;
+}
+.win-tabs button:hover {
+  color: var(--fg);
+}
+.win-tabs button.on {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+.win-body {
+  padding: 14px 16px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.win-cols {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.win-cols > .win-left:empty,
+.win-cols > .win-right:empty {
+  display: none;
+}
+.win-cols > .win-left {
+  width: 250px;
+  border-right: 1px solid var(--line);
+  overflow: auto;
+}
+.win-cols > .win-right {
+  width: 310px;
+  border-left: 1px solid var(--line);
+  overflow: auto;
+}
+.win-cols > .win-main {
+  min-width: 0;
+}
+.win-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  flex: none;
+}
+.win-foot .btn {
+  align-self: center;
+  min-height: 32px;
+}
+.win-head .btn {
+  min-height: 30px;
+}
+/* forms inside a window */
+.win-form {
+  display: grid;
+  gap: 10px 16px;
+  align-content: start;
+}
+.win-form.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.win-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.win-form input:not([type='radio']):not([type='checkbox']):not([type='color']),
+.win-form select {
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 7px;
+  min-width: 0;
+  color: var(--fg);
+}
+.win-form label.radio {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 13px;
+  min-height: 26px;
+}
+.win-form .span2,
+.win-form .hint {
+  grid-column: 1 / -1;
+}
+.win-form .hint {
+  margin: 0;
+}
+.win-form .win-err,
+.win-err {
+  color: var(--danger);
+  font-size: 12px;
+  min-height: 16px;
+}
+.win-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.win-scroll {
+  overflow: auto;
+  max-width: 100%;
+}
+/* the table of the floors window: the name column is wider, number fields are compact */
+.win-body .mtbl input[data-k='n'] {
+  width: 100%;
+  min-width: 120px;
+}
+.win-body .mtbl input[type='number'] {
+  width: 100%;
+  min-width: 72px;
+}
+/* tablet and touch: 44 px targets */
+html[data-form='tablet'] .win-dlg .btn,
+html[data-touch='1'] .win-dlg .btn,
+html[data-form='tablet'] .win-dlg .x,
+html[data-touch='1'] .win-dlg .x,
+html[data-form='tablet'] .win-tabs button,
+html[data-touch='1'] .win-tabs button {
+  min-height: 44px;
+  min-width: 44px;
+}
+html[data-form='tablet'] .win-dlg input:not([type='checkbox']):not([type='radio']):not([type='color']),
+html[data-touch='1'] .win-dlg input:not([type='checkbox']):not([type='radio']):not([type='color']),
+html[data-form='tablet'] .win-dlg select,
+html[data-touch='1'] .win-dlg select {
+  min-height: 44px;
+}
+html[data-form='tablet'] .win-form label.radio,
+html[data-touch='1'] .win-form label.radio {
+  min-height: 44px;
+}
+html[data-form='tablet'] .modal.win > .win-dlg {
+  max-width: 96vw;
+}
+/* a floating panel: no backdrop, sits at the top right (placePop may move it); a bottom sheet on a phone */
+.win.win-float {
+  position: fixed;
+  right: 12px;
+  top: 96px;
+  z-index: var(--z-win);
+  width: min(380px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.win.win-float > .win-dlg {
+  pointer-events: auto;
+  width: 100%;
+  background: var(--win-bg);
+  box-shadow: var(--win-shadow);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow: hidden;
+}
+/* phone: the window fills the screen, the header is 48 px, the close button is on the left */
+@media (max-width: 760px) {
+  html .modal.win {
+    padding: 0;
+  }
+  html .modal.win > .win-dlg,
+  html .modal.win > .win-dlg.mini {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+  .win-head {
+    min-height: 48px;
+    padding: max(6px, env(safe-area-inset-top, 0px)) 8px 6px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .win-head .x {
+    order: -1;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 22px;
+  }
+  .win-titles {
+    flex: 1 1 0;
+  }
+  .win-acts {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    order: 3;
+  }
+  .win-form.two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .win-cols {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+  .win-cols > .win-left,
+  .win-cols > .win-right {
+    width: auto;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: 40vh;
+  }
+  .win-foot {
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+  .win-foot .btn {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+  .win.win-float {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+  }
+  .win.win-float > .win-dlg {
+    border-radius: 14px 14px 0 0;
+    max-height: 70vh;
+  }
+}
+.win-form .colrow {
+  display: flex;
+  grid-column: auto;
+  gap: 8px;
+  align-items: center;
+}
+.win-form .colrow .btn {
+  flex: none;
+}
+.win-body .mtbl td:last-child {
+  white-space: nowrap;
+}
+.win-form.two + .win-form {
+  margin-top: 14px;
+}
+.win-form .colrow input[type='color'] {
+  width: 44px;
+  height: 30px;
+  padding: 0;
+  flex: none;
+}
+
 /* ===== Window frame (docs/UI-LAYOUT.md): burger, two header rows, tool column, panel over the field, right panel,
    bottom dock, mode strip. Colours only through variables (--bar1, --bar2, --chip, --chip2, --dock, --col, --sidebg
    are set per theme by ui/theme.js; the values below are the fallback). Loaded last: `html #app …` beats the skins. */
@@ -8871,7 +9239,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.86';
+const APP_VER = '59.87';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -23027,7 +23395,8 @@ const THEMES = {
 /**
  * Colours of the window frame (docs/UI-LAYOUT.md): bar1 — the first header row (lighter), bar2 — the second row
  * (darker), chip / chip2 — plaques on them, dock — floating panels over the field, col — the tool column,
- * sidebg — the right panel. One set per theme; they become CSS variables --bar1 … --sidebg.
+ * sidebg — the right panel; win-bg / win-head / win-shadow — the frame of inner windows (uikit/window.js), ok / warn — status
+ * colours, scene — the dark background of 3D scenes inside windows. One set per theme; they become CSS variables --bar1 … --scene.
  */
 const FRAME = {
   mac: {
@@ -23037,7 +23406,13 @@ const FRAME = {
     chip2: '#ffffff',
     dock: '#e2e2e7',
     col: '#ececf0',
-    sidebg: '#f1f1f4'
+    sidebg: '#f1f1f4',
+    'win-bg': '#f5f5f7',
+    'win-head': '#fafafc',
+    'win-shadow': '0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 22px 70px rgba(0, 0, 0, 0.28)',
+    ok: '#1a7f4b',
+    warn: '#9a5b00',
+    scene: '#22262d'
   },
   kalka: {
     bar1: '#e6ebe7',
@@ -23046,7 +23421,13 @@ const FRAME = {
     chip2: '#f3f6f3',
     dock: '#d3dad5',
     col: '#dde3df',
-    sidebg: '#e5eae6'
+    sidebg: '#e5eae6',
+    'win-bg': '#d9dfdb',
+    'win-head': '#e6ebe7',
+    'win-shadow': 'none',
+    ok: '#2e6b4a',
+    warn: '#8a5a00',
+    scene: '#1c2433'
   },
   dark: {
     bar1: '#2b3037',
@@ -23055,7 +23436,13 @@ const FRAME = {
     chip2: '#222730',
     dock: '#262b32',
     col: '#1e2227',
-    sidebg: '#1e2227'
+    sidebg: '#1e2227',
+    'win-bg': '#1e2227',
+    'win-head': '#2b3037',
+    'win-shadow': '0 24px 60px rgba(0, 0, 0, 0.55)',
+    ok: '#7fd6a5',
+    warn: '#e0a84a',
+    scene: '#14171c'
   },
   graphite: {
     bar1: '#383c42',
@@ -23064,7 +23451,13 @@ const FRAME = {
     chip2: '#2b2e32',
     dock: '#33373c',
     col: '#2a2d31',
-    sidebg: '#2a2d31'
+    sidebg: '#2a2d31',
+    'win-bg': '#2a2d31',
+    'win-head': '#383c42',
+    'win-shadow': '0 24px 60px rgba(0, 0, 0, 0.55)',
+    ok: '#7fd6a5',
+    warn: '#e0a84a',
+    scene: '#1a1c20'
   },
   light: {
     bar1: '#f8f9fa',
@@ -23073,7 +23466,13 @@ const FRAME = {
     chip2: '#ffffff',
     dock: '#e4e7eb',
     col: '#eceef1',
-    sidebg: '#f1f2f4'
+    sidebg: '#f1f2f4',
+    'win-bg': '#f1f2f4',
+    'win-head': '#f8f9fa',
+    'win-shadow': '0 24px 60px rgba(31, 35, 40, 0.28)',
+    ok: '#17633a',
+    warn: '#8a5a00',
+    scene: '#2a2f36'
   }
 };
 const ICONS = {
@@ -23981,25 +24380,9 @@ function closeMenu() {
   renderMbar();
 }
 /* ---------- dialogs ---------- */
+/** A simple window with an HTML body, on the common frame (openWindow); w is an old width in px, mapped to a size class. Returns the window element. */
 function miniDlg(id, title, html, w) {
-  let d = $('#' + id);
-  if (!d) {
-    d = document.createElement('div');
-    d.id = id;
-    d.className = 'modal';
-    d.innerHTML = `<div class="dlg mini" role="dialog" aria-label="${esc(title)}" style="width:min(${w || 620}px,100%);height:auto;max-height:min(760px,100%)"><div class="dlgh"><h3>${esc(title)}</h3><button class="x" aria-label="Закрыть">×</button></div><div class="mbody"></div></div>`;
-    document.body.appendChild(d);
-    d.querySelector('.x').onclick = () => {
-      d.hidden = true;
-      cin.focus({ preventScroll: true });
-    };
-    d.addEventListener('pointerdown', e => {
-      if (e.target === d) d.hidden = true;
-    });
-  }
-  d.querySelector('.mbody').innerHTML = html;
-  d.hidden = false;
-  return d;
+  return openWindow({ id, title, body: html, size: w || 620, cls: 'mini' }).el;
 }
 function openUI() {
   const sel = (id, opts, v) =>
@@ -24007,10 +24390,23 @@ function openUI() {
   const th = THEMES[themeState.UI.theme] || THEMES.dark;
   const col = (id, v, def, label) =>
     `<label>${label}<span class="colrow"><input type="color" data-nopal id="${id}" value="${hexOk(v) ? v : def}"><button class="btn" data-rst="${id}">авто</button></span></label>`;
-  const d = miniDlg(
-    'uidlg',
-    'Настройки интерфейса',
-    `<div class="form" style="grid-template-columns:1fr 1fr">
+  const win = openWindow({
+    id: 'uidlg',
+    title: 'Настройки интерфейса',
+    size: 'm',
+    footer: [
+      {
+        n: 'Сбросить всё',
+        id: 'uiReset',
+        danger: true,
+        a: () => {
+          themeState.UI = { ...UI_DEF };
+          saveUI();
+          openUI();
+        }
+      }
+    ],
+    body: `<div class="win-form two">
     <label>Тема панелей${sel(
       'uiTheme',
       Object.entries(THEMES).map(([k, t]) => [k, t.n]),
@@ -24046,7 +24442,7 @@ function openUI() {
       ],
       themeState.UI.cross
     )}</label></div>
-    <div class="sech" style="margin-top:10px">Фон чертежа — быстрый выбор</div><div class="btnrow">${[
+    <div class="win-form"><div class="sech">Фон чертежа — быстрый выбор</div><div class="btnrow">${[
       ['#16191d', 'Тёмный'],
       ['#1c2633', 'Синий ночной'],
       ['#2a2d31', 'Серый'],
@@ -24058,10 +24454,9 @@ function openUI() {
           `<button class="btn" data-cv="${c}"><i style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${c};border:1px solid var(--line);margin-right:6px;vertical-align:-1px"></i>${n}</button>`
       )
       .join('')}</div>
-    <p class="hint">На светлом фоне светлые цвета слоёв автоматически затемняются, чтобы линии оставались видны. Настройки хранятся в этом браузере.</p>
-    <div class="btnrow"><button class="btn" id="uiReset">Сбросить всё</button></div>`,
-    640
-  );
+    <p class="hint">На светлом фоне светлые цвета слоёв автоматически затемняются, чтобы линии оставались видны. Настройки хранятся в этом браузере.</p></div>`
+  });
+  const d = win.el;
   const q = x => d.querySelector(x);
   const set = (k, v) => {
     themeState.UI[k] = v;
@@ -24101,11 +24496,6 @@ function openUI() {
         openUI();
       })
   );
-  q('#uiReset').onclick = () => {
-    themeState.UI = { ...UI_DEF };
-    saveUI();
-    openUI();
-  };
 }
 function openHelp() {
   const keys = [
@@ -57587,38 +57977,41 @@ function lvMenu(btn) {
   m.hidden = false;
   placePop(m, r.left, r.top - 8 - m.offsetHeight);
 }
+/** Opens the «Этажи» window (id lvlsdlg — «Раскладка» of the finishes block owns lvdlg): the table of floors with marks, heights and slab; «+ Этаж» adds one. */
 function openLevels() {
-  let d = $('#lvdlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'lvdlg';
-    d.className = 'modal';
-    d.innerHTML = `<div class="dlg" style="width:min(820px,100%);height:auto;max-height:90vh" role="dialog" aria-label="Этажи"><div class="dlgh"><h3>Этажи</h3><button class="btn" id="lvAdd">+ Этаж</button><button class="x" id="lvClose" aria-label="Закрыть">×</button></div><div id="lvBody" style="padding:14px 16px;overflow:auto"></div></div>`;
-    document.body.appendChild(d);
-    d.querySelector('#lvClose').onclick = () => {
-      d.hidden = true;
-    };
-    d.querySelector('#lvAdd').onclick = () => {
-      addLevel({ copyFrom: LV().cur });
-      renderLevels();
-    };
-  }
-  d.hidden = false;
+  openWindow({
+    id: 'lvlsdlg',
+    title: 'Этажи',
+    size: 'l',
+    closeId: 'lvClose',
+    actions: [
+      {
+        n: '+ Этаж',
+        id: 'lvAdd',
+        a: () => {
+          addLevel({ copyFrom: LV().cur });
+          renderLevels();
+        }
+      }
+    ],
+    body: '<div id="lvlsBody"></div>'
+  });
   renderLevels();
 }
+/** Fills the floors table of the «Этажи» window and wires its fields and buttons. */
 function renderLevels() {
-  const el = $('#lvBody');
+  const el = $('#lvlsdlg #lvlsBody');
   if (!el) return;
   const L = LV();
-  const inp = (id, k, v, w) =>
-    `<input data-lv="${id}" data-k="${k}" ${k === 'n' ? '' : 'type="number"'} value="${esc(k === 'n' ? v : fmt(v))}" style="width:${w || 90}px">`;
-  el.innerHTML = `<table class="mtbl" style="width:100%"><thead><tr><th>Этаж</th><th>Отметка ±0.000, мм</th><th>Высота этажа, мм</th><th>Верх плиты от чистого пола, мм</th><th>Толщина плиты, мм</th><th>Объектов</th><th></th></tr></thead><tbody>${lvSorted()
+  const inp = (id, k, v) =>
+    `<input data-lv="${id}" data-k="${k}" ${k === 'n' ? '' : 'type="number"'} value="${esc(k === 'n' ? v : fmt(v))}">`;
+  el.innerHTML = `<div class="win-scroll"><table class="mtbl"><thead><tr><th>Этаж</th><th>Отметка ±0.000, мм</th><th>Высота этажа, мм</th><th>Верх плиты от чистого пола, мм</th><th>Толщина плиты, мм</th><th>Объектов</th><th></th></tr></thead><tbody>${lvSorted()
     .reverse()
     .map(
       l =>
-        `<tr class="${l.id === L.cur ? 'on' : ''}"><td>${inp(l.id, 'n', l.n, 140)}</td><td>${inp(l.id, 'z', l.z)}</td><td>${inp(l.id, 'h', l.h)}</td><td>${inp(l.id, 'top', l.top)}</td><td>${inp(l.id, 'slab', l.slab)}</td><td>${lvEnts(l.id).length}</td><td><button class="btn" data-go="${l.id}">Открыть</button> <button class="btn" data-del="${l.id}" aria-label="Удалить этаж">×</button></td></tr>`
+        `<tr class="${l.id === L.cur ? 'on' : ''}"><td>${inp(l.id, 'n', l.n)}</td><td>${inp(l.id, 'z', l.z)}</td><td>${inp(l.id, 'h', l.h)}</td><td>${inp(l.id, 'top', l.top)}</td><td>${inp(l.id, 'slab', l.slab)}</td><td>${lvEnts(l.id).length}</td><td><button class="btn" data-go="${l.id}">Открыть</button> <button class="btn" data-del="${l.id}" aria-label="Удалить этаж">×</button></td></tr>`
     )
-    .join('')}</tbody></table>
+    .join('')}</tbody></table></div>
   <p class="hint">Отметка — уровень чистого пола этажа в проекте. «Верх плиты» — где лежит перекрытие относительно чистого пола (например −80: пирог пола 80 мм). Высота этажа задаёт лестницы и следующий этаж. Плита под этажом строится по контуру этажа.</p>`;
   el.querySelectorAll('[data-lv]').forEach(
     i =>
@@ -98261,41 +98654,42 @@ uiHooks.wsSet = id => {
 };
 
 /* ---------- dimension style ---------- */
+/** Opens the «Стиль размеров» window: sizes of the dimension text, ticks and extension lines on a sheet, arrow type, rounding and units. */
 function openDimStyle() {
-  let d = $('#dimStDlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'dimStDlg';
-    d.className = 'modal';
-    d.style.zIndex = '61';
-    document.body.appendChild(d);
-  }
   const st = dimStyle();
   const num = (k, n, step = '0.1') =>
     `<label class="fl">${esc(n)}<input type="number" step="${step}" data-ds="${k}" value="${st[k]}"></label>`;
-  d.innerHTML = `<div class="dlg" role="dialog" aria-label="Стиль размеров" style="width:min(560px,100%)"><div class="dlgh"><h3>Стиль размеров</h3><button class="x" id="dsX" aria-label="Закрыть">×</button></div>
-  <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px">
+  const win = openWindow({
+    id: 'dimStDlg',
+    title: 'Стиль размеров',
+    size: 'm',
+    over: true,
+    closeId: 'dsX',
+    body: `<div class="win-form two">
   ${num('th', 'Высота текста на листе, мм')}${num('tgap', 'Отступ текста от линии, мм')}
   ${num('tick', 'Засечка / стрелка, мм')}${num('gap', 'Отступ выносной от объекта, мм')}
   ${num('ext', 'Выход выносной за размерную, мм')}${num('dle', 'Выход размерной за выносную, мм')}
   <label class="fl">Окончание<select data-ds="arrow"><option value="" ${st.arrow ? '' : 'selected'}>засечка 45° (архитектурная)</option><option value="1" ${st.arrow ? 'selected' : ''}>стрелка</option></select></label>
   <label class="fl">Округление<select data-ds="round">${[1, 5, 10, 50].map(r => `<option value="${r}" ${+st.round === r ? 'selected' : ''}>${r} мм</option>`).join('')}</select></label>
   <label class="fl">Единицы<select data-ds="unit">${['мм', 'см', 'м'].map(u => `<option ${st.unit === u ? 'selected' : ''}>${u}</option>`).join('')}</select></label>
-  <p class="hint" style="grid-column:1/3">Размеры задаются в миллиметрах листа: в модели и в видах они умножаются на масштаб аннотаций (у вида — его масштаб или свой), поэтому на любом листе выглядят одинаково. Размер, поставленный прямо на лист поверх вида, привязывается к плану (или к 3D) и переходит в этот вид.</p>
-  </div><div class="btnrow" style="padding:0 14px 14px"><button class="btn" id="dsReset">По умолчанию</button><button class="btn pri" id="dsOk">Готово</button></div></div>`;
-  d.hidden = false;
-  const close = () => {
-    d.hidden = true;
-  };
-  d.querySelector('#dsX').onclick = close;
-  d.querySelector('#dsOk').onclick = close;
-  d.querySelector('#dsReset').onclick = () => {
-    pushUndo();
-    delete S.x.dimStyle;
-    SHT.ras.clear();
-    changed();
-    openDimStyle();
-  };
+  <p class="hint">Размеры задаются в миллиметрах листа: в модели и в видах они умножаются на масштаб аннотаций (у вида — его масштаб или свой), поэтому на любом листе выглядят одинаково. Размер, поставленный прямо на лист поверх вида, привязывается к плану (или к 3D) и переходит в этот вид.</p>
+  </div>`,
+    footer: [
+      {
+        n: 'По умолчанию',
+        id: 'dsReset',
+        a: () => {
+          pushUndo();
+          delete S.x.dimStyle;
+          SHT.ras.clear();
+          changed();
+          openDimStyle();
+        }
+      },
+      { n: 'Готово', id: 'dsOk', pri: true, a: w => w.close() }
+    ]
+  });
+  const d = win.el;
   d.querySelectorAll('[data-ds]').forEach(
     i =>
       (i.onchange = () => {
@@ -117893,14 +118287,16 @@ const solidEditorState = ED;
 
 
 const VU_CSS = `#vulock{position:fixed;inset:0;z-index:9000;background:var(--bg,#f4f4f2);display:flex;align-items:center;justify-content:center;padding:16px}
-#vulock .vub,#vudlg .vub{width:min(380px,100%);display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--fg,#222)}
+#vulock .vub{width:min(380px,100%)}
+#vulock .vub,#vudlg .vub{display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--fg,#222)}
 #vulock h3{margin:0 0 2px;font-size:17px}
 .vub input{width:100%;padding:8px 10px;font-size:14px}
-.vub .vum{font-size:12px;color:var(--muted,#666);line-height:1.45}.vub .vue{font-size:12px;color:#c0392b;min-height:16px}
+.vub .vum{font-size:12px;color:var(--muted,#666);line-height:1.45}.vub .vue{font-size:12px;color:var(--danger,#c0392b);min-height:16px}
 .vub .vur{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .vub .vul{background:none;border:0;padding:0;color:var(--muted,#666);text-decoration:underline;font-size:12px;cursor:pointer}
-#vudlg .dlg,#vuask .dlg{height:auto;max-height:92vh}.vub label{display:flex;flex-direction:column;gap:4px}#vudlg .dlg{width:min(440px,96vw)}#vudlg .vub{width:auto;padding:14px 18px}
+#vuask .dlg{height:auto;max-height:92vh}.vub label{display:flex;flex-direction:column;gap:4px}
 #vuask .dlg{width:min(380px,96vw)}#vuask .vub{width:auto;padding:14px 18px}`;
+const vuBound = new WeakMap();
 function vuCss() {
   if (document.getElementById('vucss')) return;
   const st = document.createElement('style');
@@ -117999,62 +118395,61 @@ ${pass ? '<label>Текущий пароль<input type="password" id="vuo" auto
 <label>${pass ? 'Новый пароль' : 'Пароль'} (не короче 8 знаков)<input type="password" id="vun" autocomplete="new-password"></label>
 <label>Ещё раз<input type="password" id="vun2" autocomplete="new-password"></label>
 <div class="vum">Пароль нигде не хранится. Если его забыть, зашифрованные файлы и сохранённый в браузере проект открыть будет нельзя.</div>
-<div class="vue" id="vuerr" role="alert"></div>
-<div class="vur"><button class="btn pri" type="button" data-vu="set">${pass ? 'Сменить пароль' : 'Задать пароль'}</button>${pass ? '<button class="btn" type="button" data-vu="off">Снять пароль</button>' : ''}</div>`;
+<div class="vue" id="vuerr" role="alert"></div>`;
 }
+/** Footer buttons of the «Защита паролем» window: set / change the password and, when one is set, remove it. */
+function vuFoot() {
+  if (vaultState.mode === 'none') return [];
+  const pass = vaultState.mode === 'pass';
+  return [
+    ...(pass ? [{ n: 'Снять пароль', danger: true, data: { vu: 'off' } }] : []),
+    { n: pass ? 'Сменить пароль' : 'Задать пароль', pri: true, data: { vu: 'set' } }
+  ];
+}
+/** Opens the «Защита паролем» window: the state of the password and the buttons to set, change or remove it. */
 function openVault() {
   vuCss();
-  let m = document.getElementById('vudlg');
-  if (!m) {
-    m = document.createElement('div');
-    m.id = 'vudlg';
-    m.className = 'modal';
-    m.innerHTML = `<div class="dlg" role="dialog" aria-label="Защита паролем"><div class="dlgh"><h3>Защита паролем</h3><button class="x" type="button" data-vu="close" aria-label="Закрыть">×</button></div><div class="vub" id="vubody"></div></div>`;
-    document.body.appendChild(m);
-    m.addEventListener('click', async ev => {
-      if (ev.target === m) {
-        m.hidden = true;
-        return;
-      }
-      const b = ev.target.closest('[data-vu]');
-      if (!b) return;
-      const a = b.dataset.vu;
-      if (a === 'close') {
-        m.hidden = true;
-        return;
-      }
-      const err = m.querySelector('#vuerr');
-      const val = id => (m.querySelector(id) || {}).value || '';
-      const fail = t => (err.textContent = t);
-      fail('');
-      b.disabled = true;
-      try {
-        if (vaultState.mode === 'pass' && !(await vaultVerify(val('#vuo')))) return fail('Текущий пароль не подошёл');
-        if (a === 'off') {
-          await vaultSetPassword('');
-          await vuResave();
-          log('Пароль снят: проект в браузере зашифрован ключом этого браузера, файлы сохраняются открытыми');
-        } else {
-          const p = val('#vun');
-          if (p.length < 8) return fail('Пароль короче 8 знаков');
-          if (p !== val('#vun2')) return fail('Пароли не совпадают');
-          await vaultSetPassword(p);
-          await vuResave();
-          log('Пароль задан: проект в браузере и файлы «.kontur» шифруются этим паролем');
-        }
-        m.querySelector('#vubody').innerHTML = vuBody();
-      } catch (e) {
-        fail('Не получилось: ' + ((e && e.message) || e));
-      } finally {
-        b.disabled = false;
-      }
-    });
-    m.addEventListener('keydown', ev => {
-      if (ev.key === 'Escape') m.hidden = true;
-    });
-  }
+  const w = openWindow({
+    id: 'vudlg',
+    title: 'Защита паролем',
+    size: 's',
+    body: '<div class="vub" id="vubody"></div>',
+    footer: vuFoot()
+  });
+  const m = w.el;
   m.querySelector('#vubody').innerHTML = vuBody();
-  m.hidden = false;
+  if (vuBound.has(m)) return;
+  vuBound.set(m, 1);
+  m.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-vu]');
+    if (!b) return;
+    const a = b.dataset.vu;
+    const err = m.querySelector('#vuerr');
+    const val = id => (m.querySelector(id) || {}).value || '';
+    const fail = t => (err.textContent = t);
+    fail('');
+    b.disabled = true;
+    try {
+      if (vaultState.mode === 'pass' && !(await vaultVerify(val('#vuo')))) return fail('Текущий пароль не подошёл');
+      if (a === 'off') {
+        await vaultSetPassword('');
+        await vuResave();
+        log('Пароль снят: проект в браузере зашифрован ключом этого браузера, файлы сохраняются открытыми');
+      } else {
+        const p = val('#vun');
+        if (p.length < 8) return fail('Пароль короче 8 знаков');
+        if (p !== val('#vun2')) return fail('Пароли не совпадают');
+        await vaultSetPassword(p);
+        await vuResave();
+        log('Пароль задан: проект в браузере и файлы «.kontur» шифруются этим паролем');
+      }
+      openVault();
+    } catch (e) {
+      fail('Не получилось: ' + ((e && e.message) || e));
+    } finally {
+      b.disabled = false;
+    }
+  });
 }
 defineTools({
   vault: {
@@ -118360,6 +118755,7 @@ function xBoot() {
     lightKeyOf,
     furnModel,
     openFurnDraw,
+    openWindow,
     writeIFC,
     parseIFC,
     pipeCross,
@@ -139388,57 +139784,57 @@ function saveCnc(M, fmt, perPart) {
 
 /* ---------- dialog ---------- */
 const CADX = { what: 'plan', fmt: 'dwg' };
+/** Opens the «Экспорт в DWG / DXF» window: what to export, the format and the annotation scale; «Сохранить» builds and downloads the file. */
 function openCadExport() {
-  let d = $('#cadxdlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'cadxdlg';
-    d.className = 'modal';
-    d.style.zIndex = '60';
-    document.body.appendChild(d);
-  }
   const shN = proj().sheets.length,
     lvN = LV().list.length;
   const opt = (v, t, dis) =>
     `<label class="radio"><input type="radio" name="cadxw" value="${v}" ${CADX.what === v ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${t}</label>`;
-  d.innerHTML = `<div class="dlg" role="dialog" aria-label="Экспорт DWG и DXF" style="width:min(520px,100%)"><div class="dlgh"><h3>Экспорт в DWG / DXF</h3><button class="x" id="cadxClose" aria-label="Закрыть">×</button></div>
-  <div style="padding:14px 16px;display:grid;gap:10px">
+  const win = openWindow({
+    id: 'cadxdlg',
+    title: 'Экспорт в DWG / DXF',
+    size: 's',
+    over: true,
+    closeId: 'cadxClose',
+    body: `<div class="win-form">
   <div>${opt('plan', 'План текущего этажа — как на экране, по слоям проекта')}${opt('levels', `Все этажи рядом (${lvN})`, lvN < 2)}${opt('sheets', `Листы (${shN}) — в масштабе 1:1 на бумаге`, !shN)}${opt('3d', '3D-модель — грани (3DFACE)')}</div>
   <label>Формат<select id="cadxFmt"><option value="dwg" ${CADX.fmt === 'dwg' ? 'selected' : ''}>DWG (AutoCAD 2000) — открывают все CAD</option><option value="dxf" ${CADX.fmt === 'dxf' ? 'selected' : ''}>DXF (AutoCAD 2000)</option></select></label>
   <label>Масштаб аннотаций плана (толщины, тексты, условные знаки)<select id="cadxSc">${[20, 25, 50, 75, 100, 200].map(s => `<option value="${s}" ${s === ((S.x && S.x.ascale) || 50) ? 'selected' : ''}>1:${s}</option>`).join('')}</select></label>
-  <p class="hint">Единицы — миллиметры. Слои, цвета и веса линий берутся из проекта. Мебель и присадка для ЧПУ выгружаются из окна «Чертежи» изделия.</p>
-  <div class="btnrow"><button class="btn pri" id="cadxGo">Сохранить</button><button class="btn" id="cadxCancel">Отмена</button></div></div></div>`;
-  d.hidden = false;
-  const close = () => (d.hidden = true);
-  d.querySelector('#cadxClose').onclick = close;
-  d.querySelector('#cadxCancel').onclick = close;
-  d.querySelector('#cadxGo').onclick = () => {
-    CADX.what = (d.querySelector('input[name=cadxw]:checked') || {}).value || 'plan';
-    CADX.fmt = d.querySelector('#cadxFmt').value;
-    const sc = +d.querySelector('#cadxSc').value || 50;
-    close();
-    busy('Готовлю ' + CADX.fmt.toUpperCase() + '…');
-    setTimeout(() => {
-      try {
-        const T = proj().tpl.fields;
-        const base = safeName(T.code || T.object || 'Проект');
-        if (CADX.what === 'plan')
-          saveCad(
-            planCad({ scale: sc }),
-            `${base} — план${LV().list.length > 1 ? ' ' + ((lvCur() || {}).name || '') : ''}`,
-            CADX.fmt
-          );
-        else if (CADX.what === 'levels') saveCad(levelsCad({ scale: sc }), `${base} — этажи`, CADX.fmt);
-        else if (CADX.what === 'sheets') saveCad(sheetsCad(), `${base} — листы`, CADX.fmt);
-        else saveCad(model3dCad(), `${base} — 3D`, CADX.fmt);
-      } catch (err) {
-        console.error(err);
-        log('Экспорт не удался: ' + (err.message || err), true);
-      } finally {
-        busy(false);
-      }
-    }, 30);
-  };
+  <p class="hint">Единицы — миллиметры. Слои, цвета и веса линий берутся из проекта. Мебель и присадка для ЧПУ выгружаются из окна «Чертежи» изделия.</p></div>`,
+    footer: [
+      { n: 'Сохранить', id: 'cadxGo', pri: true, a: () => cadxGo(win) },
+      { n: 'Отмена', id: 'cadxCancel', a: w => w.close() }
+    ]
+  });
+}
+/** Reads the options of the export window, closes it and saves the chosen drawing as DWG or DXF. */
+function cadxGo(win) {
+  const d = win.el;
+  CADX.what = (d.querySelector('input[name=cadxw]:checked') || {}).value || 'plan';
+  CADX.fmt = d.querySelector('#cadxFmt').value;
+  const sc = +d.querySelector('#cadxSc').value || 50;
+  win.close();
+  busy('Готовлю ' + CADX.fmt.toUpperCase() + '…');
+  setTimeout(() => {
+    try {
+      const T = proj().tpl.fields;
+      const base = safeName(T.code || T.object || 'Проект');
+      if (CADX.what === 'plan')
+        saveCad(
+          planCad({ scale: sc }),
+          `${base} — план${LV().list.length > 1 ? ' ' + ((lvCur() || {}).name || '') : ''}`,
+          CADX.fmt
+        );
+      else if (CADX.what === 'levels') saveCad(levelsCad({ scale: sc }), `${base} — этажи`, CADX.fmt);
+      else if (CADX.what === 'sheets') saveCad(sheetsCad(), `${base} — листы`, CADX.fmt);
+      else saveCad(model3dCad(), `${base} — 3D`, CADX.fmt);
+    } catch (err) {
+      console.error(err);
+      log('Экспорт не удался: ' + (err.message || err), true);
+    } finally {
+      busy(false);
+    }
+  }, 30);
 }
 
 /* ---------- import dialog ---------- */
@@ -149816,6 +150212,192 @@ defineTools({
     icon: '<path d="M4 6h5v12"/><path d="M4 10h9v8"/><path d="M4 14h13v4" class="t"/>'
   }
 });
+
+// ===== blocks/uikit/window.js =====
+/**
+ * uikit/window.js
+ *
+ * The common frame of inner windows (docs/UI-LAYOUT.md, «Внутренние окна»): `openWindow` builds the backdrop, the frame, the header
+ * (title, subtitle, up to three action buttons, the «⋮» menu, the close button), the tabs, the body (or left / main / right panes) and the footer.
+ * Sizes are four classes (s, m, l, xl) set in CSS, colours come only from theme variables, z-index from --z-win / --z-win2 / --z-pop.
+ * Closing (Esc, the × button, the backdrop) is one: the element gets `hidden`; `onClose` fires on any hide.
+ */
+
+
+
+/** Width classes of the frame, px (the CSS classes .win-s … .win-xl carry the same numbers); used to map an old pixel width to a class. */
+const WIN_SIZE_MAX = [
+  ['s', 560],
+  ['m', 760],
+  ['l', 1100]
+];
+const WIN_MAX_ACTS = 3;
+const winBound = new WeakMap();
+const winHandles = new WeakMap();
+let winSeq = 0;
+
+/** Size class for an old pixel width (miniDlg callers): s, m, l or xl. */
+function winSizeFor(px) {
+  const w = +px || 0;
+  for (const [k, max] of WIN_SIZE_MAX) if (w <= max) return k;
+  return 'xl';
+}
+/** One button of a header, footer or menu as HTML: classes btn / btn pri / btn danger, optional id, data attributes and title. */
+function winBtn(it, i, attr, cls = '') {
+  const c = ['btn', it.pri ? 'pri' : '', it.danger ? 'danger' : '', cls].filter(Boolean).join(' ');
+  const data = Object.entries(it.data || {})
+    .map(([k, v]) => ` data-${esc(k)}="${esc(v)}"`)
+    .join('');
+  return `<button type="button" class="${c}" ${attr}="${i}"${it.id ? ` id="${esc(it.id)}"` : ''}${data}${it.title ? ` title="${esc(it.title)}"` : ''}${it.d ? ' disabled' : ''}>${esc(it.n)}</button>`;
+}
+/** Puts a string (HTML) or a node into a container. */
+function winFill(box, v) {
+  if (!box) return;
+  if (v == null) return;
+  if (typeof v === 'string') box.innerHTML = v;
+  else {
+    box.innerHTML = '';
+    box.appendChild(v);
+  }
+}
+/**
+ * Opens (or rebuilds in place when the id exists) an inner window and returns its handle.
+ * Options: id; title; sub (grey subtitle); size 's'|'m'|'l'|'xl' (a number of old pixels is mapped to a class); tabs [{k,n}] with tab (active key) and onTab(k, w);
+ * actions [{n, id, pri, danger, d, title, data, a(w, ev)}] — the first three go to the header, the rest into the «⋮» menu;
+ * body (HTML string or node), left / right (side panes, make the body a three-pane grid); footer [{n, id, pri, danger, a}];
+ * float (a panel without the backdrop); over (stack above other windows, --z-win2); backdrop:false (no close by the backdrop);
+ * closeId (id of the × button); cls (extra class of the frame, e.g. 'mini'); onClose(w).
+ * Handle: { el, dlg, body, left, right, foot, setTitle(t, sub), setTab(k), setBody(v), setFooter(items), close() }.
+ */
+function openWindow(o = {}) {
+  const id = o.id || 'win' + ++winSeq;
+  let el = $('#' + id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id;
+    document.body.appendChild(el);
+  }
+  const acts = o.actions || [];
+  const head = acts.slice(0, WIN_MAX_ACTS),
+    more = acts.slice(WIN_MAX_ACTS);
+  const foot = o.footer || [];
+  const tabs = o.tabs || [];
+  const panes = !!(o.left || o.right);
+  const size = typeof o.size === 'number' ? winSizeFor(o.size) : ['s', 'm', 'l', 'xl'].includes(o.size) ? o.size : 'm';
+  const title = o.title || '';
+  el.className = `${o.float ? 'win win-float' : 'modal win'}${o.over ? ' win-over' : ''}`;
+  el.dataset.win = id;
+  const tabHtml = tabs.length
+    ? `<div class="win-tabs wtabs" role="tablist">${tabs.map(t => `<button type="button" role="tab" class="${t.k === o.tab ? 'on' : ''}" aria-selected="${t.k === o.tab}" data-wtab="${esc(t.k)}">${esc(t.n)}</button>`).join('')}</div>`
+    : '';
+  el.innerHTML = `<div class="dlg win-dlg win-${size}${panes ? ' win-panes' : ''}${o.cls ? ' ' + esc(o.cls) : ''}" role="dialog" aria-label="${esc(title)}"${o.float ? '' : ' aria-modal="true"'}>
+<div class="dlgh win-head"><div class="win-titles"><h3>${esc(title)}</h3><span class="hint win-sub">${esc(o.sub || '')}</span></div><div class="win-acts">${head.map((a, i) => winBtn(a, i, 'data-wa')).join('')}${more.length ? '<button type="button" class="btn win-more" aria-label="Ещё" aria-haspopup="menu" aria-expanded="false" title="Ещё">⋮</button>' : ''}</div><button type="button" class="x" data-win="close" aria-label="Закрыть"${o.closeId ? ` id="${esc(o.closeId)}"` : ''}>×</button>${more.length ? `<div class="win-menu" role="menu" hidden>${more.map((a, i) => winBtn(a, i + WIN_MAX_ACTS, 'data-wa', 'win-mi')).join('')}</div>` : ''}</div>
+${tabHtml}${panes ? '<div class="win-cols"><div class="win-left"></div><div class="win-body win-main mbody"></div><div class="win-right"></div></div>' : '<div class="win-body mbody"></div>'}${foot.length ? `<div class="win-foot">${foot.map((a, i) => winBtn(a, i, 'data-wf')).join('')}</div>` : ''}</div>`;
+  const dlg = el.firstElementChild || el.querySelector('.dlg');
+  const q = s => el.querySelector(s);
+  const w = {
+    el,
+    dlg,
+    body: q('.win-body'),
+    left: q('.win-left'),
+    right: q('.win-right'),
+    foot: q('.win-foot'),
+    /** Hides the window (the same as Esc or ×). */
+    close() {
+      el.hidden = true;
+    },
+    /** Changes the title and, when given, the subtitle. */
+    setTitle(t, sub) {
+      const h = q('.win-head h3');
+      if (h) h.textContent = t;
+      if (dlg) dlg.setAttribute('aria-label', t);
+      const s = q('.win-sub');
+      if (s && sub !== undefined) s.textContent = sub;
+    },
+    /** Marks a tab active (does not call onTab). */
+    setTab(k) {
+      el.querySelectorAll('[data-wtab]').forEach(b => {
+        const on = b.dataset.wtab === String(k);
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', on);
+      });
+    },
+    /** Replaces the content of the body (HTML string or node). */
+    setBody(v) {
+      winFill(w.body, v);
+    },
+    /** Replaces the footer buttons. */
+    setFooter(items) {
+      const f = q('.win-foot');
+      if (f) f.innerHTML = (items || []).map((a, i) => winBtn(a, i, 'data-wf')).join('');
+      w.foot = f;
+      w.footer = items || [];
+    }
+  };
+  w.footer = foot;
+  winFill(w.body, o.body);
+  winFill(w.left, o.left);
+  winFill(w.right, o.right);
+  winHandles.set(el, w);
+  w.opts = o;
+  const menu = q('.win-menu'),
+    mbtn = q('.win-more');
+  const menuShow = on => {
+    if (!menu) return;
+    menu.hidden = !on;
+    if (mbtn) mbtn.setAttribute('aria-expanded', on);
+  };
+  dlg.onclick = ev => {
+    const t = ev.target.closest ? ev.target : null;
+    if (!t) return;
+    const b = t.closest('button');
+    if (!b) {
+      menuShow(false);
+      return;
+    }
+    if (b.dataset.win === 'close') {
+      w.close();
+      return;
+    }
+    if (b.classList.contains('win-more')) {
+      menuShow(menu.hidden);
+      return;
+    }
+    if (b.dataset.wtab !== undefined) {
+      w.setTab(b.dataset.wtab);
+      if (o.onTab) o.onTab(b.dataset.wtab, w);
+      return;
+    }
+    const wa = b.dataset.wa,
+      wf = b.dataset.wf;
+    const it = wa !== undefined ? acts[+wa] : wf !== undefined ? w.footer[+wf] : null;
+    menuShow(false);
+    if (it && it.a) it.a(w, ev);
+  };
+  if (!winBound.has(el)) {
+    winBound.set(el, 1);
+    if (!o.float && o.backdrop !== false)
+      el.addEventListener('pointerdown', e => {
+        if (e.target === el) el.hidden = true;
+      });
+    if (o.float)
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Escape') el.hidden = true;
+      });
+    if (typeof MutationObserver === 'function')
+      new MutationObserver(() => {
+        const cur = winHandles.get(el);
+        if (el.hidden && cur && !cur.closed) {
+          cur.closed = true;
+          if (cur.opts.onClose) cur.opts.onClose(cur);
+          if (cin && cin.focus) cin.focus({ preventScroll: true });
+        } else if (!el.hidden && cur) cur.closed = false;
+      }).observe(el, { attributes: true, attributeFilter: ['hidden'] });
+  }
+  el.hidden = false;
+  w.closed = false;
+  return w;
+}
 
 // ===== blocks/view2d/model-lines.js =====
 /**
