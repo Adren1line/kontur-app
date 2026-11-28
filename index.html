@@ -9239,7 +9239,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.87';
+const APP_VER = '59.88';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -9613,7 +9613,12 @@ const S = {
   curWt: 'wt_gb',
   profiles: []
 };
-const view = { x: 0, y: 0, k: 0.1 };
+/** The plan view: x, y — the world point at the screen centre (mm), k — px per mm, a — screen angle (rad, the model turned counter-clockwise on the screen; view2d/viewport.js applies it). */
+const view = { x: 0, y: 0, k: 0.1, a: 0 };
+/** Angle (rad) a new text or callout gets: horizontal on the turned plan screen, i.e. minus the screen angle (0 on sheets). */
+function newAnnoRot() {
+  return view.a && docView.vp == null ? -view.a : 0;
+}
 const modes = { grid: true, snap: false, ortho: false, polar: true, osnap: true, otrack: true };
 const OSN = {
   end: 'Конточка',
@@ -9970,7 +9975,11 @@ function snapshot() {
     x: S.x
   });
 }
-function restore(js) {
+/** True while restore() runs for the same document (undo, redo, rollback): the plan view is kept, not read from the file. */
+const restoreState = { keepView: false };
+/** Replaces the document by a snapshot; keepView — it is the same document (an undo step), not a project being opened. */
+function restore(js, keepView = false) {
+  restoreState.keepView = keepView;
   const o = JSON.parse(js);
   S.ents = o.ents;
   S.layers = o.layers;
@@ -10057,7 +10066,7 @@ function undo() {
     return;
   }
   documentState.redoS.push(undoEntry());
-  restore(undoJSON(documentState.undoS.pop()));
+  restore(undoJSON(documentState.undoS.pop()), true);
   changed();
   say('Отменено');
 }
@@ -10067,7 +10076,7 @@ function redo() {
     return;
   }
   documentState.undoS.push(undoEntry());
-  restore(undoJSON(documentState.redoS.pop()));
+  restore(undoJSON(documentState.redoS.pop()), true);
   changed();
   say('Возвращено');
 }
@@ -10101,7 +10110,7 @@ function changed() {
   const top = () => documentState.undoS[documentState.undoS.length - 1];
   const clash = changeGuards.map(g => g(top())).find(Boolean);
   if (clash && documentState.undoS.length) {
-    restore(undoJSON(documentState.undoS.pop()));
+    restore(undoJSON(documentState.undoS.pop()), true);
     for (const g of changeGuards) g(top());
     say(clash, true);
   }
@@ -10174,7 +10183,7 @@ function tx(name, fn) {
     const at = documentState.undoS.indexOf(step);
     if (at >= 0) documentState.undoS.length = at;
     documentState.docVer++; // the caches keyed by docVer must not answer for the elements that were just replaced
-    restore(undoJSON(step));
+    restore(undoJSON(step), true);
     documentState.redoS = redoS;
     throw err;
   }
@@ -15008,6 +15017,11 @@ function xSet(o) {
   S.x = o;
 }
 
+/** S.x.vrot[id] = a: the screen angle (rad) of the plan of level id, a view state saved with the project. */
+function vrotSet(id, a) {
+  (S.x.vrot || (S.x.vrot = {}))[id] = a;
+}
+
 // ===== blocks/building/doc-api.js =====
 /**
  * blocks/building/doc-api.js
@@ -15277,20 +15291,154 @@ function sample(kind) {
 
 
 
+
+
 /* view 2D */
 let W = 0,
   H = 0,
   DPR = 1;
-/** Temporarily replaces the logical canvas size (off-screen rendering of sheets); returns the previous values. */
-function swapWH(w, h, dpr) {
-  const o = [W, H, DPR];
+/**
+ * Screen rotation state: ctx — the rotation is already in the canvas transform (rotBegin), so w2s / s2w work in the
+ * unrotated screen; off — off-screen rendering (sheets, exports), where the screen angle does not apply.
+ */
+const rotState = { ctx: false, off: false };
+/**
+ * Temporarily replaces the logical canvas size (off-screen rendering of sheets and exports, which are not rotated);
+ * returns the previous values, the last one is the previous «rotation off» flag: swapWH(...old) restores.
+ */
+function swapWH(w, h, dpr, off = true) {
+  const o = [W, H, DPR, rotState.off];
   W = w;
   H = h;
   DPR = dpr;
+  rotState.off = off;
   return o;
 }
-const w2s = p => P((p.x - view.x) * view.k + W / 2, H / 2 - (p.y - view.y) * view.k);
-const s2w = (x, y) => P((x - W / 2) / view.k + view.x, (H / 2 - y) / view.k + view.y);
+/** The screen angle in effect (rad): the model turned counter-clockwise on the screen; 0 on sheets and off-screen. */
+function viewAng() {
+  const a = view.a;
+  return !a || rotState.off || docView.vp != null ? 0 : a;
+}
+let rotCacheA = NaN,
+  rotCacheC = 1,
+  rotCacheS = 0;
+/** [cos, sin] of the angle a (cached: w2s is called for every point). */
+function rotCS(a) {
+  if (a !== rotCacheA) {
+    rotCacheA = a;
+    rotCacheC = Math.cos(a);
+    rotCacheS = Math.sin(a);
+  }
+  return [rotCacheC, rotCacheS];
+}
+/** World point → screen px (rotated by the screen angle unless the rotation is in the canvas transform). */
+function w2s(p) {
+  const dx = (p.x - view.x) * view.k,
+    dy = (p.y - view.y) * view.k,
+    a = rotState.ctx ? 0 : viewAng();
+  if (!a) return P(dx + W / 2, H / 2 - dy);
+  const [c, s] = rotCS(a);
+  return P(W / 2 + dx * c - dy * s, H / 2 - (dx * s + dy * c));
+}
+/** Screen px → world point (inverse of w2s). */
+function s2w(x, y) {
+  const u = (x - W / 2) / view.k,
+    v = (H / 2 - y) / view.k,
+    a = rotState.ctx ? 0 : viewAng();
+  if (!a) return P(u + view.x, v + view.y);
+  const [c, s] = rotCS(a);
+  return P(u * c + v * s + view.x, -u * s + v * c + view.y);
+}
+/** A world vector or point seen in the axes of the screen (y up): rotated by the screen angle about the origin. */
+function toFrame(p) {
+  const a = viewAng();
+  if (!a) return P(p.x, p.y);
+  const [c, s] = rotCS(a);
+  return P(p.x * c - p.y * s, p.x * s + p.y * c);
+}
+/** Inverse of toFrame: a vector given along the screen axes → world. */
+function fromFrame(p) {
+  const a = viewAng();
+  if (!a) return P(p.x, p.y);
+  const [c, s] = rotCS(a);
+  return P(p.x * c + p.y * s, -p.x * s + p.y * c);
+}
+/** Unit screen-px direction (y down) of a world direction (the rotation in the canvas transform counts as applied). */
+function dirToScr(d) {
+  const a = rotState.ctx ? 0 : viewAng();
+  let x = d.x,
+    y = d.y;
+  if (a) {
+    const [c, s] = rotCS(a);
+    x = d.x * c - d.y * s;
+    y = d.x * s + d.y * c;
+  }
+  const L = Math.hypot(x, y) || 1;
+  return P(x / L, -y / L);
+}
+/** Turns the canvas by the screen angle about the screen centre (model drawing); true when it did (pass to rotEnd). */
+function rotBegin() {
+  const a = viewAng();
+  if (!a || rotState.ctx) return false;
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(-a);
+  ctx.translate(-W / 2, -H / 2);
+  rotState.ctx = true;
+  return true;
+}
+/** Ends the rotated drawing started by rotBegin. */
+function rotEnd(on) {
+  if (!on) return;
+  rotState.ctx = false;
+  ctx.restore();
+}
+/** Moves the plan with the pointer: the view as it was at (vx, vy), the pointer shifted by (dsx, dsy) px. */
+function panFrom(vx, vy, dsx, dsy) {
+  const d = scrVecToWorld(dsx, dsy);
+  view.x = vx - d.x;
+  view.y = vy - d.y;
+}
+/** Moves the plan by a shift of (dsx, dsy) px along the screen. */
+function panBy(dsx, dsy) {
+  const d = scrVecToWorld(dsx, dsy);
+  view.x -= d.x;
+  view.y -= d.y;
+}
+/** World vector of a screen shift (dx, dy px, y down). */
+function scrVecToWorld(dx, dy) {
+  const a = viewAng(),
+    u = dx / view.k,
+    v = -dy / view.k;
+  if (!a) return P(u, v);
+  const [c, s] = rotCS(a);
+  return P(u * c + v * s, -u * s + v * c);
+}
+let rotLv = null;
+/** Id of the level whose plan is open. */
+function rotLevelId() {
+  const l = S.x && S.x.lv;
+  return l && l.cur != null ? l.cur : 1;
+}
+/** Sets the screen angle (rad) of the open plan and stores it with the level (a view state: no undo step). */
+function viewRotSet(a) {
+  view.a = a || 0;
+  rotLv = rotLevelId();
+  if (S.x) vrotSet(rotLv, view.a);
+  dirty();
+}
+/** Takes the screen angle of the open level from the document (level switch, project open); 0 when none is stored. */
+function viewRotSync() {
+  rotLv = rotLevelId();
+  view.a = (S.x && S.x.vrot && S.x.vrot[rotLv]) || 0;
+  dirty();
+}
+// undo / redo replace S.x: the live angle is a view and is kept, written back; another level or a project opened is read
+afterRestore(() => {
+  if (restoreState.keepView && rotLv !== null && rotLv === rotLevelId()) {
+    if (S.x && ((S.x.vrot && S.x.vrot[rotLv]) || 0) !== (view.a || 0)) vrotSet(rotLv, view.a || 0);
+  } else viewRotSync();
+});
 function resize() {
   const r = cv.getBoundingClientRect();
   W = r.width;
@@ -15320,6 +15468,8 @@ function finitePts(ents) {
  * enlarged to the whole screen.
  */
 function fitPts(pts, minSpan = 1) {
+  // the box is taken in the axes of the (turned) screen
+  if (viewAng()) pts = pts.map(toFrame);
   let x0 = Infinity,
     y0 = Infinity,
     x1 = -Infinity,
@@ -15339,8 +15489,9 @@ function fitPts(pts, minSpan = 1) {
     1e-4,
     Math.min((W - 80 - iL - iR) / Math.max(x1 - x0, minSpan), (H - 80 - iT - iB) / Math.max(y1 - y0, minSpan))
   );
-  view.x = (x0 + x1) / 2 - (iL - iR) / 2 / view.k;
-  view.y = (y0 + y1) / 2 + (iT - iB) / 2 / view.k;
+  const c = fromFrame(P((x0 + x1) / 2 - (iL - iR) / 2 / view.k, (y0 + y1) / 2 + (iT - iB) / 2 / view.k));
+  view.x = c.x;
+  view.y = c.y;
   dirty();
 }
 /** Fits the plan to all visible elements of the level (empty plan: the origin at a default scale). */
@@ -15754,7 +15905,7 @@ function textStyle() {
 }
 function textEditor(o) {
   const ed = $('#tedit');
-  const st = o.e ? { ...o.e } : { ...textStyle(), s: '', rot: 0 };
+  const st = o.e ? { ...o.e } : { ...textStyle(), s: '', rot: newAnnoRot() };
   const at = o.e ? o.e.p : o.p;
   const s = w2s(at);
   ed.innerHTML = `<div class="tbar"><select id="teFont" title="Шрифт">${FONTS.map(f => `<option ${f === st.font ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select>
@@ -17545,6 +17696,7 @@ const NO_REPEAT = [
   'vspec',
   'zoomext',
   'zoomsel',
+  'rotscr',
   'hidesel',
   'hideoth',
   'hideall',
@@ -17760,11 +17912,12 @@ function parsePoint(s, base) {
   let m;
   if ((m = s.match(/^(-?\d*\.?\d+)\s*<\s*(-?\d*\.?\d+)$/))) {
     const o = rel && base ? base : P(0, 0);
-    return polar(o, +m[2] * D2R, +m[1]);
+    // a relative angle is counted from the horizontal of the screen
+    return polar(o, +m[2] * D2R - (rel && base ? viewAng() : 0), +m[1]);
   }
   if ((m = s.match(/^(-?\d*\.?\d+)\s*[,;]\s*(-?\d*\.?\d+)$/))) {
     const p = P(+m[1], +m[2]);
-    return rel && base ? add(base, p) : p;
+    return rel && base ? add(base, fromFrame(p)) : p;
   }
   if (rel && s === '' && base) return base;
   return null;
@@ -17850,7 +18003,7 @@ function submit() {
     if (b && commandsState.cmd.onPoint && DYN.len != null) {
       const L = DYN.len;
       DYN.len = null;
-      return deliverPoint(polar(b, v * D2R, L));
+      return deliverPoint(polar(b, v * D2R - viewAng(), L));
     }
     if (b && commandsState.cmd.onPoint) {
       const dir = nrm(sub(cur.r.p, b));
@@ -18091,8 +18244,10 @@ const snapHooks = { extra: null, inner: false, ports: null };
 function findSnapAt(w, base, only) {
   return findSnap(w, base, only);
 }
+/** Tracking lines and polar angles follow the axes of the screen: a screen angle a is the world direction a − screen angle. */
 function trackLines(base) {
   const L = [];
+  const rot = -viewAng();
   const inc = documentState.polarInc * D2R,
     n = Math.round(TAU / inc);
   const angs =
@@ -18100,11 +18255,11 @@ function trackLines(base) {
       ? Array.from({ length: n }, (_, i) => i * inc)
       : [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
   if (base && modes.polar && !modes.ortho)
-    for (const a of angs) L.push({ o: base, d: P(Math.cos(a), Math.sin(a)), kind: 'polar', ray: true });
+    for (const a of angs) L.push({ o: base, d: P(Math.cos(a + rot), Math.sin(a + rot)), kind: 'polar', ray: true });
   if (modes.otrack)
     for (const t of snappingState.tracked)
       for (const a of angs.filter(a => a < Math.PI - 1e-9))
-        L.push({ o: t.p, d: P(Math.cos(a), Math.sin(a)), kind: 'track', ray: false });
+        L.push({ o: t.p, d: P(Math.cos(a + rot), Math.sin(a + rot)), kind: 'track', ray: false });
   if ((modes.osnap && osTypes.ext) || commandsState.ovr === 'ext')
     for (const t of snappingState.tracked) for (const d of t.dirs) L.push({ o: t.p, d, kind: 'ext', ray: true });
   return L;
@@ -18151,13 +18306,16 @@ function resolvePoint(sx, sy) {
   const r = trackResolve(w, trackLines(base));
   if (r) return r;
   if (base && modes.ortho) {
-    const d = sub(w, base);
-    w = Math.abs(d.x) >= Math.abs(d.y) ? P(w.x, base.y) : P(base.x, w.y);
+    // along the axes of the screen: the point is computed there and written in world coordinates
+    const d = toFrame(sub(w, base));
+    if (!viewAng()) w = Math.abs(d.x) >= Math.abs(d.y) ? P(w.x, base.y) : P(base.x, w.y);
+    else w = add(base, fromFrame(Math.abs(d.x) >= Math.abs(d.y) ? P(d.x, 0) : P(0, d.y)));
     return { p: w, ortho: true };
   }
   if (modes.snap) {
     const st = gridStep();
-    w = P(Math.round(w.x / st) * st, Math.round(w.y / st) * st);
+    const f = toFrame(w);
+    w = fromFrame(P(Math.round(f.x / st) * st, Math.round(f.y / st) * st));
   }
   return { p: w };
 }
@@ -18361,14 +18519,19 @@ function hitGrip(sx, sy, r = 6) {
   }
   return best;
 }
+/** True when the world point lies in the box r; a box with `turned` is given in the axes of the turned screen. */
+function inBox(p, r) {
+  const q = r.turned ? toFrame(p) : p;
+  return q.x >= r.x0 && q.x <= r.x1 && q.y >= r.y0 && q.y <= r.y1;
+}
 function entInside(e, r) {
   const ps = samplePts(e);
-  return ps.length && ps.every(p => p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1);
+  return ps.length && ps.every(p => inBox(p, r));
 }
+/** True when the element crosses or lies in the box r ({x0, y0, x1, y1}, plus `turned` for the axes of the turned screen). */
 function entCross(e, r) {
-  const inR = p => p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1;
-  if (samplePts(e).some(inR)) return true;
-  const c = [P(r.x0, r.y0), P(r.x1, r.y0), P(r.x1, r.y1), P(r.x0, r.y1)];
+  if (samplePts(e).some(p => inBox(p, r))) return true;
+  const c = [P(r.x0, r.y0), P(r.x1, r.y0), P(r.x1, r.y1), P(r.x0, r.y1)].map(q => (r.turned ? fromFrame(q) : q));
   for (const q of prims(e))
     for (let i = 0; i < 4; i++) {
       const a = c[i],
@@ -18382,10 +18545,20 @@ const pickingState = {
   box: null
 };
 function finishBox(sx, sy, shift) {
-  const a = s2w(pickingState.box.s.x, pickingState.box.s.y),
-    b = s2w(sx, sy),
+  // the box is rectangular on the screen: kept in the axes of the screen (turned = the screen is rotated)
+  const a0 = s2w(pickingState.box.s.x, pickingState.box.s.y),
+    b0 = s2w(sx, sy),
+    turned = !!viewAng(),
+    a = turned ? toFrame(a0) : a0,
+    b = turned ? toFrame(b0) : b0,
     win = sx > pickingState.box.s.x;
-  const r = { x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) };
+  const r = {
+    x0: Math.min(a.x, b.x),
+    x1: Math.max(a.x, b.x),
+    y0: Math.min(a.y, b.y),
+    y1: Math.max(a.y, b.y),
+    turned
+  };
   for (const e of S.ents) {
     if (!pickable(e)) continue;
     if (win ? entInside(e, r) : entCross(e, r)) {
@@ -18408,6 +18581,7 @@ function selChanged() {
  *
  * 2D renderer of the plan: entities, pens (lineweights), grid, cursor.
  */
+
 
 
 
@@ -19524,23 +19698,27 @@ function ghostSeg(a, b) {
   ctx.stroke();
   ctx.restore();
 }
+/** The grid runs along the axes of the screen: its nodes are the world turned by the screen angle about the origin. */
 function drawGrid() {
   const st = gridStep(),
     maj = st * 10,
-    a = s2w(0, H),
-    b = s2w(W, 0);
+    fc = toFrame(P(view.x, view.y)),
+    a = P(fc.x - W / 2 / view.k, fc.y - H / 2 / view.k),
+    b = P(fc.x + W / 2 / view.k, fc.y + H / 2 / view.k),
+    scrX = x => (x - fc.x) * view.k + W / 2,
+    scrY = y => H / 2 - (y - fc.y) * view.k;
   const lines = (step, alpha) => {
     if (alpha <= 0.004) return;
     ctx.strokeStyle = `rgba(${C.grid},${alpha})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = Math.ceil(a.x / step) * step; x <= b.x; x += step) {
-      const sx = Math.round(w2s(P(x, 0)).x) + 0.5;
+      const sx = Math.round(scrX(x)) + 0.5;
       ctx.moveTo(sx, 0);
       ctx.lineTo(sx, H);
     }
     for (let y = Math.ceil(a.y / step) * step; y <= b.y; y += step) {
-      const sy = Math.round(w2s(P(0, y)).y) + 0.5;
+      const sy = Math.round(scrY(y)) + 0.5;
       ctx.moveTo(0, sy);
       ctx.lineTo(W, sy);
     }
@@ -19548,7 +19726,7 @@ function drawGrid() {
   };
   lines(st, Math.min(1, (st * view.k - 8) / 30) * 0.07);
   lines(maj, 0.13);
-  const o = w2s(P(0, 0));
+  const o = P(scrX(0), scrY(0));
   ctx.lineWidth = 1;
   ctx.strokeStyle = 'rgba(224,108,108,0.28)';
   ctx.beginPath();
@@ -19718,7 +19896,7 @@ function glyph(k, x, y, r) {
 }
 function infLine(o, d, ray) {
   const s = w2s(o);
-  const sd = nrm(P(d.x, -d.y));
+  const sd = dirToScr(d);
   ctx.beginPath();
   ctx.moveTo(ray ? s.x : s.x - sd.x * 6000, ray ? s.y : s.y - sd.y * 6000);
   ctx.lineTo(s.x + sd.x * 6000, s.y + sd.y * 6000);
@@ -19893,13 +20071,14 @@ function entBox(e, fresh) {
 /** Cull statistics of the last frame (for the bench). */
 const cullStat = { drawn: 0, skipped: 0 };
 function cullScreen(vis, gripEnt) {
-  const a = s2w(0, H),
-    c = s2w(W, 0);
+  // the screen rectangle in the axes of the screen (a turned screen: element boxes are turned into them)
+  const turned = !!viewAng(),
+    fc = toFrame(P(view.x, view.y));
   const mg = Math.max(1500, 200 / view.k);
-  const X0 = a.x - mg,
-    Y0 = a.y - mg,
-    X1 = c.x + mg,
-    Y1 = c.y + mg;
+  const X0 = fc.x - W / 2 / view.k - mg,
+    Y0 = fc.y - H / 2 / view.k - mg,
+    X1 = fc.x + W / 2 / view.k + mg,
+    Y1 = fc.y + H / 2 / view.k + mg;
   const live = commandsState.cmd && commandsState.cmd.ent;
   const out = [];
   let skipped = 0;
@@ -19909,7 +20088,16 @@ function cullScreen(vis, gripEnt) {
       continue;
     }
     const fresh = S.sel.has(e.id) || e === renderState.hoverEnt || e === gripEnt || e === live;
-    const b = entBox(e, fresh);
+    let b = entBox(e, fresh);
+    if (b && turned) {
+      const q = [P(b[0], b[1]), P(b[2], b[1]), P(b[2], b[3]), P(b[0], b[3])].map(toFrame);
+      b = [
+        Math.min(...q.map(p => p.x)),
+        Math.min(...q.map(p => p.y)),
+        Math.max(...q.map(p => p.x)),
+        Math.max(...q.map(p => p.y))
+      ];
+    }
     if (!b || (b[2] >= X0 && b[0] <= X1 && b[3] >= Y0 && b[1] <= Y1)) out.push(e);
     else skipped++;
   }
@@ -20147,6 +20335,28 @@ function drawModel0(o) {
   CAD.ent = null;
   return { wp, gripEnt };
 }
+/** The highlight of the hovered element (drawn in the turned canvas together with the model). */
+function drawHover(wp) {
+  CAD.world = true;
+  if (
+    renderState.hoverEnt &&
+    !wp &&
+    visible(renderState.hoverEnt) &&
+    netShown(renderState.hoverEnt) &&
+    !S.sel.has(renderState.hoverEnt.id)
+  ) {
+    const cs = C.sel;
+    C.sel = '#9cc6ff';
+    ctx.save();
+    ctx.shadowColor = 'rgba(110,170,255,.95)';
+    ctx.shadowBlur = 14;
+    try {
+      drawEnt(renderState.hoverEnt, C.sel, { sel: true, hover: true, hl: true });
+    } catch (err) {}
+    ctx.restore();
+    C.sel = cs;
+  }
+}
 function render() {
   if (!W || !H) return;
   // a non-finite or non-positive view (NaN from a broken element) would leave the plan empty: recover
@@ -20163,33 +20373,28 @@ function render() {
   try {
     const sheet = renderHooks.sheet && renderHooks.sheet.on();
     if (!sheet && modes.grid) drawGrid();
-    const { wp } = sheet ? renderHooks.sheet.draw() : drawModel({ cull: true });
-    CAD.world = true;
-    if (
-      renderState.hoverEnt &&
-      !wp &&
-      visible(renderState.hoverEnt) &&
-      netShown(renderState.hoverEnt) &&
-      !S.sel.has(renderState.hoverEnt.id)
-    ) {
-      const cs = C.sel;
-      C.sel = '#9cc6ff';
-      ctx.save();
-      ctx.shadowColor = 'rgba(110,170,255,.95)';
-      ctx.shadowBlur = 14;
-      try {
-        drawEnt(renderState.hoverEnt, C.sel, { sel: true, hover: true, hl: true });
-      } catch (err) {}
-      ctx.restore();
-      C.sel = cs;
+    // the model is drawn in the turned canvas (the screen angle); handles, cursor and captions below stay upright
+    const rg = sheet ? false : rotBegin();
+    let wp;
+    try {
+      ({ wp } = sheet ? renderHooks.sheet.draw() : drawModel({ cull: true }));
+      drawHover(wp);
+    } finally {
+      rotEnd(rg);
     }
     CAD.world = false;
     CAD.pen = null;
     if (sheet) renderHooks.sheet.ui();
     xRenderOverlay();
     if (!sheet && uiHooks.planOverlay) uiHooks.planOverlay();
-    if (commandsState.cmd && commandsState.cmd.preview && !commandsState.cmd.selecting && cur.in)
-      commandsState.cmd.preview(dynPt(cur.r.p));
+    if (commandsState.cmd && commandsState.cmd.preview && !commandsState.cmd.selecting && cur.in) {
+      const rp = sheet ? false : rotBegin();
+      try {
+        commandsState.cmd.preview(dynPt(cur.r.p));
+      } finally {
+        rotEnd(rp);
+      }
+    }
     for (const it of gripList()) {
       const s = w2s(it.g.p),
         hv = renderState.hoverGrip && renderState.hoverGrip.g === it.g;
@@ -20267,7 +20472,7 @@ function render() {
         if (r.track.x) lines.push('Пересечение линий отслеживания');
         else {
           const A = r.track.lines[0],
-            deg = fmt(nAng(ang(A.l.d)) / D2R);
+            deg = fmt(nAng(ang(A.l.d) + viewAng()) / D2R);
           lines.push(
             A.l.kind === 'polar'
               ? `Полярная: ${fmt(A.s)} < ${deg}°`
@@ -20293,7 +20498,7 @@ function render() {
       }
       if (base && !dynOn() && !(r.track && r.track.lines[0].l.kind === 'polar')) {
         const d = dist(base, r.p);
-        if (d > 0) lines.push(`Длина ${fmt(d)}  ∠ ${fmt(nAng(ang(sub(r.p, base))) / D2R)}°`);
+        if (d > 0) lines.push(`Длина ${fmt(d)}  ∠ ${fmt(nAng(ang(sub(r.p, base)) + viewAng()) / D2R)}°`);
       }
     }
     if (cur.in && cin.value) lines.push('› ' + cin.value);
@@ -20358,6 +20563,8 @@ function render() {
     }
     drawDyn();
     drawUCS();
+    drawCompass();
+    if (cur.in && compassHit(cur.sx, cur.sy)) tip(['Угол экрана — щелчок: сбросить на 0°'], cur.sx, cur.sy);
   } catch (err) {
     reportRenderError(err);
     ctx.restore && ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -22622,6 +22829,7 @@ afterChange(() => sync3DSoon(), 40);
 
 
 
+
 /* pointer input (plan) */
 let panning = null,
   lastMid = 0,
@@ -22764,8 +22972,7 @@ function touchMove(e, sx, sy) {
   if (T.moved || T.mode === 'pan') {
     clearTimeout(T.timer);
     T.mode = 'pan';
-    view.x = T.vx - (sx - T.x0) / view.k;
-    view.y = T.vy + (sy - T.y0) / view.k;
+    panFrom(T.vx, T.vy, sx - T.x0, sy - T.y0);
     dirty();
   }
 }
@@ -22864,8 +23071,7 @@ function initPointer() {
           d = dist(a, b),
           m = mid(a, b);
         zoomAt(m.x, m.y, d / pinch.d);
-        view.x -= (m.x - pinch.m.x) / view.k;
-        view.y += (m.y - pinch.m.y) / view.k;
+        panBy(m.x - pinch.m.x, m.y - pinch.m.y);
         if (pinch.tap && (Math.abs(d - pinch.d0) > 12 || dist(m, pinch.m0) > 12)) pinch.tap = false;
         pinch = { ...pinch, d, m };
         return;
@@ -22876,8 +23082,7 @@ function initPointer() {
       }
     }
     if (panning) {
-      view.x = panning.vx - (sx - panning.sx) / view.k;
-      view.y = panning.vy + (sy - panning.sy) / view.k;
+      panFrom(panning.vx, panning.vy, sx - panning.sx, sy - panning.sy);
       dirty();
       cur.sx = sx;
       cur.sy = sy;
@@ -22896,6 +23101,11 @@ function initPointer() {
 function primaryDown(e, sx, sy) {
   {
     if (uiHooks.sheetDown && uiHooks.sheetDown(sx, sy, e)) return;
+    if (compassHit(sx, sy)) {
+      viewRotSet(0);
+      log('Угол экрана сброшен: 0°');
+      return;
+    }
     if (commandsState.cmd && commandsState.cmd.pan) {
       panning = { sx, sy, vx: view.x, vy: view.y };
       cv.style.cursor = 'grabbing';
@@ -22969,8 +23179,7 @@ function initPointerRest() {
         zoomAt(sx, sy, Math.exp(-dy * 0.01)); // pinch on a touchpad
       else if (wheelIsPad(e)) {
         // two fingers on a touchpad: move the plan
-        view.x += dx / view.k;
-        view.y -= dy / view.k;
+        panBy(-dx, -dy);
         dirty();
       } else zoomAt(sx, sy, Math.exp(-dy * 0.0015));
       updateCursor(sx, sy);
@@ -24089,6 +24298,7 @@ const MENUS = [
       '-',
       { n: 'Показать всё', k: '2×СКМ', a: () => zoomExtents() },
       { n: 'Показать выделенное', a: () => startCmd('zoomsel') },
+      { n: 'Повернуть экран', a: () => startCmd('rotscr') },
       { n: 'Скрыть выделенное', a: () => startCmd('hidesel') },
       { n: 'Скрыть всё, кроме выделенного', a: () => startCmd('hideoth') },
       { n: 'Скрыть всё', a: () => startCmd('hideall') },
@@ -28042,6 +28252,7 @@ const TLBL = {
   pan: 'Панорама',
   zoomext: 'Всё',
   zoomsel: 'Выбранное',
+  rotscr: 'Экран °',
   hidesel: 'Скрыть',
   hideoth: 'Остальное',
   hideall: 'Скрыть всё',
@@ -51187,9 +51398,14 @@ function drawArrayPreview() {
     return;
   }
   if (cs.length > 600) cs = cs.slice(0, 600);
-  for (const n of cs) {
-    if (n.type === 'door' || n.type === 'window') continue;
-    drawEnt(n, 'ghost');
+  const rg = rotBegin();
+  try {
+    for (const n of cs) {
+      if (n.type === 'door' || n.type === 'window') continue;
+      drawEnt(n, 'ghost');
+    }
+  } finally {
+    rotEnd(rg);
   }
 }
 
@@ -52429,6 +52645,7 @@ function vwPreview() {
       return;
     }
     const sv = { ...view };
+    view.a = 0; // the preview of a plan is not turned
     const saved = S.layers.map(l => [l, l.on]);
     S.layers.forEach(l => {
       if (!layOn(l.name)) l.on = false;
@@ -54434,6 +54651,11 @@ function noteAnchor(e) {
   const sp = samplePts(t);
   return sp.length ? polyCentroid(sp) : e.p;
 }
+/** A point of the callout in its own frame (x along the text, y up) in the model; the frame is turned by e.rot. */
+function noteAt(e, x, y) {
+  const r = e.rot || 0;
+  return r ? add(e.p, P(x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r))) : add(e.p, P(x, y));
+}
 XT.note = {
   layer: 'Аннотации',
   anno: true,
@@ -54442,17 +54664,17 @@ XT.note = {
     const p = e.p;
     return [
       { t: 's', a: noteAnchor(e), b: p },
-      ...closedSegs([p, add(p, P(b.w, 0)), add(p, P(b.w, b.H)), add(p, P(0, b.H))])
+      ...closedSegs([p, noteAt(e, b.w, 0), noteAt(e, b.w, b.H), noteAt(e, 0, b.H)])
     ];
   },
   dist: (e, p) => {
     const b = noteBox(e);
-    return inPoly(p, [e.p, add(e.p, P(b.w, 0)), add(e.p, P(b.w, b.H)), add(e.p, P(0, b.H))]) ? 0 : null;
+    return inPoly(p, [e.p, noteAt(e, b.w, 0), noteAt(e, b.w, b.H), noteAt(e, 0, b.H)]) ? 0 : null;
   },
   keys: e => [{ p: e.p, k: 'ins' }],
   sample: e => {
     const b = noteBox(e);
-    return [e.p, add(e.p, P(b.w, b.H)), noteAnchor(e)];
+    return [e.p, noteAt(e, b.w, b.H), noteAnchor(e)];
   },
   map: (n, e, f) => {
     n.p = f(e.p);
@@ -54474,8 +54696,9 @@ XT.note = {
       ctx.fillStyle = ink;
       ctx.lineWidth = o.hover ? 1.6 : 0.8;
       const sh0 = e.p,
-        sh1 = add(e.p, P(b.w, 0));
-      const start = A.x <= e.p.x + b.w / 2 ? sh0 : sh1;
+        sh1 = noteAt(e, b.w, 0);
+      const r0 = e.rot || 0;
+      const start = (A.x - e.p.x) * Math.cos(r0) + (A.y - e.p.y) * Math.sin(r0) <= b.w / 2 ? sh0 : sh1;
       seg(A, start);
       seg(sh0, sh1);
       const s = w2s(A);
@@ -54483,20 +54706,27 @@ XT.note = {
       ctx.arc(s.x, s.y, 2.2, 0, TAU);
       ctx.fill();
       b.lines.forEach((l, i) =>
-        drawTextW(add(e.p, P(b.h * 0.3, b.h * 0.35 + (b.lines.length - 1 - i) * b.h * 1.35)), l, b.h, 0, ink, 'left')
+        drawTextW(
+          noteAt(e, b.h * 0.3, b.h * 0.35 + (b.lines.length - 1 - i) * b.h * 1.35),
+          l,
+          b.h,
+          e.rot || 0,
+          ink,
+          'left'
+        )
       );
       return;
     }
     ctx.strokeStyle = c;
     ctx.fillStyle = c;
     ctx.lineWidth = 1;
-    const near = add(e.p, P(0, b.H / 2));
+    const near = noteAt(e, 0, b.H / 2);
     seg(A, near);
     const s = w2s(A);
     ctx.beginPath();
     ctx.arc(s.x, s.y, 3, 0, TAU);
     ctx.fill();
-    const q = [e.p, add(e.p, P(b.w, 0)), add(e.p, P(b.w, b.H)), add(e.p, P(0, b.H))];
+    const q = [e.p, noteAt(e, b.w, 0), noteAt(e, b.w, b.H), noteAt(e, 0, b.H)];
     pathPoly(q);
     ctx.fillStyle = 'rgba(30,34,39,0.92)';
     ctx.fill();
@@ -54504,10 +54734,17 @@ XT.note = {
     ctx.lineWidth = o.hover ? 2 : 1.2;
     ctx.stroke();
     b.lines.forEach((l, i) =>
-      drawTextW(add(e.p, P(b.h * 0.5, b.H - b.h * 0.35 - (i + 1) * b.h * 1.35 + b.h * 0.35)), l, b.h, 0, c, 'left')
+      drawTextW(
+        noteAt(e, b.h * 0.5, b.H - b.h * 0.35 - (i + 1) * b.h * 1.35 + b.h * 0.35),
+        l,
+        b.h,
+        e.rot || 0,
+        c,
+        'left'
+      )
     );
     if (tgt && tgt.meta && (tgt.meta.data || []).length) {
-      const t = w2s(add(e.p, P(b.w, b.H)));
+      const t = w2s(noteAt(e, b.w, b.H));
       ctx.fillStyle = c;
       ctx.font = `600 9px ${TFONT}`;
       ctx.textAlign = 'right';
@@ -55123,7 +55360,7 @@ function drawDyn() {
     ctx.stroke();
   }
   dynBox((a1.x + a2.x) / 2, (a1.y + a2.y) / 2, fmt(L), !DYN.len, DYN.len != null);
-  const A = nAng(ang(v)),
+  const A = nAng(ang(v) + viewAng()),
     R = Math.min(48, Ls * 0.6);
   ctx.strokeStyle = 'rgba(200,210,224,0.6)';
   ctx.setLineDash([3, 3]);
@@ -57710,6 +57947,7 @@ function switchLevel(id, quiet) {
   selClear();
   levelsState.LVGEN++;
   levelsState.LVU = null;
+  viewRotSync();
   changed();
   lvBtn();
   if (!quiet) log(`Этаж: ${lvCur().n} (отметка ${lvMark(lvCur().z)})`);
@@ -93442,6 +93680,7 @@ function renderTools() {
     'pan',
     'zoomext',
     'zoomsel',
+    'rotscr',
     'hidesel',
     'hideoth',
     'hideall',
@@ -101561,6 +101800,7 @@ function mkNote(target) {
           a,
           p,
           text: s.trim(),
+          ...noteRot(),
           layer: ensureLayer('Аннотации')
         });
         if (tg && !(tg.meta && tg.meta.note) && s.trim()) {
@@ -101572,7 +101812,15 @@ function mkNote(target) {
     },
     onEnter() {
       if (p) {
-        addEnt({ type: 'note', target: tg ? tg.id : null, a, p, text: '', layer: ensureLayer('Аннотации') });
+        addEnt({
+          type: 'note',
+          target: tg ? tg.id : null,
+          a,
+          p,
+          text: '',
+          ...noteRot(),
+          layer: ensureLayer('Аннотации')
+        });
         return 'end';
       }
       return 'end';
@@ -101707,6 +101955,12 @@ defineTools({
     icon: '<circle cx="8" cy="9" r="5" stroke-dasharray="2 1.6"/><circle cx="15.5" cy="15" r="3"/><path d="M11.5 12l2 1.6"/>'
   }
 });
+
+/** Field {rot} of a new callout: horizontal on the turned screen; nothing when the screen is not turned. */
+function noteRot() {
+  const r = newAnnoRot();
+  return r ? { rot: r } : {};
+}
 
 // ===== blocks/plumbing/appliances.js =====
 /**
@@ -115675,6 +115929,113 @@ function initScreenHide() {
   }, 60);
 }
 
+// ===== ui/screen-rotate.js =====
+/**
+ * ui/screen-rotate.js
+ *
+ * Screen rotation of the 2D plan: the command ПОВОРОТЭКРАНА (angle by number, [Линия] — a wall or a line becomes
+ * horizontal, [+90], [−90], [Сброс]), its button in the «Сцена» tile and the item of the «Вид» menu. Only the screen
+ * turns: the model, S and the print stay as they are; the angle is a view state of the level (view2d/viewport.js).
+ */
+
+
+
+
+
+
+
+/** Angle in degrees in (−180, 180]. */
+function degOf(a) {
+  let d = (a / D2R) % 360;
+  if (d > 180) d -= 360;
+  if (d <= -180) d += 360;
+  return Math.round(d * 1e6) / 1e6;
+}
+/** Sets the screen angle (degrees, counter-clockwise: how far the model is turned on the screen) and reports it. */
+function setScreenAngle(deg) {
+  viewRotSet(degOf(deg * D2R) * D2R);
+  log(deg ? `Угол экрана: ${fmt(degOf(deg * D2R))}°` : 'Угол экрана сброшен: 0°');
+}
+/**
+ * The direction (rad, in (−π/2, π/2]) of the straight piece of the element nearest to the point p, or null when the
+ * element has none.
+ */
+function lineDirAt(e, p) {
+  let best = null,
+    bd = Infinity;
+  for (const q of prims(e)) {
+    if (q.t !== 's') continue;
+    const d = dist(segPt(q.a, q.b, p), p);
+    if (d < bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  if (!best) return null;
+  let a = ang(sub(best.b, best.a));
+  while (a > Math.PI / 2 + 1e-12) a -= Math.PI;
+  while (a <= -Math.PI / 2 + 1e-12) a += Math.PI;
+  return a;
+}
+/** Command ПОВОРОТЭКРАНА: an angle, or [Линия] (a click on a wall or a line makes it horizontal), [+90], [−90], [Сброс]. */
+function mkRotScreen() {
+  let pickLine = false;
+  const c = {
+    name: 'rotscr',
+    noSnap: true,
+    base: () => null,
+    prompt: () =>
+      pickLine
+        ? 'Щёлкните по стене или линии — она станет горизонтальной:'
+        : `Угол экрана, ° (сейчас ${fmt(degOf(viewAng()))}°) или [Линия/+90/−90/Сброс]:`,
+    hasValue: () => !pickLine,
+    onValue(v) {
+      setScreenAngle(v);
+      return 'end';
+    },
+    onInput(s) {
+      const t = s.trim().toLowerCase().replace('−', '-');
+      if (['линия', 'лин', 'л', 'line'].includes(t)) {
+        pickLine = true;
+        return 'wait';
+      }
+      if (t === '+90') return (setScreenAngle(degOf(viewAng()) + 90), 'end');
+      if (t === '-90') return (setScreenAngle(degOf(viewAng()) - 90), 'end');
+      if (['сброс', 'сбр', 'с', 'reset', 'r'].includes(t)) return (setScreenAngle(0), 'end');
+      return false;
+    },
+    onPoint(p) {
+      if (!pickLine) return;
+      const e = pickAt(p, () => true);
+      const a = e ? lineDirAt(e, p) : null;
+      if (a == null) {
+        log('Здесь нет стены или линии — щёлкните точнее', true);
+        return;
+      }
+      setScreenAngle(-a / D2R);
+      return 'end';
+    },
+    onEnter: () => 'end'
+  };
+  return c;
+}
+defineTools({
+  rotscr: {
+    command: {
+      t: 'ПОВОРОТЭКРАНА',
+      a: ['rotscr', 'viewrot', 'screenrot', 'поворотэкрана', 'повэкр'],
+      m: mkRotScreen
+    },
+    title:
+      'Повернуть экран: на сколько градусов повернут план на экране (модель, чертёж и печать не меняются); [Линия] — стена или линия станет горизонтальной · ПОВОРОТЭКРАНА',
+    icon: '<circle cx="10" cy="10" r="6.5"/><path d="M10 3.5V1.5M7.6 6.2L10 3.5l2.4 2.7M10 10l3.4 3.4"/>',
+    help: 'Повернуть экран: введите угол в градусах (против часовой стрелки) или выберите [Линия] — щелчок по стене или линии делает её горизонтальной; [+90], [−90], [Сброс]. Поворачивается только экран: координаты, данные и печать модели не меняются; тексты и размеры поворачиваются вместе с планом, сетка, орто и полярные углы идут по осям экрана. Угол запоминается для плана каждого этажа; стрелка-компас в углу поля показывает угол, щелчок по ней — сброс.'
+  }
+});
+
+/** Anchor for app/boot.js: the command is registered when the module loads, before the «Сцена» tile is built. */
+function initScreenRotate() {}
+
 // ===== ui/short-labels.js =====
 /**
  * ui/short-labels.js
@@ -118525,6 +118886,7 @@ defineTools({
 
 
 
+
 function xBoot() {
   $('#wsbar').innerHTML = WS.map(
     w => `<button data-ws="${w.id}" class="${w.id === curWS ? 'on' : ''}">${esc(w.n)}</button>`
@@ -118861,6 +119223,7 @@ initKeyboard();
 initHeating();
 initLayerSwitch();
 initScreenHide();
+initScreenRotate();
 initToolbar();
 initResponsive();
 initLayout();
@@ -150397,6 +150760,69 @@ ${tabHtml}${panes ? '<div class="win-cols"><div class="win-left"></div><div clas
   el.hidden = false;
   w.closed = false;
   return w;
+}
+
+// ===== blocks/view2d/compass.js =====
+/**
+ * view2d/compass.js
+ *
+ * Compass of the turned screen: a small arrow in the corner of the field that shows where the world «up» (+Y) points
+ * and the screen angle; a click on it returns the screen to 0°. Drawn only when the screen is turned (view.a ≠ 0).
+ */
+
+
+
+
+const COMPASS_R = 16;
+/** Centre of the compass on the screen (px): above the axes of the corner. */
+function compassCenter() {
+  return { x: 40, y: H - 108 };
+}
+/** Draws the compass in screen px (upright, outside the turned canvas); nothing while the screen is not turned. */
+function drawCompass() {
+  const a = viewAng();
+  if (!a) return;
+  const c = compassCenter();
+  // the direction of the world +Y on the screen (px, y down)
+  const ux = -Math.sin(a),
+    uy = -Math.cos(a);
+  ctx.save();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = '#aab2bc';
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, COMPASS_R, 0, Math.PI * 2);
+  ctx.stroke();
+  // the north half of the needle (world +Y) is red, the south half is grey
+  const nx = -uy,
+    ny = ux;
+  ctx.fillStyle = C.ucsX || '#e06c6c';
+  ctx.beginPath();
+  ctx.moveTo(c.x + ux * (COMPASS_R - 2), c.y + uy * (COMPASS_R - 2));
+  ctx.lineTo(c.x + nx * 5, c.y + ny * 5);
+  ctx.lineTo(c.x - nx * 5, c.y - ny * 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#7d8590';
+  ctx.beginPath();
+  ctx.moveTo(c.x - ux * (COMPASS_R - 2), c.y - uy * (COMPASS_R - 2));
+  ctx.lineTo(c.x + nx * 5, c.y + ny * 5);
+  ctx.lineTo(c.x - nx * 5, c.y - ny * 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = `600 10px ${TFONT}`;
+  ctx.fillStyle = '#aab2bc';
+  ctx.textBaseline = 'middle';
+  let d = ((a * 180) / Math.PI) % 360;
+  if (d > 180) d -= 360;
+  if (d <= -180) d += 360;
+  ctx.fillText(`${fmt(d)}°`, c.x + COMPASS_R + 7, c.y);
+  ctx.restore();
+}
+/** True when the screen point is on the compass (which is shown only for a turned screen). */
+function compassHit(sx, sy) {
+  if (!viewAng()) return false;
+  const c = compassCenter();
+  return Math.hypot(sx - c.x, sy - c.y) <= COMPASS_R + 6;
 }
 
 // ===== blocks/view2d/model-lines.js =====
