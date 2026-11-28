@@ -10433,7 +10433,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.93';
+const APP_VER = '59.94';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -23693,6 +23693,12 @@ function sync3DPass0(budget, tok, t0) {
       disposeObj(o.obj);
       V3.objs.delete(id);
     }
+  // rebuilt objects start with both the near and the far parts visible: pick them by the distance of the camera now
+  try {
+    lodApply();
+  } catch (err) {
+    console.error(err);
+  }
   applySel3D();
   applyClip();
   fitShadow();
@@ -38098,7 +38104,7 @@ XT.fix = {
   k3: e => [
     S.ceil,
     e.kind === 'wcinst'
-      ? JSON.stringify([instOf(e), panOf(e)])
+      ? JSON.stringify([instOf(e), panOf(e), libModelReady(instOf(e).model), instOf(e).model ? instGeo(e).slab : 0])
       : e.kind === 'wcfloor'
         ? JSON.stringify(floorOf(e))
         : fixModelKey(e),
@@ -38172,6 +38178,9 @@ XT.fix = {
  *
  * Sanitary model library: GROHE/TECE installations, WC pans, catalogue editor.
  */
+
+
+
 
 
 
@@ -38298,6 +38307,42 @@ const SANLIB0 = [
     ]
   },
   {
+    id: 'tece-9300000',
+    cat: 'inst',
+    look: 'tece',
+    brand: 'TECE',
+    series: 'TECEprofil',
+    art: '9300000',
+    name: 'TECEprofil модуль для WC с бачком Uni, 1120 мм',
+    model: 'tece-9300000',
+    H: 1120,
+    W: 500,
+    D: 144,
+    legs: 200,
+    frameBot: 62,
+    frameCol: '#8d949c',
+    bendCol: '#2a2d31',
+    cistCol: '#e7ecf2',
+    cist: { w: 466, d: 136, top: 1063, bot: 689, kind: 'Uni-бачок 10 л' },
+    flush: '6 л (переключается на 4,5 / 7,5 / 9 л), частичный 3 л',
+    drainZ: 210,
+    flushZ: 357,
+    boltZ: 316,
+    bendY: 114,
+    bolts: [180, 230],
+    inlet: { sides: ['left', 'right'], z: 1020, valve: 'наружная резьба R ½″ сбоку, под быстроразъёмные адаптеры' },
+    plate: { w: 220, h: 150, z: 1000, style: 'tece', name: 'TECEloop / TECEnow 220×150' },
+    plateIncl: false,
+    leg: { x: [222, 248], y: [1.7, 38.4], foot: [178, 249], col: '#c9cdd1' },
+    feats: [
+      'Модель производителя TECE (3D): рама, бачок Uni, подвод воды, отвод, шпильки M12',
+      'Опоры регулируются 0–200 мм: длина считается от низа рамы до плиты перекрытия',
+      'Выпуск Ø90 к унитазу; в стояк Ø110 — вниз или отводом влево / вправо',
+      'Подвод воды R ½″ слева или справа',
+      'Шпильки M12 с шагом 180 или 230 мм'
+    ]
+  },
+  {
     id: 'tece-9400400',
     cat: 'inst',
     look: 'tece',
@@ -38419,7 +38464,8 @@ const SANLIB0 = [
     ]
   }
 ];
-const SANDEF = { inst: 'grohe-38340001', wcw: 'roca-meridian-w', wcf: 'roca-meridian-cc' };
+/** Default model of each catalogue category; tece — the default installation of the TECE brand (the model of the library). */
+const SANDEF = { inst: 'grohe-38340001', wcw: 'roca-meridian-w', wcf: 'roca-meridian-cc', tece: 'tece-9300000' };
 const SANLS = 'kontur.sanlib';
 function sanUser() {
   if (!S.x.sanlib) S.x.sanlib = [];
@@ -38662,9 +38708,10 @@ function instGeo(e) {
     y0 = yF + clad + ft;
   }
   const rim = +c.seat || 400;
-  const drainZ = P ? rim + P.outDz : M.drainZ + rim - 400,
-    flushZ = P ? rim + P.flushDz : M.flushZ + rim - 400,
-    boltZ = P ? rim + P.boltDz : M.drainZ + 80 + rim - 400,
+  const drainZ = P ? rim + P.outDz : M.drainZ + rim - 400;
+  // a library model fixes the heights of its flush pipe and studs relative to its drain; the pan follows the model
+  const flushZ = M.model ? drainZ + M.flushZ - M.drainZ : P ? rim + P.flushDz : M.flushZ + rim - 400,
+    boltZ = M.model ? drainZ + M.boltZ - M.drainZ : P ? rim + P.boltDz : M.drainZ + 80 + rim - 400,
     bolt = P ? P.bolt : M.bolts[0];
   const inS = M.inlet.sides.includes(c.inSide) ? c.inSide : M.inlet.sides[0];
   const yc = yF - M.cist.d / 2 - 5;
@@ -38693,11 +38740,24 @@ function instGeo(e) {
     boltZ,
     bolt,
     yc,
-    yB: fb + 45,
+    yB: M.bendY ? yF - M.bendY : fb + 45,
     vx,
     dd: c.drainDir || 'left',
     toFinish: y0 - yF
   };
+  g.model = M.model || '';
+  g.plate = M.plate;
+  if (M.model) {
+    // the library model is placed by its drain axis: everything of the module moves with it; the legs reach the slab
+    g.dz = drainZ - M.drainZ;
+    g.plate = { ...M.plate, z: M.plate.z + g.dz };
+    try {
+      g.slab = floorAt(e.p).slabTop - (e.z || 0);
+    } catch (err) {
+      g.slab = 0;
+    }
+    g.legLen = M.frameBot + g.dz - g.slab;
+  }
   g.sup = instSupport(e, g);
   g.reinf = (c.reinf || 'auto') === 'on' || ((c.reinf || 'auto') === 'auto' && g.sup.need);
   g.tece = c.pipe === 'tece';
@@ -38733,19 +38793,28 @@ function instReinfDims(g) {
   const py = g.yF - 25;
   return { s, t: s >= 60 ? 3 : 2, top, px, py, zb: g.M.H + s / 2 + 5, cross: 2 * px + s };
 }
+/** Connection point of a library model by id, in the frame of the item (the model is placed by its drain axis). */
+function instModelPort(g, id) {
+  const q = ((libModelInfo(g.model) || {}).ports || []).find(p => p.id === id);
+  return q ? { x: q.p[0], y: g.yF + q.p[1], z: q.p[2] + g.dz } : null;
+}
 function instPorts(e) {
   const g = instGeo(e),
     M = g.M;
+  const mk = g.model ? instModelPort(g, 'sewer110') : null,
+    mw = g.model ? instModelPort(g, 'inlet') : null;
   const kp =
     g.dd === 'down'
-      ? { x: 0, y: g.yB, z: 40 }
+      ? mk || { x: 0, y: g.yB, z: 40 }
       : { x: (g.dd === 'left' ? -1 : 1) * (M.W / 2 + 60), y: g.yB, z: g.drainZ };
   const wp =
-    g.side === 'back'
-      ? { x: g.vx, y: g.fb, z: M.inlet.z }
-      : g.side === 'top'
-        ? { x: g.vx, y: g.yc, z: M.H + 80 }
-        : { x: (g.side === 'right' ? 1 : -1) * (M.W / 2 + 50), y: g.yc, z: M.inlet.z };
+    mw && (g.side === 'left' || g.side === 'right')
+      ? { ...mw, x: (g.side === 'right' ? 1 : -1) * Math.abs(mw.x) }
+      : g.side === 'back'
+        ? { x: g.vx, y: g.fb, z: M.inlet.z }
+        : g.side === 'top'
+          ? { x: g.vx, y: g.yc, z: M.H + 80 }
+          : { x: (g.side === 'right' ? 1 : -1) * (M.W / 2 + 50), y: g.yc, z: M.inlet.z };
   return [
     {
       s: 'k',
@@ -38789,9 +38858,121 @@ function buildPlate(mb, pl, y0, col) {
     }
   }
 }
+/** 3D of the installation: a library model near the camera (when it is loaded), the factory graphics from afar and as a fallback; sheets and export get the model alone. */
 function buildInst(mb, e) {
-  const g = instGeo(e),
-    M = g.M,
+  const g = instGeo(e);
+  const mdl = g.model && g.c.gfx !== 'factory' ? libModel(g.model) : null;
+  if (mdl) {
+    // raw mode (sheets, sections, export) draws the model alone: the near and far graphics together would overlap there
+    if (!sceneState.raw) {
+      mb.lod('f');
+      buildInstFactory(mb, g);
+    }
+    mb.lod(sceneState.raw ? '' : 'n');
+    buildInstModel(mb, g, mdl);
+    mb.lod('');
+  } else buildInstFactory(mb, g);
+  buildInstTail(mb, g);
+}
+/** The revision shaft around the flush plate. */
+function buildInstShaft(mb, g) {
+  const { yF, y0 } = g,
+    pl = g.plate;
+  mb.tag('Ревизионная шахта');
+  mb.box(-pl.w / 2 - 20, yF - 4, pl.z - pl.h / 2 - 20, -pl.w / 2 - 8, y0 - 2, pl.z + pl.h / 2 + 20, '#cfd3d8');
+  mb.box(pl.w / 2 + 8, yF - 4, pl.z - pl.h / 2 - 20, pl.w / 2 + 20, y0 - 2, pl.z + pl.h / 2 + 20, '#cfd3d8');
+  mb.box(-pl.w / 2 - 8, yF - 4, pl.z + pl.h / 2 + 8, pl.w / 2 + 8, y0 - 2, pl.z + pl.h / 2 + 20, '#cfd3d8');
+  mb.box(-pl.w / 2 - 8, yF - 4, pl.z - pl.h / 2 - 20, pl.w / 2 + 8, y0 - 2, pl.z - pl.h / 2 - 8, '#cfd3d8');
+}
+/** Box between x0..x1 of one side (s = ±1, x0 < x1 are absolute distances from the axis). */
+function instSideBox(mb, s, x0, x1, y0, y1, z0, z1, col) {
+  mb.box(s > 0 ? x0 : -x1, y0, z0, s > 0 ? x1 : -x0, y1, z1, col);
+}
+/**
+ * A library model in place of the factory frame / tank / inlet / bend: the model is shifted so that its drain Ø90 comes to the
+ * drain axis of the pan and its face plane to the face plane of the frame; the legs below the frame are built by the
+ * generator (frame bottom → slab), the studs follow the pan step, the inlet is mirrored for «справа», the bend and the
+ * Ø110 stub of the model are used only for the drain «вниз» (left / right — the generator's horizontal bend).
+ */
+function buildInstModel(mb, g, mdl) {
+  const { M, P, yF, y0 } = g,
+    dz = g.dz,
+    W = M.W;
+  const stR = libModelInfo(g.model).ports.find(p => p.id === 'studR');
+  const sh = g.bolt / 2 - stR.p[0];
+  const at =
+    (ox = 0) =>
+    (x, y, z) => [x + ox, yF + y, z + dz];
+  libModelPut(mb, mdl, ['body', 'legs'], at());
+  libModelPut(mb, mdl, ['studL'], at(-sh));
+  libModelPut(mb, mdl, ['studR'], at(sh));
+  if (g.dd === 'down') libModelPut(mb, mdl, ['drainBend', 'drainStub'], at());
+  if (g.side === 'right') libModelPut(mb, mdl, ['inlet'], (x, y, z) => [-x, yF + y, z + dz], true);
+  else libModelPut(mb, mdl, ['inlet'], at());
+  buildInstShaft(mb, g);
+  const lg = M.leg,
+    zt = M.frameBot + dz;
+  if (g.legLen > 2) {
+    mb.tag('Регулируемые опоры (по длине до плиты)');
+    for (const s of [-1, 1]) {
+      instSideBox(mb, s, lg.x[0], lg.x[1], yF - lg.y[1], yF - lg.y[0], g.slab, zt + 0.3, lg.col);
+      instSideBox(mb, s, lg.foot[0], lg.foot[1], yF - lg.y[1] - 1, yF - lg.y[0] + 1, g.slab, g.slab + 5, lg.col);
+    }
+  }
+  const ORG = '#e4572e',
+    WH = '#f2f3f5',
+    bc = M.bendCol,
+    drainZ = g.drainZ;
+  if (g.dd !== 'down') {
+    const s2 = g.dd === 'left' ? -1 : 1;
+    mb.tag('Отвод канализации Ø90');
+    sanPipe(
+      mb,
+      [
+        [0, yF + 12, drainZ],
+        [0, g.yB, drainZ],
+        [s2 * (W / 2 + 60), g.yB, drainZ]
+      ],
+      45,
+      bc,
+      70,
+      16
+    );
+    mb.tag('Переходник Ø90/110');
+    mb.tube([s2 * (W / 2 - 30), g.yB, drainZ], [s2 * (W / 2 + 60), g.yB, drainZ], 55, bc, 16);
+  }
+  const yEnd = y0 + (P ? 70 : 40),
+    tip = yF + 50;
+  mb.tag('Шпильки M12');
+  for (const s of [-1, 1]) {
+    if (yEnd > tip) mb.tube([(s * g.bolt) / 2, tip - 1, g.boltZ], [(s * g.bolt) / 2, yEnd, g.boltZ], 6, lg.col, 8);
+    if (!P) {
+      mb.tag('Защитные колпачки');
+      mb.tube([(s * g.bolt) / 2, y0 + 8, g.boltZ], [(s * g.bolt) / 2, y0 + 40, g.boltZ], 9, ORG, 10);
+      mb.tag('Шпильки M12');
+    }
+  }
+  if (P) {
+    mb.tag('Смывная труба Ø45');
+    mb.tube([0, yF + 2, g.flushZ], [0, y0 + 10, g.flushZ], 22, WH, 12);
+    mb.tag('Соединительный патрубок Ø90');
+    mb.tube([0, yF + 5, drainZ], [0, y0 + 40, drainZ], 46, WH, 16);
+  } else {
+    mb.tag('Защитные колпачки');
+    mb.tube([0, yF + 5, g.flushZ], [0, yF + 40, g.flushZ], 27, ORG, 12);
+    mb.tube([0, yF + 5, drainZ], [0, yF + 45, drainZ], 50, ORG, 16);
+  }
+}
+/** The finishing of the installation common to every graphics: the flush plate, the pan, the reinforcement and the box. */
+function buildInstTail(mb, g) {
+  buildPlate(mb, g.plate, g.y0, g.c.btnCol);
+  if (g.P) buildWallPan(mb, g.P, g.y0, g.rim, g.c.lid);
+  if (g.reinf) buildInstReinf(mb, g);
+  if (g.mode === 'wall' && g.clad > 0 && g.c.box !== false) buildInstBox(mb, g);
+}
+/** The factory (procedural) graphics of the frame, tank, inlet and bend. */
+function buildInstFactory(mb, g) {
+  const M = g.M,
     c = g.c,
     { fb, yF, y0 } = g;
   const W = M.W,
@@ -38845,12 +39026,7 @@ function buildInst(mb, e) {
     true,
     true
   );
-  mb.tag('Ревизионная шахта');
-  const pl = M.plate;
-  mb.box(-pl.w / 2 - 20, yF - 4, pl.z - pl.h / 2 - 20, -pl.w / 2 - 8, y0 - 2, pl.z + pl.h / 2 + 20, '#cfd3d8');
-  mb.box(pl.w / 2 + 8, yF - 4, pl.z - pl.h / 2 - 20, pl.w / 2 + 20, y0 - 2, pl.z + pl.h / 2 + 20, '#cfd3d8');
-  mb.box(-pl.w / 2 - 8, yF - 4, pl.z + pl.h / 2 + 8, pl.w / 2 + 8, y0 - 2, pl.z + pl.h / 2 + 20, '#cfd3d8');
-  mb.box(-pl.w / 2 - 8, yF - 4, pl.z - pl.h / 2 - 20, pl.w / 2 + 8, y0 - 2, pl.z - pl.h / 2 - 8, '#cfd3d8');
+  buildInstShaft(mb, g);
   mb.tag('Подвод воды ½″');
   const vz = M.inlet.z,
     BR = '#c9a640';
@@ -38921,10 +39097,6 @@ function buildInst(mb, e) {
     mb.tag('Защитные колпачки');
     mb.tube([0, yF + 5, dz], [0, yF + 45, dz], 50, ORG, 16);
   }
-  buildPlate(mb, pl, y0, c.btnCol);
-  if (g.P) buildWallPan(mb, g.P, y0, g.rim, c.lid);
-  if (g.reinf) buildInstReinf(mb, g);
-  if (g.mode === 'wall' && g.clad > 0 && c.box !== false) buildInstBox(mb, g);
 }
 function buildInstReinf(mb, g) {
   const d = instReinfDims(g),
@@ -38984,7 +39156,7 @@ function buildInstBox(mb, g) {
     x1 = W / 2 + cl + 20,
     yA = g.yF,
     yB = g.yF + cl;
-  const pl = g.M.plate;
+  const pl = g.plate;
   const holes = [
     { x0: -pl.w / 2 - 10, x1: pl.w / 2 + 10, z0: pl.z - pl.h / 2 - 10, z1: pl.z + pl.h / 2 + 10 },
     ...(g.P
@@ -39069,9 +39241,35 @@ function instPanel(e) {
     P = g.P;
   const warn =
     P && !M.bolts.includes(P.bolt) ? ` · ⚠ шаг шпилек ${P.bolt} не поддерживается рамой (${M.bolts.join('/')})` : '';
+  const flushGap = g.P && M.model ? g.P.flushDz - g.P.outDz - (M.flushZ - M.drainZ) : 0;
+  const mdlWarn =
+    Math.abs(flushGap) > 5
+      ? ` · ⚠ смыв унитаза на ${fmt(g.P.flushDz - g.P.outDz)} мм выше выпуска, у модуля — на ${fmt(M.flushZ - M.drainZ)} мм`
+      : '';
   const lowRim = g.rim < 360 || g.rim > 500 ? ' · ⚠ высота чаши вне обычной регулировки (360–500 мм)' : '';
   return [
     ['Модель инсталляции', 'cfg.inst', 's', sanAll('inst').map(m => [m.id, m.name + (m.user ? ' · своя' : '')])],
+    ...(M.model
+      ? [
+          [
+            'Графика',
+            'cfg.gfx',
+            's',
+            [
+              ['', `модель производителя: ${M.brand} ${M.art}`],
+              ['factory', 'заводская графика']
+            ]
+          ],
+          [
+            'Опоры до плиты',
+            esc(
+              `${fmt(g.legLen)} мм (регулировка 0–${M.legs})` +
+                (g.legLen < 0 || g.legLen > M.legs ? ' — ⚠ вне регулировки: измените высоту чаши или пирог пола' : '')
+            ),
+            'r'
+          ]
+        ]
+      : []),
     ['Подвод воды', 'cfg.inSide', 's', M.inlet.sides.map(s => [s, SAN_SIDES[s]])],
     [
       'Выпуск',
@@ -39200,7 +39398,7 @@ function instPanel(e) {
     [
       'Отметки',
       esc(`выпуск +${fmt(g.drainZ)} · смыв +${fmt(g.flushZ)} · шпильки ${g.bolt} мм на +${fmt(g.boltZ)}`) +
-        `<b style="color:var(--warn,#f0b45e)">${esc(warn + lowRim)}</b>`,
+        `<b style="color:var(--warn,#f0b45e)">${esc(warn + lowRim + mdlWarn)}</b>`,
       'r'
     ],
     ['', '<button class="btn" data-sanlib="inst">Каталог моделей…</button>', 'r']
@@ -39942,6 +40140,8 @@ function openSanLib(cat) {
 
 /** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
 function initSanitaryLib() {
+  // a library model came from the network: only the items of that model are rebuilt (their 3D key includes the flag)
+  bus.on('libmodel', () => sync3D());
   try {
     document.addEventListener('click', ev => {
       const b = ev.target && ev.target.closest && ev.target.closest('[data-sanlib]');
@@ -116097,6 +116297,77 @@ function libMenu(b) {
   } catch (_) {}
 }
 
+// ===== core/bus.js =====
+/**
+ * core/bus.js
+ *
+ * bus — the event bus of the kernel: blocks announce what happened (emit) and other blocks react (on) without importing
+ * each other. Listeners are called synchronously in the order of subscription; a listener that throws is logged with
+ * console.error and does not stop the others.
+ */
+/** @type {Map<string, Set<Function>>} listeners by event name */
+const handlers = new Map();
+
+/**
+ * Event bus of the kernel.
+ * @namespace bus
+ */
+const bus = {
+  /**
+   * Subscribes fn to the event.
+   * @param {string} name event name
+   * @param {(data?:any)=>void} fn listener
+   * @returns {()=>void} function that unsubscribes this listener
+   */
+  on(name, fn) {
+    let s = handlers.get(name);
+    if (!s) handlers.set(name, (s = new Set()));
+    s.add(fn);
+    return () => bus.off(name, fn);
+  },
+  /**
+   * Removes the listener; unknown name or listener is ignored.
+   * @param {string} name event name
+   * @param {Function} fn listener given to on()
+   */
+  off(name, fn) {
+    const s = handlers.get(name);
+    if (!s) return;
+    s.delete(fn);
+    if (!s.size) handlers.delete(name);
+  },
+  /**
+   * Calls the listeners of the event synchronously. The list is copied first, so listeners may subscribe or
+   * unsubscribe while the event runs.
+   * @param {string} name event name
+   * @param {any} [data] payload given to every listener
+   */
+  emit(name, data) {
+    const s = handlers.get(name);
+    if (!s) return;
+    for (const fn of [...s]) {
+      try {
+        fn(data);
+      } catch (err) {
+        console.error('bus: listener of "' + name + '" failed', err);
+      }
+    }
+  },
+  /**
+   * Subscribes fn for one call only.
+   * @param {string} name event name
+   * @param {(data?:any)=>void} fn listener
+   * @returns {()=>void} function that cancels the subscription before it fires
+   */
+  once(name, fn) {
+    const off = bus.on(name, data => {
+      off();
+      fn(data);
+    });
+    return off;
+  }
+};
+
 // ===== samples/villa.js =====
 /**
  * samples/villa.js
@@ -131620,6 +131891,222 @@ function openConverter(openId) {
   }
   ov.hidden = false;
   if (openId) kcvPost({ op: 'open', id: openId });
+}
+
+// ===== blocks/catalog/model-db.js =====
+/**
+ * blocks/catalog/model-db
+ *
+ * Database of the manufacturer models (records without geometry: section › type › brand › model › article); generated by
+ * tools/models.js from models/src (model.json of each model) — do not edit by hand. The geometry lives in the separate files
+ * dist/models/<id>.kmb (blocks/catalog/model-lib.js loads them on first use).
+ */
+/** @type {Array<{id:string,section:string,type:string,brand:string,series:string,art:string,name:string,def:boolean,file:string,bbox:number[],tris:number,parts:string[],ports:object[]}>} */
+const LIBMODELS = [
+  {
+    id: 'tece-9300000',
+    section: 'plumbing',
+    type: 'inst',
+    brand: 'TECE',
+    series: 'TECEprofil',
+    art: '9300000',
+    name: 'TECEprofil модуль для WC с бачком Uni, 1120 мм',
+    def: true,
+    file: 'tece-9300000.kmb',
+    bbox: [-250, -172.6, -65.4, 250, 50, 1120],
+    tris: 21680,
+    parts: ['legs', 'studL', 'studR', 'drainBend', 'drainStub', 'inlet', 'body'],
+    ports: [
+      {
+        id: 'drain90',
+        s: 'k',
+        d: 90,
+        p: [0, 12, 210],
+        dir: [0, 1, 0],
+        align: true,
+        mirrorX: false,
+        n: 'выпуск к унитазу Ø90'
+      },
+      {
+        id: 'flush45',
+        s: '',
+        d: 45,
+        p: [0, 2, 357],
+        dir: [0, 1, 0],
+        align: false,
+        mirrorX: false,
+        n: 'смыв к унитазу Ø45'
+      },
+      {
+        id: 'studL',
+        s: '',
+        d: 12,
+        p: [-90, 50, 316],
+        dir: [0, 1, 0],
+        align: false,
+        mirrorX: false,
+        n: 'шпилька M12 слева'
+      },
+      {
+        id: 'studR',
+        s: '',
+        d: 12,
+        p: [90, 50, 316],
+        dir: [0, 1, 0],
+        align: false,
+        mirrorX: false,
+        n: 'шпилька M12 справа'
+      },
+      {
+        id: 'inlet',
+        s: 'hvs',
+        d: 20,
+        p: [-235, -80, 1020],
+        dir: [-1, 0, 0],
+        align: false,
+        mirrorX: true,
+        n: 'подвод воды R ½″'
+      },
+      {
+        id: 'sewer110',
+        s: 'k',
+        d: 110,
+        p: [0, -115, -65],
+        dir: [0, 0, -1],
+        align: false,
+        mirrorX: false,
+        n: 'выпуск в стояк Ø110, вниз'
+      }
+    ]
+  }
+];
+
+// ===== blocks/catalog/model-lib.js =====
+/**
+ * blocks/catalog/model-lib
+ *
+ * Library of manufacturer models (OBJ from SketchUp, baked by tools/models.js into dist/models/<id>.kmb): the records of the
+ * database (model-db.js: section › type › brand › model › article), the lazy loader and the placement of a model into a mesh
+ * builder. A model is shipped with the program and is not editable; a project keeps only its id. The geometry is loaded on
+ * first use (libModel starts the load and answers null until it is ready), then the bus event 'libmodel' is emitted and 3D
+ * rebuilds the items of that model. A failed load (no file, offline build, file://) is silent: the factory graphics stays.
+ */
+
+
+
+/** base — folder of the files relative to the page; fetcher(id, file) → Promise<ArrayBuffer> (tests); ver grows with every ready model. */
+const libState = { base: 'models/', fetcher: null, ver: 0, err: {} };
+const libCache = new Map();
+const libWait = new Map();
+
+/** The database record of a model (no geometry) or null. */
+function libModelInfo(id) {
+  return LIBMODELS.find(m => m.id === id) || null;
+}
+/** Records of a section and type (e.g. 'plumbing', 'inst'), optionally of one brand. */
+function libModelsOf(section, type, brand) {
+  return LIBMODELS.filter(m => m.section === section && m.type === type && (!brand || m.brand === brand));
+}
+/** The default model of a brand within the section and type (the record with def), or null. */
+function libModelDefault(section, type, brand) {
+  return libModelsOf(section, type, brand).find(m => m.def) || null;
+}
+/** Decodes an uncompressed KMB1 buffer: { id, bbox, ports, tris, parts: { id: [{ v: Float32Array, i: Uint16Array, col, op, tag }] } }. */
+function kmbDecode(buf) {
+  const u8 = new Uint8Array(buf);
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  if (String.fromCharCode(u8[0], u8[1], u8[2], u8[3]) !== 'KMB1') throw new Error('not a KMB1 file');
+  const hl = dv.getUint32(4, true);
+  const H = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + hl)));
+  const base = 8 + hl;
+  const parts = {};
+  for (const p of H.parts) {
+    parts[p.id] = p.chunks.map(c => {
+      const o = base + c.o;
+      const v = new Float32Array(c.nv * 3);
+      for (let k = 0; k < v.length; k++) v[k] = dv.getInt16(o + k * 2, true) * H.step;
+      const io = o + ((c.nv * 6 + 3) & ~3);
+      const i = new Uint16Array(u8.buffer.slice(u8.byteOffset + io, u8.byteOffset + io + c.nt * 6));
+      return { v, i, col: c.col, op: c.op, tag: c.tag, mat: c.mat };
+    });
+  }
+  return { id: H.id, bbox: H.bbox, ports: H.ports, tris: H.tris, parts };
+}
+/** Unpacks a downloaded file (gzip or plain KMB1) into an ArrayBuffer; gzip needs DecompressionStream. */
+async function libInflate(ab) {
+  const u8 = new Uint8Array(ab);
+  if (u8[0] !== 0x1f || u8[1] !== 0x8b) return ab;
+  if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
+  const s = new Blob([ab]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(s).arrayBuffer();
+}
+/** Starts the load of a model (once); resolves with the decoded model or null. */
+function libModelLoad(id) {
+  if (libCache.has(id)) return Promise.resolve(libCache.get(id));
+  if (libWait.has(id)) return libWait.get(id);
+  const info = libModelInfo(id);
+  if (!info || libState.err[id]) return Promise.resolve(null);
+  const get = libState.fetcher
+    ? libState.fetcher(id, info.file)
+    : typeof fetch === 'function'
+      ? fetch(libState.base + info.file).then(r => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        })
+      : Promise.reject(new Error('no fetch'));
+  const p = Promise.resolve(get)
+    .then(libInflate)
+    .then(ab => {
+      const m = kmbDecode(ab);
+      libCache.set(id, m);
+      libState.ver++;
+      bus.emit('libmodel', { id });
+      return m;
+    })
+    .catch(err => {
+      libState.err[id] = String((err && err.message) || err);
+      console.warn('Model library: "' + id + '" is not loaded, the factory graphics stays (' + libState.err[id] + ')');
+      return null;
+    })
+    .finally(() => libWait.delete(id));
+  libWait.set(id, p);
+  return p;
+}
+/** The decoded model if it is ready, otherwise null (the load is started on the first call). */
+function libModel(id) {
+  const m = libCache.get(id);
+  if (m) return m;
+  if (id && !libWait.has(id) && !libState.err[id] && libModelInfo(id)) libModelLoad(id);
+  return null;
+}
+/** True when the geometry of the model is loaded (cheap: no load is started). */
+function libModelReady(id) {
+  return libCache.has(id);
+}
+/** Puts the parts ids of a model into the mesh builder; map(x, y, z) → [x, y, z] places a point, flip reverses the winding (mirror). */
+function libModelPut(mb, m, ids, map, flip) {
+  mb.smooth(true);
+  for (const id of ids)
+    for (const c of m.parts[id] || []) {
+      mb.tag(c.tag);
+      const P = k => map(c.v[k * 3], c.v[k * 3 + 1], c.v[k * 3 + 2]);
+      const pts = new Array(c.v.length / 3);
+      for (let k = 0; k < pts.length; k++) pts[k] = P(k);
+      for (let t = 0; t < c.i.length; t += 3) {
+        const a = pts[c.i[t]],
+          b = pts[c.i[t + 1]],
+          d = pts[c.i[t + 2]];
+        if (flip) mb.tri3(c.col, a, d, b, c.op);
+        else mb.tri3(c.col, a, b, d, c.op);
+      }
+    }
+  mb.smooth(false);
+  mb.tag('');
+}
+/** Test hook: puts a decoded model into the cache without a download. */
+function libModelInject(id, m) {
+  libCache.set(id, m);
+  libState.ver++;
 }
 
 // ===== blocks/drafting/annot-xt.js =====
@@ -150624,6 +151111,13 @@ checkRule('fix-ports', {
           'Инсталляция «внутри стены» возможна только в каркасной стене — сейчас считается «к стене».',
           e.p
         );
+      if (g.model && (g.legLen < 0 || g.legLen > g.M.legs))
+        add_(
+          e,
+          'warn',
+          `Инсталляция ${g.M.art}: опоры от низа рамы до плиты ${Math.round(g.legLen)} мм — вне регулировки 0–${g.M.legs} мм (высота чаши ${Math.round(g.rim)} мм, пирог пола).`,
+          e.p
+        );
       if (g.mode === 'in' && g.cavity < g.M.D)
         add_(e, 'bad', `Рама ${g.M.D} мм не помещается в полость перегородки ${Math.round(g.cavity)} мм.`, e.p);
     }
@@ -153932,77 +154426,6 @@ function renderScene(r, scene, cam, o = {}) {
   }
   return renderCapped(r, scene, cam, pl, o);
 }
-
-// ===== core/bus.js =====
-/**
- * core/bus.js
- *
- * bus — the event bus of the kernel: blocks announce what happened (emit) and other blocks react (on) without importing
- * each other. Listeners are called synchronously in the order of subscription; a listener that throws is logged with
- * console.error and does not stop the others.
- */
-/** @type {Map<string, Set<Function>>} listeners by event name */
-const handlers = new Map();
-
-/**
- * Event bus of the kernel.
- * @namespace bus
- */
-const bus = {
-  /**
-   * Subscribes fn to the event.
-   * @param {string} name event name
-   * @param {(data?:any)=>void} fn listener
-   * @returns {()=>void} function that unsubscribes this listener
-   */
-  on(name, fn) {
-    let s = handlers.get(name);
-    if (!s) handlers.set(name, (s = new Set()));
-    s.add(fn);
-    return () => bus.off(name, fn);
-  },
-  /**
-   * Removes the listener; unknown name or listener is ignored.
-   * @param {string} name event name
-   * @param {Function} fn listener given to on()
-   */
-  off(name, fn) {
-    const s = handlers.get(name);
-    if (!s) return;
-    s.delete(fn);
-    if (!s.size) handlers.delete(name);
-  },
-  /**
-   * Calls the listeners of the event synchronously. The list is copied first, so listeners may subscribe or
-   * unsubscribe while the event runs.
-   * @param {string} name event name
-   * @param {any} [data] payload given to every listener
-   */
-  emit(name, data) {
-    const s = handlers.get(name);
-    if (!s) return;
-    for (const fn of [...s]) {
-      try {
-        fn(data);
-      } catch (err) {
-        console.error('bus: listener of "' + name + '" failed', err);
-      }
-    }
-  },
-  /**
-   * Subscribes fn for one call only.
-   * @param {string} name event name
-   * @param {(data?:any)=>void} fn listener
-   * @returns {()=>void} function that cancels the subscription before it fires
-   */
-  once(name, fn) {
-    const off = bus.on(name, data => {
-      off();
-      fn(data);
-    });
-    return off;
-  }
-};
 
 // ===== core/csg.js =====
 /**
