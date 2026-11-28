@@ -10433,7 +10433,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.94';
+const APP_VER = '59.95';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -132040,6 +132040,20 @@ async function libInflate(ab) {
   const s = new Blob([ab]).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Response(s).arrayBuffer();
 }
+/** Fallback for hosts that serve only text types: the same file as base64 (<id>.kmb.txt); resolves with an ArrayBuffer. */
+function libFetchTxt(url) {
+  return fetch(url)
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(t => {
+      const s = atob(t.trim()),
+        u = new Uint8Array(s.length);
+      for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+      return u.buffer;
+    });
+}
 /** Starts the load of a model (once); resolves with the decoded model or null. */
 function libModelLoad(id) {
   if (libCache.has(id)) return Promise.resolve(libCache.get(id));
@@ -132049,10 +132063,12 @@ function libModelLoad(id) {
   const get = libState.fetcher
     ? libState.fetcher(id, info.file)
     : typeof fetch === 'function'
-      ? fetch(libState.base + info.file).then(r => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.arrayBuffer();
-        })
+      ? fetch(libState.base + info.file)
+          .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+          })
+          .catch(() => libFetchTxt(libState.base + info.file + '.txt'))
       : Promise.reject(new Error('no fetch'));
   const p = Promise.resolve(get)
     .then(libInflate)
