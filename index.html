@@ -10433,7 +10433,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.96';
+const APP_VER = '59.97';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15097,7 +15097,17 @@ function wallOpeningNiches(w) {
       const c = e.cfg || {};
       if (e.kind === 'shsys') {
         const g = shsGeo(e);
-        if (g.conc) add_(e, e.p, 95, fz + g.z - 115, fz + g.z + 115, 100, 'Ниша под Rapido SmartBox', fs);
+        if (g.conc)
+          add_(
+            e,
+            e.p,
+            g.bx.hw,
+            fz + g.z + g.bx.lo,
+            fz + g.z + g.bx.hi,
+            g.bx.depth - g.ft,
+            'Ниша под Rapido SmartBox',
+            fs
+          );
       } else if (e.kind === 'vtrap') {
         const V = vtOf(e);
         if (V.mount === 'in')
@@ -38667,6 +38677,14 @@ function instHost(e) {
   const h = e.host != null ? byId(e.host) : null;
   return h && h.type === 'wall' ? h : null;
 }
+/** Thickness (mm) of the finish of the host wall in front of a wall item at the height zz (tiles, panels, paint: the finished surface over the structural face); 0 without a host. */
+function wallFinishAt(e, zz) {
+  const host = instHost(e);
+  if (!host) return 0;
+  const wi = wallInfo(host),
+    side = dot(sub(e.p, host.a), wi.n) >= 0 ? 1 : -1;
+  return faceFinishAt(host, side, dot(sub(e.p, host.a), wi.u), zz).th;
+}
 function instGeo(e) {
   const M = instOf(e),
     P = panOf(e),
@@ -40623,6 +40641,29 @@ SANLIB0.push(
           'Подключение шланга с держателем (26658)',
           'Шланг Silverflex 1500 мм (28364)'
         ]
+      },
+      {
+        k: 'smartcontrol-3',
+        art: 'уточнить',
+        n: 'Grohtherm SmartControl, 3 кнопки, квадратная накладка + Rapido SmartBox',
+        ctrl: 'smart',
+        shape: 'cube',
+        out3: true,
+        model: 'grohe-smartcontrol-3',
+        price: 0,
+        arm: 380,
+        head: { d: 250, n: 'Tempesta 250 Cube (26687)' },
+        hand: { d: 0, stick: true, n: 'Euphoria Cube Stick (27698)' },
+        hose: 1500,
+        comp: [
+          'Термостат скрытого монтажа Grohtherm SmartControl на 3 выхода, квадратная накладка (3 кнопки)',
+          'Rapido SmartBox ½″ (35600): три выхода ½″, два подвода ½″ снизу, глубина в стене ≈100 мм',
+          'Верхний душ Tempesta 250 Cube с кронштейном 380 мм (26687)',
+          'Ручной душ Euphoria Cube Stick (27698)',
+          'Подключение шланга с держателем (26370)',
+          'Шланг Rotaflex 1500 мм (28409)',
+          '3-й выход ½″ (излив / форсунки) — свободен, закрыт заглушкой'
+        ]
       }
     ],
     feats: [
@@ -41009,6 +41050,21 @@ FIXK.mixer = {
 };
 
 /* ---- shower systems ---- */
+/** The article shown for a set variant: V.art (e.g. «уточнить» while the article is unknown) or its key V.k. */
+const vArt = V => V.art || V.k;
+/** Length of the stub of the third output of the SmartBox from its side (mm): the connection point lies at its end. */
+const SHS_OUT3 = 45;
+/**
+ * Hidden body (Rapido SmartBox) of a concealed set in the local axes of the item: { hw (half width), lo / hi (z from the axis of the
+ * mixer), depth (into the wall from the finished face), model (the manufacturer model or '') }. A variant with a model takes the box
+ * from the database record of the model (the buried part, tools/models.js «embed»), the others use the generic 190 × 230 × 100.
+ */
+function shsBox(V) {
+  const em = V.model ? (libModelInfo(V.model) || {}).embed : null;
+  if (em) return { hw: em.box[3], lo: em.box[2], hi: em.box[5], depth: em.depth, model: V.model };
+  return { hw: 95, lo: -115, hi: 115, depth: 100, model: '' };
+}
+/** Geometry of a shower system item: model M, variant V, heights, shape and the hidden body bx (concealed sets). */
 function shsGeo(e) {
   const c = e.cfg || {};
   const M = sanM(c.model, 'shs');
@@ -41032,7 +41088,9 @@ function shsGeo(e) {
     zt: z + (+c.riser || M.riser || 1000),
     headZ: +c.headZ || 2150,
     outX: c.outX ?? 260,
-    shape: V.shape || 'round'
+    shape: V.shape || 'round',
+    bx: shsBox(V),
+    ft: conc && V.model ? wallFinishAt(e, (e.z || 0) + z) : 0
   };
 }
 function buildShsExposed(mb, g) {
@@ -41121,59 +41179,99 @@ function buildShsExposed(mb, g) {
   hoseLoop(mb, [V.ctrl === 'div' ? 0 : 40, y, z - 30], [0, y + 52, hz - 48], 420);
 }
 function buildShsConcealed(mb, g) {
-  const { V, z, headZ, arm, head, hand, shape, outX } = g,
+  const { V, z, headZ, head, hand, shape, outX, bx } = g,
+    F = g.ft, // finish of the wall in front of the face (a set with a model stands on the finished surface)
+    arm = g.arm + F,
     cube = shape === 'cube',
     C_ = CHR;
-  mb.tag('Rapido SmartBox (скрытая часть)');
-  mb.box(-95, -100, z - 115, 95, -12, z + 115, '#7a828c');
-  mb.tag('Скрытая подводка ½″');
-  mb.tube([0, -55, z + 115], [0, -55, headZ], 9, '#c9a640', 10);
-  mb.tube([0, -55, headZ], [0, -2, headZ], 9, '#c9a640', 10);
-  mb.tube([95, -55, z], [outX, -55, z], 9, '#c9a640', 10);
-  mb.tube([outX, -55, z], [outX, -2, z], 9, '#c9a640', 10);
-  mb.tag(V.ctrl === 'thermo' ? 'Термостат Grohtherm (накладка)' : 'Смеситель (накладка)');
-  if (cube) mb.box(-79, 0, z - 79, 79, 8, z + 79, C_);
-  else discY(mb, 0, 0, 8, z, 79, C_, 40);
-  if (V.ctrl === 'thermo') {
-    mb.tag('Рукоятки термостата');
-    discY(mb, 0, 8, 58, z + 20, 30, C_);
-    discY(mb, 0, 8, 26, z - 45, 22, C_);
+  const mdl = bx.model ? libModel(bx.model) : null;
+  if (mdl) {
+    // the plate, the buttons, the knob and the hidden body of the model: the centre of the plate on the axis of the mixer,
+    // the back of the plate on the finished surface (y = F, the finish of the wall at the place)
+    libModelPut(mb, mdl, ['box', 'plate', 'screws', 'buttons', 'knob'], (x, y, zz) => [x, y + F, z + zz]);
+  } else if (V.ctrl === 'smart') {
+    mb.tag('Rapido SmartBox (скрытая часть)');
+    mb.box(-bx.hw, F - bx.depth, z + bx.lo, bx.hw, F - 10, z + bx.hi, '#7a828c');
+    mb.tag('Термостат SmartControl (накладка)');
+    mb.box(-79, F, z - 79, 79, F + 12, z + 79, C_);
+    mb.tag('Кнопки SmartControl');
+    for (const x of [-45, 0, 45]) mb.box(x - 17, F + 12, z, x + 17, F + 29, z + 30, '#d9dde2');
+    mb.tag('Ручка температуры');
+    discY(mb, 0, F + 12, F + 43, z - 40, 24, C_);
   } else {
-    mb.tag('Рычаг');
-    if (cube) mb.box(-14, 8, z - 14, 14, 40, z + 14, C_);
-    else discY(mb, 0, 8, 40, z, 16, C_);
-    mb.obox([0, 34, z + 10], [0, 34, z + 80], 18, 10, C_);
-    mb.tag('Переключатель');
-    discY(mb, 0, 8, 22, z - 50, 14, C_);
+    mb.tag('Rapido SmartBox (скрытая часть)');
+    mb.box(-95, -100, z - 115, 95, -12, z + 115, '#7a828c');
+  }
+  mb.tag('Скрытая подводка ½″');
+  mb.tube([0, -55, z + bx.hi], [0, -55, headZ], 9, '#c9a640', 10);
+  mb.tube([0, -55, headZ], [0, F - 2, headZ], 9, '#c9a640', 10);
+  mb.tube([bx.hw, -55, z], [outX, -55, z], 9, '#c9a640', 10);
+  mb.tube([outX, -55, z], [outX, F - 2, z], 9, '#c9a640', 10);
+  if (V.out3) {
+    // the third output of the body: a short stub with a plug, the connection point of the set (shsPorts)
+    mb.tag('3-й выход SmartBox (заглушка)');
+    mb.tube([-bx.hw, -55, z], [-bx.hw - SHS_OUT3, -55, z], 9, '#c9a640', 10);
+    mb.tube([-bx.hw - SHS_OUT3, -55, z], [-bx.hw - SHS_OUT3 - 8, -55, z], 11, '#9aa1a9', 10);
+  }
+  if (!mdl && V.ctrl !== 'smart') {
+    mb.tag(V.ctrl === 'thermo' ? 'Термостат Grohtherm (накладка)' : 'Смеситель (накладка)');
+    if (cube) mb.box(-79, 0, z - 79, 79, 8, z + 79, C_);
+    else discY(mb, 0, 0, 8, z, 79, C_, 40);
+    if (V.ctrl === 'thermo') {
+      mb.tag('Рукоятки термостата');
+      discY(mb, 0, 8, 58, z + 20, 30, C_);
+      discY(mb, 0, 8, 26, z - 45, 22, C_);
+    } else {
+      mb.tag('Рычаг');
+      if (cube) mb.box(-14, 8, z - 14, 14, 40, z + 14, C_);
+      else discY(mb, 0, 8, 40, z, 16, C_);
+      mb.obox([0, 34, z + 10], [0, 34, z + 80], 18, 10, C_);
+      mb.tag('Переключатель');
+      discY(mb, 0, 8, 22, z - 50, 14, C_);
+    }
   }
   mb.tag('Кронштейн верхнего душа');
   if (cube) {
-    mb.box(-30, 0, headZ - 30, 30, 8, headZ + 30, C_);
-    mb.obox([0, 8, headZ], [0, arm, headZ], 22, 12, C_);
+    mb.box(-30, F, headZ - 30, 30, F + 8, headZ + 30, C_);
+    mb.obox([0, F + 8, headZ], [0, arm, headZ], 22, 12, C_);
   } else {
-    discY(mb, 0, 0, 8, headZ, 32, C_);
-    mb.tube([0, 8, headZ], [0, arm, headZ], 11, C_, 14);
+    discY(mb, 0, F, F + 8, headZ, 32, C_);
+    mb.tube([0, F + 8, headZ], [0, arm, headZ], 11, C_, 14);
   }
   mb.tag('Верхний душ');
   mb.cyl(0, arm - 10, headZ - 22, headZ, 12, C_, 12);
   showerHead(mb, 0, arm - 10, headZ - 22, head.d, shape, C_);
   mb.tag('Подключение шланга с держателем');
-  if (cube) mb.box(outX - 28, 0, z - 40, outX + 28, 8, z + 40, C_);
-  else discY(mb, outX, 0, 8, z, 28, C_);
-  mb.box(outX - 14, 8, z - 22, outX + 14, 34, z - 6, C_);
-  mb.box(outX - 20, 8, z + 6, outX + 20, 48, z + 30, C_);
+  if (cube) mb.box(outX - 28, F, z - 40, outX + 28, F + 8, z + 40, C_);
+  else discY(mb, outX, F, F + 8, z, 28, C_);
+  mb.box(outX - 14, F + 8, z - 22, outX + 14, F + 34, z - 6, C_);
+  mb.box(outX - 20, F + 8, z + 6, outX + 20, F + 48, z + 30, C_);
   mb.tag('Ручной душ');
-  handShower(mb, [outX, 46, z - 10], norm3([0, 0.18, 1]), hand.stick ? 250 : 180, hand.d || 110, C_, hand.stick);
+  handShower(mb, [outX, F + 46, z - 10], norm3([0, 0.18, 1]), hand.stick ? 250 : 180, hand.d || 110, C_, hand.stick);
   mb.tag('Шланг');
-  hoseLoop(mb, [outX, 30, z - 22], [outX, 52, z - 18], 520);
+  hoseLoop(mb, [outX, F + 30, z - 22], [outX, F + 52, z - 18], 520);
 }
 function shsPorts(e) {
   const g = shsGeo(e);
-  if (g.conc)
-    return [
-      { s: 'gvs', d: 20, x: -60, y: -55, z: g.z - 115, n: 'ГВС ½″ (Rapido SmartBox)' },
-      { s: 'hvs', d: 20, x: 60, y: -55, z: g.z - 115, n: 'ХВС ½″ (Rapido SmartBox)' }
+  if (g.conc) {
+    const ps = [
+      { s: 'gvs', d: 20, x: -60, y: -55, z: g.z + g.bx.lo, n: 'ГВС ½″ (Rapido SmartBox)' },
+      { s: 'hvs', d: 20, x: 60, y: -55, z: g.z + g.bx.lo, n: 'ХВС ½″ (Rapido SmartBox)' }
     ];
+    // the third output of the SmartBox (a set on three outputs): an optional point, free is not a defect (check «fix-ports»)
+    if (g.V.out3)
+      ps.push({
+        s: 'hvs',
+        d: 20,
+        x: -g.bx.hw - SHS_OUT3,
+        y: -55,
+        z: g.z,
+        out: true,
+        opt: true,
+        n: '3-й выход (излив / форсунки) ½″, смешанная вода'
+      });
+    return ps;
+  }
   if (g.V.ctrl === 'div')
     return [{ s: 'hvs', d: 20, x: 0, y: 0, z: g.z, n: 'вход смешанной воды ½″ (от отдельного смесителя)' }];
   return [
@@ -41185,6 +41283,10 @@ FIXK.shsys = {
   n: 'Душевая система (модель)',
   cfg: () => ({ model: SANDEF.shs, v: '', z: 0, headZ: 2150, outX: 260 }),
   ports: shsPorts,
+  k3: e => {
+    const g = shsGeo(e);
+    return [libModelReady(g.bx.model), g.ft];
+  },
   plan: e => {
     const g = shsGeo(e);
     const r = g.head.d / 2,
@@ -41207,8 +41309,8 @@ FIXK.shsys = {
             poly: [
               [-79, 0],
               [79, 0],
-              [79, 8],
-              [-79, 8]
+              [79, g.V.ctrl === 'smart' ? 29 : 8],
+              [-79, g.V.ctrl === 'smart' ? 29 : 8]
             ]
           },
           {
@@ -41260,7 +41362,7 @@ FIXK.shsys = {
     const warn = top - 24 > S.ceil - 80 ? ' · ⚠ лейка упирается в потолок' : '';
     return [
       ['Модель', 'cfg.model', 's', sanAll('shs').map(m => [m.id, m.name + (m.user ? ' · своя' : '')])],
-      ['Исполнение (набор)', 'cfg.v', 's', M.variants.map(v => [v.k, `${v.k} · ${v.n} · ${priceTxt(v.price)}`])],
+      ['Исполнение (набор)', 'cfg.v', 's', M.variants.map(v => [v.k, `${vArt(v)} · ${v.n} · ${priceTxt(v.price)}`])],
       [g.conc ? 'Ось смесителя от пола' : 'Ось смесителя (эксцентриков) от пола', 'cfg.z', 'n'],
       ...(g.conc
         ? [
@@ -41285,14 +41387,14 @@ FIXK.shsys = {
       M = g.M,
       V = g.V;
     const rows = [
-      ['Набор', `${M.brand} ${M.series} · ${V.k}`],
+      ['Набор', `${M.brand} ${M.series} · ${vArt(V)}`],
       ['Исполнение', `${V.n} · ${priceTxt(V.price)}`],
       ['Верхний душ', `${g.head.n}, Ø${g.head.d}${g.shape === 'cube' ? ' (квадратный)' : ''}`],
       ['Кронштейн', `${g.arm} мм`],
       ['Ручной душ', g.hand.n],
       ['Шланг', `${g.hose} мм`]
     ];
-    return ['Состав и характеристики', V.k, sanInfoHTML(rows, [...(V.comp || []), ...M.feats], SHS_NOTE)];
+    return ['Состав и характеристики', vArt(V), sanInfoHTML(rows, [...(V.comp || []), ...M.feats], SHS_NOTE)];
   },
   spec: e => {
     const g = shsGeo(e),
@@ -41301,7 +41403,7 @@ FIXK.shsys = {
     return [
       [
         'shs:' + V.k,
-        `${g.conc ? 'Душевой набор скрытого монтажа' : 'Душевая система'} ${M.brand} ${g.conc ? V.n : M.series + ', ' + V.n} (${V.k})`
+        `${g.conc ? 'Душевой набор скрытого монтажа' : 'Душевая система'} ${M.brand} ${g.conc ? V.n : M.series + ', ' + V.n} (${vArt(V)})`
       ]
     ];
   }
@@ -131948,8 +132050,28 @@ function openConverter(openId) {
  * tools/models.js from models/src (model.json of each model) — do not edit by hand. The geometry lives in the separate files
  * dist/models/<id>.kmb (blocks/catalog/model-lib.js loads them on first use).
  */
-/** @type {Array<{id:string,section:string,type:string,brand:string,series:string,art:string,name:string,def:boolean,file:string,bbox:number[],tris:number,parts:string[],legs?:object,ports:object[]}>} */
+/** @type {Array<{id:string,section:string,type:string,brand:string,series:string,art:string,name:string,def:boolean,file:string,bbox:number[],tris:number,parts:string[],legs?:object,embed?:{part:string,box:number[],depth:number},ports:object[]}>} */
 const LIBMODELS = [
+  {
+    id: 'grohe-smartcontrol-3',
+    section: 'plumbing',
+    type: 'shs',
+    brand: 'GROHE',
+    series: 'Grohtherm SmartControl',
+    art: 'уточнить',
+    name: 'GROHE Grohtherm SmartControl, 3 выхода, квадратная накладка + Rapido SmartBox',
+    def: true,
+    file: 'grohe-smartcontrol-3.kmb',
+    bbox: [-79, -101.5, -79, 79, 43, 79],
+    tris: 8733,
+    parts: ['screws', 'buttons', 'knob', 'plate', 'box'],
+    embed: {
+      part: 'box',
+      box: [-73, -101.5, -73, 73, -10, 73],
+      depth: 101.5
+    },
+    ports: []
+  },
   {
     id: 'tece-9300000',
     section: 'plumbing',
@@ -151159,6 +151281,7 @@ checkRule('fix-ports', {
     if (e.kind === 'manifold' || !K) return;
     for (const q of portsOf(e)) {
       if (K.src) break;
+      if (q.opt) continue; // an optional output (the third output of a SmartBox) may stay free
       const has = S.ents.some(
         p =>
           p.type === 'pipe' &&
