@@ -3180,28 +3180,6 @@ label.ck {
 }
 
 /* the panel tab: sections, checks, tables, 3D */
-.pntabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 10px;
-}
-.pntab {
-  font: inherit;
-  font-size: 13px;
-  padding: 7px 12px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.pntab.on {
-  color: var(--fg);
-  border-bottom-color: currentColor;
-  font-weight: 600;
-}
 .pnbadge {
   display: inline-block;
   min-width: 18px;
@@ -3210,11 +3188,11 @@ label.ck {
   font-size: 11px;
   line-height: 18px;
   text-align: center;
-  color: #fff;
-  background: #d68910;
+  color: var(--win-bg);
+  background: var(--warn);
 }
 .pnbadge.bad {
-  background: #d23c3c;
+  background: var(--danger);
 }
 .pnbody {
   display: flex;
@@ -3249,17 +3227,17 @@ label.ck {
   place-items: center;
   font-size: 12px;
   font-weight: 700;
-  color: #fff;
-  background: #8b939d;
+  color: var(--win-bg);
+  background: var(--muted);
 }
 .pnck.ok .pnci {
-  background: #2e9b5b;
+  background: var(--ok);
 }
 .pnck.warn .pnci {
-  background: #d68910;
+  background: var(--warn);
 }
 .pnck.bad .pnci {
-  background: #d23c3c;
+  background: var(--danger);
 }
 .pntbl {
   width: 100%;
@@ -3445,50 +3423,6 @@ label.ck {
   padding: 0 5px;
   background: var(--panel);
   border-radius: 3px;
-}
-
-/* collector 3D editor: the step bar next to the selected part */
-.mf3hud {
-  position: absolute;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 6px;
-  /* narrow screen: the bar goes to a second row instead of running off the view */
-  max-width: calc(100% - 12px);
-  background: rgba(20, 23, 28, 0.94);
-  border: 1px solid #f0b45e;
-  border-radius: 6px;
-  z-index: 3;
-}
-.mf3hud[hidden] {
-  display: none;
-}
-.mf3hud .btn {
-  min-width: 30px;
-  padding: 3px 7px;
-  margin: 0;
-}
-.mf3hud .mf3hv {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #f0b45e;
-  font:
-    12px 'IBM Plex Mono',
-    monospace;
-}
-.mf3hud .mf3hv input {
-  width: 64px;
-}
-.mf3hud .mf3hs {
-  color: #9aa3ad;
-  font:
-    11px 'IBM Plex Mono',
-    monospace;
-  margin-left: 2px;
 }
 
 /*
@@ -7337,6 +7271,308 @@ html[data-form='tablet'] .modal.win > .win-dlg {
   background: var(--scene);
 }
 
+/* ===== Windows of the group «Инженерия» on the common frame (uikit/window.js): engineering systems (#mepdlg: Электрика, Вентиляция, Щит,
+   Коллектор, Общие), the climate calculation (#avdlg), the collector 3D editor inside the first one (HUD, dynamic input field).
+   Colours — only theme variables; dark 3D scenes — --scene; the colours of DATA (device icons, system and group colours, schemes) stay in the data.
+   Loaded after zz-windows-catalog.css. ===== */
+
+/* ---- 04–08 engineering systems: one row of tabs, the body is a column that scrolls ---- */
+.mepwin .win-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mepwin .mepb {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.mep-row {
+  align-items: center;
+}
+.mep-fl {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.mep-num,
+.mep-id {
+  width: 90px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 7px;
+  color: var(--fg);
+}
+.mep-id {
+  width: 80px;
+}
+.mep-sech {
+  margin-bottom: 6px;
+}
+.mep-mt8 {
+  margin-top: 8px;
+}
+.mep-mt10 {
+  margin-top: 10px;
+}
+.mep-mb4 {
+  margin-bottom: 4px;
+}
+.mep-form1 {
+  grid-template-columns: 1fr;
+}
+.mep-hint {
+  margin: 4px 0;
+}
+.mep-hint0 {
+  margin: 0;
+}
+.mep-self {
+  align-self: center;
+}
+.mep-pad {
+  padding: 16px;
+}
+.mep-fill {
+  flex: 1;
+}
+.mep-mode {
+  display: inline-flex;
+  gap: 0;
+  margin-right: 8px;
+}
+.mep-mode .btn + .btn {
+  margin-left: -1px;
+}
+.m3cl {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--danger);
+}
+.m3cl li {
+  cursor: pointer;
+}
+
+/* ---- the second row of tabs inside a tab (the panel: Сборка / 3D / Однолинейная схема / Проверки / Ведомость) ---- */
+.wtabs.sub {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wtabs.sub button {
+  padding: 5px 11px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  flex: none;
+}
+.wtabs.sub button:hover {
+  color: var(--fg);
+}
+.wtabs.sub button.on {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+html[data-form='tablet'] .wtabs.sub button,
+html[data-touch='1'] .wtabs.sub button {
+  min-height: 44px;
+}
+/* the badge of the checks: the skins recolour .bad, so the text colour is set here with a stronger selector */
+html .wtabs .pnbadge,
+html .wtabs .pnbadge.bad {
+  color: var(--win-bg);
+}
+#pnSvg {
+  width: 100%;
+  max-height: 66vh;
+  touch-action: none;
+  font-family: var(--f-ui);
+}
+
+/* ---- 07 collector: the 3D area, its HUD and the dynamic input field ---- */
+.pnsvg.mf3box {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  min-height: 360px;
+  background: var(--scene);
+}
+.mf3box #mf3cv {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.mf3box #mf3ov {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.mepwin .pnwrap > .pnsvg:not(.mf3box) {
+  overflow: auto;
+}
+.mf3hud,
+.mf3dynw {
+  background: color-mix(in srgb, var(--scene) 94%, transparent);
+  border: 1px solid var(--warn);
+  color: var(--fg);
+}
+.mf3hud {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  /* narrow screen: the bar goes to a second row instead of running off the view */
+  max-width: calc(100% - 12px);
+  border-radius: 6px;
+  z-index: 3;
+}
+.mf3hud[hidden],
+.mf3dynw[hidden] {
+  display: none;
+}
+.mf3hud .btn {
+  min-width: 30px;
+  padding: 3px 7px;
+  margin: 0;
+}
+.mf3hud .mf3hv,
+.mf3dynw #mf3dynl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warn);
+  font:
+    12px 'IBM Plex Mono',
+    monospace;
+}
+.mf3hud .mf3hv input {
+  width: 64px;
+}
+.mf3hud .mf3hs {
+  color: var(--muted);
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+  margin-left: 2px;
+}
+.mf3dynw {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: 5px;
+  padding: 4px 8px;
+  z-index: 3;
+}
+.mf3dynw input {
+  width: 90px;
+}
+@media (max-width: 760px) {
+  .mepwin .mepb.collmode {
+    overflow: auto;
+  }
+  .mepwin .pnsvg.mf3box {
+    min-height: 300px;
+    height: 56vh;
+  }
+}
+
+/* ---- 22 climate calculation ---- */
+.avwin .avb {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.avwin .win-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.avwin .avb > * {
+  flex-shrink: 0;
+}
+.avwin .avsum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.avwin .avsum b {
+  color: var(--fg);
+  font-size: 15px;
+  display: block;
+}
+.avwin .mtbl td {
+  font-size: 12px;
+}
+.avwin td.n,
+.avwin th.n {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.avwin tr[data-sel] {
+  cursor: pointer;
+}
+.avwin tr[data-sel]:hover td {
+  background: var(--panel2);
+}
+.avwin .bad {
+  color: var(--danger);
+}
+.avwin .warn {
+  color: var(--warn);
+}
+.avwin .ok {
+  color: var(--ok);
+}
+.avwin .avnorm {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px 14px;
+}
+.avwin .avnorm label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.avwin .avnorm input,
+.avwin .avnorm select {
+  width: 80px;
+}
+.avwin .avmsg {
+  font-size: 12px;
+  color: var(--muted);
+}
+html .modal.win > .avwin.win-dlg {
+  --ww: 980px;
+  height: auto;
+  max-height: min(92vh, 100%);
+}
+
 /* ===== Windows of the group «Отделка и стены» on the common frame (uikit/window.js): wall types (#wtdlg), section profiles (#prdlg),
    molding layout (#mledlg), tile layout (#lvdlg), glass drawing (#gvdlg), the finishing brush (#finpop, a floating panel).
    Colours — only theme variables; dark canvases and 3D previews — --scene. Paper drawings (the layout scheme, the cut tiles, the glass sheet,
@@ -9756,12 +9992,6 @@ html #app #hideBadge:hover {
   <button data-f="new">Новый чертёж</button>
 </div>
 
-<div id="mepdlg" class="modal" hidden>
-  <div class="dlg" role="dialog" aria-label="Инженерные системы">
-    <div class="dlgh"><h3>Инженерные системы</h3><button class="x" id="mepClose" aria-label="Закрыть">×</button></div>
-    <div class="mepwrap"><div class="tabsrow" id="meptabs"><button data-t="el" class="on">Электрика</button><button data-t="vt">Вентиляция</button><button data-t="panel">Щит</button><button data-t="coll">Коллектор</button><button data-t="gen">Общие</button></div><div class="mepb" id="mepbody"></div></div>
-  </div>
-</div>
 <input type="file" id="dxfIn" hidden accept=".dxf">
 <input type="file" id="metaIn" hidden>
 <div id="wsmenu" class="pop menu" hidden></div>
@@ -9826,7 +10056,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.91';
+const APP_VER = '59.92';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -29151,8 +29381,35 @@ defineTools({
 
 /* engineering dialog */
 let mepTab = 'el';
+const MEP_TABS = [
+  { k: 'el', n: 'Электрика' },
+  { k: 'vt', n: 'Вентиляция' },
+  { k: 'panel', n: 'Щит' },
+  { k: 'coll', n: 'Коллектор' },
+  { k: 'gen', n: 'Общие' }
+];
+/** Builds the «Инженерные системы» window once, on the first call (the frame code loads after the start-up code): one row of tabs, the body is #mepbody. */
+function mepWindow() {
+  if ($('#mepdlg')) return;
+  openWindow({
+    id: 'mepdlg',
+    title: 'Инженерные системы',
+    size: 'xl',
+    cls: 'mepwin',
+    closeId: 'mepClose',
+    tabs: MEP_TABS,
+    tab: mepTab,
+    onTab: k => {
+      mepTab = k;
+      renderMEP();
+    },
+    body: '<div class="mepb" id="mepbody"></div>'
+  });
+}
+/** Opens the engineering window on the tab `t` (the last tab when omitted). */
 function openMEP(t) {
   if (t) mepTab = t;
+  mepWindow();
   $('#mepdlg').hidden = false;
   renderMEP();
 }
@@ -29192,8 +29449,14 @@ function groupCheck(gr, s) {
   if (!out.length) out.push(['ok', 'в норме']);
   return out;
 }
+/** Redraws the active tab of the engineering window. */
 function renderMEP() {
-  document.querySelectorAll('#meptabs button').forEach(b => b.classList.toggle('on', b.dataset.t === mepTab));
+  mepWindow();
+  document.querySelectorAll('#mepdlg [data-wtab]').forEach(b => {
+    const on = b.dataset.wtab === mepTab;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on);
+  });
   const el = $('#mepbody');
   el.classList.toggle('collmode', mepTab === 'coll');
   if (mepTab === 'panel') {
@@ -29207,7 +29470,7 @@ function renderMEP() {
   if (mepTab === 'el') {
     const st = groupStats();
     el.innerHTML = `<p class="hint">Группы — линии квартирного щита. Устройства и трассы получают группу при установке (опция «Группа» в команде). Ток считается по сумме мощностей устройств при 230 В. Проверка сечения медного кабеля при скрытой прокладке по типовой практике: 1,5 мм² — автомат до 10 А, 2,5 мм² — до 16 А, 4 мм² — до 25 А, 6 мм² — до 32 А.</p>
-    <div class="tblwrap"><table class="mtbl"><thead><tr><th>№</th><th>Название</th><th>Автомат</th><th>Кабель</th><th>Цвет</th><th style="text-align:right">Устр.</th><th style="text-align:right">P, Вт</th><th style="text-align:right">I, А</th><th style="text-align:right">Кабель, м</th><th>Проверка</th><th></th></tr></thead><tbody>${S.elec.groups
+    <div class="tblwrap"><table class="mtbl"><thead><tr><th>№</th><th>Название</th><th>Автомат</th><th>Кабель</th><th>Цвет</th><th class="n">Устр.</th><th class="n">P, Вт</th><th class="n">I, А</th><th class="n">Кабель, м</th><th>Проверка</th><th></th></tr></thead><tbody>${S.elec.groups
       .map(gr => {
         const s = st.get(gr.n) || { P: 0, n: 0, L: 0, ids: [] };
         return `<tr data-g="${gr.n}"><td class="n">${gr.n}</td><td><input data-k="name" value="${esc(gr.name)}" aria-label="Название группы"></td><td><select data-k="brk">${BREAKERS.map(b => `<option ${b === gr.brk ? 'selected' : ''}>${b}</option>`).join('')}</select></td><td><select data-k="cable">${CABLES.map(c => `<option ${c === gr.cable ? 'selected' : ''}>${c}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${gr.col}" aria-label="Цвет группы"></td><td class="n">${s.n}</td><td class="n">${Math.round(s.P)}</td><td class="n">${(s.P / 230).toFixed(1)}</td><td class="n">${(s.L / 1000).toFixed(1)}</td><td>${groupCheck(
@@ -29220,7 +29483,7 @@ function renderMEP() {
           )}</td><td><button class="btn" data-del="${gr.n}" aria-label="Удалить группу" ${s.n || s.L ? 'disabled title="Группа используется"' : ''}>×</button></td></tr>`;
       })
       .join('')}</tbody></table></div>
-    <div class="btnrow" style="align-items:center"><button class="btn" id="mepAddG">+ Группа</button><label class="fl" style="flex-direction:row;align-items:center;gap:8px">Запас кабеля на каждое подключение, мм <input type="number" id="mepRes" value="${S.elec.reserve}" style="width:90px;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:5px 7px"></label></div>`;
+    <div class="btnrow mep-row"><button class="btn" id="mepAddG">+ Группа</button><label class="fl mep-fl">Запас кабеля на каждое подключение, мм <input type="number" id="mepRes" class="mep-num" value="${S.elec.reserve}"></label></div>`;
     el.querySelectorAll('tr[data-g] [data-k]').forEach(
       inp =>
         (inp.onchange = () => {
@@ -29273,14 +29536,14 @@ function renderMEP() {
     }
     const fast = query('duct', e => ductVel(e) > (S.vent.vmax || 4));
     el.innerHTML = `<p class="hint">Система объединяет воздуховоды и решётки одного назначения. Скорость в воздуховоде считается из расхода и сечения; для жилых помещений обычно держат до 3–4 м/с в ответвлениях, чтобы не было шума.</p>
-    <div class="tblwrap"><table class="mtbl"><thead><tr><th title="Показывать систему на плане и в 3D">Вид</th><th>Обозначение</th><th>Название</th><th>Тип</th><th>Цвет</th><th style="text-align:right">Устройств</th><th style="text-align:right">Σ расход, м³/ч</th><th style="text-align:right">Воздуховоды, м</th><th></th></tr></thead><tbody>${S.vent.systems
+    <div class="tblwrap"><table class="mtbl"><thead><tr><th title="Показывать систему на плане и в 3D">Вид</th><th>Обозначение</th><th>Название</th><th>Тип</th><th>Цвет</th><th class="n">Устройств</th><th class="n">Σ расход, м³/ч</th><th class="n">Воздуховоды, м</th><th></th></tr></thead><tbody>${S.vent.systems
       .map((s, i) => {
         const r = stat.get(s.id);
-        return `<tr data-s="${i}"><td><input type="checkbox" data-voff="${esc(s.id)}" ${S.vent.off && S.vent.off[s.id] ? '' : 'checked'} aria-label="Показывать ${esc(s.id)}"></td><td><input data-k="id" value="${esc(s.id)}" style="width:80px" aria-label="Обозначение"></td><td><input data-k="name" value="${esc(s.name)}" aria-label="Название"></td><td><select data-k="kind">${VKINDS.map(k => `<option ${k === s.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${s.col}" aria-label="Цвет"></td><td class="n">${r.n}</td><td class="n">${Math.round(r.q)}</td><td class="n">${(r.L / 1000).toFixed(1)}</td><td><button class="btn" data-del="${i}" ${r.n || r.L ? 'disabled title="Система используется"' : ''} aria-label="Удалить систему">×</button></td></tr>`;
+        return `<tr data-s="${i}"><td><input type="checkbox" data-voff="${esc(s.id)}" ${S.vent.off && S.vent.off[s.id] ? '' : 'checked'} aria-label="Показывать ${esc(s.id)}"></td><td><input data-k="id" class="mep-id" value="${esc(s.id)}" aria-label="Обозначение"></td><td><input data-k="name" value="${esc(s.name)}" aria-label="Название"></td><td><select data-k="kind">${VKINDS.map(k => `<option ${k === s.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td><input type="color" data-nopal data-k="col" value="${s.col}" aria-label="Цвет"></td><td class="n">${r.n}</td><td class="n">${Math.round(r.q)}</td><td class="n">${(r.L / 1000).toFixed(1)}</td><td><button class="btn" data-del="${i}" ${r.n || r.L ? 'disabled title="Система используется"' : ''} aria-label="Удалить систему">×</button></td></tr>`;
       })
       .join('')}</tbody></table></div>
-    <div class="btnrow" style="align-items:center"><button class="btn" id="mepAddS">+ Система</button><button class="btn" id="mepStdCol" title="Приток — синий, вытяжка — красный, подача кондиционера — малиновый, забор — голубой">Цвета по стандарту</button><label class="fl" style="flex-direction:row;align-items:center;gap:8px" title="Длиннее — замечание в проверках">Гибкая подводка до, мм <input type="number" step="100" id="mepFlex" value="${S.vent.flexMax || 3000}" style="width:80px"></label><label class="fl" style="flex-direction:row;align-items:center;gap:8px">Предельная скорость, м/с <input type="number" step="0.5" id="mepV" value="${S.vent.vmax}" style="width:80px;background:var(--canvas);border:1px solid var(--line);border-radius:4px;padding:5px 7px"></label></div>
-    ${fast.length ? `<div><div class="sech" style="margin-bottom:6px">Скорость выше предела</div><div class="tblwrap"><table class="mtbl"><tbody>${fast.map(e => `<tr data-sel="${e.id}"><td>${esc(e.sys)} · ${secTxt(e)}</td><td class="n">${fmt(e.flow)} м³/ч</td><td class="n bad">${ductVel(e).toFixed(2)} м/с</td><td>увеличьте сечение</td></tr>`).join('')}</tbody></table></div></div>` : '<div class="ok">Скорость во всех воздуховодах в пределе.</div>'}`;
+    <div class="btnrow mep-row"><button class="btn" id="mepAddS">+ Система</button><button class="btn" id="mepStdCol" title="Приток — синий, вытяжка — красный, подача кондиционера — малиновый, забор — голубой">Цвета по стандарту</button><label class="fl mep-fl" title="Длиннее — замечание в проверках">Гибкая подводка до, мм <input type="number" step="100" id="mepFlex" class="mep-num" value="${S.vent.flexMax || 3000}"></label><label class="fl mep-fl">Предельная скорость, м/с <input type="number" step="0.5" id="mepV" class="mep-num" value="${S.vent.vmax}"></label></div>
+    ${fast.length ? `<div><div class="sech mep-sech">Скорость выше предела</div><div class="tblwrap"><table class="mtbl"><tbody>${fast.map(e => `<tr data-sel="${e.id}"><td>${esc(e.sys)} · ${secTxt(e)}</td><td class="n">${fmt(e.flow)} м³/ч</td><td class="n bad">${ductVel(e).toFixed(2)} м/с</td><td>увеличьте сечение</td></tr>`).join('')}</tbody></table></div></div>` : '<div class="ok">Скорость во всех воздуховодах в пределе.</div>'}`;
     el.querySelectorAll('tr[data-s] [data-k]').forEach(
       inp =>
         (inp.onchange = () => {
@@ -29404,24 +29667,10 @@ defineTools({
   }
 });
 
-/** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
+/** Wires this module to the page (the buttons that open the windows; the windows themselves are built on first open). Called once by app/boot.js. */
 function initMepDialog() {
-  $('#meptabs').addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (b) {
-      mepTab = b.dataset.t;
-      renderMEP();
-    }
-  });
-  $('#mepClose').onclick = () => {
-    $('#mepdlg').hidden = true;
-    cin.focus({ preventScroll: true });
-  };
   $('#bWT').onclick = () => openWT();
   $('#bMEP').onclick = () => openMEP();
-  $('#mepdlg').addEventListener('pointerdown', e => {
-    if (e.target.id === 'mepdlg') $('#mepdlg').hidden = true;
-  });
 }
 
 // ===== blocks/io/ifc.js =====
@@ -42621,7 +42870,7 @@ function mfPowerHTML(e) {
   const P = mfPower(e);
   if (!P.need) return '<span class="hint">Электрических потребителей в узле нет — розетка не нужна.</span>';
   const s = mfSock(e);
-  return `<span>Питание 230 В: ≈${P.W} Вт (${P.list.map(([n, q]) => `${esc(n)}${q > 1 ? ' ×' + q : ''}`).join(', ')})${P.v24 ? ' · приводы 24 В — через контроллер/трансформатор' : ''}. </span>${s ? '<span style="color:#7fcf8f">Розетка рядом есть ✓</span>' : '<span style="color:#ef7f7f">Розетки рядом нет.</span> <button class="btn" data-mfsock="1">Добавить розетку рядом</button>'}`;
+  return `<span>Питание 230 В: ≈${P.W} Вт (${P.list.map(([n, q]) => `${esc(n)}${q > 1 ? ' ×' + q : ''}`).join(', ')})${P.v24 ? ' · приводы 24 В — через контроллер/трансформатор' : ''}. </span>${s ? '<span class="ok">Розетка рядом есть ✓</span>' : '<span class="bad">Розетки рядом нет.</span> <button class="btn" data-mfsock="1">Добавить розетку рядом</button>'}`;
 }
 /** Mutable state of this module that other modules read or change. */
 const manifoldState = {
@@ -45137,6 +45386,7 @@ function mfSvg(e) {
   );
   return `<svg id="mfsvg" viewBox="0 0 ${W_} ${y}" width="${W_}" height="${y}" style="max-width:none;touch-action:none" role="img" aria-label="Схема коллекторного узла">${h}</svg>`;
 }
+/** Draws the scheme mode of the «Коллектор» tab into `el`. */
 function mfSchemeTab(el) {
   const nodes = mfNodes();
   if (!manifoldState.MFNODE || !nodes.includes(byId(manifoldState.MFNODE)))
@@ -45171,35 +45421,25 @@ function mfSchemeTab(el) {
     .join('');
   const items = mfItems(e);
   el.innerHTML = `<p class="hint">Конструктор узла: цепочки на вводе каждого коллектора, на концах и на каждом выходе. Щёлкните узел — изменить; перетащите — переставить (в т. ч. на другой выход); палитра вставляет узел после выбранного. ★ — удобные владельцу. В сцене узел — один блок, вводы и выходы — точки подключения труб. Габариты арматуры ориентировочные.</p>
-   <div class="btnrow" style="align-items:center">${nodes.length > 1 ? `<select id="mfNode">${nodes.map((n, i) => `<option value="${n.id}" ${n.id === e.id ? 'selected' : ''}>Узел ${i + 1}: ${esc(MFT[mfCfg(n).type])}</option>`).join('')}</select>` : ''}
-    <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Тип <select id="mfType">${Object.entries(
-      MFT
-    )
+   <div class="btnrow mep-row">${nodes.length > 1 ? `<select id="mfNode">${nodes.map((n, i) => `<option value="${n.id}" ${n.id === e.id ? 'selected' : ''}>Узел ${i + 1}: ${esc(MFT[mfCfg(n).type])}</option>`).join('')}</select>` : ''}
+    <label class="fl mep-fl">Тип <select id="mfType">${Object.entries(MFT)
       .map(([k, v]) => `<option value="${k}" ${c.type === k ? 'selected' : ''}>${v}</option>`)
       .join('')}</select></label>
-    <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Краны <select id="mfMode"><option value="plumber" ${c.mode !== 'owner' ? 'selected' : ''}>сантехнические</option><option value="owner" ${c.mode === 'owner' ? 'selected' : ''}>удобные владельцу</option></select></label>
-    <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Исполнение <select id="mfPreset">${Object.entries(
-      MFP[c.type]
-    )
+    <label class="fl mep-fl">Краны <select id="mfMode"><option value="plumber" ${c.mode !== 'owner' ? 'selected' : ''}>сантехнические</option><option value="owner" ${c.mode === 'owner' ? 'selected' : ''}>удобные владельцу</option></select></label>
+    <label class="fl mep-fl">Исполнение <select id="mfPreset">${Object.entries(MFP[c.type])
       .map(([k, v]) => `<option value="${k}" ${mfPresetOf(c) === k ? 'selected' : ''}>${esc(v.n)}</option>`)
-      .join(
-        ''
-      )}</select></label><label class="fl" style="flex-direction:row;align-items:center;gap:6px">Контроллер <select id="mfCtrl">${Object.entries(
-      MFCTRL
-    )
+      .join('')}</select></label><label class="fl mep-fl">Контроллер <select id="mfCtrl">${Object.entries(MFCTRL)
       .map(
         ([k, v]) => `<option value="${k}" ${((c.ctrl || {}).k || 'none') === k ? 'selected' : ''}>${esc(v)}</option>`
       )
       .join(
         ''
       )}</select></label>${c.type === 'water' ? '<button class="btn pri" id="mfAuto">Собрать выходы по сантехнике</button>' : ''}<button class="btn" id="mfMirror" title="Отзеркалить весь узел (лево ↔ право)">⇋ Отзеркалить узел</button><button class="btn" id="mfGo">Показать в сцене</button></div>
-   <p class="hint" style="margin:4px 0">${mfPowerHTML(e)}</p><div class="kpis">${c.lines.map(L => `<div class="kpi"><b style="color:${PSYS[L.sys].col}">${L.outs.length}</b><span>выходов ${PSYS[L.sys].n} · ${L.dn}</span></div>`).join('')}<div class="kpi"><b>${items.reduce((a, x) => a + x[1], 0)}</b><span>позиций в узле</span></div></div>
-   <div class="pnwrap"><div class="pnpal">${pal}</div><div class="pnsvg" style="overflow:auto">${mfSvg(e)}</div>
+   <p class="hint mep-hint">${mfPowerHTML(e)}</p><div class="kpis">${c.lines.map(L => `<div class="kpi"><b style="color:${PSYS[L.sys].col}">${L.outs.length}</b><span>выходов ${PSYS[L.sys].n} · ${L.dn}</span></div>`).join('')}<div class="kpi"><b>${items.reduce((a, x) => a + x[1], 0)}</b><span>позиций в узле</span></div></div>
+   <div class="pnwrap"><div class="pnpal">${pal}</div><div class="pnsvg">${mfSvg(e)}</div>
     <div class="pnedit">${
       item
-        ? `<div class="sech">Узел</div><div class="form" style="grid-template-columns:1fr"><label>Тип<select data-mfe="k">${Object.entries(
-            MFC
-          )
+        ? `<div class="sech">Узел</div><div class="form mep-form1"><label>Тип<select data-mfe="k">${Object.entries(MFC)
             .map(([k, m]) => `<option value="${k}" ${k === item.k ? 'selected' : ''}>${esc(m.n)}</option>`)
             .join(
               ''
@@ -45212,13 +45452,13 @@ function mfSchemeTab(el) {
           }${item.k === 'teeturn' ? `<label>На проходе<select data-mfe="run"><option value="gauge" ${item.run !== 'cap' ? 'selected' : ''}>манометр</option><option value="cap" ${item.run === 'cap' ? 'selected' : ''}>заглушка</option></select></label>` : ''}${item.k === 'pipe' ? `<label>Длина отрезка, мм<input data-mfe="len" type="number" min="20" step="10" value="${esc(String(item.len || 150))}"></label>` : ''}${item.k === 'reducer' ? `<label>Настройка, бар<input data-mfe="bar" value="${esc(item.bar || '3')}"></label>` : ''}${item.k === 'safety' ? `<label>Срабатывание, бар<input data-mfe="bar" value="${esc(item.bar || '3')}"></label>` : ''}</div>
       <div class="btnrow"><button class="btn" id="mfUp">◀ раньше</button><button class="btn" id="mfDn">позже ▶</button><button class="btn" id="mfDup">Копия</button><button class="btn" id="mfDel">Удалить</button></div>`
         : outSel
-          ? `<div class="sech">Выход</div><div class="form" style="grid-template-columns:1fr"><label>Потребитель<input data-mfo="to" value="${esc(outSel.to || '')}"></label><label>Ø трубы<select data-mfo="d">${[16, 20, 25].map(v => `<option ${outSel.d === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div><div class="btnrow"><button class="btn" id="mfOutDel">Удалить выход</button></div>`
+          ? `<div class="sech">Выход</div><div class="form mep-form1"><label>Потребитель<input data-mfo="to" value="${esc(outSel.to || '')}"></label><label>Ø трубы<select data-mfo="d">${[16, 20, 25].map(v => `<option ${outSel.d === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div><div class="btnrow"><button class="btn" id="mfOutDel">Удалить выход</button></div>`
           : '<p class="hint">Выберите узел или подпись выхода на схеме.</p>'
     }
-     <div class="sech" style="margin-top:8px">Коллекторы</div>${c.lines
+     <div class="sech mep-mt8">Коллекторы</div>${c.lines
        .map(
          (L, li) =>
-           `<div class="form" style="grid-template-columns:1fr;margin-bottom:4px"><label>Система<select data-mfl="${li}:sys">${MF_LSYS()
+           `<div class="form mep-form1 mep-mb4"><label>Система<select data-mfl="${li}:sys">${MF_LSYS()
              .map(([k, v]) => `<option value="${k}" ${L.sys === k ? 'selected' : ''}>${esc(v)}</option>`)
              .join(
                ''
@@ -45235,7 +45475,7 @@ function mfSchemeTab(el) {
        .map(([k, v]) => `<option value="${k}">${esc(v)}</option>`)
        .join(
          ''
-       )}</select></div><div class="sech" style="margin-top:10px">Состав узла</div><div class="tblwrap"><table class="mtbl"><thead><tr><th>Позиция</th><th style="text-align:right">Кол-во</th></tr></thead><tbody>${items.map(([n, q]) => `<tr><td>${esc(n)}</td><td class="n">${q}</td></tr>`).join('')}</tbody></table></div></div></div>`;
+       )}</select></div><div class="sech mep-mt10">Состав узла</div><div class="tblwrap"><table class="mtbl"><thead><tr><th>Позиция</th><th class="n">Кол-во</th></tr></thead><tbody>${items.map(([n, q]) => `<tr><td>${esc(n)}</td><td class="n">${q}</td></tr>`).join('')}</tbody></table></div></div></div>`;
   const re = () => {
     changed();
     renderMEP();
@@ -46923,7 +47163,7 @@ function mf3Side(e) {
   const T = MF3.tool;
   const st = MF3.snap || 1;
   if (T && T.k === 'pipe')
-    h = `<div class="sech">Рисование трубы</div><div class="form" style="grid-template-columns:1fr"><label>Система${mf3Sel(
+    h = `<div class="sech">Рисование трубы</div><div class="form mep-form1"><label>Система${mf3Sel(
       'psys',
       Object.entries(PSYS)
         .filter(([k, v]) => v.kind !== 'sewer')
@@ -46939,9 +47179,7 @@ function mf3Side(e) {
     const ch = mf3Chain(c, it.addr),
       i = +it.addr.split('|')[2],
       k = ch[i];
-    h = `<div class="sech">Элемент</div><div class="form" style="grid-template-columns:1fr"><label>Тип<select data-m3k="k">${Object.entries(
-      MFC
-    )
+    h = `<div class="sech">Элемент</div><div class="form mep-form1"><label>Тип<select data-m3k="k">${Object.entries(MFC)
       .map(([a, m]) => `<option value="${a}" ${a === k.k ? 'selected' : ''}>${esc(m.n)}</option>`)
       .join(
         ''
@@ -46967,10 +47205,10 @@ function mf3Side(e) {
         : ''
     }${k.k === 'teeturn' ? `<label>На проходе<select data-m3k="run"><option value="gauge" ${k.run !== 'cap' ? 'selected' : ''}>манометр</option><option value="cap" ${k.run === 'cap' ? 'selected' : ''}>заглушка</option></select></label>` : ''}${k.k === 'pipe' ? `<label>Длина отрезка, мм<input type="number" min="20" step="${st}" data-m3k="len" value="${Math.round(+k.len || 150)}"></label>` : ''}${k.k === 'tank' ? `<label>Объём бака, л<select data-m3k="vol">${[8, 12, 18, 24].map(v => `<option ${+(k.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Крепление<select data-m3k="mount"><option value="wall" ${k.mount !== 'pipe' ? 'selected' : ''}>на стене, на кронштейне (тройник + подводка)</option><option value="pipe" ${k.mount === 'pipe' ? 'selected' : ''}>на трубе</option></select></label>` : ''}</div>
       <p class="hint">Длина по оси ${it.len} мм. Двигайте кнопками ◀ ▶ над видом или стрелками — на шаг привязки, зазор можно ввести числом. Мышью: тяните вдоль трубы (соседи стоят, дальше середины соседа — перестановка; Shift — вместе с соседями). Delete — удалить.</p>
-      <div class="btnrow"><span class="hint" style="align-self:center">Поворот вокруг трубы: ${(((+k.rot || 0) % 360) + 360) % 360}°</span><button class="btn" data-m3b="rotl" title="Повернуть на −90°">⟲ 90°</button><button class="btn" data-m3b="rotr" title="Повернуть на +90° (клавиша R)">⟳ 90°</button><button class="btn" data-m3b="rot45">+45°</button></div><div class="btnrow"><button class="btn" data-m3b="prev">◀ раньше</button><button class="btn" data-m3b="next">позже ▶</button><button class="btn" data-m3b="tight">Вплотную</button><button class="btn" data-m3b="del">Удалить</button></div>`;
+      <div class="btnrow"><span class="hint mep-self">Поворот вокруг трубы: ${(((+k.rot || 0) % 360) + 360) % 360}°</span><button class="btn" data-m3b="rotl" title="Повернуть на −90°">⟲ 90°</button><button class="btn" data-m3b="rotr" title="Повернуть на +90° (клавиша R)">⟳ 90°</button><button class="btn" data-m3b="rot45">+45°</button></div><div class="btnrow"><button class="btn" data-m3b="prev">◀ раньше</button><button class="btn" data-m3b="next">позже ▶</button><button class="btn" data-m3b="tight">Вплотную</button><button class="btn" data-m3b="del">Удалить</button></div>`;
   } else if (it && it.kind === 'ctrl') {
     const k = it.k;
-    h = `<div class="sech">Контроллер / модуль</div><div class="form" style="grid-template-columns:1fr"><label>Тип${mf3Sel('ck', Object.entries(MFCTRL), k.k)}</label>${
+    h = `<div class="sech">Контроллер / модуль</div><div class="form mep-form1"><label>Тип${mf3Sel('ck', Object.entries(MFCTRL), k.k)}</label>${
       k.k !== 'leak'
         ? `<label>Приводы${mf3Sel(
             'cv',
@@ -46984,12 +47222,12 @@ function mf3Side(e) {
     }<label>Центр по X, мм<input type="number" step="${st}" data-m3k="wx" value="${Math.round(it.C[0])}"></label><label>Центр от пола, мм<input type="number" step="${st}" data-m3k="wz" value="${Math.round(it.C[2])}"></label></div><p class="hint">Модуль висит на стене рядом с узлом (в шкафу — внутри). Тяните по стене, стрелки — на шаг привязки.</p>`;
   } else if (it && it.kind === 'wall') {
     const k = it.k;
-    h = `<div class="sech">Бак расширительный на стене</div><div class="form" style="grid-template-columns:1fr"><label>Объём, л<select data-m3k="vol">${[8, 12, 18, 24].map(v => `<option ${+(k.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Патрубок<select data-m3k="nip"><option value="up" ${k.nip !== 'down' ? 'selected' : ''}>вверх (бак висит патрубком вверх)</option><option value="down" ${k.nip === 'down' ? 'selected' : ''}>вниз</option></select></label><label>Центр по X, мм<input type="number" step="${st}" data-m3k="wx" value="${Math.round(it.C[0])}"></label><label>Центр от пола, мм<input type="number" step="${st}" data-m3k="wz" value="${Math.round(it.C[2])}"></label><label>Корпус от стены, мм<input type="number" step="${st}" data-m3k="wy" value="${Math.round(it.wy)}"></label><label>Крепление<select data-m3k="mount"><option value="wall" selected>на стене, на кронштейне</option><option value="pipe">на трубе (без кронштейна)</option></select></label></div>
+    h = `<div class="sech">Бак расширительный на стене</div><div class="form mep-form1"><label>Объём, л<select data-m3k="vol">${[8, 12, 18, 24].map(v => `<option ${+(k.vol || 12) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label>Патрубок<select data-m3k="nip"><option value="up" ${k.nip !== 'down' ? 'selected' : ''}>вверх (бак висит патрубком вверх)</option><option value="down" ${k.nip === 'down' ? 'selected' : ''}>вниз</option></select></label><label>Центр по X, мм<input type="number" step="${st}" data-m3k="wx" value="${Math.round(it.C[0])}"></label><label>Центр от пола, мм<input type="number" step="${st}" data-m3k="wz" value="${Math.round(it.C[2])}"></label><label>Корпус от стены, мм<input type="number" step="${st}" data-m3k="wy" value="${Math.round(it.wy)}"></label><label>Крепление<select data-m3k="mount"><option value="wall" selected>на стене, на кронштейне</option><option value="pipe">на трубе (без кронштейна)</option></select></label></div>
       <p class="hint">Бак висит на своём кронштейне; к линии — тройник и подводка, проложенная по осям. Тяните бак по стене, Shift — от стены. Стрелки, PgUp/PgDn — на шаг привязки.</p><div class="btnrow"><button class="btn" data-m3b="wauto">Поставить рядом с тройником</button></div>`;
   } else if (it && it.kind === 'pipe') {
     const p = c.pipes[it.pi],
       q = mfPipeLen(it);
-    h = `<div class="sech">Труба узла</div><div class="form" style="grid-template-columns:1fr"><label>Система${mf3Sel(
+    h = `<div class="sech">Труба узла</div><div class="form mep-form1"><label>Система${mf3Sel(
       'xsys',
       Object.entries(PSYS)
         .filter(([k, v]) => v.kind !== 'sewer')
@@ -46999,7 +47237,7 @@ function mf3Side(e) {
       'xd',
       [16, 20, 25, 32, 40].map(d => [String(d), 'Ø' + d]),
       String(p.d)
-    )}</label></div><div class="sech">Участки</div><div class="form" style="grid-template-columns:1fr">${p.pts
+    )}</label></div><div class="sech">Участки</div><div class="form mep-form1">${p.pts
       .slice(1)
       .map((b, i) => {
         const a = p.pts[i],
@@ -47015,9 +47253,9 @@ function mf3Side(e) {
       l = g.lines[it.li];
     if (it.kind === 'out') {
       const ob = L.outs[+it.addr.split('|')[1].slice(3)];
-      h += `<div class="sech">Выход ${+it.addr.split('|')[1].slice(3) + 1}${ob.to ? ' · ' + esc(ob.to) : ''}</div><div class="form" style="grid-template-columns:1fr"><label>Длина выхода после арматуры, мм<input type="number" step="${st}" data-m3x="olen" value="${Math.round(mfNum(ob.len, 28))}"></label></div>`;
+      h += `<div class="sech">Выход ${+it.addr.split('|')[1].slice(3) + 1}${ob.to ? ' · ' + esc(ob.to) : ''}</div><div class="form mep-form1"><label>Длина выхода после арматуры, мм<input type="number" step="${st}" data-m3x="olen" value="${Math.round(mfNum(ob.len, 28))}"></label></div>`;
     }
-    h += `<div class="sech">Коллектор ${PSYS[L.sys].n}</div><div class="form" style="grid-template-columns:1fr"><label>Система${mf3Sel('sys', MF_LSYS(), L.sys)}</label><label>Диаметр коллектора${mf3Sel(
+    h += `<div class="sech">Коллектор ${PSYS[L.sys].n}</div><div class="form mep-form1"><label>Система${mf3Sel('sys', MF_LSYS(), L.sys)}</label><label>Диаметр коллектора${mf3Sel(
       'dn',
       MF_DN.map(v => [v, v]),
       L.dn
@@ -47068,16 +47306,16 @@ function mf3Side(e) {
       l.rv > 0 ? 'up' : 'down'
     )}</label>
       <label>Ось от стены, мм<input type="number" step="${st}" data-m3l="y" value="${Math.round(l.y)}"></label><label>${l.ori === 'v' ? 'Центр' : 'Ось'} от пола, мм<input type="number" step="${st}" data-m3l="z" value="${Math.round(l.z)}"></label><label>Центр по X, мм<input type="number" step="${st}" data-m3l="x" value="${Math.round(l.cx)}"></label><label>Шаг выходов, мм<input type="number" step="1" data-m3l="step" value="${l.step}"></label><label>Прямой участок ввода, мм<input type="number" step="${st}" data-m3l="drop" value="${Math.round(l.drop)}"></label><label>Выходов<input type="number" min="1" max="16" data-m3l="n" value="${L.outs.length}"></label></div>
-      <p class="hint">Двигайте кнопками над видом или стрелками (PgUp/PgDn — от стены) на шаг привязки; R / Shift+R — поворот на 45° в плоскости стены. Мышью: тяните по стене, Shift — от стены, Alt — весь узел. Ввод тянется вдоль подвода, крайний выход — шаг выходов.</p><div class="btnrow"><span class="hint" style="align-self:center">Поворот в плоскости стены: ${mfAng(L)}°</span><button class="btn" data-m3b="angl" title="Повернуть коллектор на −45° в плоскости стены (Shift+R)">⟲ 45°</button><button class="btn" data-m3b="angr" title="Повернуть коллектор на +45° в плоскости стены (R)">⟳ 45°</button><button class="btn" data-m3b="ang90" title="Повернуть на 90°">⟳ 90°</button></div><div class="btnrow"><button class="btn" data-m3b="auto">Сбросить положение</button><button class="btn" data-m3b="lflip" title="Ввод с другого конца, выходы в обратном порядке">⇋ Зеркально</button><button class="btn" data-m3b="ldel">Удалить коллектор</button></div>`;
+      <p class="hint">Двигайте кнопками над видом или стрелками (PgUp/PgDn — от стены) на шаг привязки; R / Shift+R — поворот на 45° в плоскости стены. Мышью: тяните по стене, Shift — от стены, Alt — весь узел. Ввод тянется вдоль подвода, крайний выход — шаг выходов.</p><div class="btnrow"><span class="hint mep-self">Поворот в плоскости стены: ${mfAng(L)}°</span><button class="btn" data-m3b="angl" title="Повернуть коллектор на −45° в плоскости стены (Shift+R)">⟲ 45°</button><button class="btn" data-m3b="angr" title="Повернуть коллектор на +45° в плоскости стены (R)">⟳ 45°</button><button class="btn" data-m3b="ang90" title="Повернуть на 90°">⟳ 90°</button></div><div class="btnrow"><button class="btn" data-m3b="auto">Сбросить положение</button><button class="btn" data-m3b="lflip" title="Ввод с другого конца, выходы в обратном порядке">⇋ Зеркально</button><button class="btn" data-m3b="ldel">Удалить коллектор</button></div>`;
   } else
     h = `<p class="hint">Щёлкните элемент, коллектор, ввод, выход, бак или трубу. Камера: Ctrl + левая кнопка — вращение, Ctrl + правая (или просто правая / средняя) — сдвиг, колесо — масштаб к курсору. «Труба» — рисовать трубы прямо в узле.</p>`;
-  h += `<div class="sech" style="margin-top:8px">Питание</div><p class="hint" style="margin:0">${mfPowerHTML(e)}</p><div class="sech" style="margin-top:8px">Проверка сборки</div>${
+  h += `<div class="sech mep-mt8">Питание</div><p class="hint mep-hint0">${mfPowerHTML(e)}</p><div class="sech mep-mt8">Проверка сборки</div>${
     MF3.clash.length
-      ? `<ul class="m3cl" style="margin:0;padding-left:16px;color:#ef7f7f">${MF3.clash
+      ? `<ul class="m3cl">${MF3.clash
           .slice(0, 8)
           .map(x => `<li data-m3go="${esc(x.a)}" style="cursor:pointer">${esc(x.msg)}</li>`)
           .join('')}</ul>`
-      : '<p class="hint" style="color:#7fcf8f">Пересечений и заходов в стену нет.</p>'
+      : '<p class="hint ok">Пересечений и заходов в стену нет.</p>'
   }`;
   box.innerHTML = h;
   mf3Hud(e, it);
@@ -47505,9 +47743,11 @@ function mf3Tools() {
   if (b) b.classList.toggle('pri', !!(MF3.tool && MF3.tool.k === 'pipe'));
   if (MF3.cv) MF3.cv.style.cursor = MF3.tool ? 'crosshair' : 'default';
 }
+/** HTML of the «Схема / 3D-редактор» mode switch of the collector tab. */
 function mfModeBar() {
-  return `<div class="seg" style="display:inline-flex;gap:0;margin-right:8px"><button class="btn ${MFMODE === 'scheme' ? 'pri' : ''}" data-mfmode="scheme">Схема</button><button class="btn ${MFMODE === '3d' ? 'pri' : ''}" data-mfmode="3d">3D-редактор</button></div>`;
+  return `<div class="mep-mode" role="group" aria-label="Режим узла"><button class="btn ${MFMODE === 'scheme' ? 'pri' : ''}" data-mfmode="scheme">Схема</button><button class="btn ${MFMODE === '3d' ? 'pri' : ''}" data-mfmode="3d">3D-редактор</button></div>`;
 }
+/** Draws the 3D editor of the collector node `e` into `el` (toolbar, palette, canvas area with HUD and dynamic input, side panel). */
 function renderColl3D(el, e) {
   const c = mfCfg(e);
   const nodes = mfNodes();
@@ -47539,7 +47779,7 @@ function renderColl3D(el, e) {
           .join('')
     )
     .join('');
-  el.innerHTML = `<div class="btnrow" style="align-items:center">${mfModeBar()}${nodes.length > 1 ? `<select id="mfNode">${nodes.map((n, i) => `<option value="${n.id}" ${n.id === e.id ? 'selected' : ''}>Узел ${i + 1}: ${esc(MFT[mfCfg(n).type])}</option>`).join('')}</select>` : ''}
+  el.innerHTML = `<div class="btnrow mep-row">${mfModeBar()}${nodes.length > 1 ? `<select id="mfNode">${nodes.map((n, i) => `<option value="${n.id}" ${n.id === e.id ? 'selected' : ''}>Узел ${i + 1}: ${esc(MFT[mfCfg(n).type])}</option>`).join('')}</select>` : ''}
      <button class="btn" id="mf3mirror" title="Отзеркалить весь узел (лево ↔ право)">⇋ Узел</button><select id="mf3addl" title="Добавить коллектор в узел"><option value="">+ Коллектор…</option>${MF_LSYS()
        .map(([k, v]) => `<option value="${k}">${esc(v)}</option>`)
        .join('')}</select><select id="mf3preset" title="Исполнение узла">${Object.entries(MFP[c.type])
@@ -47547,16 +47787,16 @@ function renderColl3D(el, e) {
        .join(
          ''
        )}</select><button class="btn ${MF3.tool ? 'pri' : ''}" data-m3t="pipe" title="Рисовать трубу в узле">⟋ Труба</button>
-     <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Привязка <select id="mf3snap">${[1, 5, 10, 25, 50].map(v => `<option value="${v}" ${MF3.snap === v ? 'selected' : ''}>${v} мм</option>`).join('')}</select></label>
-     <label class="fl" style="flex-direction:row;align-items:center;gap:6px" title="Перетаскивание деталей (порог 8 px). Без него — щелчок выбирает, двигают стрелки, кнопки у детали и ввод числа"><input type="checkbox" id="mf3drag" ${MF3.noDrag ? '' : 'checked'}>${matchMedia('(pointer: coarse)').matches ? 'Тянуть пальцем' : 'Тянуть мышью'}</label>
-     <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Узел от стены <input id="mf3dy" type="number" step="5" value="${c.dy}" style="width:70px"></label>
-     <span style="flex:1"></span>${['front:Спереди', 'side:Сбоку', 'top:Сверху', 'iso:3D', 'fit:Вписать']
+     <label class="fl mep-fl">Привязка <select id="mf3snap">${[1, 5, 10, 25, 50].map(v => `<option value="${v}" ${MF3.snap === v ? 'selected' : ''}>${v} мм</option>`).join('')}</select></label>
+     <label class="fl mep-fl" title="Перетаскивание деталей (порог 8 px). Без него — щелчок выбирает, двигают стрелки, кнопки у детали и ввод числа"><input type="checkbox" id="mf3drag" ${MF3.noDrag ? '' : 'checked'}>${matchMedia('(pointer: coarse)').matches ? 'Тянуть пальцем' : 'Тянуть мышью'}</label>
+     <label class="fl mep-fl">Узел от стены <input id="mf3dy" class="mep-num" type="number" step="5" value="${c.dy}"></label>
+     <span class="mep-fill"></span>${['front:Спереди', 'side:Сбоку', 'top:Сверху', 'iso:3D', 'fit:Вписать']
        .map(s => {
          const [a, b] = s.split(':');
          return `<button class="btn" data-m3v="${a}">${b}</button>`;
        })
        .join('')}<button class="btn" id="mfGo">Показать в сцене</button></div>
-   <div class="pnwrap"><div class="pnpal">${pal}</div><div class="pnsvg" style="position:relative;padding:0;overflow:hidden;min-height:360px"><canvas id="mf3cv" style="width:100%;height:100%;display:block;touch-action:none" tabindex="0" aria-label="3D-редактор коллекторного узла"></canvas><canvas id="mf3ov" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas><div id="mf3hud" class="mf3hud" hidden></div><div id="mf3dynw" hidden style="position:absolute;left:12px;bottom:12px;display:flex;gap:6px;align-items:center;background:rgba(20,23,28,.92);border:1px solid #f0b45e;border-radius:5px;padding:4px 8px"><span id="mf3dynl" style="color:#f0b45e;font:12px 'IBM Plex Mono',monospace"></span><input id="mf3dyn" style="width:90px" inputmode="decimal" aria-label="Значение, мм"></div></div><div class="pnedit" id="mf3side"></div></div>`;
+   <div class="pnwrap"><div class="pnpal">${pal}</div><div class="pnsvg mf3box"><canvas id="mf3cv" tabindex="0" aria-label="3D-редактор коллекторного узла"></canvas><canvas id="mf3ov"></canvas><div id="mf3hud" class="mf3hud" hidden></div><div id="mf3dynw" class="mf3dynw" hidden><span id="mf3dynl"></span><input id="mf3dyn" inputmode="decimal" aria-label="Значение, мм"></div></div><div class="pnedit" id="mf3side"></div></div>`;
   const q = x => el.querySelector(x);
   el.querySelectorAll('[data-mfmode]').forEach(
     b =>
@@ -47640,8 +47880,7 @@ function renderColl3D(el, e) {
     MF3.gl = null;
   }
   if (!MF3.gl) {
-    q('.pnsvg').innerHTML =
-      '<p class="hint" style="padding:16px">WebGL недоступен в этом браузере — используйте режим «Схема».</p>';
+    q('.pnsvg').innerHTML = '<p class="hint mep-pad">WebGL недоступен в этом браузере — используйте режим «Схема».</p>';
     return;
   }
   mf3Build(e);
@@ -48393,7 +48632,7 @@ function panelSvgMM(selId) {
     W = L.W,
     H = L.H;
   const vb = [-pad, -pad, W + 2 * pad + 40, H + 2 * pad + 40];
-  let s = `<svg id="pnSvg" viewBox="${vb.join(' ')}" style="width:100%;max-height:66vh;touch-action:none;font-family:var(--f-ui)" role="img" aria-label="Сборка щита в масштабе">`;
+  let s = `<svg id="pnSvg" viewBox="${vb.join(' ')}" role="img" aria-label="Сборка щита в масштабе">`;
   if (L.fl)
     s += `<rect x="${(W - L.frame.W) / 2}" y="${(H - L.frame.H) / 2}" width="${L.frame.W}" height="${L.frame.H}" rx="6" fill="#d9dde1" stroke="#8b939d" stroke-width="1"/>`;
   s += `<rect x="0" y="0" width="${W}" height="${H}" rx="5" fill="#eef0f2" stroke="#5d656f" stroke-width="1.4"/><rect x="9" y="9" width="${W - 18}" height="${H - 18}" rx="2" fill="#e1e4e8"/>`;
@@ -48477,25 +48716,21 @@ function renderPanelAsm(el) {
   const over = L.rowsL.map((R, i) => (R.over ? i + 1 : 0)).filter(Boolean);
   const pd = S.ents.filter(e => e.type === 'dev' && e.kind === 'panel');
   const ck = (id, k, t) =>
-    `<label class="fl" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${id}" ${P_.head[k] ? 'checked' : ''}>${t}</label>`;
+    `<label class="fl mep-fl"><input type="checkbox" id="${id}" ${P_.head[k] ? 'checked' : ''}>${t}</label>`;
   el.innerHTML = `<p class="hint">Щит в масштабе 1:1 по модулю 17,5 мм: перетаскивайте аппараты мышью между местами и рядами, щёлкните — чтобы изменить. Палитра слева добавляет аппарат в выбранный ряд. Та же модель стоит в сцене у устройства «Щит»${pd.length ? '' : ' (сейчас в проекте его нет — поставьте инструментом «Щит» в разделе Инженерия)'}. Размеры корпусов ориентировочные.</p>
   <div class="kpis"><div class="kpi"><b>${sz.used}</b><span>модулей занято</span></div><div class="kpi"><b>${L.box}</b><span>модулей в корпусе</span></div><div class="kpi"><b>${L.W}×${L.H}×${L.D}</b><span>${PMOUNT[P_.mount]}, мм</span></div><div class="kpi"><b class="${over.length ? 'bad' : ''}">${over.length ? 'ряд ' + over.join(', ') : 'нет'}</b><span>перегрузка рядов</span></div></div>
-  <div class="btnrow" style="align-items:center"><label class="fl" style="flex-direction:row;align-items:center;gap:6px">Тип <select id="pnMount">${Object.entries(
-    PMOUNT
-  )
+  <div class="btnrow mep-row"><label class="fl mep-fl">Тип <select id="pnMount">${Object.entries(PMOUNT)
     .map(([k, v]) => `<option value="${k}" ${P_.mount === k ? 'selected' : ''}>${v}</option>`)
     .join('')}</select></label>
-   <label class="fl" style="flex-direction:row;align-items:center;gap:6px">Корпус <select id="pnBox"><option value="0">авто</option>${BOXES.map(b => `<option value="${b}" ${P_.box === b ? 'selected' : ''}>${b} мод. (${PBOX[b][0]}×${PBOX[b][1]})</option>`).join('')}</select></label>
-   <label class="fl" style="flex-direction:row;align-items:center;gap:6px">В сцене <select id="pnDoor">${Object.entries(
-     PDOOR
-   )
+   <label class="fl mep-fl">Корпус <select id="pnBox"><option value="0">авто</option>${BOXES.map(b => `<option value="${b}" ${P_.box === b ? 'selected' : ''}>${b} мод. (${PBOX[b][0]}×${PBOX[b][1]})</option>`).join('')}</select></label>
+   <label class="fl mep-fl">В сцене <select id="pnDoor">${Object.entries(PDOOR)
      .map(([k, v]) => `<option value="${k}" ${P_.door === k ? 'selected' : ''}>${v}</option>`)
      .join('')}</select></label></div>
   <div class="pnwrap"><div class="pnpal">${PPAL.map(([g, ks]) => `<div class="sech">${g}</div>` + ks.map(k => `<button class="btn" data-pa="${k}" title="${esc(MODL[k].n)}"><span class="mw" style="width:${MODL[k].w * 9}px;background:${MODCOL(k)}"></span>${esc(MODL[k].n)}</button>`).join('')).join('')}</div>
    <div class="pnsvg">${panelSvgMM(PSEL)}</div>
    <div class="pnedit">${
      sel
-       ? `<div class="sech">Аппарат</div><div class="form" style="grid-template-columns:1fr"><label>Тип<select data-pe="k">${Object.entries(
+       ? `<div class="sech">Аппарат</div><div class="form mep-form1"><label>Тип<select data-pe="k">${Object.entries(
            MODL
          )
            .map(([k, v]) => `<option value="${k}" ${k === sel.k ? 'selected' : ''}>${esc(v.n)}</option>`)
@@ -48505,16 +48740,16 @@ function renderPanelAsm(el) {
      <div class="btnrow"><button class="btn" id="pnL">◀</button><button class="btn" id="pnR">▶</button><button class="btn" id="pnDup">Копия</button><button class="btn" id="pnDel">Удалить</button></div>`
        : '<p class="hint">Выберите аппарат на щите. Перетаскивание — изменить место или ряд.</p>'
    }
-     <div class="sech" style="margin-top:8px">Вводные аппараты <span class="hint">(пересоберут щит)</span></div>${ck('pnRelay', 'relay', 'Реле напряжения')}${ck('pnUzoF', 'uzoF', 'УЗО 100 мА')}${ck('pnSurge', 'surge', 'УЗИП')}${ck('pnMeter', 'meter', 'Счётчик в щите')}
+     <div class="sech mep-mt8">Вводные аппараты <span class="hint">(пересоберут щит)</span></div>${ck('pnRelay', 'relay', 'Реле напряжения')}${ck('pnUzoF', 'uzoF', 'УЗО 100 мА')}${ck('pnSurge', 'surge', 'УЗИП')}${ck('pnMeter', 'meter', 'Счётчик в щите')}
      <div class="btnrow"><button class="btn pri" id="pnAuto">Собрать заново по группам</button></div>
-     <div class="sech" style="margin-top:10px">Провода в щите</div>
-     <label class="fl" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="pnAutoW" ${P_.autoW === false ? '' : 'checked'}>Разводка автоматически (по схеме щита)</label>
+     <div class="sech mep-mt10">Провода в щите</div>
+     <label class="fl mep-fl"><input type="checkbox" id="pnAutoW" ${P_.autoW === false ? '' : 'checked'}>Разводка автоматически (по схеме щита)</label>
      <label class="fl">Цвет жилы<select id="pnWc">${Object.entries(PWNAME)
        .map(([k, v]) => `<option value="${k}" ${PW.c === k ? 'selected' : ''}>${v}</option>`)
        .join('')}</select></label>
      <div class="btnrow"><button class="btn ${PW.mode ? 'pri' : ''}" id="pnWire">${PW.mode ? 'Готово' : 'Нарисовать провод'}</button>${PW.sel != null ? '<button class="btn" id="pnWDel">Удалить провод</button>' : ''}</div>
      <p class="hint">${PW.mode ? (PW.pick ? 'Щёлкните второй зажим — провод проложится по кабель-каналу.' : 'Щёлкните зажим аппарата (кружок у винта) или винт шины N / PE. Свой провод — щелчок по нему, затем «Удалить».') : `Своих проводов: ${(P_.wires || []).length}. Автоматические — тонкие, свои — толще.`}</p>
-     <label class="fl" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="pnCover" ${P_.cover === false ? '' : 'checked'}>Лицевая панель в 3D (сними, чтобы видеть провода)</label></div></div>`;
+     <label class="fl mep-fl"><input type="checkbox" id="pnCover" ${P_.cover === false ? '' : 'checked'}>Лицевая панель в 3D (сними, чтобы видеть провода)</label></div></div>`;
   const re = () => {
     changed();
     renderMEP();
@@ -48759,15 +48994,16 @@ const PTABS = [
   ['checks', 'Проверки'],
   ['list', 'Ведомость аппаратов']
 ];
+/** Draws the «Щит» tab into `el`: the second row of tabs (.wtabs.sub) and the chosen section (assembly, 3D, scheme, checks, list). */
 function renderPanelTab(el) {
   const P_ = S.x.panel;
   if (!P_.mods.length) buildPanel();
   const ck = panelChecks();
   const nb = ck.filter(c => c.lvl === 'bad').length,
     nw = ck.filter(c => c.lvl === 'warn').length;
-  el.innerHTML = `<div class="pntabs" role="tablist">${PTABS.map(
+  el.innerHTML = `<div class="wtabs sub" role="tablist" aria-label="Разделы щита">${PTABS.map(
     ([k, n]) =>
-      `<button class="pntab ${PTAB === k ? 'on' : ''}" data-ptab="${k}" role="tab">${n}${k === 'checks' && nb + nw ? ` <span class="pnbadge ${nb ? 'bad' : 'warn'}">${nb + nw}</span>` : ''}</button>`
+      `<button type="button" class="${PTAB === k ? 'on' : ''}" data-ptab="${k}" role="tab" aria-selected="${PTAB === k}">${n}${k === 'checks' && nb + nw ? ` <span class="pnbadge ${nb ? 'bad' : 'warn'}">${nb + nw}</span>` : ''}</button>`
   ).join('')}</div><div class="pnbody"></div>`;
   el.querySelectorAll('[data-ptab]').forEach(
     b =>
@@ -48918,7 +49154,7 @@ function listHTML() {
   const runs = L.rowsL.reduce((a, R) => a + R.items.filter(it => BRK_RUN(it.m.k) && it.m.k !== 'main2').length, 0);
   return `<p class="hint">Перечень аппаратов щита в порядке установки, с позиционными обозначениями по ГОСТ 2.710 — для схемы и для сборщика.</p>
   <table class="pntbl"><thead><tr><th>№</th><th>Поз.</th><th>Аппарат</th><th>Номинал</th><th>Полюсов</th><th>Модулей</th><th>Назначение</th></tr></thead><tbody>${rows.join('')}</tbody></table>
-  <table class="pntbl" style="margin-top:10px"><thead><tr><th colspan="2">Корпус и комплектующие</th></tr></thead><tbody>
+  <table class="pntbl mep-mt10"><thead><tr><th colspan="2">Корпус и комплектующие</th></tr></thead><tbody>
   <tr><td>Корпус ${esc(PMOUNT[P_.mount || 'surface'])}, ${L.box} модулей (${L.rows}×${L.per})</td><td>${L.W}×${L.H}×${L.D} мм</td></tr>
   <tr><td>DIN-рейка TS35</td><td>${L.rows} × ${Math.round(L.per * MOD_W + 24)} мм</td></tr>
   <tr><td>Шина-гребёнка (по рядам автоматов)</td><td>${runs} полюсных мест</td></tr>
@@ -113704,17 +113940,6 @@ let avMsg = '';
 const avN = (v, d = 0) => (v == null || !isFinite(v) ? '—' : (+v).toFixed(d).replace('.', ','));
 const avKw = W => avN(W / 1000, 1);
 
-const AV_CSS = `#avdlg .dlg{width:min(980px,96vw);max-height:92vh;display:flex;flex-direction:column}
-#avdlg .avb{overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
-#avdlg .avb>*{flex-shrink:0}
-#avdlg .avsum{display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:var(--muted)}#avdlg .avsum b{color:var(--fg);font-size:15px;display:block}
-#avdlg .mtbl td{font-size:12px}#avdlg td.n,#avdlg th.n{text-align:right;font-variant-numeric:tabular-nums}
-#avdlg tr[data-sel]{cursor:pointer}#avdlg tr[data-sel]:hover td{background:var(--panel2)}
-#avdlg .bad{color:var(--danger)}#avdlg .warn{color:#b7791f}#avdlg .ok{color:#2f855a}
-#avdlg .avnorm{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 14px}
-#avdlg .avnorm label{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px}#avdlg .avnorm input,#avdlg .avnorm select{width:80px}
-#avdlg .avmsg{font-size:12px;color:var(--muted)}`;
-
 const AV_TABS = [
   ['air', 'Воздух'],
   ['cool', 'Холод'],
@@ -113723,24 +113948,28 @@ const AV_TABS = [
   ['qty', 'Объёмы'],
   ['norm', 'Нормы']
 ];
+let avWin = null;
+/** Builds the «Расчёт климата» window once (frame of uikit/window.js, six tabs, the body #avbody) and returns its element; the window is shown by the caller. */
 function avEnsure() {
   let m = document.getElementById('avdlg');
   if (m) return m;
-  const st = document.createElement('style');
-  st.textContent = AV_CSS;
-  document.head.appendChild(st);
-  m = document.createElement('div');
-  m.id = 'avdlg';
-  m.className = 'modal';
-  m.hidden = true;
-  m.innerHTML = `<div class="dlg" role="dialog" aria-label="Расчёт климата"><div class="dlgh"><h3>Расчёт климата</h3><button class="x" data-av="close" aria-label="Закрыть">×</button></div>
-<div class="tabsrow" id="avtabs">${AV_TABS.map(([k, n]) => `<button data-avt="${k}">${n}</button>`).join('')}</div><div class="avb" id="avbody"></div></div>`;
-  document.body.appendChild(m);
+  avWin = openWindow({
+    id: 'avdlg',
+    title: 'Расчёт климата',
+    size: 'l',
+    cls: 'avwin',
+    closeId: 'avClose',
+    tabs: AV_TABS.map(([k, n]) => ({ k, n })),
+    tab: avTab,
+    onTab: k => {
+      avTab = k;
+      renderAirCalc();
+    },
+    body: '<div class="avb" id="avbody"></div>'
+  });
+  m = avWin.el;
   m.addEventListener('click', avClick);
   m.addEventListener('change', avChange);
-  m.addEventListener('keydown', ev => {
-    if (ev.key === 'Escape') m.hidden = true;
-  });
   return m;
 }
 function openAirCalc(t) {
@@ -113897,7 +114126,7 @@ function avNormTab() {
 function renderAirCalc() {
   const m = document.getElementById('avdlg');
   if (!m || m.hidden) return;
-  m.querySelectorAll('[data-avt]').forEach(b => b.classList.toggle('on', b.dataset.avt === avTab));
+  if (avWin) avWin.setTab(avTab);
   let h = '';
   try {
     h =
@@ -113920,17 +114149,10 @@ function renderAirCalc() {
   avMsg = '';
 }
 function avClick(ev) {
-  const t = ev.target.closest('[data-avt]');
-  if (t) {
-    avTab = t.dataset.avt;
-    renderAirCalc();
-    return;
-  }
   const b = ev.target.closest('[data-av]');
   if (b) {
     const a = b.dataset.av;
-    if (a === 'close') document.getElementById('avdlg').hidden = true;
-    else if (a === 'rooms') avMsg = `Расходы по нормам: изменено решёток ${avApplyRoomFlows()}.`;
+    if (a === 'rooms') avMsg = `Расходы по нормам: изменено решёток ${avApplyRoomFlows()}.`;
     else if (a === 'velcol') {
       pushUndo();
       ventVelColorSet(!S.vent.velColor);
@@ -117303,7 +117525,7 @@ function shortOf(t) {
 }
 
 // dt: field names of the properties panel; option: texts of select fields (the full text stays in title)
-const SL_SEL = 'button, summary, dt, option, .pntabs > *, [role="tab"]';
+const SL_SEL = 'button, summary, dt, option, .wtabs > *, [role="tab"]';
 function apply(el) {
   if (el.closest && el.closest(SL_SKIP)) return;
   // the code changed the text to something not in the dictionary: give back the title it had
