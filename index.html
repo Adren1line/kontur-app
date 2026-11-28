@@ -1614,55 +1614,6 @@ details.ps dl {
   }
 }
 
-.wtbody {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  min-height: 0;
-}
-#wtlist {
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-#wtlist .grp {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  padding: 10px 8px 4px;
-  font-weight: 600;
-}
-#wtlist button {
-  text-align: left;
-  padding: 6px 8px;
-  border-radius: 4px;
-  color: var(--muted);
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-#wtlist button span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#wtlist button:hover,
-#wtlist button.on {
-  background: var(--panel2);
-  color: var(--fg);
-}
-#wted {
-  overflow-y: auto;
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
 .form {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -1718,7 +1669,7 @@ details.ps dl {
   min-height: 260px;
   overflow: hidden;
   border-radius: 6px;
-  background: #1b1f25;
+  background: var(--scene);
 }
 .pie3 canvas {
   display: block;
@@ -2112,62 +2063,13 @@ details.cfg .props {
   color: var(--muted);
   font-weight: 500;
 }
-.prbody {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  min-height: 0;
-}
-#prlist {
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-#prlist .grp {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  padding: 10px 8px 4px;
-  font-weight: 600;
-}
-#prlist button {
-  text-align: left;
-  padding: 6px 8px;
-  border-radius: 4px;
-  color: var(--muted);
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-#prlist button span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#prlist button:hover,
-#prlist button.on {
-  background: var(--panel2);
-  color: var(--fg);
-}
-#preditor {
-  overflow-y: auto;
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
 #prc {
   display: block;
   width: 100%;
   height: 340px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #14171b;
+  background: var(--scene);
   cursor: crosshair;
   touch-action: none;
 }
@@ -2200,26 +2102,6 @@ details.cfg .props {
 .anl .btn.on {
   border-color: var(--accent);
   color: var(--accent);
-}
-@media (max-width: 900px) {
-  .prbody {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  #prlist {
-    max-height: 30vh;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-}
-@media (max-width: 900px) {
-  .wtbody {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  #wtlist {
-    max-height: 32vh;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
 }
 @media (max-width: 760px) {
   #sideGrip,
@@ -3209,85 +3091,6 @@ label.ck {
 }
 
 /* molding layout editor */
-.dlg.mle {
-  width: min(1320px, 100%);
-  height: min(820px, 100%);
-}
-.mle-sub {
-  color: var(--muted);
-  font-size: 12px;
-}
-.mle-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  min-height: 0;
-}
-.mle-view {
-  position: relative;
-  min-height: 0;
-  background: #e4e1da;
-}
-.mle-view svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-  touch-action: none;
-  user-select: none;
-}
-.mle-tip {
-  position: absolute;
-  left: 12px;
-  bottom: 10px;
-  font-size: 12px;
-  color: var(--muted);
-  pointer-events: none;
-}
-.mle-side {
-  box-sizing: border-box;
-  min-width: 0;
-  border-left: 1px solid var(--line);
-  overflow: auto;
-  padding: 12px 14px;
-  display: grid;
-  gap: 14px;
-  align-content: start;
-}
-.mle-side h4 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-.mle-side section {
-  display: grid;
-  gap: 8px;
-}
-.mle-side input,
-.mle-side select {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-}
-.mle-side label {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.mle-side .two {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  align-items: end;
-}
-.mle-side label.chk {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .mle-wall {
   fill: #f6f4ef;
   stroke: #9a958c;
@@ -3361,17 +3164,6 @@ label.ck {
 }
 .mle-dim.faint text {
   fill: #7b858f;
-}
-@media (max-width: 760px) {
-  .mle-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(260px, 1fr) auto;
-  }
-  .mle-side {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    max-height: 42vh;
-  }
 }
 
 /* modes of the running command over the plan (fill / contour …) */
@@ -6606,8 +6398,6 @@ html[data-form='phone'] #spec table.sp {
   min-width: 0 !important;
 }
 html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'],
-html[data-form='phone'] .wtbody,
-html[data-form='phone'] .prbody,
 html[data-form='phone'] .odbody,
 html[data-form='phone'] .solbody {
   display: flex !important;
@@ -6618,8 +6408,6 @@ html[data-form='phone'] .solbody {
   overflow-x: hidden !important;
 }
 html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > *,
-html[data-form='phone'] .wtbody > *,
-html[data-form='phone'] .prbody > *,
 html[data-form='phone'] .odbody > *,
 html[data-form='phone'] .solbody > * {
   flex: none;
@@ -6973,6 +6761,16 @@ html .modal.win > .win-panes {
 .win-cols > .win-right:empty {
   display: none;
 }
+/* fixed columns: an empty (hidden) side pane must not shift the others */
+.win-cols > .win-left {
+  grid-column: 1;
+}
+.win-cols > .win-main {
+  grid-column: 2;
+}
+.win-cols > .win-right {
+  grid-column: 3;
+}
 .win-cols > .win-left {
   width: 250px;
   border-right: 1px solid var(--line);
@@ -7100,6 +6898,7 @@ html[data-form='tablet'] .modal.win > .win-dlg {
 }
 .win.win-float > .win-dlg {
   pointer-events: auto;
+  box-sizing: border-box;
   width: 100%;
   background: var(--win-bg);
   box-shadow: var(--win-shadow);
@@ -7536,6 +7335,620 @@ html[data-form='tablet'] .modal.win > .win-dlg {
   width: 100%;
   min-height: 0;
   background: var(--scene);
+}
+
+/* ===== Windows of the group «Отделка и стены» on the common frame (uikit/window.js): wall types (#wtdlg), section profiles (#prdlg),
+   molding layout (#mledlg), tile layout (#lvdlg), glass drawing (#gvdlg), the finishing brush (#finpop, a floating panel).
+   Colours — only theme variables; dark canvases and 3D previews — --scene. Paper drawings (the layout scheme, the cut tiles, the glass sheet,
+   the molding elevation) stay black on white. The rules of the layout and glass pages (.lv*, .gv*) are also copied into the print document
+   (paperCss), so they carry no window selectors. Loaded after zz-window.css. ===== */
+
+/* ---- 03 wall types and 09 section profiles: list | editor ---- */
+html .modal.win > .wtwin.win-dlg,
+html .modal.win > .prwin.win-dlg {
+  height: min(820px, 100%);
+}
+.wtwin .win-cols > .win-left {
+  width: 300px;
+}
+.prwin .win-cols > .win-left {
+  width: 280px;
+}
+.wtwin .win-cols > .win-main,
+.prwin .win-cols > .win-main {
+  padding: 0;
+  min-width: 0;
+}
+#wtlist,
+#prlist {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#wtlist .grp,
+#prlist .grp {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 10px 8px 4px;
+  font-weight: 600;
+}
+#wtlist button,
+#prlist button {
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+#wtlist button span:first-child,
+#prlist button span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#wtlist button:hover,
+#wtlist button.on,
+#prlist button:hover,
+#prlist button.on {
+  background: var(--panel2);
+  color: var(--fg);
+}
+#wted,
+#preditor {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+#preditor {
+  gap: 12px;
+}
+.wtwin .sect canvas,
+#prc {
+  background: var(--scene);
+}
+@media (max-width: 760px) {
+  .wtwin .win-cols > .win-left,
+  .prwin .win-cols > .win-left {
+    width: auto;
+  }
+  #wted,
+  #preditor {
+    padding: 12px;
+  }
+  #prc {
+    height: 260px;
+  }
+}
+
+/* ---- 18 molding layout: toolbar, drawing, right pane ---- */
+html .modal.win > .mlewin.win-dlg {
+  height: min(860px, 100%);
+}
+.mlewin .win-cols > .win-main {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.mle-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.mle-bar .seg {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.mle-view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #e4e1da;
+}
+.mle-view svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+}
+.mle-tip {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  right: 12px;
+  font-size: 12px;
+  color: #4a4f55;
+  pointer-events: none;
+}
+.mle-side {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 12px 14px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.mle-side h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.mle-side section {
+  display: grid;
+  gap: 8px;
+}
+.mle-side input,
+.mle-side select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.mle-side label {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mle-side .two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+.mle-side label.chk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 760px) {
+  .mlewin .win-cols > .win-main {
+    overflow: visible;
+  }
+  .mle-view {
+    flex: none;
+    height: min(56vh, 420px);
+  }
+  .mlewin .win-cols > .win-right {
+    max-height: none;
+  }
+}
+
+/* ---- 19 tile layout: themed surround, paper drawings ---- */
+.lvwin .win-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lv-bar {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.lv-bar .seg {
+  display: inline-flex;
+  max-width: 100%;
+}
+.lvbody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+  color: var(--fg);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.lvh4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.lvtop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+.lvst dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+.lvst dt {
+  color: var(--muted);
+}
+.lvst dd {
+  margin: 0;
+}
+.lvbody .bad {
+  color: var(--danger);
+}
+.lvtbl {
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.lvtbl th,
+.lvtbl td {
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  text-align: left;
+}
+.lvtbl tr.hl td {
+  background: color-mix(in srgb, var(--warn) 28%, transparent);
+}
+.lvleg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.lvleg i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: middle;
+  border: 1px solid #999;
+}
+.lvleg .full {
+  background: #e8e4dc;
+}
+.lvleg .cut {
+  background: #e8e4dc;
+  border-color: #c77d1a;
+}
+.lvleg .mit {
+  border: 0;
+  border-top: 3px dashed #c0392b;
+  height: 0;
+}
+.lvleg .slope {
+  border: 0;
+  border-top: 2px dashed #2563eb;
+  height: 0;
+}
+.lvleg .org {
+  border-radius: 50%;
+  border: 2px solid #e11d48;
+}
+.lvcards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.lvbig {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 10px 0;
+}
+.lvct {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+/* paper: the sheets of the drawings stay black on white in every theme */
+.lvscroll {
+  overflow: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 6px;
+  background: #fff;
+  color: #1b1d20;
+}
+.lvcard {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 6px;
+  background: #fafafa;
+  color: #1b1d20;
+  font-size: 11px;
+}
+.lvcard .hint {
+  color: #555;
+}
+.lvcard.full {
+  min-width: 150px;
+}
+.lvcard.hl {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px #f59e0b55;
+  background: #fffbeb;
+}
+.lvsvg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  font-family: system-ui, sans-serif;
+}
+.lvp.cut {
+  stroke: #c77d1a;
+  stroke-width: 0.9;
+  cursor: pointer;
+}
+.lvp.full {
+  stroke: none;
+}
+.lvp.slope {
+  stroke: #2563eb;
+}
+.lvp.hlsh {
+  fill: #fde68a !important;
+}
+.lvp.hl {
+  fill: #f59e0b !important;
+  stroke: #7c2d12;
+  stroke-width: 2;
+}
+.lvno {
+  fill: #1b1d20;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: all;
+}
+.lvno.hl {
+  fill: #7c2d12;
+}
+.lvsz {
+  fill: #555;
+  pointer-events: none;
+}
+.lvdim line {
+  stroke: #333;
+  stroke-width: 0.8;
+}
+.lvdim text {
+  font-size: 11px;
+  fill: #333;
+}
+.lvsch.picking {
+  cursor: crosshair;
+}
+@media (max-width: 760px) {
+  .lvtop {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lvbody {
+    padding: 10px;
+  }
+  .lvtbl {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* ---- 20 glass drawing: the whole page is a sheet for printing ---- */
+.gvwin .win-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gvbody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+  background: #fff;
+  color: #1b1d20;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.gvbody h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #555;
+}
+.gvbody .hint {
+  color: #555;
+}
+.gvtop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.gvbody dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.gvbody dt {
+  color: #666;
+}
+.gvbody dd {
+  margin: 0;
+}
+.gvsvg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  font-family: system-ui, sans-serif;
+}
+.gvdim line {
+  stroke: #333;
+  stroke-width: 0.8;
+}
+.gvdim text {
+  font-size: 10.5px;
+  fill: #333;
+}
+.gvcards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.gvcard {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafafa;
+  font-size: 11px;
+}
+.gvcard.film {
+  border-color: #e5a3a3;
+  background: #fff6f6;
+}
+.gvct {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.gvtbl {
+  border-collapse: collapse;
+  font-size: 11.5px;
+  width: 100%;
+}
+.gvtbl td {
+  border: 1px solid #ddd;
+  padding: 3px 8px;
+}
+.gvrules,
+.gviss {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.gviss .bad,
+.gvbody .bad {
+  color: #c0392b;
+}
+.gviss .warn {
+  color: #b26b00;
+}
+.gviss .info {
+  color: #555;
+}
+.gviss .ok {
+  color: #2e7d32;
+}
+@media (max-width: 760px) {
+  .gvtop {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gvbody {
+    padding: 10px;
+  }
+}
+
+/* ---- 37 finishing brush: a floating panel (a bottom sheet on a phone) ---- */
+@media (min-width: 761px) {
+  #finpop.win-float {
+    left: 76px;
+    right: auto;
+    top: 112px;
+  }
+}
+.finwin .win-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.finwin .fp-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.finwin .fp-row select {
+  flex: 1;
+  min-width: 0;
+}
+.finwin .fp-row label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 1;
+}
+.finwin .fp-row input[type='number'] {
+  width: 70px;
+}
+.finwin .hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.finwin .win-head h3 {
+  font-size: 13px;
+}
+
+/* ---- the zones of a wall in the properties panel (finishing) ---- */
+.props > .zone,
+.props > .btnrow,
+.props > .hint {
+  grid-column: 1 / -1;
+}
+.zone {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  margin: 6px 0;
+}
+.zone .zh {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+.zone .zh .x {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+}
+.zone .zg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 6px 0;
+}
+.zone .zg label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+}
+.zone .zg input[type='number'] {
+  width: 100%;
+  min-width: 0;
+}
+.zone .zc {
+  font-size: 11px;
+  opacity: 0.85;
+  line-height: 1.35;
+}
+.zone .bad {
+  color: var(--danger);
 }
 
 /* ===== Window frame (docs/UI-LAYOUT.md): burger, two header rows, tool column, panel over the field, right panel,
@@ -9343,22 +9756,10 @@ html #app #hideBadge:hover {
   <button data-f="new">Новый чертёж</button>
 </div>
 
-<div id="wtdlg" class="modal" hidden>
-  <div class="dlg" role="dialog" aria-label="Типы стен">
-    <div class="dlgh"><h3>Типы стен</h3><button class="btn" id="wtNewK">+ Система Кнауф</button><button class="btn" id="wtNewL">+ Стена из слоёв</button><button class="btn pri" id="wtNewC">+ Конструктор стены / облицовки</button><button class="x" id="wtClose" aria-label="Закрыть">×</button></div>
-    <div class="wtbody"><div id="wtlist"></div><div id="wted"></div></div>
-  </div>
-</div>
 <div id="mepdlg" class="modal" hidden>
   <div class="dlg" role="dialog" aria-label="Инженерные системы">
     <div class="dlgh"><h3>Инженерные системы</h3><button class="x" id="mepClose" aria-label="Закрыть">×</button></div>
     <div class="mepwrap"><div class="tabsrow" id="meptabs"><button data-t="el" class="on">Электрика</button><button data-t="vt">Вентиляция</button><button data-t="panel">Щит</button><button data-t="coll">Коллектор</button><button data-t="gen">Общие</button></div><div class="mepb" id="mepbody"></div></div>
-  </div>
-</div>
-<div id="prdlg" class="modal" hidden>
-  <div class="dlg" role="dialog" aria-label="Профили сечений">
-    <div class="dlgh"><h3>Профили сечений</h3><button class="btn" id="prImp">Импорт DXF…</button><button class="x" id="prClose" aria-label="Закрыть">×</button></div>
-    <div class="prbody"><div id="prlist"></div><div id="preditor"></div></div>
   </div>
 </div>
 <input type="file" id="dxfIn" hidden accept=".dxf">
@@ -9425,7 +9826,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.90';
+const APP_VER = '59.91';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -26926,8 +27327,10 @@ const sheetOpts = v =>
     .filter(k => !k.startsWith('b:'))
     .map(k => `<option value="${k}" ${k === v ? 'selected' : ''}>${SHEETS[k].n}</option>`)
     .join('');
+/** Opens the wall types window (built on the first call, not at start: the frame code is loaded after the start-up code) and shows the type `id`. */
 function openWT(id) {
   wtSel = id || wtSel || S.curWt;
+  wtWindow();
   $('#wtdlg').hidden = false;
   renderWT();
 }
@@ -27221,8 +27624,7 @@ function drawSection(t, ct, cv_) {
   c.height = H * dpr;
   const g = c.getContext('2d');
   g.scale(dpr, dpr);
-  g.fillStyle = '#16191d';
-  g.fillRect(0, 0, W, H);
+  g.clearRect(0, 0, W, H);
   const labW = Math.min(300, W * 0.48),
     x0 = 16,
     x1 = W - labW - 24,
@@ -27296,68 +27698,80 @@ function drawSection(t, ct, cv_) {
   });
 }
 
-/** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
-function initWallTypesDialog() {
-  $('#wtlist').addEventListener('click', e => {
+/** Builds the wall types window once: three creation buttons in the header, the list of types on the left, the editor of the chosen type in the main pane. */
+function wtWindow() {
+  if ($('#wtdlg')) return;
+  const w = openWindow({
+    id: 'wtdlg',
+    title: 'Типы стен',
+    size: 'xl',
+    cls: 'wtwin',
+    closeId: 'wtClose',
+    actions: [
+      { n: '+ Система Кнауф', id: 'wtNewK', a: wtNewKnauf },
+      { n: '+ Стена из слоёв', id: 'wtNewL', a: wtNewLayers },
+      { n: '+ Конструктор стены / облицовки', id: 'wtNewC', pri: true, a: wtNewCustom }
+    ],
+    left: '<div id="wtlist"></div>',
+    body: '<div id="wted"></div>'
+  });
+  w.el.querySelector('#wtlist').addEventListener('click', e => {
     const b = e.target.closest('button[data-id]');
     if (b) {
       wtSel = b.dataset.id;
       renderWT();
     }
   });
-  $('#wtClose').onclick = () => {
-    $('#wtdlg').hidden = true;
-    cin.focus({ preventScroll: true });
+}
+/** Adds a Knauf partition type (С112) and selects it. */
+function wtNewKnauf() {
+  pushUndo();
+  const t = findOrMakeType({
+    kind: 'knauf',
+    sys: 'С112',
+    prof: 75,
+    step: 600,
+    sa: 'ГКЛ',
+    sb: 'ГКЛ',
+    ins: true,
+    gap: KN['С112'].gap,
+    auto: true
+  });
+  wtSel = t.id;
+  changed();
+  renderWT();
+}
+/** Adds an empty custom wall (constructor) type and selects it. */
+function wtNewCustom() {
+  pushUndo();
+  const t = {
+    id: 'wt_' + Date.now().toString(36),
+    name: 'Своя стена',
+    kind: 'custom',
+    layers: JSON.parse(JSON.stringify(CTPL.part1.layers))
   };
-  $('#wtNewK').onclick = () => {
-    pushUndo();
-    const t = findOrMakeType({
-      kind: 'knauf',
-      sys: 'С112',
-      prof: 75,
-      step: 600,
-      sa: 'ГКЛ',
-      sb: 'ГКЛ',
-      ins: true,
-      gap: KN['С112'].gap,
-      auto: true
-    });
-    if (S.wtypes.filter(x => x === t).length && wtSel === t.id) {
-    }
-    wtSel = t.id;
-    changed();
-    renderWT();
+  wtypesPush(t);
+  wtSel = t.id;
+  changed();
+  renderWT();
+}
+/** Adds a layered wall type (plaster, aerated concrete, plaster) and selects it. */
+function wtNewLayers() {
+  pushUndo();
+  const t = {
+    id: 'wt_' + Date.now().toString(36),
+    name: 'Новая стена',
+    kind: 'layers',
+    layers: [
+      { m: 'Штукатурка гипсовая', th: 10 },
+      { m: 'Газобетон D500', th: 150 },
+      { m: 'Штукатурка гипсовая', th: 10 }
+    ]
   };
-  $('#wtNewC').onclick = () => {
-    pushUndo();
-    const t = {
-      id: 'wt_' + Date.now().toString(36),
-      name: 'Своя стена',
-      kind: 'custom',
-      layers: JSON.parse(JSON.stringify(CTPL.part1.layers))
-    };
-    wtypesPush(t);
-    wtSel = t.id;
-    changed();
-    renderWT();
-  };
-  $('#wtNewL').onclick = () => {
-    pushUndo();
-    const t = {
-      id: 'wt_' + Date.now().toString(36),
-      name: 'Новая стена',
-      kind: 'layers',
-      layers: [
-        { m: 'Штукатурка гипсовая', th: 10 },
-        { m: 'Газобетон D500', th: 150 },
-        { m: 'Штукатурка гипсовая', th: 10 }
-      ]
-    };
-    wtypesPush(t);
-    wtSel = t.id;
-    changed();
-    renderWT();
-  };
+  wtypesPush(t);
+  wtSel = t.id;
+  changed();
+  renderWT();
 }
 
 /* ---------- constructor of custom wall / lining types ---------- */
@@ -27830,10 +28244,43 @@ function prMark(g, k, x, y) {
 }
 const prUsage = id =>
   query('door', e => e.cfg && (e.cfg.frame.prof === id || e.cfg.ext.prof === id || e.cfg.casing.prof === id)).length;
+/** Opens the section profiles window (built on the first call, not at start) and selects the profile `id`. */
 function openProfiles(id) {
   prSel = id || prSel || S.profiles[0].id;
+  prWindow();
   $('#prdlg').hidden = false;
   renderProfiles();
+}
+/** Builds the profiles window once: the DXF import button in the header, the list of profiles on the left, the editor of the chosen one in the main pane. */
+function prWindow() {
+  if ($('#prdlg')) return;
+  const w = openWindow({
+    id: 'prdlg',
+    title: 'Профили сечений',
+    size: 'xl',
+    cls: 'prwin',
+    closeId: 'prClose',
+    actions: [
+      {
+        n: 'Импорт DXF…',
+        id: 'prImp',
+        a: () => {
+          $('#dxfIn').value = '';
+          $('#dxfIn').click();
+        }
+      }
+    ],
+    left: '<div id="prlist"></div>',
+    body: '<div id="preditor"></div>'
+  });
+  w.el.querySelector('#prlist').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]');
+    if (b) {
+      prSel = b.dataset.id;
+      prPick = null;
+      renderProfiles();
+    }
+  });
 }
 function renderProfiles() {
   $('#prlist').innerHTML = Object.entries(PK)
@@ -28010,8 +28457,7 @@ function drawProfile(p) {
   c.height = H * dpr;
   const g = c.getContext('2d');
   g.scale(dpr, dpr);
-  g.fillStyle = '#14171b';
-  g.fillRect(0, 0, W, H);
+  g.clearRect(0, 0, W, H);
   const all = p.pts.concat(Object.values(p.an || {}), p.extra || [], ...(p.lines || []).map(l => l.p));
   const xs = all.map(q => q[0]),
     ys = all.map(q => q[1]);
@@ -28109,27 +28555,8 @@ function drawProfile(p) {
   }
 }
 
-/** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
+/** Wires the DXF file input (the window itself is built on the first opening). Called once by app/boot.js. */
 function initProfilesDialog() {
-  $('#prlist').addEventListener('click', e => {
-    const b = e.target.closest('button[data-id]');
-    if (b) {
-      prSel = b.dataset.id;
-      prPick = null;
-      renderProfiles();
-    }
-  });
-  $('#prClose').onclick = () => {
-    $('#prdlg').hidden = true;
-    cin.focus({ preventScroll: true });
-  };
-  $('#prdlg').addEventListener('pointerdown', e => {
-    if (e.target.id === 'prdlg') $('#prdlg').hidden = true;
-  });
-  $('#prImp').onclick = () => {
-    $('#dxfIn').value = '';
-    $('#dxfIn').click();
-  };
   $('#dxfIn').addEventListener('change', async e => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
@@ -28992,12 +29419,9 @@ function initMepDialog() {
   };
   $('#bWT').onclick = () => openWT();
   $('#bMEP').onclick = () => openMEP();
-  for (const id of ['wtdlg', 'mepdlg'])
-    $('#' + id).addEventListener('pointerdown', e => {
-      if (e.target.id === id) {
-        $('#' + id).hidden = true;
-      }
-    });
+  $('#mepdlg').addEventListener('pointerdown', e => {
+    if (e.target.id === 'mepdlg') $('#mepdlg').hidden = true;
+  });
 }
 
 // ===== blocks/io/ifc.js =====
@@ -40413,6 +40837,7 @@ function initMixers() {
 
 
 
+
 /* wall finishing tool: whole side or zones; panels surface / flush with the build-up;
    substrate made up from sheet materials; joint profiles on zone borders */
 const FINM = {
@@ -41139,37 +41564,29 @@ function mkFinish() {
     }
   };
 }
+/** Shows or hides the floating panel of the finishing brush (a `float` window of the common frame, id finpop); closing it with × ends the command. */
 function showFinPop(on) {
-  let d = $('#finpop');
   if (!on) {
+    const d = $('#finpop');
     if (d) d.hidden = true;
     return;
-  }
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'finpop';
-    d.className = 'pop';
-    d.setAttribute('role', 'dialog');
-    d.setAttribute('aria-label', 'Кисть отделки');
-    document.body.appendChild(d);
   }
   const B = brush(),
     M = FINM[B.k] || FINM.paint;
   const sel = (k, opts, v) =>
     `<select data-b="${k}">${opts.map(([a, b]) => `<option value="${esc(a)}" ${String(a) === String(v) ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select>`;
-  d.innerHTML = `<div class="mh">Отделка стен</div>
-    <div class="fp-row">${sel(
-      'mode',
-      [
-        ['side', 'Вся сторона'],
-        ['zone', 'Зона']
-      ],
-      B.mode
-    )}${sel(
-      'k',
-      Object.entries(FINM).map(([k, v]) => [k, v.n]),
-      B.k
-    )}</div>
+  const html = `<div class="fp-row">${sel(
+    'mode',
+    [
+      ['side', 'Вся сторона'],
+      ['zone', 'Зона']
+    ],
+    B.mode
+  )}${sel(
+    'k',
+    Object.entries(FINM).map(([k, v]) => [k, v.n]),
+    B.k
+  )}</div>
     <div class="fp-row">${sel('ral', [['', 'Свой цвет'], ...RAL.map(r => [r[0], r[0] + ' ' + r[1]])], B.ral)}<input type="color" data-b="col" value="${hexOk(B.col) ? B.col : '#f1f0ea'}"></div>
     ${
       M.panel
@@ -41210,11 +41627,19 @@ function showFinPop(on) {
     <div class="fp-row">${sel('joint', Object.entries(JOINT), B.joint)}</div>
     ${B.mode === 'zone' ? `<div class="fp-row"><label>низ <input type="number" data-b="z0" value="${+B.z0 || 0}"></label><label>верх <input type="number" data-b="z1" value="${+B.z1 || 0}" title="0 — до верха стены"></label></div>` : ''}
     <div class="hint">${B.mode === 'side' ? 'Щелчок у стороны стены — отделка на всю сторону. Панели ставятся зоной на всю сторону.' : 'Два щелчка вдоль стороны стены (в 3D — два угла зоны прямо на стене). Высота: низ/верх, 0 — до верха.'} Enter / Esc — выход.</div>`;
-  d.hidden = false;
-  d.style.position = 'fixed';
-  d.style.left = '76px';
-  d.style.top = '112px';
-  d.style.zIndex = 40;
+  const win = openWindow({
+    id: 'finpop',
+    title: 'Отделка стен',
+    float: true,
+    size: 's',
+    cls: 'finwin',
+    body: html,
+    onClose: () => {
+      const c = commandsState.cmd;
+      if (c && c.name === 'finish') endCmd();
+    }
+  });
+  const d = win.el;
   d.querySelectorAll('[data-b]').forEach(
     inp =>
       (inp.onchange = () => {
@@ -41401,16 +41826,6 @@ function bindZones(el, w) {
       changed();
     };
   });
-}
-
-/** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
-function initFinishing() {
-  try {
-    const st = document.createElement('style');
-    st.textContent = `#finpop{width:330px;display:flex;flex-direction:column;gap:6px;padding:10px 12px}#finpop .mh{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}#finpop .fp-row{display:flex;gap:6px;align-items:center}#finpop .fp-row select{flex:1;min-width:0}#finpop .fp-row label{display:flex;gap:4px;align-items:center;flex:1}#finpop .fp-row input[type=number]{width:70px}#finpop .hint{font-size:11px;opacity:.7}
-.props>.zone,.props>.btnrow,.props>.hint{grid-column:1/-1}.zone{border:1px solid var(--line,#333);border-radius:6px;padding:6px;margin:6px 0}.zone .zh{display:flex;gap:6px;align-items:center;font-size:12px}.zone .zh .x{margin-left:auto;background:none;border:0;color:inherit;cursor:pointer;font-size:15px}.zone .zg{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:6px 0}.zone .zg label{display:flex;gap:4px;align-items:center;font-size:11px}.zone .zg input[type=number]{width:100%;min-width:0}.zone .zc{font-size:11px;opacity:.85;line-height:1.35}.zone .bad{color:#ef5f5f}`;
-    document.head.appendChild(st);
-  } catch (e) {}
 }
 
 // ===== blocks/finishes/tiles.js =====
@@ -109371,355 +109786,6 @@ function initAgent() {
     });
 }
 
-// ===== blocks/building/build-catalog.js =====
-/**
- * blocks/building/build-catalog.js
- *
- * Catalogue for custom wall and lining types («Конструктор»): sheet boards, frame profiles, insulation, and the
- * project library of the user's own materials / boards / profiles / insulation (S.x.lib).
- *
- * A custom wall type is { kind: 'custom', name, layers: [...] }, layers from side A to side B:
- *   { k: 'board', b: boardId }                                  — one layer of sheathing
- *   { k: 'frame', p: profileId, step, fix, bstep, ins, insTh }  — frame (studs or furring) with insulation inside
- *   { k: 'ins', i: insId, th }                                  — insulation board / mat outside a frame
- *   { k: 'mat', m: materialName, th }                           — masonry, concrete, plaster, glue…
- *   { k: 'air', th, n }                                         — air gap / installation zone
- * Masses: boards kg/m², profiles kg/m, insulation and materials kg/m³. Values are typical catalogue data.
- */
-
-
-
-
-/** Sheet boards: th mm, kg/m², sheet w × l mm, fire / moisture flags; screw — screw length for this board. */
-const BOARDS = {
-  gkl125: { n: 'ГКЛ 12,5', th: 12.5, kgm2: 8.5, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
-  gkl95: { n: 'ГКЛ 9,5', th: 9.5, kgm2: 7, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
-  gklv125: { n: 'ГКЛВ 12,5 (H2)', th: 12.5, kgm2: 9, w: 1200, l: 2500, col: '#b9d4b2', sheet: 'ГКЛВ', wet: true },
-  gklo125: { n: 'ГКЛО 12,5 (DF)', th: 12.5, kgm2: 9.5, w: 1200, l: 2500, col: '#e2bcb7', sheet: 'ГКЛО', fire: true },
-  gklvo125: {
-    n: 'ГКЛВО 12,5 (DFH2)',
-    th: 12.5,
-    kgm2: 10,
-    w: 1200,
-    l: 2500,
-    col: '#c8c0d8',
-    sheet: 'ГКЛВО',
-    fire: true,
-    wet: true
-  },
-  gkl15: { n: 'ГКЛ 15', th: 15, kgm2: 11, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
-  saph: {
-    n: 'Кнауф Сапфир 12,5 (DFH2IR)',
-    th: 12.5,
-    kgm2: 12,
-    w: 1200,
-    l: 2500,
-    col: '#b8c6dc',
-    fire: true,
-    wet: true
-  },
-  fireb: { n: 'Кнауф Файерборд 12,5 (GM-F)', th: 12.5, kgm2: 10.5, w: 1200, l: 2500, col: '#e8b8a8', fire: true },
-  arch65: { n: 'ГКЛ арочный 6,5', th: 6.5, kgm2: 5.5, w: 1200, l: 2500, col: '#dedbd4' },
-  gvl10: { n: 'ГВЛ 10', th: 10, kgm2: 12, w: 1200, l: 2500, col: '#e9e4da', fire: true },
-  gvl125: { n: 'ГВЛ 12,5', th: 12.5, kgm2: 15, w: 1200, l: 2500, col: '#e9e4da', fire: true },
-  gvlv125: { n: 'ГВЛВ 12,5', th: 12.5, kgm2: 15.5, w: 1200, l: 2500, col: '#dbe5d6', fire: true, wet: true },
-  aqua: { n: 'Аквапанель Indoor 12,5', th: 12.5, kgm2: 15, w: 900, l: 1200, col: '#d5d6d2', wet: true, fire: true },
-  csp12: { n: 'ЦСП 12', th: 12, kgm2: 16, w: 1250, l: 3200, col: '#c9c7c0', wet: true },
-  csp16: { n: 'ЦСП 16', th: 16, kgm2: 21, w: 1250, l: 3200, col: '#c9c7c0', wet: true },
-  sml10: {
-    n: 'СМЛ (стекломагниевый лист) 10',
-    th: 10,
-    kgm2: 10,
-    w: 1220,
-    l: 2440,
-    col: '#e3e1da',
-    wet: true,
-    fire: true
-  },
-  osb12: { n: 'ОСБ-3 12', th: 12, kgm2: 7.5, w: 1250, l: 2500, col: '#d2b07a' },
-  osb15: { n: 'ОСБ-3 15', th: 15, kgm2: 9.5, w: 1250, l: 2500, col: '#d2b07a' },
-  ply15: { n: 'Фанера ФСФ 15', th: 15, kgm2: 9.8, w: 1525, l: 1525, col: '#d8b98a' },
-  ply18: { n: 'Фанера ФСФ 18', th: 18, kgm2: 11.7, w: 1525, l: 1525, col: '#d8b98a' },
-  mdf16: { n: 'МДФ 16', th: 16, kgm2: 12, w: 1830, l: 2800, col: '#cfc6b8' },
-  xps20: { n: 'Плита XPS под плитку 20 (армированная)', th: 20, kgm2: 3.5, w: 600, l: 1250, col: '#a9cbe0', wet: true },
-  vag14: { n: 'Вагонка / рейка 14', th: 14, kgm2: 7, w: 96, l: 3000, col: '#c99a5b' }
-};
-/**
- * Frame profiles: depth (frame thickness), flange, kg/m; kind: stud (vertical studs + tracks), furring (ПП 60/27 on
- * brackets / clips), wood (timber studs). maxH — max height at step 600 with one board layer per side (single frame).
- */
-const PROFS = {
-  ps50: { n: 'ПС 50/50 + ПН 50/40 (0,6)', kind: 'stud', depth: 50, fl: 50, kgm: 0.67, track: 'ПН 50/40', maxH: 3000 },
-  ps65: { n: 'ПС 65/50 + ПН 65/40 (0,6)', kind: 'stud', depth: 65, fl: 50, kgm: 0.74, track: 'ПН 65/40', maxH: 4000 },
-  ps75: { n: 'ПС 75/50 + ПН 75/40 (0,6)', kind: 'stud', depth: 75, fl: 50, kgm: 0.8, track: 'ПН 75/40', maxH: 4500 },
-  ps100: {
-    n: 'ПС 100/50 + ПН 100/40 (0,6)',
-    kind: 'stud',
-    depth: 100,
-    fl: 50,
-    kgm: 0.94,
-    track: 'ПН 100/40',
-    maxH: 5000
-  },
-  ps125: {
-    n: 'ПС 125/50 + ПН 125/40 (0,8)',
-    kind: 'stud',
-    depth: 125,
-    fl: 50,
-    kgm: 1.35,
-    track: 'ПН 125/40',
-    maxH: 6000
-  },
-  ps150: {
-    n: 'ПС 150/50 + ПН 150/40 (0,8)',
-    kind: 'stud',
-    depth: 150,
-    fl: 50,
-    kgm: 1.5,
-    track: 'ПН 150/40',
-    maxH: 6500
-  },
-  ua75: { n: 'ПУ 75/40 (2 мм, усиленный)', kind: 'stud', depth: 75, fl: 40, kgm: 2.6, track: 'ПН 75/40', maxH: 6000 },
-  ua100: {
-    n: 'ПУ 100/40 (2 мм, усиленный)',
-    kind: 'stud',
-    depth: 100,
-    fl: 40,
-    kgm: 3.0,
-    track: 'ПН 100/40',
-    maxH: 7000
-  },
-  pp27: {
-    n: 'ПП 60/27 + ПН 28/27 на прямых подвесах',
-    kind: 'furring',
-    depth: 27,
-    fl: 60,
-    kgm: 0.6,
-    track: 'ПН 28/27',
-    maxH: 99999
-  },
-  pp27c: {
-    n: 'ПП 60/27 на виброподвесах (акустика)',
-    kind: 'furring',
-    depth: 27,
-    fl: 60,
-    kgm: 0.6,
-    track: 'ПН 28/27',
-    maxH: 99999,
-    vib: true
-  },
-  wood45: { n: 'Брус 45×45 (обрешётка)', kind: 'wood', depth: 45, fl: 45, kgm: 1.0, track: 'брус 45×45', maxH: 99999 },
-  wood50x100: {
-    n: 'Брус 50×100 (каркас)',
-    kind: 'wood',
-    depth: 100,
-    fl: 50,
-    kgm: 2.5,
-    track: 'брус 50×100',
-    maxH: 3600
-  },
-  wood50x150: {
-    n: 'Брус 50×150 (каркас)',
-    kind: 'wood',
-    depth: 150,
-    fl: 50,
-    kgm: 3.75,
-    track: 'брус 50×150',
-    maxH: 4500
-  }
-};
-/** Brackets connecting a frame to the base wall (rigidity of linings and «наросты»). maxGap — max gap, mm. */
-const BRK = {
-  none: { n: 'Нет (каркас стоит свободно)' },
-  direct: { n: 'Подвес прямой П-образный', maxGap: 120, kg: 0.06, dowel: 2, screw: 2 },
-  director: { n: 'Кронштейн-директор (Г-образный, регулируемый)', maxGap: 200, kg: 0.12, dowel: 2, screw: 2 },
-  long: { n: 'Кронштейн удлинённый / из ПН (большой зазор)', maxGap: 400, kg: 0.25, dowel: 2, screw: 4 },
-  vibro: { n: 'Виброподвес (акустический)', maxGap: 120, kg: 0.1, dowel: 1, screw: 2 }
-};
-/** Insulation: density kg/m³. */
-const INSUL = {
-  none: { n: 'Без утеплителя', rho: 0, col: null },
-  mw37: { n: 'Минвата акустическая 37 кг/м³', rho: 37, col: '#e7d58f' },
-  rw45: { n: 'Каменная вата 45 кг/м³ (Акустик Баттс)', rho: 45, col: '#d9c06a' },
-  rw100: { n: 'Каменная вата 100 кг/м³ (огнезащита)', rho: 100, col: '#c9b060' },
-  glass: { n: 'Стекловата 15 кг/м³', rho: 15, col: '#efe08f' },
-  eps: { n: 'Пенополистирол ППС 25', rho: 25, col: '#f1f3f5' },
-  xps: { n: 'XPS 35 кг/м³', rho: 35, col: '#a9cbe0' },
-  cork: { n: 'Пробка 200 кг/м³', rho: 200, col: '#a77b4f' }
-};
-/** Density of the standard materials, kg/m³ (for the mass of a wall). */
-const MAT_RHO = {
-  'Газобетон D500': 600,
-  'Кирпич керамический': 1800,
-  'Кирпич силикатный': 1900,
-  'ПГП Кнауф': 1250,
-  'Керамзитобетонный блок': 1100,
-  Железобетон: 2500,
-  'Штукатурка гипсовая': 950,
-  'Штукатурка цементная': 1800,
-  Шпаклёвка: 1200,
-  'Минеральная вата': 40,
-  'Воздушный зазор': 0,
-  'Кладка (обобщённо)': 1600,
-  'Клей гипсовый (Перлфикс)': 900,
-  'Клей плиточный': 1500
-};
-/** Classes for user materials. */
-const MAT_CLS = {
-  block: 'Кладка / блок',
-  brick: 'Кирпич',
-  aer: 'Газобетон',
-  conc: 'Бетон',
-  pgp: 'ПГП',
-  plas: 'Штукатурка / шпаклёвка',
-  ins: 'Утеплитель',
-  glue: 'Клей / раствор'
-};
-
-/* ---------- project library ---------- */
-function lib() {
-  xInit();
-  S.x.lib = S.x.lib || {};
-  const L = S.x.lib;
-  L.mats = L.mats || [];
-  L.boards = L.boards || [];
-  L.profs = L.profs || [];
-  L.ins = L.ins || [];
-  return L;
-}
-const boardsAll = () => ({ ...BOARDS, ...Object.fromEntries(lib().boards.map(b => [b.id, b])) });
-const profsAll = () => ({ ...PROFS, ...Object.fromEntries(lib().profs.map(p => [p.id, p])) });
-const insAll = () => ({ ...INSUL, ...Object.fromEntries(lib().ins.map(i => [i.id, i])) });
-const matRho = m => {
-  const u = lib().mats.find(x => x.n === m);
-  return u ? +u.rho || 0 : (MAT_RHO[m] ?? 1600);
-};
-/** User materials and boards become known to the wall machinery (colours, classes, sheet names). */
-function registerLib() {
-  const L = lib();
-  for (const m of L.mats) MATS[m.n] = { cls: m.cls || 'block', col: m.col || '#c9c3b8' };
-  if (!MATS['Клей гипсовый (Перлфикс)']) MATS['Клей гипсовый (Перлфикс)'] = { cls: 'air', col: '#e9e4d6' };
-  if (!MATS['Клей плиточный']) MATS['Клей плиточный'] = { cls: 'plas', col: '#c9c6bf' };
-  for (const [id, b] of Object.entries(boardsAll())) SHEETS['b:' + id] = { n: b.n, col: b.col || '#d6d3cc' };
-}
-/** Max height of a frame: catalogue value for step 600 and one board per side, corrected for step and boards. */
-function frameMaxH(p, step, boardsPerSide, frames) {
-  if (!p || !(p.maxH < 99999)) return null;
-  const k = Math.pow(600 / (step || 600), 0.33) * (1 + 0.12 * Math.max(0, boardsPerSide - 1)) * (frames > 1 ? 1.15 : 1);
-  return Math.round((p.maxH * k) / 50) * 50;
-}
-
-/** Ready-made stacks for the constructor (templates). */
-const CTPL = {
-  part1: {
-    n: 'Перегородка: 1 слой с каждой стороны',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'frame', p: 'ps75', step: 600, ins: 'mw37' },
-      { k: 'board', b: 'gkl125' }
-    ]
-  },
-  part2: {
-    n: 'Перегородка: 2 слоя с каждой стороны',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'board', b: 'gkl125' },
-      { k: 'frame', p: 'ps75', step: 600, ins: 'mw37' },
-      { k: 'board', b: 'gkl125' },
-      { k: 'board', b: 'gkl125' }
-    ]
-  },
-  wet: {
-    n: 'Мокрая зона: аквапанель + ГКЛВ',
-    layers: [
-      { k: 'board', b: 'aqua' },
-      { k: 'board', b: 'gklv125' },
-      { k: 'frame', p: 'ps75', step: 400, ins: 'rw45' },
-      { k: 'board', b: 'gklv125' },
-      { k: 'board', b: 'gklv125' }
-    ]
-  },
-  double: {
-    n: 'Двойной каркас (звукоизоляция)',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'board', b: 'gkl125' },
-      { k: 'frame', p: 'ps50', step: 600, ins: 'rw45' },
-      { k: 'air', th: 10, n: 'Зазор между каркасами' },
-      { k: 'frame', p: 'ps50', step: 600, ins: 'rw45' },
-      { k: 'board', b: 'gkl125' },
-      { k: 'board', b: 'gkl125' }
-    ]
-  },
-  linPP: {
-    n: 'Облицовка на ПП 60/27 по газобетону',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'frame', p: 'pp27', step: 600, bstep: 800, ins: 'none' },
-      { k: 'air', th: 20, n: 'Зазор до стены' },
-      { k: 'mat', m: 'Газобетон D500', th: 200 },
-      { k: 'mat', m: 'Штукатурка гипсовая', th: 10 }
-    ]
-  },
-  linFree: {
-    n: 'Облицовка свободностоящая на ПС 50 (инсталляции)',
-    layers: [
-      { k: 'board', b: 'gklv125' },
-      { k: 'board', b: 'gklv125' },
-      { k: 'frame', p: 'ps50', step: 600, ins: 'none' },
-      { k: 'air', th: 100, n: 'Зона коммуникаций' },
-      { k: 'mat', m: 'Кирпич керамический', th: 120 },
-      { k: 'mat', m: 'Штукатурка гипсовая', th: 15 }
-    ]
-  },
-  buildout: {
-    n: 'Нарост к наружной стене: ГКЛВ на ПС 50 с зазором, кронштейны-директоры',
-    layers: [
-      { k: 'board', b: 'gklv125' },
-      { k: 'board', b: 'gklv125' },
-      { k: 'frame', p: 'ps50', step: 600, ins: 'none', fix: 'free', brk: 'director', bz: 1000, bn: 1 },
-      { k: 'air', th: 100, n: 'Зазор до стены (коммуникации)' }
-    ]
-  },
-  linGlue: {
-    n: 'Облицовка ГКЛ на клей по кирпичу',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'mat', m: 'Клей гипсовый (Перлфикс)', th: 10 },
-      { k: 'mat', m: 'Кирпич керамический', th: 250 },
-      { k: 'mat', m: 'Штукатурка цементная', th: 20 }
-    ]
-  },
-  acoustic: {
-    n: 'Акустическая облицовка на виброподвесах',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'board', b: 'gkl125' },
-      { k: 'frame', p: 'pp27c', step: 600, bstep: 600, ins: 'rw45', insTh: 50 },
-      { k: 'air', th: 30, n: 'Зазор с минватой' },
-      { k: 'mat', m: 'Железобетон', th: 200 }
-    ]
-  },
-  wood: {
-    n: 'Деревянный каркас + ОСБ + ГКЛ',
-    layers: [
-      { k: 'board', b: 'gkl125' },
-      { k: 'board', b: 'osb12' },
-      { k: 'frame', p: 'wood50x100', step: 600, ins: 'rw45' },
-      { k: 'board', b: 'osb12' },
-      { k: 'board', b: 'gkl125' }
-    ]
-  },
-  block: {
-    n: 'Кладка + штукатурка',
-    layers: [
-      { k: 'mat', m: 'Штукатурка гипсовая', th: 10 },
-      { k: 'mat', m: 'Газобетон D500', th: 150 },
-      { k: 'mat', m: 'Штукатурка гипсовая', th: 10 }
-    ]
-  }
-};
-
 // ===== blocks/building/openings/openings.js =====
 /**
  * blocks/building/openings/openings.js
@@ -113324,24 +113390,41 @@ function openLayoutView(kind, id, i = 0) {
   LYV.pick = false;
   let d = document.getElementById('lvdlg');
   if (!d) {
-    d = document.createElement('div');
-    d.id = 'lvdlg';
-    d.className = 'modal';
-    d.style.zIndex = '60';
-    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Раскладка" style="width:min(1400px,100%);height:min(920px,100%)"><div class="dlgh"><h3>Раскладка</h3><span class="hint" id="lvTitle"></span><div class="seg" id="lvMode"><button class="btn" data-m="factory" title="Видимые кромки деталей — только заводские: деталь берётся из плитки на своём месте, две детали из одной плитки — только с противоположных краёв">Заводские кромки</button><button class="btn" data-m="reuse" title="Мастер обрабатывает торцы: годные обрезки идут на другие детали">Обрезки в дело</button></div><button class="btn" id="lvPick" title="Щёлкните на схеме — привязка к углам, серединам сторон, проёмам и трапам">Начало в схеме</button><button class="btn" id="lvPlan" title="Указать точку начала на плане с привязками">Начало на плане</button><button class="btn" id="lvAuto" title="Вернуть автоматический выбор начала">Авто</button><button class="btn pri" id="lvPrint">Печать / PDF</button><button class="x" id="lvClose" aria-label="Закрыть">×</button></div><div id="lvBody" class="lvbody"></div></div>`;
-    document.body.appendChild(d);
-    d.querySelector('#lvClose').onclick = () => (d.hidden = true);
+    // the three main buttons in the header, «Авто» in «⋮»; the switch of the cutting mode is a bar above the page
+    const w = openWindow({
+      id: 'lvdlg',
+      title: 'Раскладка',
+      size: 'xl',
+      over: true,
+      cls: 'lvwin',
+      closeId: 'lvClose',
+      actions: [
+        { n: 'Печать / PDF', id: 'lvPrint', pri: true, a: printLayout },
+        {
+          n: 'Начало в схеме',
+          id: 'lvPick',
+          title: 'Щёлкните на схеме — привязка к углам, серединам сторон, проёмам и трапам',
+          a: () => {
+            LYV.pick = !LYV.pick;
+            renderLayoutView();
+          }
+        },
+        {
+          n: 'Начало на плане',
+          id: 'lvPlan',
+          title: 'Указать точку начала на плане с привязками',
+          a: wn => {
+            wn.close();
+            startCmd('layorg', mkLayOrg({ kind: LYV.kind, id: LYV.id, i: LYV.i, back: true }));
+          }
+        },
+        { n: 'Авто', id: 'lvAuto', title: 'Вернуть автоматический выбор начала', a: () => setLayoutCfg({ auto: true }) }
+      ],
+      body: `<div class="lv-bar"><div class="seg" id="lvMode"><button class="btn" data-m="factory" title="Видимые кромки деталей — только заводские: деталь берётся из плитки на своём месте, две детали из одной плитки — только с противоположных краёв">Заводские кромки</button><button class="btn" data-m="reuse" title="Мастер обрабатывает торцы: годные обрезки идут на другие детали">Обрезки в дело</button></div></div><div id="lvBody" class="lvbody"></div>`
+    });
+    d = w.el;
+    w.el.querySelector('.win-sub').id = 'lvTitle';
     d.querySelectorAll('#lvMode [data-m]').forEach(b => (b.onclick = () => setLayoutCfg({ reuse: b.dataset.m })));
-    d.querySelector('#lvPick').onclick = () => {
-      LYV.pick = !LYV.pick;
-      renderLayoutView();
-    };
-    d.querySelector('#lvPlan').onclick = () => {
-      d.hidden = true;
-      startCmd('layorg', mkLayOrg({ kind: LYV.kind, id: LYV.id, i: LYV.i, back: true }));
-    };
-    d.querySelector('#lvAuto').onclick = () => setLayoutCfg({ auto: true });
-    d.querySelector('#lvPrint').onclick = printLayout;
     d.querySelector('#lvBody').addEventListener('click', onBodyClick);
   }
   d.hidden = false;
@@ -113354,7 +113437,7 @@ function renderLayoutView() {
   document.getElementById('lvTitle').textContent = D.title;
   document.querySelectorAll('#lvMode [data-m]').forEach(b => b.classList.toggle('pri', b.dataset.m === D.reuse));
   document.getElementById('lvPick').classList.toggle('pri', LYV.pick);
-  body.innerHTML = `<div class="lvtop"><section><h4 class="lvh4">Контур</h4>${outlineSvg(D)}</section><section class="lvst"><h4 class="lvh4">Расход</h4><dl>${D.stats
+  body.innerHTML = `<div class="lvtop"><section><h4 class="lvh4">Контур</h4><div class="lvscroll">${outlineSvg(D)}</div></section><section class="lvst"><h4 class="lvh4">Расход</h4><dl>${D.stats
     .map(([a, b]) => `<dt>${esc(a)}</dt><dd>${b}</dd>`)
     .join(
       ''
@@ -113477,7 +113560,7 @@ function lvApply(T, o) {
 function printLayout() {
   const body = document.getElementById('lvBody');
   if (!body) return;
-  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Раскладка</title><style>${LV_CSS}body{font:12px system-ui,sans-serif;color:#111;background:#fff;margin:12mm}.lvbody{background:#fff}@page{size:A3 landscape;margin:10mm}section{page-break-inside:avoid}</style></head><body><h2>${esc(document.getElementById('lvTitle').textContent)}</h2><div class="lvbody">${body.innerHTML}</div></body></html>`;
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Раскладка</title><style>:root{--fg:#111;--muted:#555;--line:#ddd;--panel:#fff;--panel2:#f2f2f2;--canvas:#fff;--accent:#2563eb;--warn:#b26b00;--danger:#c0392b}${paperCss(/\.lv/)}body{font:12px system-ui,sans-serif;color:#111;background:#fff;margin:12mm}.lvbody{background:#fff;color:#111}@page{size:A3 landscape;margin:10mm}section{page-break-inside:avoid}</style></head><body><h2>${esc(document.getElementById('lvTitle').textContent)}</h2><div class="lvbody">${body.innerHTML}</div></body></html>`;
   let f = document.getElementById('lvPrintFrame');
   if (f) f.remove();
   f = document.createElement('iframe');
@@ -113578,26 +113661,6 @@ function mkLayOrg(t0) {
   };
 }
 
-const LV_CSS = `.lvbody{display:flex;flex-direction:column;gap:14px;padding:14px;overflow:auto;background:#fff;color:#1b1d20;min-height:0}
-.lvbody section{background:#fff}.lvh4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#555}
-.lvtop{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
-.lvst dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:12px}.lvst dt{color:#666}.lvst dd{margin:0}
-.lvsvg{max-width:100%;height:auto;display:block;font-family:system-ui,sans-serif}.lvscroll{overflow:auto;border:1px solid #ddd;border-radius:6px;padding:6px}
-.lvp.cut{stroke:#c77d1a;stroke-width:.9;cursor:pointer}.lvp.full{stroke:none}.lvp.slope{stroke:#2563eb}
-.lvp.hlsh{fill:#fde68a!important}.lvp.hl{fill:#f59e0b!important;stroke:#7c2d12;stroke-width:2}
-.lvno{fill:#1b1d20;font-weight:700;cursor:pointer;pointer-events:all}.lvno.hl{fill:#7c2d12}.lvsz{fill:#555;pointer-events:none}
-.lvdim line{stroke:#333;stroke-width:.8}.lvdim text{font-size:11px;fill:#333}
-.lvsch.picking{cursor:crosshair}
-.lvcards{display:flex;flex-wrap:wrap;gap:10px}.lvcard{border:1px solid #ddd;border-radius:6px;padding:6px;background:#fafafa;font-size:11px}
-.lvcard.hl{border-color:#f59e0b;box-shadow:0 0 0 2px #f59e0b55;background:#fffbeb}.lvct{font-weight:600;margin-bottom:4px}
-.lvcard.full{min-width:150px}.lvbig{font-size:22px;font-weight:700;margin:10px 0}
-.lvtbl{border-collapse:collapse;font-size:11.5px}.lvtbl th,.lvtbl td{border:1px solid #ddd;padding:3px 8px;text-align:left}.lvtbl tr.hl td{background:#fef3c7}
-.lvleg{display:flex;gap:14px;font-size:11px;color:#444;margin-top:4px}.lvleg i{display:inline-block;width:14px;height:10px;margin-right:4px;vertical-align:middle;border:1px solid #999}
-.lvleg .full{background:#e8e4dc}.lvleg .cut{background:#e8e4dc;border-color:#c77d1a}.lvleg .mit{border:0;border-top:3px dashed #c0392b;height:0}
-.lvleg .slope{border:0;border-top:2px dashed #2563eb;height:0}.lvleg .org{border-radius:50%;border:2px solid #e11d48}
-.bad{color:#c0392b}
-#lvdlg .seg{display:flex;gap:0}#lvdlg .seg .btn{border-radius:0}#lvdlg .seg .btn:first-child{border-radius:6px 0 0 6px}#lvdlg .seg .btn:last-child{border-radius:0 6px 6px 0}`;
-
 defineTools({
   layorg: {
     command: { t: 'НАЧАЛОРАСКЛАДКИ', m: () => mkLayOrg(null), a: ['layorg', 'началораскладки', 'начало раскладки'] },
@@ -113606,12 +113669,9 @@ defineTools({
   }
 });
 
-/** Wires the module: CSS and the buttons «Раскладка детально» / «Начало…» in Properties. Called once by app/boot.js. */
+/** Wires the module: the buttons «Раскладка детально» / «Начало…» in Properties. Called once by app/boot.js. */
 function initLayoutView() {
   try {
-    const st = document.createElement('style');
-    st.textContent = LV_CSS;
-    document.head.appendChild(st);
     document.addEventListener('click', ev => {
       const b = ev.target.closest && ev.target.closest('[data-lay]');
       if (!b) return;
@@ -120192,7 +120252,6 @@ initLayout();
 initLayersPanel();
 initBrowserPanel();
 initSpec();
-initWallTypesDialog();
 initProfilesDialog();
 initPalette();
 initShortLabels();
@@ -120206,7 +120265,6 @@ initMepDialog();
 initImport();
 initSanitaryLib();
 initMixers();
-initFinishing();
 initManifold();
 initPipeNetwork();
 initDynamicInput();
@@ -120898,6 +120956,355 @@ function agSummary(opts) {
       if (Array.isArray(out[k])) for (const o of out[k]) if (agProp.has(o.id)) o.proposed = true;
   return out;
 }
+
+// ===== blocks/building/build-catalog.js =====
+/**
+ * blocks/building/build-catalog.js
+ *
+ * Catalogue for custom wall and lining types («Конструктор»): sheet boards, frame profiles, insulation, and the
+ * project library of the user's own materials / boards / profiles / insulation (S.x.lib).
+ *
+ * A custom wall type is { kind: 'custom', name, layers: [...] }, layers from side A to side B:
+ *   { k: 'board', b: boardId }                                  — one layer of sheathing
+ *   { k: 'frame', p: profileId, step, fix, bstep, ins, insTh }  — frame (studs or furring) with insulation inside
+ *   { k: 'ins', i: insId, th }                                  — insulation board / mat outside a frame
+ *   { k: 'mat', m: materialName, th }                           — masonry, concrete, plaster, glue…
+ *   { k: 'air', th, n }                                         — air gap / installation zone
+ * Masses: boards kg/m², profiles kg/m, insulation and materials kg/m³. Values are typical catalogue data.
+ */
+
+
+
+
+/** Sheet boards: th mm, kg/m², sheet w × l mm, fire / moisture flags; screw — screw length for this board. */
+const BOARDS = {
+  gkl125: { n: 'ГКЛ 12,5', th: 12.5, kgm2: 8.5, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
+  gkl95: { n: 'ГКЛ 9,5', th: 9.5, kgm2: 7, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
+  gklv125: { n: 'ГКЛВ 12,5 (H2)', th: 12.5, kgm2: 9, w: 1200, l: 2500, col: '#b9d4b2', sheet: 'ГКЛВ', wet: true },
+  gklo125: { n: 'ГКЛО 12,5 (DF)', th: 12.5, kgm2: 9.5, w: 1200, l: 2500, col: '#e2bcb7', sheet: 'ГКЛО', fire: true },
+  gklvo125: {
+    n: 'ГКЛВО 12,5 (DFH2)',
+    th: 12.5,
+    kgm2: 10,
+    w: 1200,
+    l: 2500,
+    col: '#c8c0d8',
+    sheet: 'ГКЛВО',
+    fire: true,
+    wet: true
+  },
+  gkl15: { n: 'ГКЛ 15', th: 15, kgm2: 11, w: 1200, l: 2500, col: '#d6d3cc', sheet: 'ГКЛ' },
+  saph: {
+    n: 'Кнауф Сапфир 12,5 (DFH2IR)',
+    th: 12.5,
+    kgm2: 12,
+    w: 1200,
+    l: 2500,
+    col: '#b8c6dc',
+    fire: true,
+    wet: true
+  },
+  fireb: { n: 'Кнауф Файерборд 12,5 (GM-F)', th: 12.5, kgm2: 10.5, w: 1200, l: 2500, col: '#e8b8a8', fire: true },
+  arch65: { n: 'ГКЛ арочный 6,5', th: 6.5, kgm2: 5.5, w: 1200, l: 2500, col: '#dedbd4' },
+  gvl10: { n: 'ГВЛ 10', th: 10, kgm2: 12, w: 1200, l: 2500, col: '#e9e4da', fire: true },
+  gvl125: { n: 'ГВЛ 12,5', th: 12.5, kgm2: 15, w: 1200, l: 2500, col: '#e9e4da', fire: true },
+  gvlv125: { n: 'ГВЛВ 12,5', th: 12.5, kgm2: 15.5, w: 1200, l: 2500, col: '#dbe5d6', fire: true, wet: true },
+  aqua: { n: 'Аквапанель Indoor 12,5', th: 12.5, kgm2: 15, w: 900, l: 1200, col: '#d5d6d2', wet: true, fire: true },
+  csp12: { n: 'ЦСП 12', th: 12, kgm2: 16, w: 1250, l: 3200, col: '#c9c7c0', wet: true },
+  csp16: { n: 'ЦСП 16', th: 16, kgm2: 21, w: 1250, l: 3200, col: '#c9c7c0', wet: true },
+  sml10: {
+    n: 'СМЛ (стекломагниевый лист) 10',
+    th: 10,
+    kgm2: 10,
+    w: 1220,
+    l: 2440,
+    col: '#e3e1da',
+    wet: true,
+    fire: true
+  },
+  osb12: { n: 'ОСБ-3 12', th: 12, kgm2: 7.5, w: 1250, l: 2500, col: '#d2b07a' },
+  osb15: { n: 'ОСБ-3 15', th: 15, kgm2: 9.5, w: 1250, l: 2500, col: '#d2b07a' },
+  ply15: { n: 'Фанера ФСФ 15', th: 15, kgm2: 9.8, w: 1525, l: 1525, col: '#d8b98a' },
+  ply18: { n: 'Фанера ФСФ 18', th: 18, kgm2: 11.7, w: 1525, l: 1525, col: '#d8b98a' },
+  mdf16: { n: 'МДФ 16', th: 16, kgm2: 12, w: 1830, l: 2800, col: '#cfc6b8' },
+  xps20: { n: 'Плита XPS под плитку 20 (армированная)', th: 20, kgm2: 3.5, w: 600, l: 1250, col: '#a9cbe0', wet: true },
+  vag14: { n: 'Вагонка / рейка 14', th: 14, kgm2: 7, w: 96, l: 3000, col: '#c99a5b' }
+};
+/**
+ * Frame profiles: depth (frame thickness), flange, kg/m; kind: stud (vertical studs + tracks), furring (ПП 60/27 on
+ * brackets / clips), wood (timber studs). maxH — max height at step 600 with one board layer per side (single frame).
+ */
+const PROFS = {
+  ps50: { n: 'ПС 50/50 + ПН 50/40 (0,6)', kind: 'stud', depth: 50, fl: 50, kgm: 0.67, track: 'ПН 50/40', maxH: 3000 },
+  ps65: { n: 'ПС 65/50 + ПН 65/40 (0,6)', kind: 'stud', depth: 65, fl: 50, kgm: 0.74, track: 'ПН 65/40', maxH: 4000 },
+  ps75: { n: 'ПС 75/50 + ПН 75/40 (0,6)', kind: 'stud', depth: 75, fl: 50, kgm: 0.8, track: 'ПН 75/40', maxH: 4500 },
+  ps100: {
+    n: 'ПС 100/50 + ПН 100/40 (0,6)',
+    kind: 'stud',
+    depth: 100,
+    fl: 50,
+    kgm: 0.94,
+    track: 'ПН 100/40',
+    maxH: 5000
+  },
+  ps125: {
+    n: 'ПС 125/50 + ПН 125/40 (0,8)',
+    kind: 'stud',
+    depth: 125,
+    fl: 50,
+    kgm: 1.35,
+    track: 'ПН 125/40',
+    maxH: 6000
+  },
+  ps150: {
+    n: 'ПС 150/50 + ПН 150/40 (0,8)',
+    kind: 'stud',
+    depth: 150,
+    fl: 50,
+    kgm: 1.5,
+    track: 'ПН 150/40',
+    maxH: 6500
+  },
+  ua75: { n: 'ПУ 75/40 (2 мм, усиленный)', kind: 'stud', depth: 75, fl: 40, kgm: 2.6, track: 'ПН 75/40', maxH: 6000 },
+  ua100: {
+    n: 'ПУ 100/40 (2 мм, усиленный)',
+    kind: 'stud',
+    depth: 100,
+    fl: 40,
+    kgm: 3.0,
+    track: 'ПН 100/40',
+    maxH: 7000
+  },
+  pp27: {
+    n: 'ПП 60/27 + ПН 28/27 на прямых подвесах',
+    kind: 'furring',
+    depth: 27,
+    fl: 60,
+    kgm: 0.6,
+    track: 'ПН 28/27',
+    maxH: 99999
+  },
+  pp27c: {
+    n: 'ПП 60/27 на виброподвесах (акустика)',
+    kind: 'furring',
+    depth: 27,
+    fl: 60,
+    kgm: 0.6,
+    track: 'ПН 28/27',
+    maxH: 99999,
+    vib: true
+  },
+  wood45: { n: 'Брус 45×45 (обрешётка)', kind: 'wood', depth: 45, fl: 45, kgm: 1.0, track: 'брус 45×45', maxH: 99999 },
+  wood50x100: {
+    n: 'Брус 50×100 (каркас)',
+    kind: 'wood',
+    depth: 100,
+    fl: 50,
+    kgm: 2.5,
+    track: 'брус 50×100',
+    maxH: 3600
+  },
+  wood50x150: {
+    n: 'Брус 50×150 (каркас)',
+    kind: 'wood',
+    depth: 150,
+    fl: 50,
+    kgm: 3.75,
+    track: 'брус 50×150',
+    maxH: 4500
+  }
+};
+/** Brackets connecting a frame to the base wall (rigidity of linings and «наросты»). maxGap — max gap, mm. */
+const BRK = {
+  none: { n: 'Нет (каркас стоит свободно)' },
+  direct: { n: 'Подвес прямой П-образный', maxGap: 120, kg: 0.06, dowel: 2, screw: 2 },
+  director: { n: 'Кронштейн-директор (Г-образный, регулируемый)', maxGap: 200, kg: 0.12, dowel: 2, screw: 2 },
+  long: { n: 'Кронштейн удлинённый / из ПН (большой зазор)', maxGap: 400, kg: 0.25, dowel: 2, screw: 4 },
+  vibro: { n: 'Виброподвес (акустический)', maxGap: 120, kg: 0.1, dowel: 1, screw: 2 }
+};
+/** Insulation: density kg/m³. */
+const INSUL = {
+  none: { n: 'Без утеплителя', rho: 0, col: null },
+  mw37: { n: 'Минвата акустическая 37 кг/м³', rho: 37, col: '#e7d58f' },
+  rw45: { n: 'Каменная вата 45 кг/м³ (Акустик Баттс)', rho: 45, col: '#d9c06a' },
+  rw100: { n: 'Каменная вата 100 кг/м³ (огнезащита)', rho: 100, col: '#c9b060' },
+  glass: { n: 'Стекловата 15 кг/м³', rho: 15, col: '#efe08f' },
+  eps: { n: 'Пенополистирол ППС 25', rho: 25, col: '#f1f3f5' },
+  xps: { n: 'XPS 35 кг/м³', rho: 35, col: '#a9cbe0' },
+  cork: { n: 'Пробка 200 кг/м³', rho: 200, col: '#a77b4f' }
+};
+/** Density of the standard materials, kg/m³ (for the mass of a wall). */
+const MAT_RHO = {
+  'Газобетон D500': 600,
+  'Кирпич керамический': 1800,
+  'Кирпич силикатный': 1900,
+  'ПГП Кнауф': 1250,
+  'Керамзитобетонный блок': 1100,
+  Железобетон: 2500,
+  'Штукатурка гипсовая': 950,
+  'Штукатурка цементная': 1800,
+  Шпаклёвка: 1200,
+  'Минеральная вата': 40,
+  'Воздушный зазор': 0,
+  'Кладка (обобщённо)': 1600,
+  'Клей гипсовый (Перлфикс)': 900,
+  'Клей плиточный': 1500
+};
+/** Classes for user materials. */
+const MAT_CLS = {
+  block: 'Кладка / блок',
+  brick: 'Кирпич',
+  aer: 'Газобетон',
+  conc: 'Бетон',
+  pgp: 'ПГП',
+  plas: 'Штукатурка / шпаклёвка',
+  ins: 'Утеплитель',
+  glue: 'Клей / раствор'
+};
+
+/* ---------- project library ---------- */
+function lib() {
+  xInit();
+  S.x.lib = S.x.lib || {};
+  const L = S.x.lib;
+  L.mats = L.mats || [];
+  L.boards = L.boards || [];
+  L.profs = L.profs || [];
+  L.ins = L.ins || [];
+  return L;
+}
+const boardsAll = () => ({ ...BOARDS, ...Object.fromEntries(lib().boards.map(b => [b.id, b])) });
+const profsAll = () => ({ ...PROFS, ...Object.fromEntries(lib().profs.map(p => [p.id, p])) });
+const insAll = () => ({ ...INSUL, ...Object.fromEntries(lib().ins.map(i => [i.id, i])) });
+const matRho = m => {
+  const u = lib().mats.find(x => x.n === m);
+  return u ? +u.rho || 0 : (MAT_RHO[m] ?? 1600);
+};
+/** User materials and boards become known to the wall machinery (colours, classes, sheet names). */
+function registerLib() {
+  const L = lib();
+  for (const m of L.mats) MATS[m.n] = { cls: m.cls || 'block', col: m.col || '#c9c3b8' };
+  if (!MATS['Клей гипсовый (Перлфикс)']) MATS['Клей гипсовый (Перлфикс)'] = { cls: 'air', col: '#e9e4d6' };
+  if (!MATS['Клей плиточный']) MATS['Клей плиточный'] = { cls: 'plas', col: '#c9c6bf' };
+  for (const [id, b] of Object.entries(boardsAll())) SHEETS['b:' + id] = { n: b.n, col: b.col || '#d6d3cc' };
+}
+/** Max height of a frame: catalogue value for step 600 and one board per side, corrected for step and boards. */
+function frameMaxH(p, step, boardsPerSide, frames) {
+  if (!p || !(p.maxH < 99999)) return null;
+  const k = Math.pow(600 / (step || 600), 0.33) * (1 + 0.12 * Math.max(0, boardsPerSide - 1)) * (frames > 1 ? 1.15 : 1);
+  return Math.round((p.maxH * k) / 50) * 50;
+}
+
+/** Ready-made stacks for the constructor (templates). */
+const CTPL = {
+  part1: {
+    n: 'Перегородка: 1 слой с каждой стороны',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'frame', p: 'ps75', step: 600, ins: 'mw37' },
+      { k: 'board', b: 'gkl125' }
+    ]
+  },
+  part2: {
+    n: 'Перегородка: 2 слоя с каждой стороны',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'board', b: 'gkl125' },
+      { k: 'frame', p: 'ps75', step: 600, ins: 'mw37' },
+      { k: 'board', b: 'gkl125' },
+      { k: 'board', b: 'gkl125' }
+    ]
+  },
+  wet: {
+    n: 'Мокрая зона: аквапанель + ГКЛВ',
+    layers: [
+      { k: 'board', b: 'aqua' },
+      { k: 'board', b: 'gklv125' },
+      { k: 'frame', p: 'ps75', step: 400, ins: 'rw45' },
+      { k: 'board', b: 'gklv125' },
+      { k: 'board', b: 'gklv125' }
+    ]
+  },
+  double: {
+    n: 'Двойной каркас (звукоизоляция)',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'board', b: 'gkl125' },
+      { k: 'frame', p: 'ps50', step: 600, ins: 'rw45' },
+      { k: 'air', th: 10, n: 'Зазор между каркасами' },
+      { k: 'frame', p: 'ps50', step: 600, ins: 'rw45' },
+      { k: 'board', b: 'gkl125' },
+      { k: 'board', b: 'gkl125' }
+    ]
+  },
+  linPP: {
+    n: 'Облицовка на ПП 60/27 по газобетону',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'frame', p: 'pp27', step: 600, bstep: 800, ins: 'none' },
+      { k: 'air', th: 20, n: 'Зазор до стены' },
+      { k: 'mat', m: 'Газобетон D500', th: 200 },
+      { k: 'mat', m: 'Штукатурка гипсовая', th: 10 }
+    ]
+  },
+  linFree: {
+    n: 'Облицовка свободностоящая на ПС 50 (инсталляции)',
+    layers: [
+      { k: 'board', b: 'gklv125' },
+      { k: 'board', b: 'gklv125' },
+      { k: 'frame', p: 'ps50', step: 600, ins: 'none' },
+      { k: 'air', th: 100, n: 'Зона коммуникаций' },
+      { k: 'mat', m: 'Кирпич керамический', th: 120 },
+      { k: 'mat', m: 'Штукатурка гипсовая', th: 15 }
+    ]
+  },
+  buildout: {
+    n: 'Нарост к наружной стене: ГКЛВ на ПС 50 с зазором, кронштейны-директоры',
+    layers: [
+      { k: 'board', b: 'gklv125' },
+      { k: 'board', b: 'gklv125' },
+      { k: 'frame', p: 'ps50', step: 600, ins: 'none', fix: 'free', brk: 'director', bz: 1000, bn: 1 },
+      { k: 'air', th: 100, n: 'Зазор до стены (коммуникации)' }
+    ]
+  },
+  linGlue: {
+    n: 'Облицовка ГКЛ на клей по кирпичу',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'mat', m: 'Клей гипсовый (Перлфикс)', th: 10 },
+      { k: 'mat', m: 'Кирпич керамический', th: 250 },
+      { k: 'mat', m: 'Штукатурка цементная', th: 20 }
+    ]
+  },
+  acoustic: {
+    n: 'Акустическая облицовка на виброподвесах',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'board', b: 'gkl125' },
+      { k: 'frame', p: 'pp27c', step: 600, bstep: 600, ins: 'rw45', insTh: 50 },
+      { k: 'air', th: 30, n: 'Зазор с минватой' },
+      { k: 'mat', m: 'Железобетон', th: 200 }
+    ]
+  },
+  wood: {
+    n: 'Деревянный каркас + ОСБ + ГКЛ',
+    layers: [
+      { k: 'board', b: 'gkl125' },
+      { k: 'board', b: 'osb12' },
+      { k: 'frame', p: 'wood50x100', step: 600, ins: 'rw45' },
+      { k: 'board', b: 'osb12' },
+      { k: 'board', b: 'gkl125' }
+    ]
+  },
+  block: {
+    n: 'Кладка + штукатурка',
+    layers: [
+      { k: 'mat', m: 'Штукатурка гипсовая', th: 10 },
+      { k: 'mat', m: 'Газобетон D500', th: 150 },
+      { k: 'mat', m: 'Штукатурка гипсовая', th: 10 }
+    ]
+  }
+};
 
 // ===== blocks/building/checks-building.js =====
 /**
@@ -125498,17 +125905,18 @@ function openGlassView(id) {
   GVS.id = id;
   let d = document.getElementById('gvdlg');
   if (!d) {
-    d = document.createElement('div');
-    d.id = 'gvdlg';
-    d.className = 'modal';
-    d.style.zIndex = '60';
-    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертёж стекла" style="width:min(1300px,100%);height:min(920px,100%)"><div class="dlgh"><h3>Чертёж стекла</h3><span class="hint" id="gvTitle"></span><button class="btn pri" id="gvPrint">Печать / PDF</button><button class="x" id="gvClose" aria-label="Закрыть">×</button></div><div id="gvBody" class="gvbody"></div></div>`;
-    document.body.appendChild(d);
-    d.querySelector('#gvClose').onclick = () => (d.hidden = true);
-    d.querySelector('#gvPrint').onclick = printGlass;
-    const st = document.createElement('style');
-    st.textContent = GV_CSS;
-    document.head.appendChild(st);
+    const w = openWindow({
+      id: 'gvdlg',
+      title: 'Чертёж стекла',
+      size: 'xl',
+      over: true,
+      cls: 'gvwin',
+      closeId: 'gvClose',
+      actions: [{ n: 'Печать / PDF', id: 'gvPrint', pri: true, a: printGlass }],
+      body: '<div id="gvBody" class="gvbody"></div>'
+    });
+    d = w.el;
+    w.el.querySelector('.win-sub').id = 'gvTitle';
   }
   d.hidden = false;
   renderGlassView();
@@ -125544,7 +125952,7 @@ function renderGlassView() {
 function printGlass() {
   const body = document.getElementById('gvBody');
   if (!body) return;
-  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Чертёж стекла</title><style>${GV_CSS}body{font:12px system-ui,sans-serif;margin:10mm;background:#fff}@page{size:A3 landscape;margin:10mm}</style></head><body><h2>${esc(document.getElementById('gvTitle').textContent)}</h2><div class="gvbody">${body.innerHTML}</div></body></html>`;
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Чертёж стекла</title><style>${paperCss(/\.gv/)}body{font:12px system-ui,sans-serif;margin:10mm;background:#fff}@page{size:A3 landscape;margin:10mm}</style></head><body><h2>${esc(document.getElementById('gvTitle').textContent)}</h2><div class="gvbody">${body.innerHTML}</div></body></html>`;
   let f = document.getElementById('gvPrintFrame');
   if (f) f.remove();
   f = document.createElement('iframe');
@@ -125561,15 +125969,6 @@ function printGlass() {
     }
   };
 }
-const GV_CSS = `.gvbody{display:flex;flex-direction:column;gap:14px;padding:14px;overflow:auto;background:#fff;color:#1b1d20;min-height:0}
-.gvbody h4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#555}
-.gvtop{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
-.gvbody dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0 0 10px;font-size:12px}.gvbody dt{color:#666}.gvbody dd{margin:0}
-.gvsvg{max-width:100%;height:auto;display:block;font-family:system-ui,sans-serif}
-.gvdim line{stroke:#333;stroke-width:.8}.gvdim text{font-size:10.5px;fill:#333}
-.gvcards{display:flex;flex-wrap:wrap;gap:12px}.gvcard{border:1px solid #ddd;border-radius:6px;padding:8px;background:#fafafa;font-size:11px}.gvcard.film{border-color:#e5a3a3;background:#fff6f6}
-.gvct{font-weight:600;margin-bottom:4px}.gvtbl{border-collapse:collapse;font-size:11.5px;width:100%}.gvtbl td{border:1px solid #ddd;padding:3px 8px}
-.gvrules,.gviss{margin:0;padding-left:18px;font-size:11.5px;line-height:1.45}.gviss .bad{color:#c0392b}.gviss .warn{color:#b26b00}.gviss .info{color:#555}.gviss .ok{color:#2e7d32}.bad{color:#c0392b}`;
 
 // ===== blocks/building/openings/opening-panels.js =====
 /**
@@ -134946,7 +135345,8 @@ const MLE = {
   gen: null,
   spl: null,
   decor: 'rosette',
-  anno: false
+  anno: false,
+  key: null
 };
 const MLE_TOOLS = { sel: 'Выбор', f: 'Рамка', l: 'Линия', a: 'Дуга', s: 'Сплайн', o: 'Декор', d: 'Размер' };
 
@@ -134984,26 +135384,36 @@ function openMoldingEditor(e) {
     },
     e.gen || {}
   );
-  let m = $('#mledlg');
-  if (m) m.remove();
-  m = document.createElement('div');
-  m.id = 'mledlg';
-  m.className = 'modal';
-  m.innerHTML = `<div class="dlg mle" role="dialog" aria-label="Раскладка молдингов">
-  <div class="dlgh"><h3>Раскладка молдингов</h3><span class="mle-sub">${esc(pr.name)} · стена ${Math.round(F.L)} × ${Math.round(F.H)} мм, сторона ${F.side > 0 ? 'А' : 'Б'}</span>
-   <div class="seg" id="mleTools">${Object.entries(MLE_TOOLS)
-     .map(([k, n]) => `<button data-t="${k}">${n}</button>`)
-     .join('')}</div>
-   <label class="chk mle-anno" title="Цепочки размеров: отступы рамок от краёв стены и между собой, высоты от пола"><input type="checkbox" id="mleAnno" ${MLE.anno ? 'checked' : ''}> Размеры отступов</label>
-   <button class="btn" id="mleDup" title="Копия выбранного правее">Копия</button>
-   <button class="btn" id="mleMir" title="Отразить всю раскладку по ширине стены">Отразить</button>
-   <button class="btn" id="mleDel" title="Удалить выбранное (Delete)">Удалить</button>
-   <button class="btn" id="mleClr">Очистить</button>
-   <span style="flex:1"></span>
-   <button class="btn pri" id="mleOk">Готово</button><button class="x" id="mleX" aria-label="Закрыть">×</button></div>
-  <div class="mle-body">
-   <div class="mle-view"><svg id="mleSvg"></svg><div class="mle-tip" id="mleTip"></div></div>
-   <div class="mle-side">
+  if (MLE.key) document.removeEventListener('keydown', MLE.key, true);
+  const win = openWindow({
+    id: 'mledlg',
+    title: 'Раскладка молдингов',
+    sub: `${pr.name} · стена ${Math.round(F.L)} × ${Math.round(F.H)} мм, сторона ${F.side > 0 ? 'А' : 'Б'}`,
+    size: 'xl',
+    cls: 'mlewin',
+    closeId: 'mleX',
+    // the three main buttons stay in the header, the rest is in «⋮»; the tools and the dimensions switch are a bar above the drawing
+    actions: [
+      {
+        n: 'Готово',
+        id: 'mleOk',
+        pri: true,
+        a: w => {
+          mleApply();
+          w.close();
+        }
+      },
+      { n: 'Удалить', id: 'mleDel', title: 'Удалить выбранное (Delete)', a: () => mleDelete() },
+      { n: 'Копия', id: 'mleDup', title: 'Копия выбранного правее', a: () => mleDuplicate() },
+      { n: 'Отразить', id: 'mleMir', title: 'Отразить всю раскладку по ширине стены', a: () => mleMirror(F) },
+      { n: 'Очистить', id: 'mleClr', a: () => mleClear() }
+    ],
+    body: `<div class="mle-bar"><div class="seg" id="mleTools">${Object.entries(MLE_TOOLS)
+      .map(([k, n]) => `<button data-t="${k}">${n}</button>`)
+      .join('')}</div>
+   <label class="chk mle-anno" title="Цепочки размеров: отступы рамок от краёв стены и между собой, высоты от пола"><input type="checkbox" id="mleAnno" ${MLE.anno ? 'checked' : ''}> Размеры отступов</label></div>
+   <div class="mle-view"><svg id="mleSvg"></svg><div class="mle-tip" id="mleTip"></div></div>`,
+    right: `<div class="mle-side">
     <section><h4>Выбранное</h4><div id="mleSel"></div></section>
     <section id="mleDecS"><h4>Лепной декор</h4><label>Элемент <select id="mleDecK">${Object.entries(ML_DECOR)
       .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
@@ -135030,9 +135440,13 @@ function openMoldingEditor(e) {
      <button class="btn" id="mgGo">Заполнить стену</button>
      <p class="hint">Генератор заменяет раскладку; дальше её можно править руками: тянуть рамки и углы, дорисовывать, удалять.</p>
     </section>
-   </div>
-  </div></div>`;
-  document.body.appendChild(m);
+   </div>`,
+    onClose: () => {
+      if (MLE.key) document.removeEventListener('keydown', MLE.key, true);
+      MLE.key = null;
+    }
+  });
+  const m = win.el;
   const G = MLE.gen;
   const bindG = (id, key, num) => {
     const el = m.querySelector('#' + id);
@@ -135097,43 +135511,9 @@ function openMoldingEditor(e) {
       mleRender();
     }
   };
-  m.querySelector('#mleDel').onclick = () => mleDelete();
-  m.querySelector('#mleClr').onclick = () => {
-    MLE.items = [];
-    MLE.sel = -1;
-    mleRender();
-  };
-  m.querySelector('#mleDup').onclick = () => {
-    const it = MLE.items[MLE.sel];
-    if (!it) return;
-    const c = JSON.parse(JSON.stringify(it));
-    const xs = mlePts(it).map(p => p[0]);
-    const w = Math.max(...xs) - Math.min(...xs) + 100 || 300;
-    mleShift(c, JSON.parse(JSON.stringify(it)), w, 0);
-    MLE.items.push(c);
-    MLE.sel = MLE.items.length - 1;
-    mleRender();
-  };
-  m.querySelector('#mleMir').onclick = () => {
-    const L = F.L;
-    const mx = p => [L - p[0], p[1]];
-    for (const it of MLE.items)
-      if (it.k === 'f') [it.x0, it.x1] = [L - it.x1, L - it.x0];
-      else if (it.k === 'o') it.x = L - it.x;
-      else if (it.k === 's') it.pts = it.pts.map(mx);
-      else {
-        it.a = mx(it.a);
-        it.b = mx(it.b);
-        if (it.m) it.m = mx(it.m);
-      }
-    mleRender();
-  };
-  const close = () => {
-    m.remove();
-    document.removeEventListener('keydown', key, true);
-  };
+  const close = () => win.close();
   const key = ev => {
-    if (!document.body.contains(m)) return;
+    if (m.hidden) return;
     if (ev.target.closest && ev.target.closest('input,select,textarea')) return;
     if (ev.key === 'Delete' || ev.key === 'Backspace') {
       mleDelete();
@@ -135155,13 +135535,42 @@ function openMoldingEditor(e) {
       ev.stopPropagation();
     }
   };
+  MLE.key = key;
   document.addEventListener('keydown', key, true);
-  m.querySelector('#mleX').onclick = close;
-  m.querySelector('#mleOk').onclick = () => {
-    mleApply();
-    close();
-  };
   mleBindSvg(m.querySelector('#mleSvg'));
+  mleRender();
+}
+/** Puts a copy of the selected item to the right of it and selects the copy. */
+function mleDuplicate() {
+  const it = MLE.items[MLE.sel];
+  if (!it) return;
+  const c = JSON.parse(JSON.stringify(it));
+  const xs = mlePts(it).map(p => p[0]);
+  const w = Math.max(...xs) - Math.min(...xs) + 100 || 300;
+  mleShift(c, JSON.parse(JSON.stringify(it)), w, 0);
+  MLE.items.push(c);
+  MLE.sel = MLE.items.length - 1;
+  mleRender();
+}
+/** Mirrors the whole layout across the width of the wall face `F`. */
+function mleMirror(F) {
+  const L = F.L;
+  const mx = p => [L - p[0], p[1]];
+  for (const it of MLE.items)
+    if (it.k === 'f') [it.x0, it.x1] = [L - it.x1, L - it.x0];
+    else if (it.k === 'o') it.x = L - it.x;
+    else if (it.k === 's') it.pts = it.pts.map(mx);
+    else {
+      it.a = mx(it.a);
+      it.b = mx(it.b);
+      if (it.m) it.m = mx(it.m);
+    }
+  mleRender();
+}
+/** Removes every item of the layout. */
+function mleClear() {
+  MLE.items = [];
+  MLE.sel = -1;
   mleRender();
 }
 function mleDelete() {
@@ -151727,6 +152136,20 @@ function winFill(box, v) {
     box.innerHTML = '';
     box.appendChild(v);
   }
+}
+/**
+ * CSS text of the rules of the page whose selector matches `re` (for a print document that has no access to the page styles: the paper drawings
+ * of the layout and glass windows keep their rules in the style files, not in JS strings). At-rules (media queries) are skipped; an unreadable sheet gives ''.
+ */
+function paperCss(re) {
+  let out = '';
+  try {
+    for (const sh of document.styleSheets)
+      for (const r of sh.cssRules) if (r.selectorText && re.test(r.selectorText)) out += r.cssText + '\n';
+  } catch (e) {
+    /* cross-origin sheet */
+  }
+  return out;
 }
 /**
  * Opens (or rebuilds in place when the id exists) an inner window and returns its handle.
