@@ -9425,7 +9425,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.89';
+const APP_VER = '59.90';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -15485,9 +15485,10 @@ let W = 0,
   DPR = 1;
 /**
  * Screen rotation state: ctx — the rotation is already in the canvas transform (rotBegin), so w2s / s2w work in the
- * unrotated screen; off — off-screen rendering (sheets, exports), where the screen angle does not apply.
+ * unrotated screen; off — off-screen rendering (sheets, exports), where the screen angle does not apply; win — the
+ * angle of a sheet viewport (window) that is drawn or active: it replaces the screen angle (null — none).
  */
-const rotState = { ctx: false, off: false };
+const rotState = { ctx: false, off: false, win: null };
 /**
  * Temporarily replaces the logical canvas size (off-screen rendering of sheets and exports, which are not rotated);
  * returns the previous values, the last one is the previous «rotation off» flag: swapWH(...old) restores.
@@ -15500,8 +15501,15 @@ function swapWH(w, h, dpr, off = true) {
   rotState.off = off;
   return o;
 }
-/** The screen angle in effect (rad): the model turned counter-clockwise on the screen; 0 on sheets and off-screen. */
+/** Sets the angle (rad) of a sheet viewport that replaces the screen angle (null — none); returns the previous one. */
+function winAngSet(a) {
+  const o = rotState.win;
+  rotState.win = a == null ? null : a;
+  return o;
+}
+/** The screen angle in effect (rad): the model turned counter-clockwise on the screen (a sheet window: its own angle); 0 on sheets and off-screen. */
 function viewAng() {
+  if (rotState.win != null) return rotState.win;
   const a = view.a;
   return !a || rotState.off || docView.vp != null ? 0 : a;
 }
@@ -15584,12 +15592,14 @@ function panFrom(vx, vy, dsx, dsy) {
   const d = scrVecToWorld(dsx, dsy);
   view.x = vx - d.x;
   view.y = vy - d.y;
+  if (uiHooks.vpView) uiHooks.vpView();
 }
 /** Moves the plan by a shift of (dsx, dsy) px along the screen. */
 function panBy(dsx, dsy) {
   const d = scrVecToWorld(dsx, dsy);
   view.x -= d.x;
   view.y -= d.y;
+  if (uiHooks.vpView) uiHooks.vpView();
 }
 /** World vector of a screen shift (dx, dy px, y down). */
 function scrVecToWorld(dx, dy) {
@@ -15682,6 +15692,7 @@ function fitPts(pts, minSpan = 1) {
 }
 /** Fits the plan to all visible elements of the level (empty plan: the origin at a default scale). */
 function zoomExtents() {
+  if (uiHooks.vpFit && uiHooks.vpFit(null)) return;
   const pts = finitePts(S.ents.filter(visible));
   if (!pts.length || !W) {
     view.x = 0;
@@ -15696,6 +15707,7 @@ function zoomExtents() {
 function zoomToEnts(ents) {
   const pts = finitePts(ents);
   if (!pts.length || !W) return false;
+  if (uiHooks.vpFit && uiHooks.vpFit(pts)) return true;
   fitPts(pts, 1000);
   return true;
 }
@@ -15705,6 +15717,7 @@ function zoomAt(sx, sy, f) {
   const a = s2w(sx, sy);
   view.x += b.x - a.x;
   view.y += b.y - a.y;
+  if (uiHooks.vpView) uiHooks.vpView();
   dirty();
 }
 function gridStep() {
@@ -28310,7 +28323,7 @@ const WSDEF = [
     n: 'Листы',
     ab: 'Листы',
     g: [
-      ['На лист', ['shvp', 'sh3d', 'dim3']],
+      ['На лист', ['shvp', 'sh3d', 'dim3', 'shclip']],
       ['Черчение на листе', ['sheetdraw']]
     ]
   }
@@ -28452,6 +28465,7 @@ const TLBL = {
   shvp: 'План',
   sh3d: '3D-вид',
   dim3: 'Размер 3D',
+  shclip: 'Контур',
   sheetdraw: 'Черчение',
   move: 'Перенести',
   copy: 'Копировать',
@@ -28476,7 +28490,7 @@ const HELP = {
   plumb:
     'Сантехника: трубы ХВС/ГВС/канализации от точек подключения приборов (привязка «Подключение»), «Канализация (авто)» разводит стоки к стояку. Коллектор собирается в «Коллектор…».',
   hvac: 'Климат: радиаторы (подбор по теплопотерям помещения), тёплый пол, воздуховоды и решётки, вентканалы, кондиционеры с отдельными трассами фреона и дренажа.',
-  proj: 'Листы: рамка и штамп по шаблону. Планы этажей, разрезы и 3D-виды на листе в масштабе; двойной щелчок по плану — размеры и правки через вид, по 3D — размеры в своих плоскостях. Чертежи мебели, щит, коллектор, однолинейная схема и спецификация — кнопками в панели. Печать / PDF, PNG.',
+  proj: 'Листы: рамка и штамп по шаблону. Планы этажей, разрезы и 3D-виды на листе в масштабе; двойной щелчок по виду — войти в него: колесо — масштаб в точке курсора, СКМ — сдвиг (у 3D левая кнопка — поворот камеры), у плана — ещё и правки модели через вид; выход — двойной щелчок вне вида или Esc. Масштаб, угол поворота, замок вида и контур вида (окно сложной формы) — в панели вида; размеры в 3D — «Размер 3D». Чертежи мебели, щит, коллектор, однолинейная схема и спецификация — кнопками в панели. Печать / PDF, PNG.',
   views:
     'Виды: разрезы, развёртки стен, узлы, 3D-вид с секущим кубом и инженерные виды — горизонтальный разрез, сложный разрез по ломаной, 3D-куб с раскладкой объекта. У каждого вида — масштаб, глубина, стадия и свои слои. AR-точки — три точки на полу для совмещения модели с объектом через камеру.'
 };
@@ -94640,30 +94654,79 @@ function shInner(sh) {
 
 /* ---------- viewport mapping (plan): paper ↔ model ---------- */
 const vpN = it => +it.scale || 50;
+/** The window angle of a viewport (rad): the content turned counter-clockwise on the paper about the window centre; 0 — none. */
+const vpAng = it => +it.rot || 0;
+/** Centre of the window of a viewport on the paper (the centre of its box). */
 function vpPC(it) {
   return { x: it.x + it.w / 2, y: it.y + it.h / 2 };
+}
+/** The vector p turned counter-clockwise by the angle a (rad) about the origin. */
+function turnP(a, p) {
+  if (!a) return { x: p.x, y: p.y };
+  const c = Math.cos(a),
+    s = Math.sin(a);
+  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
 }
 /** model → paper for a plan viewport */
 function m2p(it, m) {
   const c = vpPC(it),
-    N = vpN(it);
-  return { x: c.x + (m.x - it.src.cx) / N, y: c.y + (m.y - it.src.cy) / N };
+    N = vpN(it),
+    d = turnP(vpAng(it), { x: (m.x - it.src.cx) / N, y: (m.y - it.src.cy) / N });
+  return { x: c.x + d.x, y: c.y + d.y };
 }
 function p2m(it, p) {
   const c = vpPC(it),
-    N = vpN(it);
-  return { x: it.src.cx + (p.x - c.x) * N, y: it.src.cy + (p.y - c.y) * N };
+    N = vpN(it),
+    d = turnP(-vpAng(it), { x: p.x - c.x, y: p.y - c.y });
+  return { x: it.src.cx + d.x * N, y: it.src.cy + d.y * N };
 }
-/** The model view (x, y, k) that shows the viewport where it is on the paper view pv. */
+/**
+ * The model view (x, y, k) that shows the viewport where it is on the paper view pv: the view point is the model point
+ * that lies under the centre of the paper view (a turned window: the turn about the window centre is part of it).
+ */
 function vpModelView(it, pv) {
   const c = vpPC(it),
-    N = vpN(it);
-  return { x: it.src.cx + (pv.x - c.x) * N, y: it.src.cy + (pv.y - c.y) * N, k: pv.k / N };
+    N = vpN(it),
+    d = turnP(-vpAng(it), { x: pv.x - c.x, y: pv.y - c.y });
+  return { x: it.src.cx + d.x * N, y: it.src.cy + d.y * N, k: pv.k / N };
 }
+/** The paper view that shows the model view mv through the viewport (the inverse of vpModelView). */
 function paperFromModelView(it, mv) {
   const c = vpPC(it),
-    N = vpN(it);
-  return { x: c.x + (mv.x - it.src.cx) / N, y: c.y + (mv.y - it.src.cy) / N, k: mv.k * N };
+    N = vpN(it),
+    d = turnP(vpAng(it), { x: (mv.x - it.src.cx) / N, y: (mv.y - it.src.cy) / N });
+  return { x: c.x + d.x, y: c.y + d.y, k: mv.k * N };
+}
+
+/* ---------- window shape: a rectangle or a contour (polygon on the paper) ---------- */
+/** The contour of a viewport (points on the paper, mm) or null for the usual rectangular window. */
+const vpPoly = it => (Array.isArray(it.poly) && it.poly.length > 2 ? it.poly : null);
+/** Box [x0, y0, x1, y1] of points. */
+function polyBox(pts) {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p.x);
+    y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x);
+    y1 = Math.max(y1, p.y);
+  }
+  return [x0, y0, x1, y1];
+}
+/** True when the paper point p is inside the window of the viewport (its contour, else its rectangle). */
+function vpHas(it, p) {
+  if (!(p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h)) return false;
+  const P_ = vpPoly(it);
+  if (!P_) return true;
+  let in_ = false;
+  for (let i = 0, j = P_.length - 1; i < P_.length; j = i++) {
+    const a = P_[i],
+      b = P_[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) in_ = !in_;
+  }
+  return in_;
 }
 
 /* ---------- levels and layers of a viewport ---------- */
@@ -95531,8 +95594,8 @@ function camOf(c) {
     }
   };
 }
-/** Fits the camera to the geometry: centre and, if wanted, the largest standard scale that fits w×h mm. */
-function camFit(c, G, w, h, scales) {
+/** Fits the camera to the geometry: centre and, if wanted, the largest standard scale that fits w×h mm (rot — the window is turned by this angle, rad). */
+function camFit(c, G, w, h, scales, rot = 0) {
   const b = G.box;
   const ctr = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
   const cam = camOf({ ...c, tgt: ctr, N: 1 });
@@ -95542,8 +95605,10 @@ function camFit(c, G, w, h, scales) {
     for (const y of [b[1], b[4]])
       for (const z of [b[2], b[5]]) {
         const d = v3.sub([x, y, z], ctr);
-        ex = Math.max(ex, Math.abs(v3.dot(d, cam.r)));
-        ey = Math.max(ey, Math.abs(v3.dot(d, cam.u)));
+        const dr = v3.dot(d, cam.r),
+          du = v3.dot(d, cam.u);
+        ex = Math.max(ex, Math.abs(dr * Math.cos(rot) - du * Math.sin(rot)));
+        ey = Math.max(ey, Math.abs(dr * Math.sin(rot) + du * Math.cos(rot)));
       }
   const need = Math.max((2 * ex) / (w * 0.92), (2 * ey) / (h * 0.92));
   const N = (scales || [1, 2, 5, 10, 20, 25, 50, 75, 100, 200]).find(s => s >= need) || Math.ceil(need);
@@ -96548,11 +96613,15 @@ function elecSchemeSvg() {
 
 
 
-/** Sheet runtime state (not saved): on, the paper view, the active viewport (model space), the selected item. */
+/**
+ * Sheet runtime state (not saved): on, the paper view, the active viewport (model space of a plan: ms; any window
+ * entered by a double click: win), the selected item.
+ */
 const SHT = {
   on: false,
   pv: { x: 210, y: 148, k: 2 },
   ms: null,
+  win: null,
   sel: null,
   drag: null,
   bump: 0,
@@ -96766,6 +96835,16 @@ function drawTitle(it) {
 }
 
 /* ---------- viewports ---------- */
+/** Path of a closed contour of paper points (mm) in the current context. */
+function polyPath(pts) {
+  ctx.beginPath();
+  pts.forEach((q, i) => {
+    const p = sp(q.x, q.y);
+    if (i) ctx.lineTo(p.x, p.y);
+    else ctx.moveTo(p.x, p.y);
+  });
+  ctx.closePath();
+}
 function screenRect(it) {
   const a = sp(it.x, it.y + it.h),
     b = sp(it.x + it.w, it.y);
@@ -96802,18 +96881,24 @@ function drawPlanVp(it, o = {}) {
   docView.stageOv = it.src.stage ?? null;
   const phOv = docView.phaseOv;
   docView.phaseOv = it.src.phase || null;
+  const winA = winAngSet(vpAng(it));
+  let rg = false;
   try {
     Object.assign(view, mv);
     docView.vp = it.id;
     S.x.ascale = +it.ascale || vpN(it);
     const nv0 = NV.on;
     if (it.src.nv) NV.on = true;
+    // a turned window: the model is drawn in the canvas turned about the window centre (view2d/viewport.js)
+    rg = rotBegin();
     try {
       withLv(it.src.lv, () => drawModel({ plain: !o.active, noLv: true, planZ: +it.src.planZ || 0 }));
     } finally {
       NV.on = nv0;
     }
   } finally {
+    rotEnd(rg);
+    winAngSet(winA);
     if (restoreL) restoreL();
     nodeState.pieForce = pie0;
     docView.stageOv = stOv;
@@ -96837,6 +96922,7 @@ function planRaster(it) {
     it.h,
     it.scale,
     it.ascale,
+    it.rot || 0,
     it.src,
     layKey(it),
     S.sel.size,
@@ -96971,11 +97057,12 @@ function fitGeo(it, G) {
   }
   return G;
 }
+/** The camera of a camera viewport (fitted to the geometry G first when it is not yet or «fit» is asked). */
 function camFor(it, G) {
   const s = it.src;
   const dir = s.dir || (SH_CAM[s.view] || SH_CAM.iso)[1];
   if (!s.tgt || s.fit) {
-    const f = camFit({ dir, persp: s.persp }, fitGeo(it, G), it.w, it.h);
+    const f = camFit({ dir, persp: s.persp }, fitGeo(it, G), it.w, it.h, undefined, vpAng(it));
     s.tgt = f.tgt.map(v => Math.round(v));
     if (s.fit || !it.scale) it.scale = f.N;
     s.dist = Math.round(f.dist);
@@ -96987,13 +97074,15 @@ const camRasterX = it => camRaster(it);
 function camRaster(it) {
   // the first fit changes the camera of the viewport: do it before the cache key
   if (it.src.fit || !it.src.tgt) camFor(it, camGeo(it));
-  const key = JSON.stringify([geoVer(), it.w, it.h, it.scale, it.src, layKey(it)]);
+  const key = JSON.stringify([geoVer(), it.w, it.h, it.scale, it.rot || 0, it.src, layKey(it)]);
   let c = SHT.ras.get(it.id);
+  // a turned window needs the picture of the box that covers the turned rectangle
+  const [bw, bh] = turnedBox(it);
   // resolution: the screen one, limited so that a zoomed-in 3D view does not redraw millions of pixels
-  const pxmm = Math.min(view.k * DPR, Math.sqrt(RAS_MAX / Math.max(1, it.w * it.h)));
+  const pxmm = Math.min(view.k * DPR, Math.sqrt(RAS_MAX / Math.max(1, bw * bh)));
   if (c && c.key === key && (zoomBusy() || Math.abs(c.pxmm / pxmm - 1) < 0.2)) return c;
-  const wpx = Math.ceil(it.w * pxmm),
-    hpx = Math.ceil(it.h * pxmm);
+  const wpx = Math.ceil(bw * pxmm),
+    hpx = Math.ceil(bh * pxmm);
   if (wpx < 1 || hpx < 1) return null;
   const cv2 = (c && c.cv) || document.createElement('canvas');
   cv2.width = wpx;
@@ -97006,8 +97095,8 @@ function camRaster(it) {
     const cam = camFor(it, G);
     info = soft3dPaint(c2, G, cam, {
       k: pxmm,
-      w: it.w,
-      h: it.h,
+      w: bw,
+      h: bh,
       clip: camClip(it),
       fill: camFill(it),
       style: it.src.style || 'lines'
@@ -97019,10 +97108,19 @@ function camRaster(it) {
   SHT.ras.set(it.id, c);
   return c;
 }
-/** Projects a world point of a camera viewport to paper coords. */
+/** Size [w, h] (mm) of the box that covers the window of a viewport turned by its angle. */
+function turnedBox(it) {
+  const a = vpAng(it),
+    ca = Math.abs(Math.cos(a)),
+    sa = Math.abs(Math.sin(a));
+  return [it.w * ca + it.h * sa, it.w * sa + it.h * ca];
+}
+/** Projects a world point of a camera viewport to paper coords (the window angle of the viewport is applied). */
 function camToPaper(it, cam, v) {
   const q = cam.project(v);
-  return q ? { x: it.x + it.w / 2 + q[0], y: it.y + it.h / 2 + q[1], z: q[2] } : null;
+  if (!q) return null;
+  const d = turnP(vpAng(it), { x: q[0], y: q[1] });
+  return { x: it.x + it.w / 2 + d.x, y: it.y + it.h / 2 + d.y, z: q[2] };
 }
 const AX3 = { xy: [0, 0, 1], xz: [0, 1, 0], yz: [1, 0, 0] };
 /** Geometry of a 3D dimension: points of the dimension line and the value. */
@@ -97181,18 +97279,22 @@ function drawCamVp(it, direct) {
     ctx.restore();
     return;
   }
+  const a = vpAng(it);
   if (direct) {
     const G = camGeo(it);
     const cam = camFor(it, G);
+    const [bw, bh] = turnedBox(it);
     ctx.save();
     ctx.beginPath();
     ctx.rect(r.x, r.y, r.w, r.h);
     ctx.clip();
-    ctx.translate(r.x, r.y);
+    ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+    if (a) ctx.rotate(-a);
+    ctx.translate((-bw * view.k) / 2, (-bh * view.k) / 2);
     soft3dPaint(ctx, G, cam, {
       k: view.k,
-      w: it.w,
-      h: it.h,
+      w: bw,
+      h: bh,
       clip: camClip(it),
       fill: camFill(it),
       style: it.src.style || 'lines'
@@ -97203,7 +97305,18 @@ function drawCamVp(it, direct) {
     return;
   }
   const c = camRaster(it);
-  if (c) ctx.drawImage(c.cv, r.x, r.y, r.w, r.h);
+  if (c && !a) ctx.drawImage(c.cv, r.x, r.y, r.w, r.h);
+  else if (c) {
+    const [bw, bh] = turnedBox(it);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+    ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+    ctx.rotate(-a);
+    ctx.drawImage(c.cv, (-bw * view.k) / 2, (-bh * view.k) / 2, bw * view.k, bh * view.k);
+    ctx.restore();
+  }
   try {
     const G = camGeo(it);
     const cam = camFor(it, G);
@@ -97217,12 +97330,10 @@ function camSnaps(it) {
   const cam = camFor(it, G);
   return {
     cam,
-    pts: soft3dSnaps(G, cam, camClip(it)).map(([x, y, z, w, k]) => ({
-      p: { x: it.x + it.w / 2 + x, y: it.y + it.h / 2 + y },
-      z,
-      w,
-      k
-    }))
+    pts: soft3dSnaps(G, cam, camClip(it)).map(([x, y, z, w, k]) => {
+      const d = turnP(vpAng(it), { x, y });
+      return { p: { x: it.x + it.w / 2 + d.x, y: it.y + it.h / 2 + d.y }, z, w, k };
+    })
   };
 }
 
@@ -97260,6 +97371,7 @@ function imgSvg(it) {
   }
   return null;
 }
+/** The picture of an inserted drawing (cached by its source and the document version): { w, h, img, ok, ... } or null. */
 function imgOf(it) {
   const key = JSON.stringify([it.src, effVer()]);
   let c = SHT.imgs.get(it.id);
@@ -97280,6 +97392,18 @@ function imgOf(it) {
   SHT.imgs.set(it.id, c);
   return c;
 }
+/**
+ * Where an inserted drawing sits in its window: z — paper mm per drawing mm, (cx, cy) — the drawing point (mm, y down)
+ * at the window centre. Without its own «vw» the drawing is fitted into the window (turned by the window angle).
+ */
+function imgWin(it, c) {
+  const v = it.vw;
+  if (v && v.z > 0 && Number.isFinite(+v.cx) && Number.isFinite(+v.cy)) return { z: +v.z, cx: +v.cx, cy: +v.cy };
+  const a = vpAng(it),
+    ca = Math.abs(Math.cos(a)),
+    sa = Math.abs(Math.sin(a));
+  return { z: Math.min(it.w / (c.w * ca + c.h * sa), it.h / (c.w * sa + c.h * ca)), cx: c.w / 2, cy: c.h / 2 };
+}
 function drawImgItem(it) {
   const r = screenRect(it);
   const c = imgOf(it);
@@ -97291,12 +97415,23 @@ function drawImgItem(it) {
     T(it.x + it.w / 2, it.y + it.h / 2, 'Загрузка…', 3, 'center', { col: '#777' });
     return;
   }
-  // fit preserving the aspect
-  const k = Math.min(r.w / c.w, r.h / c.h);
-  const w = c.w * k,
-    h = c.h * k;
-  if (ctx.__cadRecorder && c.svg) return ctx.drawSvg(c.svg, r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h);
-  ctx.drawImage(c.img, r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h);
+  // fit preserving the aspect, or the window of the drawing (zoom, pan, turn)
+  const W_ = imgWin(it, c),
+    kp = W_.z * view.k,
+    a = vpAng(it);
+  const w = c.w * kp,
+    h = c.h * kp;
+  const x0 = r.x + r.w / 2 - W_.cx * kp,
+    y0 = r.y + r.h / 2 - W_.cy * kp;
+  if (ctx.__cadRecorder && c.svg) return ctx.drawSvg(c.svg, x0, y0, w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+  if (a) ctx.rotate(-a);
+  ctx.drawImage(c.img, -W_.cx * kp, -W_.cy * kp, w, h);
+  ctx.restore();
 }
 
 /* ---------- specification table ---------- */
@@ -97364,6 +97499,16 @@ function drawSpec(it) {
  * o.direct — viewports drawn directly (export); o.active — id of the viewport in model space; o.ui — selection marks.
  */
 function drawSheet(sh, o = {}) {
+  // the paper is drawn without the angle of an active window (a window turns only its own content)
+  const winA = winAngSet(null);
+  try {
+    drawSheet0(sh, o);
+  } finally {
+    winAngSet(winA);
+  }
+}
+/** The sheet drawing itself (drawSheet wraps it so that the paper is drawn without the angle of an active window). */
+function drawSheet0(sh, o) {
   const [W, H] = shSize(sh);
   const idx = shIndex(sh),
     tot = proj().sheets.length;
@@ -97379,7 +97524,14 @@ function drawSheet(sh, o = {}) {
   ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
   ctx.restore();
   for (const it of sh.items) {
+    // a window of a complex shape: everything of the viewport is cut by its contour (screen, print, PDF)
+    const poly = vpPoly(it);
+    ctx.save();
     try {
+      if (poly) {
+        polyPath(poly);
+        ctx.clip();
+      }
       if (it.t === 'vp' && it.src.k === 'plan') {
         if (o.direct || it.id === o.active) drawPlanVp(it, { active: it.id === o.active });
         else {
@@ -97391,9 +97543,18 @@ function drawSheet(sh, o = {}) {
       } else if (it.t === 'vp' && it.src.k === 'cam') drawCamVp(it, o.direct);
       else if (it.t === 'img') drawImgItem(it);
       else if (it.t === 'spec') drawSpec(it);
+    } catch (err) {
+      console.error('sheet item', it, err);
+    }
+    ctx.restore();
+    try {
       if (it.frame) {
         ctx.strokeStyle = '#111';
-        R(it.x, it.y, it.x + it.w, it.y + it.h, 0.25);
+        if (poly) {
+          polyPath(poly);
+          ctx.lineWidth = Math.max(0.6, px(0.25));
+          ctx.stroke();
+        } else R(it.x, it.y, it.x + it.w, it.y + it.h, 0.25);
       }
       drawTitle(it);
     } catch (err) {
@@ -97402,6 +97563,602 @@ function drawSheet(sh, o = {}) {
   }
   drawFrame(sh, idx, tot);
 }
+
+// ===== blocks/views/sheet-win.js =====
+/**
+ * blocks/views/sheet-win
+ *
+ * Windows of sheet viewports «as in AutoCAD»: the content of a viewport (a plan, a camera view, an inserted drawing) has
+ * a centre, a scale and an angle that are stored with the viewport (plan: src.cx / src.cy / scale / rot; camera: src.tgt
+ * / scale or src.dist / src.dir / rot; drawing: vw {z, cx, cy} / rot). The window is entered by a double click: the wheel
+ * zooms about the cursor, the middle button pans, a camera is orbited by the left button; the paper stays where it was.
+ * The same mapping serves the frame edits (the content does not move on the paper), the lock of a view and a window of
+ * a complex shape (contour: it.poly). The whole stay in a window is one undo step; the data is written when it ends.
+ */
+
+
+
+
+
+
+
+
+
+/** Standard scales of a window (1:N) in the list of the view panel. */
+const VP_SCALES = [1, 2, 5, 10, 20, 25, 50, 75, 100, 200, 500];
+const N_MIN = 0.2,
+  N_MAX = 5000;
+/** Session of the active window: snap — the undo step is taken, dirty — the data changed, base — the camera base. */
+const WIN = { snap: false, dirty: false, base: null, hintT: 0 };
+/** Rounds to 0.01. */
+const r2 = v => Math.round(v * 100) / 100;
+/** Rounds to 0.001. */
+const r3 = v => Math.round(v * 1000) / 1000;
+/** Rounds to 1e-6. */
+const r6 = v => Math.round(v * 1e6) / 1e6;
+
+/** The viewport whose window is active (entered by a double click), or null. */
+function winCur() {
+  const sh = SHT.on && SHT.win != null ? shCur() : null;
+  return (sh && sh.items.find(i => i.id === SHT.win)) || null;
+}
+/** Kind of the window of a viewport: 'plan', 'cam' (camera view), 'img' (inserted drawing), null — not a view. */
+function winKind(it) {
+  if (!it) return null;
+  if (it.t === 'img') return 'img';
+  if (it.t === 'vp') return it.src.k === 'cam' ? 'cam' : it.src.k === 'plan' ? 'plan' : null;
+  return null;
+}
+/** The camera base of the active window (null for a plan or a drawing). */
+const winBase = () => WIN.base;
+/** Says that the content of a locked view cannot be changed (not more often than once in two seconds). */
+function lockHint() {
+  const t = Date.now();
+  if (t - WIN.hintT < 2000) return;
+  WIN.hintT = t;
+  log('Вид закреплён замком: сдвиг, масштаб и поворот содержимого отключены (ручки рамки работают)', true);
+}
+
+/** Links that sheet-ui sets (the module of the sheet UI imports this one): levelBox(lv) — the box of the building elements of a level. */
+const winLink = { levelBox: null };
+
+/* ---------- content of a window: centre, scale, angle ---------- */
+/** Focal length (paper mm) of a perspective camera viewport. */
+const camFl = it => it.h / 2 / Math.tan(((+it.src.fov || 45) * Math.PI) / 360);
+/** Scale of a camera viewport: 1:N for the ortho camera, model mm per paper mm at the target for the perspective one. */
+const camN = it => (it.src.persp ? (+it.src.dist || 8000) / camFl(it) : vpN(it));
+/** The camera base of a camera viewport (fitted when it is not yet): target and the screen axes, to shift by (x, y). */
+function camBase(it) {
+  const cam = camFor(it, camGeo(it));
+  return { tgt: cam.tgt.slice(), r: cam.r.slice(), u: cam.u.slice() };
+}
+/**
+ * Where the content of the viewport is: { cm — the content point at the window centre (plan: model mm; camera: the shift
+ * in the screen plane from the base target; drawing: mm of the drawing, y up), N — content mm per paper mm, a — angle }.
+ * base — the camera base when it is known (a camera moves relative to it). null: the content is not available (a drawing
+ * whose source is lost).
+ */
+function winInfo(it, base) {
+  const a = vpAng(it);
+  if (it.t === 'img') {
+    const c = imgOf(it);
+    if (!c) return null;
+    const w = imgWin(it, c);
+    return { cm: { x: w.cx, y: -w.cy }, N: 1 / w.z, a };
+  }
+  if (it.src.k === 'cam') {
+    // the shift of the target from the base along the screen axes of the camera
+    const t = it.src.tgt;
+    const d = base && t ? v3.sub(t, base.tgt) : null;
+    return { cm: d ? { x: v3.dot(d, base.r), y: v3.dot(d, base.u) } : { x: 0, y: 0 }, N: camN(it), a, base };
+  }
+  return { cm: { x: +it.src.cx || 0, y: +it.src.cy || 0 }, N: vpN(it), a };
+}
+/** Writes the centre cm and the scale N of the content into the viewport (info.base — the camera base). */
+function winApply(it, cm, N, base) {
+  N = Math.min(N_MAX, Math.max(N_MIN, N));
+  if (it.t === 'img') {
+    it.vw = { z: r6(1 / N), cx: r3(cm.x), cy: r3(-cm.y) };
+    return;
+  }
+  if (it.src.k === 'cam') {
+    const b = base || camBase(it),
+      s = it.src;
+    s.tgt = [0, 1, 2].map(i => Math.round((b.tgt[i] + b.r[i] * cm.x + b.u[i] * cm.y) * 10) / 10);
+    s.fit = false;
+    if (s.persp) s.dist = Math.round(N * camFl(it));
+    else it.scale = r3(N);
+    return;
+  }
+  it.src.cx = r2(cm.x);
+  it.src.cy = r2(cm.y);
+  it.scale = r3(N);
+}
+/** The model (content) view {x, y, k} that shows the window on the paper view pv: the content point under the view centre. */
+function winView(it, pv, info = winInfo(it)) {
+  const c = vpPC(it),
+    d = turnP(-info.a, { x: pv.x - c.x, y: pv.y - c.y });
+  return { x: info.cm.x + d.x * info.N, y: info.cm.y + d.y * info.N, k: pv.k / info.N };
+}
+/** The paper view that shows the content view mv through the window (the inverse of winView). */
+function winPaper(it, mv, info = winInfo(it)) {
+  const c = vpPC(it),
+    d = turnP(info.a, { x: (mv.x - info.cm.x) / info.N, y: (mv.y - info.cm.y) / info.N });
+  return { x: c.x + d.x, y: c.y + d.y, k: mv.k * info.N };
+}
+
+/* ---------- the stay in a window ---------- */
+/** Takes the one undo step of the stay (before the first change) and marks the data as changed. */
+function winTouch() {
+  if (!WIN.snap) {
+    pushUndo();
+    WIN.snap = true;
+  }
+  WIN.dirty = true;
+}
+/** Puts the content view of the active window right for the fixed paper view (after a change of the window data). */
+function winSyncView(it) {
+  const info = winInfo(it, WIN.base);
+  if (info) Object.assign(view, winView(it, SHT.pv, info));
+}
+/** Opens the window of a viewport: the paper view stays as in SHT.pv, `view` becomes the content view. */
+function winOpen(it) {
+  WIN.snap = false;
+  WIN.dirty = false;
+  WIN.base = winKind(it) === 'cam' ? camBase(it) : null;
+  SHT.win = it.id;
+  winAngSet(vpAng(it));
+  winSyncView(it);
+}
+/** Closes the active window; returns the paper view to go back to (the paper is where it was). */
+function winClose() {
+  const it = winCur(),
+    info = it && winInfo(it, WIN.base);
+  const pv = info ? winPaper(it, view, info) : null;
+  winAngSet(null);
+  SHT.win = null;
+  WIN.base = null;
+  WIN.snap = false;
+  return pv;
+}
+/** Commits the changes of the window that was closed: one change of the document (one undo step was taken before). */
+function winCommit() {
+  if (!WIN.dirty) return;
+  WIN.dirty = false;
+  changed();
+}
+// undo / redo replace the document: the next change of the window needs a new undo step
+afterRestore(() => {
+  WIN.snap = false;
+  WIN.dirty = false;
+});
+/**
+ * The view was zoomed or panned by the wheel, the middle button or a gesture (view2d calls it): the window takes the new
+ * centre and scale, the paper stays. A locked view restores its content.
+ */
+function winSync() {
+  const it = winCur();
+  if (!it || !SHT.pv) return false;
+  const old = winInfo(it, WIN.base);
+  if (!old) return false;
+  if (it.vlock) {
+    winSyncView(it);
+    lockHint();
+    return true;
+  }
+  const mv = { x: view.x, y: view.y, k: view.k },
+    c = vpPC(it),
+    N = Math.min(N_MAX, Math.max(N_MIN, SHT.pv.k / mv.k)),
+    d = turnP(-old.a, { x: SHT.pv.x - c.x, y: SHT.pv.y - c.y });
+  winTouch();
+  winApply(it, { x: mv.x - d.x * N, y: mv.y - d.y * N }, N, WIN.base);
+  winSyncView(it);
+  dirty();
+  return true;
+}
+/** Scale 1:N of the content of the window (about the window centre); false for a locked view. */
+function winScaleSet(it, N) {
+  if (it.vlock) return false;
+  const info = winInfo(it, SHT.win === it.id ? WIN.base : undefined);
+  if (!info || !(N > 0)) return false;
+  winApply(it, info.cm, N, info.base);
+  if (SHT.win === it.id) winSyncView(it);
+  return true;
+}
+/**
+ * Fits the content into the window: a plan — the level (a standard scale) or the points pts (a free scale); a camera —
+ * the model; a drawing — the whole drawing. Returns false for a locked view.
+ */
+function winFit(it, pts = null) {
+  if (it.vlock) {
+    lockHint();
+    return false;
+  }
+  const kind = winKind(it);
+  if (kind === 'plan') {
+    const a = vpAng(it),
+      b = winLink.levelBox(it.src.lv);
+    const src = pts || [
+      { x: b.x0, y: b.y0 },
+      { x: b.x1, y: b.y0 },
+      { x: b.x1, y: b.y1 },
+      { x: b.x0, y: b.y1 }
+    ];
+    const q = polyBox(src.map(p => turnP(a, p))),
+      sx = q[2] - q[0],
+      sy = q[3] - q[1];
+    const ctr = turnP(-a, { x: (q[0] + q[2]) / 2, y: (q[1] + q[3]) / 2 });
+    const N = pts
+      ? Math.max(Math.max(sx, 1000) / (it.w * 0.9), Math.max(sy, 1000) / (it.h * 0.9))
+      : SCALES.find(s => s >= 10 && (sx + 800) / s <= it.w && (sy + 800) / s <= it.h) || 200;
+    winApply(it, ctr, N);
+  } else if (kind === 'cam') {
+    if (pts) return true;
+    it.src.fit = true;
+    const cam = camFor(it, camGeo(it));
+    if (SHT.win === it.id) WIN.base = { tgt: cam.tgt.slice(), r: cam.r.slice(), u: cam.u.slice() };
+  } else if (kind === 'img') {
+    if (pts) return true;
+    delete it.vw;
+  }
+  if (SHT.win === it.id) winSyncView(it);
+  return true;
+}
+/** Sets the angle (rad) of the content of a viewport: 0 removes it. */
+function winRotApply(it, a) {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a <= -Math.PI) a += 2 * Math.PI;
+  if (Math.abs(a) < 1e-9) delete it.rot;
+  else it.rot = r6(a);
+}
+/** The angle (rad) of the active window (ПОВОРОТЭКРАНА inside a window reads it), null when no window is active. */
+function winRotGet() {
+  const it = winCur();
+  return it ? vpAng(it) : null;
+}
+/** ПОВОРОТЭКРАНА inside an active window: turns its content by a (rad); false when no window is active. */
+function winRotSet(a) {
+  const it = winCur();
+  if (!it) return false;
+  if (it.vlock) {
+    lockHint();
+    return true;
+  }
+  winTouch();
+  winRotApply(it, a);
+  winAngSet(vpAng(it));
+  winSyncView(it);
+  dirty();
+  return true;
+}
+/** «Показать всё» / «Показать выделенное» inside an active window (view2d calls it): true when the window took it. */
+function winFitHook(pts) {
+  const it = winCur();
+  if (!it) return false;
+  if (it.vlock) {
+    lockHint();
+    return true;
+  }
+  winTouch();
+  winFit(it, pts);
+  dirty();
+  return true;
+}
+uiHooks.vpView = winSync;
+uiHooks.vpFit = winFitHook;
+uiHooks.vpActive = () => !!winCur();
+
+/* ---------- drags inside a window of a camera or a drawing ---------- */
+/** The new view direction of a camera dragged by (dx, dy) px from the direction f0: yaw about the vertical, then pitch. */
+function orbitDir(f0, dx, dy) {
+  const yaw = -dx * 0.008,
+    cy = Math.cos(yaw),
+    sy = Math.sin(yaw);
+  let f = [f0[0] * cy - f0[1] * sy, f0[0] * sy + f0[1] * cy, f0[2]];
+  const r = v3.nrm(v3.cross(f, [0, 0, 1])),
+    th = -dy * 0.006,
+    k = v3.cross(r, f);
+  const g = v3.nrm([
+    f[0] * Math.cos(th) + k[0] * Math.sin(th),
+    f[1] * Math.cos(th) + k[1] * Math.sin(th),
+    f[2] * Math.cos(th) + k[2] * Math.sin(th)
+  ]);
+  if (Math.abs(g[2]) < 0.985) f = g;
+  return v3.nrm(f).map(r6);
+}
+/** Left button inside the active window of a camera or a drawing: starts the orbit (camera) or the pan (drawing). */
+function winDown(sx, sy) {
+  const it = winCur(),
+    kind = winKind(it);
+  if (!it || kind === 'plan') return false;
+  if (it.vlock) {
+    lockHint();
+    return true;
+  }
+  const d = { mode: kind === 'cam' ? 'orbit' : 'wpan', it, s0: { x: sx, y: sy }, v0: { ...view }, moved: false };
+  if (kind === 'cam') d.f0 = camFor(it, camGeo(it)).f.slice();
+  SHT.drag = d;
+  return true;
+}
+/** A move of such a drag; true when the drag is a window drag. */
+function winDrag(d, sx, sy) {
+  if (d.mode !== 'orbit' && d.mode !== 'wpan') return false;
+  const dx = sx - d.s0.x,
+    dy = sy - d.s0.y;
+  if (!d.moved && Math.hypot(dx, dy) < 3) return true;
+  d.moved = true;
+  const it = d.it;
+  if (d.mode === 'wpan') {
+    panFrom(d.v0.x, d.v0.y, dx, dy);
+    return true;
+  }
+  winTouch();
+  it.src.dir = orbitDir(d.f0, dx, dy);
+  it.src.fit = false;
+  const cam = camFor(it, camGeo(it));
+  WIN.base = { tgt: cam.tgt.slice(), r: cam.r.slice(), u: cam.u.slice() };
+  winSyncView(it);
+  dirty();
+  return true;
+}
+
+/* ---------- frame edits keep the content where it is on the paper ---------- */
+/** Remembers the content of the viewport before its frame is edited (a camera is fitted first, so that it stays). */
+function keepStart(it) {
+  const info = winKind(it) ? winInfo(it, winKind(it) === 'cam' ? camBase(it) : undefined) : null;
+  return info ? { c: vpPC(it), info } : null;
+}
+/** After the frame is edited: the content gets the shift of the window centre, so that it does not move on the paper. */
+function keepEnd(it, st) {
+  if (!st) return;
+  const c = vpPC(it),
+    d = turnP(-st.info.a, { x: c.x - st.c.x, y: c.y - st.c.y }),
+    k = st.info.N;
+  winApply(it, { x: st.info.cm.x + d.x * k, y: st.info.cm.y + d.y * k }, k, st.info.base);
+}
+/** Takes the box of the contour as the frame of the viewport. */
+function boxFromPoly(it) {
+  const P_ = vpPoly(it);
+  if (!P_) return;
+  const [x0, y0, x1, y1] = polyBox(P_);
+  Object.assign(it, { x: r2(x0), y: r2(y0), w: r2(x1 - x0), h: r2(y1 - y0) });
+}
+/** Gives the viewport a window of a complex shape (a polygon of paper points, ≥ 3); the content stays where it is. */
+function winContour(it, pts) {
+  const st = keepStart(it);
+  it.poly = pts.map(p => ({ x: r2(p.x), y: r2(p.y) }));
+  boxFromPoly(it);
+  keepEnd(it, st);
+}
+/** Returns the usual rectangular window (the frame stays as the box of the contour was). */
+function winRect(it) {
+  delete it.poly;
+}
+/** Vertices (and the mid-edge points for adding a vertex) of the contour as handles: [x, y, key]. */
+function polyHandles(it) {
+  const P_ = vpPoly(it);
+  if (!P_) return [];
+  const out = P_.map((p, i) => [p.x, p.y, 'v' + i]);
+  P_.forEach((p, i) => {
+    const q = P_[(i + 1) % P_.length];
+    out.push([(p.x + q.x) / 2, (p.y + q.y) / 2, 'm' + i]);
+  });
+  return out;
+}
+
+// ===== blocks/views/sheet-win-ui.js =====
+/**
+ * blocks/views/sheet-win-ui
+ *
+ * Interface of the windows of sheet viewports: the rows of the view panel (scale from the list or a free one, angle,
+ * lock, «Войти», «Вписать», «Контур», «Прямоугольник») and the command ВИДКОНТУР — a window of a complex shape from a
+ * closed polyline of the sheet or from points (blocks/views/sheet-win keeps the data and the mapping).
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** HTML of one select: options [value, label], the selected value, extra attributes. */
+const opts = (list, v) =>
+  list
+    .map(
+      ([k, n]) => `<option value="${esc(String(k))}" ${String(k) === String(v) ? 'selected' : ''}>${esc(n)}</option>`
+    )
+    .join('');
+/** The scale N (1:N) of the content of a viewport's window, null when it has none (a lost source). */
+const scaleOf = it => {
+  const info = winKind(it) ? winInfo(it) : null;
+  return info ? Math.round(info.N * 1000) / 1000 : null;
+};
+/**
+ * Rows of the view panel for a viewport or a drawing: the scale (from the list or a free number, without a scale for a
+ * perspective camera), the angle of the content, the lock; then the buttons of the window.
+ */
+function winPanelHTML(it) {
+  const kind = winKind(it);
+  if (!kind) return '';
+  const lock = it.vlock ? 'disabled' : '';
+  let h = '';
+  const N = scaleOf(it);
+  if (N != null && !(kind === 'cam' && it.src.persp)) {
+    const list = VP_SCALES.map(n => [n, '1:' + n]);
+    if (!VP_SCALES.includes(N)) list.push([N, '1:' + fmt(N) + ' (свой)']);
+    h += `<label class="fl">Масштаб<span class="shrow2"><select data-wsc="1" ${lock} title="Стандартный масштаб содержимого; колесом в виде — свой">${opts(
+      list.sort((a, b) => a[0] - b[0]),
+      N
+    )}</select> 1: <input type="number" data-wsn="1" value="${fmt(N)}" step="any" style="width:70px" ${lock} title="Свой масштаб 1:N"></span></label>`;
+  }
+  h += `<label class="fl">Поворот содержимого, °<input type="number" data-wrot="1" value="${fmt(vpAng(it) / D2R)}" step="any" style="width:70px" ${lock} title="Угол поворота содержимого вида; рамка и лист не поворачиваются"></label>`;
+  h += `<label class="fl fx"><input type="checkbox" data-ip="vlock" data-ipt="b" ${it.vlock ? 'checked' : ''}> замок вида<span class="hint" style="margin-left:6px">сдвиг, масштаб и поворот отключены</span></label>`;
+  h += `<div class="btnrow"><button class="btn pri" data-wa="enter" title="Войти в вид (двойной щелчок): колесо — масштаб, СКМ — сдвиг, Esc — выход">Войти</button><button class="btn" data-wa="fit" ${lock} title="Вписать содержимое по рамке">Вписать</button><button class="btn" data-wa="clip" title="Контур вида: окно сложной формы по замкнутой полилинии листа или по точкам · ВИДКОНТУР">Контур</button>${vpPoly(it) ? '<button class="btn" data-wa="rect" title="Вернуть обычную прямоугольную рамку">Прямоугольник</button>' : ''}</div>`;
+  return h;
+}
+/**
+ * Binds the rows of winPanelHTML inside el. api: after() — redraw and save after a change of the viewport, enter(it) —
+ * enter the window. The undo step is taken here.
+ */
+function winPanelBind(el, it, api) {
+  const setScale = N => {
+    if (!(N > 0)) return;
+    pushUndo();
+    if (!winScaleSet(it, N)) return;
+    api.after();
+  };
+  el.querySelectorAll('[data-wsc]').forEach(i => (i.onchange = () => setScale(parseFloat(i.value))));
+  el.querySelectorAll('[data-wsn]').forEach(
+    i => (i.onchange = () => setScale(parseFloat(String(i.value).replace(',', '.'))))
+  );
+  el.querySelectorAll('[data-wrot]').forEach(
+    i =>
+      (i.onchange = () => {
+        const v = parseFloat(String(i.value).replace(',', '.'));
+        if (!Number.isFinite(v)) return;
+        pushUndo();
+        winRotApply(it, v * D2R);
+        api.after();
+      })
+  );
+  el.querySelectorAll('[data-wa]').forEach(
+    b =>
+      (b.onclick = () => {
+        const a = b.dataset.wa;
+        if (a === 'enter') return api.enter(it);
+        if (a === 'clip') return api.clip(it);
+        pushUndo();
+        if (a === 'fit') winFit(it);
+        if (a === 'rect') winRect(it);
+        api.after();
+      })
+  );
+}
+
+/** Hooks that sheet-ui registers: redraw of the side panel. */
+const winUi = { panel: null };
+
+/* ---------- command ВИДКОНТУР ---------- */
+/** The view (viewport or drawing) under a paper point. */
+function viewAt(p) {
+  const sh = shCur();
+  if (!sh) return null;
+  for (let i = sh.items.length - 1; i >= 0; i--) if (winKind(sh.items[i]) && vpHas(sh.items[i], p)) return sh.items[i];
+  return null;
+}
+/** A closed polyline-like element of the sheet (≥ 3 points) picked at a paper point, else null. */
+function closedAt(p) {
+  return pickAt(p, e => !!e.closed && Array.isArray(e.pts) && e.pts.length > 2);
+}
+/**
+ * Command ВИДКОНТУР: the window of a view gets a complex shape. Pick the view (the selected one is taken at once), then
+ * click a closed polyline of the sheet (it becomes the contour and is removed) or give the points of a polygon (Enter or a
+ * click on the first point closes it). The content stays where it is on the paper.
+ */
+function mkVpClip(first) {
+  let it = first || null,
+    pts = [];
+  const done = poly => {
+    if (poly.length < 3) {
+      log('Контур — не меньше трёх точек', true);
+      return;
+    }
+    pushUndo();
+    winContour(it, poly);
+    SHT.ras.delete(it.id);
+    changed();
+    log(
+      `Контур вида «${it.title || '#' + it.id}»: ${poly.length} вершин; правятся ручками, «Прямоугольник» возвращает рамку`
+    );
+    if (winUi.panel) winUi.panel();
+    return 'end';
+  };
+  return {
+    name: 'shclip',
+    base: () => pts[pts.length - 1] || null,
+    prompt: () =>
+      !it
+        ? 'Контур вида: щёлкните по виду на листе:'
+        : pts.length
+          ? `Следующая точка контура (${pts.length}) [Enter или первая точка — замкнуть]:`
+          : 'Контур вида: щёлкните по замкнутой полилинии листа или укажите точки контура:',
+    onPoint(p) {
+      if (!it) {
+        it = viewAt(p);
+        if (it) SHT.sel = it.id;
+        else log('Здесь нет вида — щёлкните по виду на листе', true);
+        return;
+      }
+      if (!pts.length) {
+        const e = closedAt(p);
+        if (e) {
+          let q = samplePts(e).map(v => ({ x: v.x, y: v.y }));
+          if (q.length > 3 && Math.hypot(q[0].x - q[q.length - 1].x, q[0].y - q[q.length - 1].y) < 1e-6) q.pop();
+          const r = done(q);
+          if (r) entsSet(S.ents.filter(x => x !== e));
+          return r;
+        }
+      }
+      if (pts.length > 2) {
+        const f = w2s(pts[0]),
+          c = w2s(p);
+        if (Math.hypot(f.x - c.x, f.y - c.y) < 8) return done(pts);
+      }
+      pts.push({ x: p.x, y: p.y });
+    },
+    onEnter() {
+      if (!it) return 'end';
+      return pts.length > 2 ? done(pts) : 'end';
+    },
+    preview(c) {
+      if (!pts.length) return;
+      ctx.save();
+      ctx.strokeStyle = '#2f7de1';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      [...pts, c].forEach((q, i) => {
+        const s = w2s(q);
+        if (i) ctx.lineTo(s.x, s.y);
+        else ctx.moveTo(s.x, s.y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([5, 4]);
+      const a = w2s(c),
+        b = w2s(pts[0]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+}
+/** The command for the panel button «Контур»: the viewport it is given (or the selected one) is the target. */
+function mkVpClipFor(it) {
+  return mkVpClip(it);
+}
+defineTools({
+  shclip: {
+    command: {
+      t: 'ВИДКОНТУР',
+      m: () => {
+        if (!SHT.on) return (log('Откройте раздел «Проект»', true), null);
+        const sel = itemById(shCur(), SHT.sel);
+        return mkVpClip(winKind(sel) ? sel : null);
+      },
+      a: ['видконтур', 'vpclip', 'контурвида']
+    },
+    title: 'Контур вида: окно сложной формы по замкнутой полилинии листа или по точкам · ВИДКОНТУР',
+    icon: '<path d="M4 5l8-2 5 6-3 7-8-1z"/><circle cx="4" cy="5" r="1.3"/><circle cx="12" cy="3" r="1.3"/><circle cx="17" cy="9" r="1.3"/><circle cx="14" cy="16" r="1.3"/><circle cx="6" cy="15" r="1.3"/>',
+    help: 'Окно вида сложной формы: выберите вид, затем щёлкните по замкнутой полилинии на листе (она станет контуром и исчезнет) или укажите точки многоугольника; Enter или щелчок по первой точке — замкнуть. Содержимое обрезается по контуру на экране, в печати и в PDF; вершины правятся ручками (средняя точка ребра добавляет вершину). Кнопка «Прямоугольник» в панели вида возвращает обычную рамку.'
+  }
+});
 
 // ===== blocks/views/sheet-ui.js =====
 /**
@@ -97439,7 +98196,11 @@ function drawSheet(sh, o = {}) {
 
 
 
+
+
 const MS = { keepLayers: null, keepAs: null, keepLv: null, keepSel: null };
+winUi.panel = () => renderPanel();
+winLink.levelBox = lv => levelBox(lv);
 
 /* ---------- mode ---------- */
 let restoreColors = null;
@@ -97459,7 +98220,7 @@ function sheetMode(on) {
     selClear();
     fitSheet();
   } else {
-    if (SHT.ms != null) exitMS();
+    if (SHT.win != null) exitMS();
     if (commandsState.cmd) endCmd();
     SHT.on = false;
     if ($('#cvBtns')) $('#cvBtns').hidden = false;
@@ -97483,7 +98244,7 @@ function fitSheet() {
   dirty();
 }
 function goSheet(id) {
-  if (SHT.ms != null) exitMS();
+  if (SHT.win != null) exitMS();
   proj().cur = id;
   docView.vp = 'P' + id;
   SHT.sel = null;
@@ -97491,61 +98252,73 @@ function goSheet(id) {
   fitSheet();
   renderPanel();
 }
-/** Enters a plan viewport (model space). */
+/**
+ * Enters the window of a viewport (a double click): a plan — its model space (the model is edited and dimensioned through
+ * the viewport); a camera view or an inserted drawing — its window. Inside, the wheel zooms about the cursor, the middle
+ * button pans, the paper stays (blocks/views/sheet-win).
+ */
 function enterMS(it) {
-  if (!it || it.t !== 'vp' || it.src.k !== 'plan') return;
+  const kind = winKind(it);
+  if (!kind) return;
+  if (SHT.win != null) exitMS();
   if (commandsState.cmd) endCmd();
+  if (kind !== 'plan' && !winInfo(it)) return log('Источник чертежа не найден', true);
   SHT.pv = { ...view };
-  MS.keepLayers = applyVpLayers(it);
-  MS.keepAs = S.x.ascale;
-  S.x.ascale = vpAnn(it);
-  const L = LV();
-  MS.keepLv = L.cur;
-  if (it.src.lv != null && it.src.lv !== L.cur) switchLevel(it.src.lv, true);
-  SHT.ms = it.id;
+  if (kind === 'plan') {
+    MS.keepLayers = applyVpLayers(it);
+    MS.keepAs = S.x.ascale;
+    S.x.ascale = vpAnn(it);
+    const L = LV();
+    MS.keepLv = L.cur;
+    if (it.src.lv != null && it.src.lv !== L.cur) switchLevel(it.src.lv, true);
+    SHT.ms = it.id;
+    docView.stageOv = it.src.stage ?? null;
+    docView.phaseOv = it.src.phase || null;
+    docView.ms = true;
+  }
   docView.vp = it.id;
-  docView.stageOv = it.src.stage ?? null;
-  docView.phaseOv = it.src.phase || null;
-  docView.ms = true;
-  Object.assign(view, vpModelView(it, SHT.pv));
+  winOpen(it);
   SHT.sel = it.id;
   selClear();
   log(
-    `Вид «${vpTitle(it)}» активен: правки модели, размеры и выноски — как на плане (масштаб 1:${vpN(it)}). Двойной щелчок вне вида или Esc — на лист.`
+    kind === 'plan'
+      ? `Вид «${vpTitle(it)}» активен: правки модели, размеры и выноски — как на плане (масштаб 1:${vpN(it)}). Колесо — масштаб, СКМ — сдвиг. Двойной щелчок вне вида или Esc — на лист.`
+      : `Вид «${vpTitle(it)}» активен: колесо — масштаб, СКМ — сдвиг${kind === 'cam' ? ', левая кнопка — поворот камеры' : ', левая кнопка — сдвиг'}. Двойной щелчок вне вида или Esc — на лист.`
   );
   selChanged();
   renderPanel();
   dirty();
 }
+/** Leaves the active window (the paper view is where it was; the new place of the content is kept in the viewport). */
 function exitMS() {
   const sh = shCur();
-  const it = sh && itemById(sh, SHT.ms);
   if (commandsState.cmd) endCmd();
-  if (it) Object.assign(view, paperFromModelView(it, view));
-  if (MS.keepLayers) MS.keepLayers();
-  MS.keepLayers = null;
-  S.x.ascale = MS.keepAs;
-  if (MS.keepLv != null && MS.keepLv !== LV().cur) switchLevel(MS.keepLv, true);
-  SHT.ms = null;
-  lswRender();
-  docView.ms = false;
-  docView.stageOv = undefined;
-  docView.phaseOv = null;
+  const pv = winClose();
+  if (pv) Object.assign(view, pv);
+  if (SHT.ms != null) {
+    if (MS.keepLayers) MS.keepLayers();
+    MS.keepLayers = null;
+    S.x.ascale = MS.keepAs;
+    if (MS.keepLv != null && MS.keepLv !== LV().cur) switchLevel(MS.keepLv, true);
+    SHT.ms = null;
+    lswRender();
+    docView.ms = false;
+    docView.stageOv = undefined;
+    docView.phaseOv = null;
+  }
   docView.vp = sh ? 'P' + sh.id : null;
   selClear();
   selChanged();
+  winCommit();
   renderPanel();
   dirty();
 }
 
 /* ---------- drawing hook ---------- */
 function paperView() {
-  const sh = shCur();
-  if (SHT.ms != null && sh) {
-    const it = itemById(sh, SHT.ms);
-    if (it) return paperFromModelView(it, view);
-  }
-  return { ...view };
+  const it = winCur();
+  const info = it && winInfo(it, winBase());
+  return info ? winPaper(it, view, info) : { ...view };
 }
 /* ---------- tabs under the canvas: Модель | sheets ---------- */
 let tabsKey = '';
@@ -97612,64 +98385,104 @@ renderHooks.sheet = {
       SHT.kPrev = pv.k;
     }
     Object.assign(view, pv);
+    // the paper is drawn without the angle of the active window; the window itself turns its content
+    const winA = winAngSet(null);
     try {
       drawSheet(sh, { active: SHT.ms });
       // paper annotations of the sheet
       const keepVp = docView.vp;
       docView.vp = 'P' + sh.id;
       try {
-        drawModel({ plain: SHT.ms != null, noLv: true });
+        drawModel({ plain: SHT.win != null, noLv: true });
       } finally {
         docView.vp = keepVp;
       }
-      if (SHT.ms != null) {
-        const it = itemById(sh, SHT.ms);
+      if (SHT.win != null) {
+        const it = itemById(sh, SHT.win);
         if (it) {
           // dim the paper outside the active viewport
-          const a = w2s({ x: it.x, y: it.y + it.h }),
-            b = w2s({ x: it.x + it.w, y: it.y });
           ctx.save();
           ctx.fillStyle = 'rgba(60,66,74,0.28)';
           ctx.beginPath();
           ctx.rect(0, 0, W, H);
-          ctx.rect(a.x, a.y, b.x - a.x, b.y - a.y);
+          winPath(it);
           ctx.fill('evenodd');
           ctx.strokeStyle = '#2f7de1';
           ctx.lineWidth = 2;
-          ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+          winPath(it);
+          ctx.stroke();
           ctx.restore();
         }
       }
     } finally {
+      winAngSet(winA);
       Object.assign(view, keepV);
     }
     return { wp: wantsPoint() };
   },
   ui() {
     const sh = shCur();
-    if (!sh || SHT.ms != null) return;
+    if (!sh || SHT.win != null) return;
+    for (const q of sh.items) if (q.vlock) lockMark(w2s({ x: q.x + q.w, y: q.y + q.h }));
     const it = itemById(sh, SHT.sel);
     if (!it) return;
-    const a = w2s({ x: it.x, y: it.y + it.h }),
-      b = w2s({ x: it.x + it.w, y: it.y });
     ctx.save();
     ctx.strokeStyle = '#2f7de1';
     ctx.setLineDash([6, 4]);
     ctx.lineWidth = 1.2;
-    ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+    winPath(it);
+    ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#2f7de1';
-    for (const [hx, hy] of handles(it)) {
+    for (const [hx, hy, k] of handles(it)) {
       const s = w2s({ x: hx, y: hy });
-      ctx.fillRect(s.x - 4, s.y - 4, 8, 8);
+      if (k[0] === 'm') {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      } else ctx.fillRect(s.x - 4, s.y - 4, 8, 8);
     }
     ctx.restore();
-    if (uiHooks.sheetCube) uiHooks.sheetCube.draw(ctx, it, w2s, vpDirOf);
+    if (uiHooks.sheetCube && !it.vlock) uiHooks.sheetCube.draw(ctx, it, w2s, vpDirOf);
   }
 };
+/** The path of the window of a viewport (its contour or rectangle) in screen px, for strokes and for dimming the rest. */
+function winPath(it) {
+  const P_ = vpPoly(it);
+  ctx.beginPath();
+  if (P_) {
+    P_.forEach((q, i) => {
+      const s = w2s(q);
+      if (i) ctx.lineTo(s.x, s.y);
+      else ctx.moveTo(s.x, s.y);
+    });
+    ctx.closePath();
+  } else {
+    const a = w2s({ x: it.x, y: it.y + it.h }),
+      b = w2s({ x: it.x + it.w, y: it.y });
+    ctx.rect(a.x, a.y, b.x - a.x, b.y - a.y);
+  }
+}
+/** The lock icon of a locked view at its corner s (screen px; it is not printed). */
+function lockMark(s) {
+  ctx.save();
+  ctx.translate(s.x - 18, s.y + 4);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillRect(-2, -2, 16, 18);
+  ctx.fillStyle = '#2f7de1';
+  ctx.strokeStyle = '#2f7de1';
+  ctx.lineWidth = 1.6;
+  ctx.fillRect(1, 7, 10, 7);
+  ctx.beginPath();
+  ctx.arc(6, 7, 3.4, Math.PI, 0);
+  ctx.stroke();
+  ctx.restore();
+}
 /** View direction of a camera viewport. */
 const vpDirOf = it => it.src.dir || (SH_CAM[it.src.view] || SH_CAM.iso)[1];
+/** Handles of a viewport on the paper: the corners and sides of the frame, or the vertices of a contour: [x, y, key]. */
 function handles(it) {
+  if (vpPoly(it)) return polyHandles(it);
   const { x, y, w, h } = it;
   return [
     [x, y, 'sw'],
@@ -97687,25 +98500,37 @@ function itemAt(p) {
   if (!sh) return null;
   for (let i = sh.items.length - 1; i >= 0; i--) {
     const it = sh.items[i];
-    if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) return it;
+    if (vpHas(it, p)) return it;
   }
   return null;
 }
 
 /* ---------- pointer / keyboard hooks ---------- */
 uiHooks.sheetDown = (sx, sy, ev) => {
-  if (!SHT.on || SHT.ms != null || wantsPoint()) return false;
+  if (!SHT.on) return false;
+  // inside an active window of a camera or a drawing the left button orbits / pans its content
+  if (SHT.win != null) return winDown(sx, sy);
+  if (wantsPoint()) return false;
   const sh = shCur();
   if (!sh) return false;
   const p = s2w(sx, sy);
   if (pickEnt(sx, sy)) return false;
   const sel = itemById(sh, SHT.sel);
-  if (sel && uiHooks.sheetCube && uiHooks.sheetCube.click(sel, w2s, vpDirOf, sx, sy, pushUndo)) return true;
+  if (sel && !sel.vlock && uiHooks.sheetCube && uiHooks.sheetCube.click(sel, w2s, vpDirOf, sx, sy, pushUndo))
+    return true;
   if (sel && !sel.lock)
     for (const [hx, hy, k] of handles(sel)) {
       const s = w2s({ x: hx, y: hy });
       if (Math.hypot(s.x - sx, s.y - sy) < 7) {
-        SHT.drag = { mode: 'size', k, it: sel, p0: p, o: { x: sel.x, y: sel.y, w: sel.w, h: sel.h }, moved: false };
+        SHT.drag = {
+          mode: vpPoly(sel) ? 'vtx' : 'size',
+          k,
+          it: sel,
+          p0: p,
+          o: { x: sel.x, y: sel.y, w: sel.w, h: sel.h, poly: vpPoly(sel) && sel.poly.map(q => ({ ...q })) },
+          keep: keepStart(sel),
+          moved: false
+        };
         return true;
       }
     }
@@ -97721,10 +98546,18 @@ uiHooks.sheetDown = (sx, sy, ev) => {
   SHT.sel = it.id;
   if (!it.lock)
     SHT.drag = {
-      mode: ev && ev.altKey && it.t === 'vp' && it.src.k === 'plan' ? 'pan' : 'move',
+      mode: ev && ev.altKey && !it.vlock && it.t === 'vp' && it.src.k === 'plan' ? 'pan' : 'move',
       it,
       p0: p,
-      o: { x: it.x, y: it.y, w: it.w, h: it.h, cx: it.src && it.src.cx, cy: it.src && it.src.cy },
+      o: {
+        x: it.x,
+        y: it.y,
+        w: it.w,
+        h: it.h,
+        cx: it.src && it.src.cx,
+        cy: it.src && it.src.cy,
+        poly: vpPoly(it) && it.poly.map(q => ({ ...q }))
+      },
       moved: false
     };
   renderPanel();
@@ -97733,11 +98566,12 @@ uiHooks.sheetDown = (sx, sy, ev) => {
 };
 uiHooks.sheetMove = (sx, sy) => {
   const d = SHT.drag;
-  if (SHT.on && !d && SHT.ms == null && uiHooks.sheetCube) {
+  if (SHT.on && !d && SHT.win == null && uiHooks.sheetCube) {
     const sel = itemById(shCur(), SHT.sel);
-    if (sel) uiHooks.sheetCube.hover(sel, w2s, vpDirOf, sx, sy);
+    if (sel && !sel.vlock) uiHooks.sheetCube.hover(sel, w2s, vpDirOf, sx, sy);
   }
   if (!SHT.on || !d) return false;
+  if (winDrag(d, sx, sy)) return true;
   const p = s2w(sx, sy);
   const dx = p.x - d.p0.x,
     dy = p.y - d.p0.y;
@@ -97752,10 +98586,27 @@ uiHooks.sheetMove = (sx, sy) => {
   if (d.mode === 'move') {
     it.x = r1(o.x + dx);
     it.y = r1(o.y + dy);
+    if (o.poly) it.poly = o.poly.map(q => ({ x: q.x + it.x - o.x, y: q.y + it.y - o.y }));
   } else if (d.mode === 'pan') {
-    const N = vpN(it);
-    it.src.cx = Math.round(o.cx - dx * N);
-    it.src.cy = Math.round(o.cy - dy * N);
+    // the content follows the pointer (the window may be turned)
+    const N = vpN(it),
+      m = turnP(-vpAng(it), { x: dx * N, y: dy * N });
+    it.src.cx = Math.round(o.cx - m.x);
+    it.src.cy = Math.round(o.cy - m.y);
+  } else if (d.mode === 'vtx') {
+    // a vertex of the contour moves (a mid-edge point first becomes a vertex); the content stays on the paper
+    let i = +d.k.slice(1);
+    if (d.k[0] === 'm') {
+      const q = o.poly[(i + 1) % o.poly.length];
+      it.poly = o.poly.map(v => ({ ...v }));
+      it.poly.splice(i + 1, 0, { x: (o.poly[i].x + q.x) / 2, y: (o.poly[i].y + q.y) / 2 });
+      i++;
+      d.k = 'v' + i;
+      o.poly = it.poly.map(v => ({ ...v }));
+    }
+    it.poly[i] = { x: Math.round(o.poly[i].x + dx), y: Math.round(o.poly[i].y + dy) };
+    boxFromPoly(it);
+    keepEnd(it, d.keep);
   } else {
     let { x, y, w, h } = o;
     if (d.k.includes('w')) {
@@ -97768,7 +98619,11 @@ uiHooks.sheetMove = (sx, sy) => {
       h = o.h - (y - o.y);
     }
     if (d.k.includes('n')) h = r1(o.h + dy);
-    if (w >= 10 && h >= 10) Object.assign(it, { x, y, w, h });
+    if (w >= 10 && h >= 10) {
+      Object.assign(it, { x, y, w, h });
+      // the content stays where it is on the paper: only the frame moves over it
+      keepEnd(it, d.keep);
+    }
   }
   dirty();
   return true;
@@ -97776,7 +98631,8 @@ uiHooks.sheetMove = (sx, sy) => {
 uiHooks.sheetUp = () => {
   const d = SHT.drag;
   SHT.drag = null;
-  if (d && d.moved) {
+  // the orbit / pan inside a window is committed when the window is left
+  if (d && d.moved && d.mode !== 'orbit' && d.mode !== 'wpan') {
     changed();
     renderPanel();
   }
@@ -97788,26 +98644,22 @@ uiHooks.sheetDbl = (sx, sy) => {
   if (!sh) return false;
   const pv = paperView();
   const p = { x: (sx - W / 2) / pv.k + pv.x, y: (H / 2 - sy) / pv.k + pv.y };
-  if (SHT.ms != null) {
-    const it = itemById(sh, SHT.ms);
-    if (it && !(p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h)) {
+  if (SHT.win != null) {
+    const it = itemById(sh, SHT.win);
+    if (it && !vpHas(it, p)) {
       exitMS();
       return true;
     }
-    return false;
+    return SHT.ms == null;
   }
   const it = itemAt(p);
   if (!it) return false;
-  if (it.t === 'vp' && it.src.k === 'plan') enterMS(it);
-  else if (it.t === 'vp' && it.src.k === 'cam') {
-    SHT.sel = it.id;
-    startCmd('dim3', mkDim3());
-  }
+  if (winKind(it)) enterMS(it);
   return true;
 };
 uiHooks.sheetEsc = () => {
   if (!SHT.on) return false;
-  if (SHT.ms != null && !commandsState.cmd && !S.sel.size) {
+  if (SHT.win != null && !commandsState.cmd && !S.sel.size) {
     exitMS();
     return true;
   }
@@ -97820,7 +98672,7 @@ uiHooks.sheetEsc = () => {
   return false;
 };
 uiHooks.sheetDel = () => {
-  if (!SHT.on || SHT.ms != null || S.sel.size) return false;
+  if (!SHT.on || SHT.win != null || S.sel.size) return false;
   const sh = shCur();
   const it = itemById(sh, SHT.sel);
   if (!it) return false;
@@ -97842,6 +98694,7 @@ function freeSpot(sh, w, h) {
     for (let x = x0 + 10; x + w <= x1 - 5; x += step) if (!overl(x, y)) return { x, y };
   return { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, taken: true };
 }
+/** Box { x0, y0, x1, y1 } of the building elements of a level (a default box when it has none). */
 function levelBox(lv) {
   let b = null;
   withLv(lv, () => {
@@ -97898,7 +98751,9 @@ function addPlanVp(sh, o = {}) {
 }
 /** Plans of a sheet (not locked) in a row or a column at the largest common standard scale that fits. */
 function arrangePlans(sh) {
-  const vps = sh.items.filter(i => i.t === 'vp' && i.src.k === 'plan' && !i.lock && !i.src.clipR);
+  const vps = sh.items.filter(
+    i => i.t === 'vp' && i.src.k === 'plan' && !i.lock && !i.vlock && !i.poly && !i.src.clipR
+  );
   if (!vps.length) return false;
   const [x0, y0, x1, y1] = shInner(sh);
   const W_ = x1 - x0 - 20,
@@ -98205,15 +99060,14 @@ function camSnapsCached(it) {
   }
   return c.S;
 }
-const inRect = (it, p) => p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h;
 snapHooks.extra = (w, base, only) => {
-  if (!SHT.on || SHT.ms != null) return null;
+  if (!SHT.on || SHT.win != null) return null;
   const sh = shCur();
   if (!sh) return null;
   const pv = { ...view };
   for (let i = sh.items.length - 1; i >= 0; i--) {
     const it = sh.items[i];
-    if (it.t !== 'vp' || !inRect(it, w)) continue;
+    if (it.t !== 'vp' || !vpHas(it, w)) continue;
     if (it.src.k === 'plan') {
       const restore = applyVpLayers(it),
         keepVp = docView.vp,
@@ -98223,7 +99077,7 @@ snapHooks.extra = (w, base, only) => {
         Object.assign(view, vpModelView(it, pv));
         docView.vp = it.id;
         S.x.ascale = vpAnn(it);
-        r = withLv(it.src.lv, () => findSnapAt(p2m(it, w), base && inRect(it, base) ? p2m(it, base) : null, only));
+        r = withLv(it.src.lv, () => findSnapAt(p2m(it, w), base && vpHas(it, base) ? p2m(it, base) : null, only));
       } finally {
         Object.assign(view, pv);
         docView.vp = keepVp;
@@ -98255,10 +99109,10 @@ snapHooks.extra = (w, base, only) => {
 };
 /** Dimensions drawn on paper over a viewport belong to it: plan — in model coordinates, 3D — as a 3D dimension. */
 uiHooks.annAdd = e => {
-  if (!SHT.on || SHT.ms != null || e.type !== 'dim' || typeof e.vp !== 'string' || !e.a || !e.b) return true;
+  if (!SHT.on || SHT.win != null || e.type !== 'dim' || typeof e.vp !== 'string' || !e.a || !e.b) return true;
   const sh = shCur();
   if (!sh) return true;
-  const it = [...sh.items].reverse().find(i => i.t === 'vp' && inRect(i, e.a) && inRect(i, e.b));
+  const it = [...sh.items].reverse().find(i => i.t === 'vp' && vpHas(i, e.a) && vpHas(i, e.b));
   if (!it) return true;
   if (it.src.k === 'plan') {
     e.a = p2m(it, e.a);
@@ -98523,7 +99377,8 @@ function sheetCanvas(sh, pxmm = 8) {
     keepV = { ...view },
     keepVp = docView.vp,
     keepMs = SHT.ms,
-    keepSel = new Set(S.sel);
+    keepSel = new Set(S.sel),
+    winA = winAngSet(null);
   selClear();
   try {
     c2.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -98532,6 +99387,7 @@ function sheetCanvas(sh, pxmm = 8) {
     docView.vp = 'P' + sh.id;
     drawModel({ plain: true, noLv: true });
   } finally {
+    winAngSet(winA);
     docView.vp = keepVp;
     SHT.ms = keepMs;
     selAssign(keepSel);
@@ -98622,18 +99478,11 @@ function itemPanel(sh, it) {
   };
   let h = `<div class="sech">${it.t === 'vp' ? (it.src.k === 'plan' ? 'План на листе' : '3D-вид / разрез') : it.t === 'img' ? 'Чертёж' : 'Таблица'}<span class="cnt">#${it.id}</span></div>`;
   h += fl('Заголовок', ip('title', 't', `placeholder="${esc(vpTitle(it))}"`));
-  h += `<div class="shrow2">X ${ip('x')} Y ${ip('y')}</div><div class="shrow2">Ш ${ip('w')} В ${ip('h')}</div>`;
+  const sized = vpPoly(it) ? 'disabled title="Окно сложной формы: правьте вершины ручками на листе"' : '';
+  h += `<div class="shrow2">X ${ip('x')} Y ${ip('y')}</div><div class="shrow2">Ш ${ip('w', 'n', sized)} В ${ip('h', 'n', sized)}</div>`;
   h += `<label class="fl fx">${ip('showTitle', 'b')} показывать заголовок</label><label class="fl fx">${ip('frame', 'b')} рамка вокруг</label><label class="fl fx">${ip('lock', 'b')} закрепить</label>`;
+  h += winPanelHTML(it);
   if (it.t === 'vp') {
-    const scales = [...new Set([...SCALES, vpN(it)])].sort((a, b) => a - b);
-    h += fl(
-      'Масштаб',
-      selS(
-        'data-ip="scale" data-ipt="n"',
-        scales.map(s => [s, '1:' + s]),
-        vpN(it)
-      )
-    );
     if (it.src.k === 'plan')
       h += fl('Масштаб аннотаций (размеры, тексты), пусто — как у вида', ip('ascale', 'n', `placeholder="${vpN(it)}"`));
     // the stage of this view: its layers, its own annotations, hidden elements and phase display
@@ -98687,7 +99536,7 @@ function itemPanel(sh, it) {
       )
     );
     h += `<div class="shrow2">Центр модели X ${ip('src.cx')} Y ${ip('src.cy')}</div>`;
-    h += `<div class="btnrow"><button class="btn pri" data-ia="ms">Войти в вид (размеры, правки)</button><button class="btn" data-ia="fit">Вписать модель</button></div><p class="hint">Alt + перетаскивание — сдвинуть модель в рамке. Двойной щелчок — войти в вид, вне вида — выйти.</p>`;
+    h += `<p class="hint">Двойной щелчок по виду — войти (размеры, правки модели, колесо — масштаб, СКМ — сдвиг), вне вида или Esc — выйти. Alt + перетаскивание — сдвинуть модель в рамке.</p>`;
   }
   if (it.t === 'vp' && it.src.k === 'cam') {
     const curSrc = it.src.from != null ? 'e:' + it.src.from : 'v:' + (it.src.view || 'iso');
@@ -98697,7 +99546,7 @@ function itemPanel(sh, it) {
     h += `<label class="fl fx">${ip('src.allLv', 'b', it.src.allLv === false ? '' : 'checked')} все этажи</label>`;
     h += fl('Горизонтальный разрез на высоте, мм (0 — нет)', ip('src.cutZ'));
     if (it.src.ids) h += `<p class="hint">Только объекты: ${it.src.ids.length} шт.</p>`;
-    h += `<div class="btnrow"><button class="btn" data-ia="fit">Вписать</button><button class="btn pri" data-ia="dim3">Размер 3D</button>${queryAny('molding') ? `<button class="btn" data-ia="mldim" title="Цепочки отступов молдингов на стенах, обращённых к виду, и размеры из редактора раскладки">${(it.dims3 || []).some(d => d.ml) ? 'Обновить размеры молдингов' : 'Размеры молдингов'}</button>` : ''}</div>`;
+    h += `<div class="btnrow"><button class="btn pri" data-ia="dim3">Размер 3D</button>${queryAny('molding') ? `<button class="btn" data-ia="mldim" title="Цепочки отступов молдингов на стенах, обращённых к виду, и размеры из редактора раскладки">${(it.dims3 || []).some(d => d.ml) ? 'Обновить размеры молдингов' : 'Размеры молдингов'}</button>` : ''}</div>`;
     if ((it.dims3 || []).length)
       h += `<div class="shdims">${it.dims3.map((d, i) => `<div>${Math.round(dim3Geo(d).val)} мм · ${d.pl.toUpperCase()}${d.m !== 'al' ? ' · ось ' + d.m.toUpperCase() : ''}<button class="x" data-idel="${i}" aria-label="Удалить размер">×</button></div>`).join('')}</div>`;
   }
@@ -98744,9 +99593,15 @@ function sheetPanel() {
     )
     .join('')}</div>`;
   if (!sh) return h;
-  if (SHT.ms != null) {
-    const it = itemById(sh, SHT.ms);
-    h += `<div class="sech">Работа в виде</div><p class="hint">${esc(it ? vpTitle(it) : '')} · М 1:${it ? vpN(it) : ''}. Размеры (РАЗМЕР), тексты, выноски и линии принадлежат этому виду; привязки — как на плане.</p><div class="btnrow"><button class="btn pri" data-sa="exitms">Вернуться на лист</button><button class="btn" data-sa="dim">Размер</button><button class="btn" data-sa="note">Выноска</button></div>`;
+  if (SHT.win != null) {
+    const it = itemById(sh, SHT.win);
+    const plan = SHT.ms != null,
+      cam = it && it.t === 'vp' && it.src.k === 'cam',
+      N = it ? winInfo(it) : null;
+    const how = plan
+      ? 'Размеры (РАЗМЕР), тексты, выноски и линии принадлежат этому виду; привязки — как на плане.'
+      : `Колесо — масштаб в точке курсора, СКМ — сдвиг, левая кнопка — ${cam ? 'поворот камеры' : 'сдвиг'}.`;
+    h += `<div class="sech">Работа в виде</div><p class="hint">${esc(it ? vpTitle(it) : '')}${N && !(cam && it.src.persp) ? ' · М 1:' + fmt(Math.round(N.N * 1000) / 1000) : ''}. ${how} Поворот содержимого — ПОВОРОТЭКРАНА; «Показать выделенное» вписывает выделенное в окно.</p><div class="btnrow"><button class="btn pri" data-sa="exitms">Вернуться на лист</button>${plan ? '<button class="btn" data-sa="dim">Размер</button><button class="btn" data-sa="note">Выноска</button>' : ''}</div>`;
     return h;
   }
   h += `<div class="sech">Лист</div>`;
@@ -98931,12 +99786,20 @@ function bindPanel(el) {
         if (t === 'n' && !Number.isFinite(v)) v = null;
         const ks = p.split('.');
         let o = it;
+        // the size of the frame is edited: the content stays where it is on the paper
+        const keep = p === 'w' || p === 'h' ? keepStart(it) : null,
+          x0 = it.x,
+          y0 = it.y;
         for (let j = 0; j < ks.length - 1; j++) o = o[ks[j]] = o[ks[j]] || {};
         o[ks[ks.length - 1]] = v;
+        if (keep) keepEnd(it, keep);
+        if ((p === 'x' || p === 'y') && vpPoly(it))
+          it.poly = it.poly.map(q => ({ x: q.x + it.x - x0, y: q.y + it.y - y0 }));
         if (p === 'src.persp' || p === 'src.allLv' || p === 'src.cutZ') it.src.fit = true;
         after();
       })
   );
+  winPanelBind(el, it, { after, enter: enterMS, clip: v => startCmd('shclip', mkVpClipFor(v)) });
   el.querySelectorAll('[data-istg]').forEach(
     sel =>
       (sel.onchange = () => {
@@ -99015,8 +99878,8 @@ function bindPanel(el) {
     b =>
       (b.onclick = () => {
         const a = b.dataset.ia;
-        if (a === 'ms') return enterMS(it);
         if (a === 'dim3') return startCmd('dim3', mkDim3());
+        if (a === 'fit' && it.vlock) return winFit(it);
         pushUndo();
         if (a === 'mldim') {
           const f = vpDirOf(it);
@@ -99032,16 +99895,7 @@ function bindPanel(el) {
             }
           log(n ? `Размеры молдингов: ${n} на виде` : 'Нет молдингов на стенах, обращённых к этому виду', !n);
         }
-        if (a === 'fit') {
-          if (it.src.k === 'plan') {
-            const bx = levelBox(it.src.lv);
-            it.src.cx = Math.round((bx.x0 + bx.x1) / 2);
-            it.src.cy = Math.round((bx.y0 + bx.y1) / 2);
-            it.scale =
-              SCALES.find(s => s >= 10 && (bx.x1 - bx.x0 + 800) / s <= it.w && (bx.y1 - bx.y0 + 800) / s <= it.h) ||
-              200;
-          } else it.src.fit = true;
-        }
+        if (a === 'fit') winFit(it);
         if (a === 'del') {
           sh.items = sh.items.filter(x => x !== it);
           entsSet(S.ents.filter(e => e.vp !== it.id));
@@ -99052,6 +99906,7 @@ function bindPanel(el) {
           n.id = newItemId();
           n.x += 10;
           n.y -= 10;
+          if (n.poly) n.poly = n.poly.map(q => ({ x: q.x + 10, y: q.y - 10 }));
           sh.items.push(n);
           SHT.sel = n.id;
         }
@@ -115984,11 +116839,12 @@ function hideRestore() {
   hideRefresh();
   log('Всё снова на месте');
 }
-/** «Показать выделенное»: the plan and the 3D camera are fitted to the selection (nothing happens on a sheet). */
+/** «Показать выделенное»: the plan and the 3D camera are fitted to the selection (on a sheet only inside an active view window: the selection is fitted into it). */
 function showSelected() {
   const es = selEnts();
   if (!es.length) return log('Сначала выберите объекты', true);
-  if (renderHooks.sheet && renderHooks.sheet.on()) return;
+  // on a sheet only an active window takes it (views/sheet-win fits the selection into the window)
+  if (renderHooks.sheet && renderHooks.sheet.on() && !(uiHooks.vpActive && uiHooks.vpActive())) return;
   const mode = sceneState.viewMode;
   if (mode === 'spec') return;
   if (mode !== '3d') zoomToEnts(es);
@@ -116070,6 +116926,7 @@ function initScreenHide() {
 
 
 
+
 /** Angle in degrees in (−180, 180]. */
 function degOf(a) {
   let d = (a / D2R) % 360;
@@ -116077,9 +116934,23 @@ function degOf(a) {
   if (d <= -180) d += 360;
   return Math.round(d * 1e6) / 1e6;
 }
-/** Sets the screen angle (degrees, counter-clockwise: how far the model is turned on the screen) and reports it. */
+/** The angle (rad) of the screen, or of the active viewport window of a sheet: the command acts on the window there. */
+function curAngle() {
+  const w = winRotGet();
+  return w == null ? viewAng() : w;
+}
+/**
+ * Sets the screen angle (degrees, counter-clockwise: how far the model is turned on the screen) and reports it. Inside
+ * an active viewport window of a sheet the content of the window turns (a view state kept in the viewport, one undo step).
+ */
 function setScreenAngle(deg) {
-  viewRotSet(degOf(deg * D2R) * D2R);
+  const a = degOf(deg * D2R) * D2R;
+  if (winRotGet() != null) {
+    winRotSet(a);
+    log(deg ? `Угол вида на листе: ${fmt(degOf(deg * D2R))}°` : 'Угол вида на листе сброшен: 0°');
+    return;
+  }
+  viewRotSet(a);
   log(deg ? `Угол экрана: ${fmt(degOf(deg * D2R))}°` : 'Угол экрана сброшен: 0°');
 }
 /**
@@ -116113,7 +116984,7 @@ function mkRotScreen() {
     prompt: () =>
       pickLine
         ? 'Щёлкните по стене или линии — она станет горизонтальной:'
-        : `Угол экрана, ° (сейчас ${fmt(degOf(viewAng()))}°) или [Линия/+90/−90/Сброс]:`,
+        : `Угол ${winRotGet() != null ? 'вида' : 'экрана'}, ° (сейчас ${fmt(degOf(curAngle()))}°) или [Линия/+90/−90/Сброс]:`,
     hasValue: () => !pickLine,
     onValue(v) {
       setScreenAngle(v);
@@ -116125,8 +116996,8 @@ function mkRotScreen() {
         pickLine = true;
         return 'wait';
       }
-      if (t === '+90') return (setScreenAngle(degOf(viewAng()) + 90), 'end');
-      if (t === '-90') return (setScreenAngle(degOf(viewAng()) - 90), 'end');
+      if (t === '+90') return (setScreenAngle(degOf(curAngle()) + 90), 'end');
+      if (t === '-90') return (setScreenAngle(degOf(curAngle()) - 90), 'end');
       if (['сброс', 'сбр', 'с', 'reset', 'r'].includes(t)) return (setScreenAngle(0), 'end');
       return false;
     },
@@ -116155,7 +117026,7 @@ defineTools({
     title:
       'Повернуть экран: на сколько градусов повернут план на экране (модель, чертёж и печать не меняются); [Линия] — стена или линия станет горизонтальной · ПОВОРОТЭКРАНА',
     icon: '<circle cx="10" cy="10" r="6.5"/><path d="M10 3.5V1.5M7.6 6.2L10 3.5l2.4 2.7M10 10l3.4 3.4"/>',
-    help: 'Повернуть экран: введите угол в градусах (против часовой стрелки) или выберите [Линия] — щелчок по стене или линии делает её горизонтальной; [+90], [−90], [Сброс]. Поворачивается только экран: координаты, данные и печать модели не меняются; тексты и размеры поворачиваются вместе с планом, сетка, орто и полярные углы идут по осям экрана. Угол запоминается для плана каждого этажа; стрелка-компас в углу поля показывает угол, щелчок по ней — сброс.'
+    help: 'Внутри активного видового окна на листе (двойной щелчок по виду) команда поворачивает содержимое окна — рамка и лист остаются на месте; угол хранится в виде. Повернуть экран: введите угол в градусах (против часовой стрелки) или выберите [Линия] — щелчок по стене или линии делает её горизонтальной; [+90], [−90], [Сброс]. Поворачивается только экран: координаты, данные и печать модели не меняются; тексты и размеры поворачиваются вместе с планом, сетка, орто и полярные углы идут по осям экрана. Угол запоминается для плана каждого этажа; стрелка-компас в углу поля показывает угол, щелчок по ней — сброс.'
   }
 });
 
