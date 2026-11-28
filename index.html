@@ -2368,20 +2368,7 @@ ul.calc li.hint {
   margin-left: -16px;
   margin-top: 4px;
 }
-.od {
-  width: min(1320px, 100%);
-  height: min(820px, 100%);
-}
-#objdlg {
-  z-index: 39;
-}
-.odbody {
-  display: grid;
-  grid-template-columns: 170px minmax(300px, 390px) minmax(0, 1fr);
-  min-height: 0;
-}
 #odNav {
-  border-right: 1px solid var(--line);
   overflow-y: auto;
   padding: 8px;
   display: flex;
@@ -2400,15 +2387,13 @@ ul.calc li.hint {
   color: var(--fg);
 }
 #odForm {
-  overflow-y: auto;
   padding: 12px 14px;
-  border-right: 1px solid var(--line);
 }
 #odPrev {
   position: relative;
   min-width: 0;
   min-height: 0;
-  background: radial-gradient(circle at 50% 40%, #252b33, #16191d);
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--scene) 85%, #fff), var(--scene));
 }
 #od3,
 #od2 {
@@ -2461,28 +2446,7 @@ ul.calc li.hint {
   border-radius: 6px;
   padding: 3px 8px;
 }
-@media (max-width: 900px) {
-  .odbody {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 40vh minmax(0, 1fr);
-  }
-  #odNav {
-    flex-direction: row;
-    overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  #odNav button {
-    white-space: nowrap;
-  }
-  #odForm {
-    order: 3;
-    border-right: 0;
-  }
-  #odPrev {
-    order: 2;
-  }
-}
+
 .mode2.m3 {
   grid-template-columns: 1fr 1fr 1fr;
 }
@@ -2543,20 +2507,6 @@ ul.calc li.hint {
   resize: both;
   min-height: 56px;
   line-height: 1.3;
-}
-#arraymenu {
-  width: 330px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-}
-#arraymenu .mh {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-weight: 600;
 }
 .pform label.ck,
 .lays label.ck,
@@ -2718,15 +2668,6 @@ label.ck {
 }
 
 /* ---------- solid body editor ---------- */
-.dlg.sol {
-  width: min(1500px, 100%);
-  height: min(940px, 100%);
-}
-.solbody {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) 300px;
-  min-height: 0;
-}
 .soltools {
   display: flex;
   flex-direction: column;
@@ -2762,7 +2703,7 @@ label.ck {
   position: relative;
   min-height: 0;
   overflow: hidden;
-  background: #1c2025;
+  background: var(--scene);
 }
 .solstage canvas {
   position: absolute;
@@ -2772,7 +2713,6 @@ label.ck {
   cursor: crosshair;
 }
 .solvcb {
-  color: #c9d1dc;
   position: absolute;
   left: 0;
   right: 0;
@@ -2782,10 +2722,10 @@ label.ck {
   align-items: center;
   gap: 12px;
   padding: 6px 10px;
-  background: rgba(22, 25, 29, 0.86);
+  background: color-mix(in srgb, var(--scene) 86%, transparent);
   border-top: 1px solid var(--line);
   font-size: 12px;
-  color: var(--muted);
+  color: #c9d1dc;
 }
 .solvcb input {
   width: 120px;
@@ -2793,7 +2733,6 @@ label.ck {
   font-family: var(--f-mono);
 }
 .solside {
-  border-left: 1px solid var(--line);
   padding: 10px 12px;
   overflow: auto;
   font-size: 12px;
@@ -6327,50 +6266,9 @@ html[data-form='phone'] #spec .tblwrap {
   overflow: visible;
 }
 
-/* ---------- builders and libraries on a phone: the columns go one under another ---------- */
+/* ---------- the specification table on a phone ---------- */
 html[data-form='phone'] #spec table.sp {
   min-width: 0 !important;
-}
-html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'],
-html[data-form='phone'] .odbody,
-html[data-form='phone'] .solbody {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > *,
-html[data-form='phone'] .odbody > *,
-html[data-form='phone'] .solbody > * {
-  flex: none;
-  width: auto !important;
-  max-width: 100%;
-  min-width: 0;
-  max-height: none;
-  overflow: visible;
-  border-left: 0 !important;
-  border-right: 0 !important;
-  border-bottom: 1px solid var(--line);
-}
-/* the drawing / 3D of a builder first, with a real height */
-html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > div[style*='grid-template-rows'] {
-  order: -1;
-  height: 62vh;
-  min-height: 320px;
-  overflow: hidden;
-}
-html[data-form='phone']
-  .modal
-  .dlg
-  > div[style*='grid-template-columns']
-  > div[style*='grid-template-rows']
-  > div:last-child {
-  max-height: 30vh;
-}
-html[data-form='phone'] .solbody > :nth-child(2) {
-  min-height: 50vh;
 }
 html[data-form='phone'] .pnsvg {
   overflow-x: auto;
@@ -6446,26 +6344,6 @@ html[data-form='phone'] .modal .tblwrap:has(table.cards) {
   border-radius: 10px;
 }
 
-/* ---------- builders (kitchen, cabinets): the view buttons scroll in one row above the drawing ---------- */
-html[data-form='phone'] .modal .cvbtns {
-  left: 0 !important;
-  right: 0 !important;
-  top: 0 !important;
-  padding: 6px 8px;
-  flex-wrap: nowrap !important;
-  justify-content: flex-start !important;
-  overflow-x: auto;
-  scrollbar-width: none;
-  background: color-mix(in srgb, var(--canvas) 88%, transparent);
-  border-bottom: 1px solid var(--line);
-}
-html[data-form='phone'] .modal .cvbtns::-webkit-scrollbar {
-  display: none;
-}
-html[data-form='phone'] .modal .cvbtns .btn {
-  flex: none;
-  min-height: 36px;
-}
 /* mouse hints over the 3D views mean nothing to a finger */
 html[data-touch='1'] #cw3hint,
 html[data-touch='1'] #kd3hint,
@@ -8185,6 +8063,512 @@ html .modal.win > .mlewin.win-dlg {
 }
 .zone .bad {
   color: var(--danger);
+}
+
+/* ===== Windows of the groups «Мебель» and «Прочее» on the common frame (uikit/window.js): the kitchen / island and case furniture constructors
+   (#kitdlg, #cwdlg), furniture drawings (#fddlg, #fdCadMenu), the sheet item (#shdlg), object parameters (#objdlg), the solid editor (#soldlg),
+   the stamp editor (#stampDlg), the sensor check (#arChk) and the floating panels: field notes (#arnDlg), the stage menu (#stageMenu), the array (#arraymenu).
+   Colours — only theme variables; 3D scenes — --scene. The drawing tables of the builders (#f4f2ee / #eeece6), the grey sheet bed (#8f949a)
+   and the white paper stay as they are. Loaded after zz-windows-finishes.css. ===== */
+
+/* ---- 12–14 kitchen, island and case furniture constructors: list | view | catalogue ---- */
+html .modal.win > .bldwin.win-dlg,
+html .modal.win > .fdwin.win-dlg {
+  height: min(900px, 100%);
+}
+.kitwin .win-cols > .win-left,
+.kitwin .win-cols > .win-right {
+  width: 250px;
+}
+.cwwin .win-cols > .win-left {
+  width: 270px;
+}
+.cwwin .win-cols > .win-right {
+  width: 290px;
+}
+.bldwin .win-cols > .win-main {
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.bld-side {
+  padding: 12px;
+}
+.bld-view {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+.bld-cv2,
+.bld-cv3 {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* the drafting table of the builders: the same in every theme */
+.bld-cv2 {
+  background: #f4f2ee;
+  cursor: pointer;
+}
+.bld-cv3 {
+  background: #eeece6;
+  cursor: grab;
+}
+.bld-hint {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  pointer-events: none;
+  z-index: 2;
+}
+.bld-bottom {
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  max-height: 250px;
+  overflow: auto;
+}
+.cwwin .bld-bottom {
+  padding: 8px 12px;
+  max-height: 190px;
+}
+.cwwin .fl input,
+.cwwin .fl select {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.cwwin .fl {
+  min-width: 0;
+}
+.bld-grid {
+  display: grid;
+  gap: 6px;
+}
+.bld-gtop {
+  margin-top: 6px;
+}
+.bld-sech {
+  margin-top: 10px;
+}
+.bld-item {
+  display: block;
+  width: 100%;
+  margin: 3px 0;
+  text-align: left;
+}
+.bld-wrap {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.bld-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.cwwin .bld-row {
+  gap: 14px;
+  align-items: baseline;
+}
+.bld-ttl {
+  align-self: center;
+}
+.bld-w {
+  width: 80px;
+}
+.bld-chk {
+  font-size: 11.5px;
+  margin: 4px 0;
+}
+.bld-det {
+  margin: 6px 0;
+}
+.bld-det > summary {
+  cursor: pointer;
+}
+.bld-hw {
+  font-size: 11.5px;
+  margin: 2px 0;
+  display: flex;
+  gap: 6px;
+}
+.bld-hw > span {
+  flex: 1;
+}
+.bld-z2 {
+  display: grid;
+  grid-template-columns: 1fr 70px;
+  gap: 4px;
+}
+.bld-zone {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  margin: 4px 0;
+}
+.bld-zone.on {
+  outline: 2px solid var(--accent);
+}
+.bld-zrow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+}
+.bld-n {
+  width: 70px;
+}
+.bld-gap {
+  flex: 1;
+}
+.bld-full {
+  width: 100%;
+}
+.bld-left {
+  text-align: left;
+}
+/* ---- 17 item from sheets ---- */
+.shwin .win-body {
+  padding: 10px;
+}
+.bld-bar {
+  margin-bottom: 8px;
+}
+.bld-tbl {
+  width: 100%;
+}
+.bld-qty {
+  width: 90px;
+}
+.bld-hx {
+  display: flex;
+  gap: 6px;
+  margin: 3px 0;
+}
+.bld-hx input:first-child {
+  flex: 1;
+}
+.bld-hx input[type='number'] {
+  width: 70px;
+}
+.shwin .peadd::before {
+  content: 'Добавить деталь:';
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+/* ---- 15 furniture drawings: sheets list | toolbar + sheet bed ---- */
+.fdwin .win-cols > .win-left {
+  width: 220px;
+}
+.fd-list {
+  padding: 10px;
+}
+.fdwin .win-cols > .win-main {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.fd-bar {
+  flex: none;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.fd-join {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* the bed under the paper sheet: the same grey in every theme */
+.fd-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: #8f949a;
+  padding: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.fd-sheet {
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  width: min(100%, 1300px);
+  aspect-ratio: 420/297;
+}
+
+/* ---- 11 object parameters: sections | form | preview with view tabs ---- */
+html .modal.win > .odwin.win-dlg {
+  height: min(820px, 100%);
+}
+.odwin .win-cols {
+  grid-template-columns: 170px minmax(300px, 390px) minmax(0, 1fr);
+}
+.odwin .win-cols > .win-left {
+  width: auto;
+}
+.odwin .win-cols > .win-main {
+  padding: 0;
+  border-right: 1px solid var(--line);
+}
+.odwin .win-cols > .win-right {
+  width: auto;
+  min-width: 0;
+  border-left: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.od-views {
+  padding-top: 6px;
+}
+.od-views:empty {
+  display: none;
+}
+.odwin #odPrev {
+  flex: 1 1 auto;
+}
+.od-none {
+  padding: 12px;
+}
+
+/* ---- 25 solid editor: tools | view toolbar + stage | side panel ---- */
+html .modal.win > .solwin.win-dlg {
+  height: min(940px, 100%);
+}
+.solwin .win-cols > .win-left {
+  width: 112px;
+}
+.solwin .win-cols > .win-right {
+  width: 300px;
+}
+.solwin .soltools {
+  border-right: 0;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.solwin .win-cols > .win-main {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sol-bar {
+  display: flex;
+  gap: 14px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.solwin .solstage {
+  flex: 1 1 auto;
+}
+.solwin .solside {
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+/* ---- 29 stamp editor: sketch | cell form ---- */
+#stampDlg .win-cols > .win-right {
+  width: 360px;
+}
+.stwin-side {
+  padding: 12px 14px;
+  min-width: 0;
+}
+.stwin-side .shrow2 > .fl {
+  flex: 1;
+  min-width: 0;
+}
+.stwin-side input,
+.stwin-side select,
+.stwin-side textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* ---- 35 field notes (floating panel) ---- */
+.arnrow {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.arnrow.on {
+  background: var(--panel2);
+}
+.arn-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.arn-chip {
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.arn-text {
+  margin: 4px 0;
+}
+.arn-photo {
+  width: 100%;
+  border-radius: 6px;
+  margin: 4px 0;
+}
+.arn-btns {
+  margin-top: 4px;
+}
+
+/* ---- 36 sensor check: above the AR view (z-index 200) ---- */
+html #arChk.modal.win {
+  z-index: 210;
+}
+.archk .r {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.archk .r i {
+  font-style: normal;
+  width: 18px;
+  flex: none;
+  font-weight: 700;
+}
+.archk .r.ok i {
+  color: var(--ok);
+}
+.archk .r.no i {
+  color: var(--danger);
+}
+.archk .r.na i {
+  color: var(--muted);
+}
+.archk .fix {
+  background: var(--panel2);
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.archk .fix b {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* ---- 38 stage menu (floating panel) ---- */
+#stageMenu.win-float {
+  width: min(300px, calc(100vw - 24px));
+}
+.stgmenu .win-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+.stgmenu .win-body > .btn {
+  text-align: left;
+  border-color: transparent;
+  background: none;
+}
+.stgmenu .win-body > .btn:hover {
+  background: var(--panel2);
+}
+.stgmenu .mh {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8px 8px 2px;
+}
+.stgmenu .fl {
+  padding: 2px 8px 6px;
+}
+.stgmenu input[type='number'] {
+  width: 110px;
+}
+
+/* ---- phone: the columns go one under another, the drawing / 3D first with a real height ---- */
+@media (max-width: 760px) {
+  .bldwin .win-cols,
+  .odwin .win-cols,
+  .solwin .win-cols {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .bldwin .win-cols > *,
+  .odwin .win-cols > *,
+  .solwin .win-cols > * {
+    flex: none;
+    min-width: 0;
+  }
+  .bldwin .win-cols > .win-left,
+  .bldwin .win-cols > .win-right,
+  .odwin .win-cols > .win-left,
+  .odwin .win-cols > .win-right,
+  .solwin .win-cols > .win-left,
+  .solwin .win-cols > .win-right {
+    width: auto;
+    max-height: none;
+  }
+  .bldwin .win-cols > .win-main,
+  .solwin .win-cols > .win-main {
+    order: -1;
+    height: 62vh;
+    min-height: 320px;
+  }
+  .bld-bottom {
+    max-height: 30vh;
+  }
+  .odwin .win-cols > .win-left {
+    order: 0;
+  }
+  .odwin .win-cols > .win-right {
+    order: 1;
+    height: 46vh;
+  }
+  .odwin .win-cols > .win-main {
+    order: 2;
+    overflow: visible;
+    border-right: 0;
+  }
+  #odNav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  #odNav button {
+    white-space: nowrap;
+  }
+  .solwin .soltools {
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-height: 0;
+  }
+  .fdwin .win-cols > .win-main {
+    overflow: visible;
+  }
+  .fd-view {
+    min-height: 60vh;
+  }
+  .fdwin .win-cols > .win-left {
+    width: auto;
+  }
+  #stampDlg .win-cols > .win-right {
+    width: auto;
+  }
 }
 
 /* ===== Window frame (docs/UI-LAYOUT.md): burger, two header rows, tool column, panel over the field, right panel,
@@ -9996,14 +10380,7 @@ html #app #hideBadge:hover {
 <input type="file" id="metaIn" hidden>
 <div id="wsmenu" class="pop menu" hidden></div>
 <div id="pipemenu" class="pop" hidden role="dialog" aria-label="Выбор трубопровода"></div>
-<div id="arraymenu" class="pop" hidden role="dialog" aria-label="Массив"></div>
 <div id="flymenu" class="pop menu" hidden></div>
-<div id="objdlg" class="modal" hidden>
-  <div class="dlg od" role="dialog" aria-label="Параметры объекта">
-    <div class="dlgh"><h3 id="odTitle">Параметры объекта</h3><div class="seg" id="odViews"></div><button class="x" id="odClose" aria-label="Закрыть">×</button></div>
-    <div class="odbody"><nav id="odNav" aria-label="Разделы параметров"></nav><div id="odForm"></div><div id="odPrev"><div id="od3"></div><canvas id="od2" hidden></canvas><div id="odLab"></div><div id="odBar"></div></div></div>
-  </div>
-</div>
 <div id="busy" class="modal" hidden><div class="busybox"><div class="spin"></div><div id="busytxt">Обработка…</div></div></div>
 <input type="file" id="fileIn" hidden accept=".ifc,.glb,.gltf,.obj,.json">
 
@@ -10056,7 +10433,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.92';
+const APP_VER = '59.93';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -51920,7 +52297,6 @@ function mkArcSwitch(k) {
 
 
 
-
 /* ---------- offset ---------- */
 function offsetEnt(e, d, side) {
   // side: +1 left/outer, -1 right/inner
@@ -52112,8 +52488,8 @@ function arrayCopies(es, cfg) {
   }
   return out;
 }
+/** The array parameters panel: a floating window on the common frame (openWindow float; a bottom sheet on a phone), built on each call. */
 function arrayPopup(es) {
-  const m = $('#arraymenu');
   const cfg = Object.assign(
     {
       kind: 'rect',
@@ -52151,15 +52527,43 @@ function arrayPopup(es) {
   cfg.base = bb.c;
   const f = (l, k, step) =>
     `<label>${l}<input type="number" data-k="${k}" value="${cfg[k]}" step="${step || 'any'}"></label>`;
+  const win = openWindow({
+    id: 'arraymenu',
+    title: 'Массив',
+    sub: `объектов: ${es.length}`,
+    float: true,
+    closeId: 'arClose',
+    tabs: [
+      { k: 'rect', n: 'Прямоугольный' },
+      { k: 'polar', n: 'Круговой' },
+      { k: 'path', n: 'По траектории' }
+    ],
+    tab: cfg.kind,
+    onTab: k => {
+      cfg.kind = k;
+      draw();
+      dirty();
+    },
+    body: '',
+    footer: [
+      { n: 'Создать', id: 'arGo', pri: true, a: () => create() },
+      {
+        n: 'Отмена',
+        id: 'arX',
+        a: w => {
+          w.close();
+        }
+      }
+    ],
+    onClose: () => {
+      if (AP.pick) return;
+      AP.es = null;
+      dirty();
+    }
+  });
+  const m = win.body;
   const draw = () => {
-    m.innerHTML = `<div class="mh">Массив · объектов: ${es.length}</div><div class="seg">${[
-      ['rect', 'Прямоугольный'],
-      ['polar', 'Круговой'],
-      ['path', 'По траектории']
-    ]
-      .map(([k, n]) => `<button data-kind="${k}" class="${cfg.kind === k ? 'on' : ''}">${n}</button>`)
-      .join('')}</div>
-    <div class="pform">${
+    m.innerHTML = `<div class="pform">${
       cfg.kind === 'rect'
         ? f('Рядов', 'rows', 1) + f('Столбцов', 'cols', 1) + f('Шаг по X', 'dx') + f('Шаг по Y', 'dy')
         : cfg.kind === 'polar'
@@ -52168,16 +52572,8 @@ function arrayPopup(es) {
             `<label class="ck"><input type="checkbox" data-k="rot" ${cfg.rot ? 'checked' : ''}>Поворачивать</label><label>Центр<button class="btn" id="arC">${cfg.c ? `${fmt(cfg.c.x)}, ${fmt(cfg.c.y)}` : 'Указать на плане'}</button></label>`
           : f('Элементов', 'n', 1) +
             `<label class="ck"><input type="checkbox" data-k="fill" ${cfg.fill ? 'checked' : ''}>Равномерно по длине</label>${cfg.fill ? '' : f('Шаг', 'step')}<label class="ck"><input type="checkbox" data-k="align" ${cfg.align ? 'checked' : ''}>По направлению пути</label><label>Траектория<button class="btn" id="arP">${cfg.path ? 'выбрана' : 'Выбрать на плане'}</button></label>`
-    }</div>
-    <div class="btnrow"><button class="btn pri" id="arGo">Создать</button><button class="btn" id="arX">Отмена</button></div>`;
-    m.querySelectorAll('[data-kind]').forEach(
-      b =>
-        (b.onclick = () => {
-          cfg.kind = b.dataset.kind;
-          draw();
-          dirty();
-        })
-    );
+    }</div>`;
+    win.setTab(cfg.kind);
     m.querySelectorAll('input[data-k]').forEach(
       i =>
         (i.oninput = i.onchange =
@@ -52189,7 +52585,8 @@ function arrayPopup(es) {
           })
     );
     const pick = what => {
-      m.hidden = true;
+      AP.pick = true;
+      win.el.hidden = true;
       startCmd('arraypick', {
         name: 'arraypick',
         prompt: () => (what === 'c' ? 'Центр кругового массива:' : 'Траектория (полилиния, отрезок, дуга):'),
@@ -52204,14 +52601,16 @@ function arrayPopup(es) {
             cfg.path = e;
           }
           setTimeout(() => {
-            m.hidden = false;
+            AP.pick = false;
+            win.el.hidden = false;
             draw();
           }, 0);
           return 'end';
         },
         onEnter: () => {
           setTimeout(() => {
-            m.hidden = false;
+            AP.pick = false;
+            win.el.hidden = false;
           }, 0);
           return 'end';
         }
@@ -52221,40 +52620,35 @@ function arrayPopup(es) {
     if (c_) c_.onclick = () => pick('c');
     const p_ = $('#arP');
     if (p_) p_.onclick = () => pick('p');
-    $('#arGo').onclick = () => {
-      if (cfg.kind === 'polar' && !cfg.c) {
-        log('Укажите центр', true);
-        return;
-      }
-      if (cfg.kind === 'path' && !cfg.path) {
-        log('Выберите траекторию', true);
-        return;
-      }
-      const cs = arrayCopies(es, cfg);
-      pushUndo();
-      for (const n of cs) {
-        n.id = newId();
-        entsPush(n);
-      }
-      arrayPopup.last = { ...cfg, c: null, path: null };
-      AP.es = null;
-      m.hidden = true;
-      changed();
-      log(`Массив: создано копий ${cs.length}`);
-    };
-    $('#arX').onclick = () => {
-      AP.es = null;
-      m.hidden = true;
-      dirty();
-    };
+  };
+  const create = () => {
+    if (cfg.kind === 'polar' && !cfg.c) {
+      log('Укажите центр', true);
+      return;
+    }
+    if (cfg.kind === 'path' && !cfg.path) {
+      log('Выберите траекторию', true);
+      return;
+    }
+    const cs = arrayCopies(es, cfg);
+    pushUndo();
+    for (const n of cs) {
+      n.id = newId();
+      entsPush(n);
+    }
+    arrayPopup.last = { ...cfg, c: null, path: null };
+    AP.es = null;
+    win.close();
+    changed();
+    log(`Массив: создано копий ${cs.length}`);
   };
   AP.es = es;
   AP.cfg = cfg;
+  AP.pick = false;
   draw();
-  placePop(m, window.innerWidth - 640, 90);
   dirty();
 }
-const AP = { es: null, cfg: null };
+const AP = { es: null, cfg: null, pick: false };
 function mkArray(kind) {
   if (kind) arrayPopup.last = { ...(arrayPopup.last || {}), kind };
   const go = () => {
@@ -52280,7 +52674,7 @@ function mkArray(kind) {
   };
 }
 function drawArrayPreview() {
-  if (!AP.es || $('#arraymenu').hidden) return;
+  if (!AP.es || AP.pick || !$('#arraymenu') || $('#arraymenu').hidden) return;
   let cs = [];
   try {
     const c = { ...AP.cfg };
@@ -84472,7 +84866,7 @@ function kitchenPanelForm(e) {
       'Проверки',
       '',
       kitChecks(e)
-        .map(([l, m]) => `<dt></dt><dd class="${l}" style="text-align:left">${esc(m)}</dd>`)
+        .map(([l, m]) => `<dt></dt><dd class="${l} bld-left">${esc(m)}</dd>`)
         .join('') || cR('Эргономика', '✓')
     ]
   ]);
@@ -84773,23 +85167,37 @@ function kitModToParts(e, it) {
   if (k === 'w_hood') add('tech', 'Вытяжка встроенная', 'tech', 30, 30, U.z0 + 16, w - 60, U.d - 40, 180);
   return out;
 }
-var KD = { id: null, run: 0, sel: null };
+var KD = { id: null, run: 0, sel: null, win: null };
 /** Kitchen constructor dialog: 3D view or 2D elevation of the selected wall, module catalogue and settings. */
 function openKitchen(id) {
   KD.id = id;
   KD.run = 0;
   KD.sel = null;
   let d = $('#kitdlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'kitdlg';
-    d.className = 'modal';
-    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Конструктор кухни" style="width:min(1320px,100%);height:min(860px,100%)"><div class="dlgh"><h3>Конструктор кухни</h3><span class="hint" id="kdSum"></span><button class="x" id="kdClose" aria-label="Закрыть">×</button></div>
-  <div style="display:grid;grid-template-columns:250px minmax(0,1fr) 250px;min-height:0;overflow:hidden"><div id="kdLeft" style="padding:12px;overflow:auto;border-right:1px solid var(--line)"></div><div style="display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0"><div style="position:relative;min-height:0;overflow:hidden"><canvas id="kdCv" style="position:absolute;inset:0;width:100%;height:100%;background:#f4f2ee;cursor:pointer"></canvas><canvas id="kd3" style="position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#eeece6"></canvas><div class="cvbtns" style="position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2"><button class="btn" data-kdm="3d">3D</button><button class="btn" data-kdm="2d">Развёртка</button><button class="btn" data-kdm="dw">Чертёж и раскрой</button></div><div class="hint" id="kd3hint" style="position:absolute;left:10px;bottom:8px;pointer-events:none;z-index:2">3D: щелчок — выбрать модуль · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="kdMod" style="padding:10px 12px;border-top:1px solid var(--line);max-height:250px;overflow:auto"></div></div><div id="kdRight" style="padding:12px;overflow:auto;border-left:1px solid var(--line)"></div></div></div>`;
-    document.body.appendChild(d);
-    d.querySelector('#kdClose').onclick = () => {
-      d.hidden = true;
+  if (!d || !KD.win) {
+    const mode = m => () => {
+      if (m === 'dw') openFurnDraw('kitchen', KD.id);
+      else {
+        K3.mode = m;
+        kdDraw();
+      }
     };
+    KD.win = openWindow({
+      id: 'kitdlg',
+      title: 'Конструктор кухни',
+      size: 'xl',
+      cls: 'bldwin kitwin',
+      closeId: 'kdClose',
+      actions: [
+        { n: '3D', data: { kdm: '3d' }, a: mode('3d') },
+        { n: 'Развёртка', data: { kdm: '2d' }, a: mode('2d') },
+        { n: 'Чертёж и раскрой', data: { kdm: 'dw' }, a: mode('dw') }
+      ],
+      left: '<div id="kdLeft" class="bld-side"></div>',
+      right: '<div id="kdRight" class="bld-side"></div>',
+      body: `<div class="bld-view"><canvas id="kdCv" class="bld-cv2"></canvas><canvas id="kd3" class="bld-cv3"></canvas><div class="hint bld-hint" id="kd3hint">3D: щелчок — выбрать модуль · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="kdMod" class="bld-bottom"></div>`
+    });
+    d = KD.win.el;
     d.querySelector('#kdCv').addEventListener('click', ev => {
       const r = ev.target.getBoundingClientRect();
       const hit = (KD.hits || []).find(
@@ -84805,15 +85213,6 @@ function openKitchen(id) {
     new ResizeObserver(() => {
       if (!d.hidden) kdDraw();
     }).observe(d.querySelector('#kdCv'));
-    d.querySelectorAll('[data-kdm]').forEach(b => {
-      b.onclick = () => {
-        if (b.dataset.kdm === 'dw') openFurnDraw('kitchen', KD.id);
-        else {
-          K3.mode = b.dataset.kdm;
-          kdDraw();
-        }
-      };
-    });
     new ResizeObserver(() => {
       if (!d.hidden && K3.mode === '3d') k3Draw();
     }).observe(d.querySelector('#kd3'));
@@ -84847,13 +85246,13 @@ function renderKitchen() {
     ['none', 'нет']
   ];
   $('#kdLeft').innerHTML =
-    `<div class="sech">${isl ? 'Стороны острова' : 'Стены кухни'}</div>${R.map(r => `<button class="btn ${r.i === KD.run ? 'pri' : ''}" data-run="${r.i}" style="display:block;width:100%;margin:3px 0;text-align:left">${isl ? (r.i ? 'Задняя сторона' : 'Рабочая сторона') : 'Стена ' + (r.i + 1)} · ${Math.round(r.L)} мм</button>`).join('')}
+    `<div class="sech">${isl ? 'Стороны острова' : 'Стены кухни'}</div>${R.map(r => `<button class="btn bld-item ${r.i === KD.run ? 'pri' : ''}" data-run="${r.i}">${isl ? (r.i ? 'Задняя сторона' : 'Рабочая сторона') : 'Стена ' + (r.i + 1)} · ${Math.round(r.L)} мм</button>`).join('')}
     ${
       isl
         ? ''
-        : `<div class="sech" style="margin-top:10px">Торцы стены ${KD.run + 1}</div><div style="display:grid;gap:6px">${sel('Слева', 'endA', run.endA || 'auto', ENDS, 'data-kr')}${sel('Справа', 'endB', run.endB || 'auto', ENDS, 'data-kr')}${num('Толщина боковины, мм', 'endT', c.endT || 18)}</div>`
+        : `<div class="sech bld-sech">Торцы стены ${KD.run + 1}</div><div class="bld-grid">${sel('Слева', 'endA', run.endA || 'auto', ENDS, 'data-kr')}${sel('Справа', 'endB', run.endB || 'auto', ENDS, 'data-kr')}${num('Толщина боковины, мм', 'endT', c.endT || 18)}</div>`
     }
-    <div class="sech" style="margin-top:10px">Параметры</div><div style="display:grid;gap:6px">${num('Опоры / цоколь, мм', 'legs', c.legs)}${isl ? '' : num('Корпус нижний, мм', 'baseH', c.baseH)}${isl ? '' : num('Столешница, мм', 'top', c.top) + num('Глубина столешницы', 'depth', c.depth)}${isl ? '' : num('Низ навесных, мм', 'wallZ', c.wallZ) + num('Высота навесных', 'wallH', c.wallH) + num('Глубина навесных', 'wallD', c.wallD)}
+    <div class="sech bld-sech">Параметры</div><div class="bld-grid">${num('Опоры / цоколь, мм', 'legs', c.legs)}${isl ? '' : num('Корпус нижний, мм', 'baseH', c.baseH)}${isl ? '' : num('Столешница, мм', 'top', c.top) + num('Глубина столешницы', 'depth', c.depth)}${isl ? '' : num('Низ навесных, мм', 'wallZ', c.wallZ) + num('Высота навесных', 'wallH', c.wallH) + num('Глубина навесных', 'wallD', c.wallD)}
     ${sel('Фасады: исполнение', 'fstyle', c.fstyle || 'flat', Object.entries(KFS))}${sel('Открывание', 'handle', c.handle, Object.entries(KH))}${['bar', 'edge', 'knob'].includes(c.handle) ? sel('Цвет ручек', 'hcol', c.hcol || '#1c1c1c', KHC) : ''}${sel('Ящики Blum', 'drawer', c.drawer, Object.entries(BLUM_DR))}${isl ? '' : sel('Вытяжка (по умолчанию)', 'hood', c.hood || 'built', Object.entries(HOOD_T)) + sel('Высота вытяжки', 'hoodH', c.hoodH || 'flush', Object.entries(HOOD_H)) + ((c.hoodH || 'flush') === 'custom' ? num('Над столешницей, мм', 'hoodZc', c.hoodZc || kitHoodNorm(e)) : '')}${sel('Варочная (по умолчанию)', 'hobT', c.hobT || 'ind', Object.entries(HOB_T))}${sel('Материал мойки', 'sink', c.sink, Object.entries(SINK_MAT))}${
       isl
         ? ''
@@ -84880,16 +85279,13 @@ function renderKitchen() {
       .map(
         ([g, list]) =>
           `<details class="kdcat" ${g === 'Нижние' || g === 'Навесные' ? 'open' : ''}><summary class="sech">${esc(g)} <span class="cnt">${list.length}</span></summary>${list
-            .map(
-              ([k, v]) =>
-                `<button class="btn" data-add="${k}" style="display:block;width:100%;margin:3px 0;text-align:left">+ ${esc(v.n)}</button>`
-            )
+            .map(([k, v]) => `<button class="btn bld-item" data-add="${k}">+ ${esc(v.n)}</button>`)
             .join('')}</details>`
       )
       .join('') +
-    `<div class="sech" style="margin-top:10px">Проверки</div>${
+    `<div class="sech bld-sech">Проверки</div>${
       kitChecks(e)
-        .map(([l, m]) => `<div class="${l}" style="font-size:11.5px;margin:4px 0">${esc(m)}</div>`)
+        .map(([l, m]) => `<div class="${l} bld-chk">${esc(m)}</div>`)
         .join('') || '<div class="hint">Эргономика ✓</div>'
     }`;
   const m = e.mods.find(x => x.id === KD.sel);
@@ -84918,14 +85314,14 @@ function renderKitchen() {
     if (m.kind === 'b_hob' || (m.kind === 'b_oven' && m.hob))
       extra.push(sel('Варочная', 'hobT', kitHobT(e, m), Object.entries(HOB_T), 'data-km'));
     if (m.kind === 'w_hood') extra.push(sel('Вытяжка', 'hood', kitHoodT(e, m), Object.entries(HOOD_T), 'data-km'));
-    box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><b style="align-self:center">${esc(KM[m.kind].n)}</b>${sel('Тип', 'kind', m.kind, kinds, 'data-km')}<label class="fl">Ширина<select data-km="w">${[
+    box.innerHTML = `<div class="bld-row"><b class="bld-ttl">${esc(KM[m.kind].n)}</b>${sel('Тип', 'kind', m.kind, kinds, 'data-km')}<label class="fl">Ширина<select data-km="w">${[
       ...new Set([...KM[m.kind].w, +m.w])
     ]
       .sort((a, b) => a - b)
       .map(w => `<option value="${w}" ${w === +m.w ? 'selected' : ''}>${w}</option>`)
       .join(
         ''
-      )}</select></label><label class="fl">Своя ширина<input type="number" data-km="w" value="${m.w}" style="width:80px"></label>${m.kind === 'b_oven' ? `<label class="ck"><input type="checkbox" data-km="hob" ${m.hob ? 'checked' : ''}>варочная над духовкой</label>` : ''}${extra.join('')}<button class="btn" data-mv="-1">← левее</button><button class="btn" data-mv="1">правее →</button>${m.parts ? (KM[m.kind].own ? '' : '<button class="btn" data-kp="std" title="Вернуть стандартный модуль (свои детали удалятся)">Стандартный модуль</button>') : '<button class="btn pri" data-kp="split" title="Разобрать модуль на боковины, дно, царги, фасады — и править каждую деталь">Разобрать на детали</button>'}<button class="btn" data-del="1">Удалить</button><span class="hint">позиция ${Math.round(it.s0)}…${Math.round(it.s1)} мм</span></div><div id="kdParts"></div>`;
+      )}</select></label><label class="fl">Своя ширина<input type="number" data-km="w" value="${m.w}" class="bld-w"></label>${m.kind === 'b_oven' ? `<label class="ck"><input type="checkbox" data-km="hob" ${m.hob ? 'checked' : ''}>варочная над духовкой</label>` : ''}${extra.join('')}<button class="btn" data-mv="-1">← левее</button><button class="btn" data-mv="1">правее →</button>${m.parts ? (KM[m.kind].own ? '' : '<button class="btn" data-kp="std" title="Вернуть стандартный модуль (свои детали удалятся)">Стандартный модуль</button>') : '<button class="btn pri" data-kp="split" title="Разобрать модуль на боковины, дно, царги, фасады — и править каждую деталь">Разобрать на детали</button>'}<button class="btn" data-del="1">Удалить</button><span class="hint">позиция ${Math.round(it.s0)}…${Math.round(it.s1)} мм</span></div><div id="kdParts"></div>`;
     if (m.parts)
       partsEditor(
         box.querySelector('#kdParts'),
@@ -84941,9 +85337,13 @@ function renderKitchen() {
     box.innerHTML = `<span class="hint">Щёлкните модуль на развёртке или в 3D, чтобы изменить. Добавление — справа (в конец ${isl ? 'выбранной стороны' : 'выбранной стены'}), порядок — кнопками ← →. Любой модуль можно разобрать на детали, а «Свой модуль из деталей» собрать с нуля.</span>`;
   const used = r =>
     Math.round(L.items.filter(it => it.r === r && it.row === 'low').reduce((a, it) => Math.max(a, it.s1), 0));
-  $('#kdSum').textContent = isl
-    ? `${R[KD.run].i ? 'Задняя' : 'Рабочая'} сторона: ${used(R[KD.run])} мм модулей`
-    : `Стена ${KD.run + 1}: ${Math.round(R[KD.run].L)} мм · занято низом ${used(R[KD.run])} · столешница ${(kitWorktopLen(e) / 1000).toFixed(2)} м`;
+  if (KD.win)
+    KD.win.setTitle(
+      isl ? 'Конструктор острова' : 'Конструктор кухни',
+      isl
+        ? `${R[KD.run].i ? 'Задняя' : 'Рабочая'} сторона: ${used(R[KD.run])} мм модулей`
+        : `Стена ${KD.run + 1}: ${Math.round(R[KD.run].L)} мм · занято низом ${used(R[KD.run])} · столешница ${(kitWorktopLen(e) / 1000).toFixed(2)} м`
+    );
   const ch = () => {
     changed();
     renderKitchen();
@@ -93291,32 +93691,44 @@ function furnSheets(M, sel) {
     }
   }));
 }
-var FDD = { kind: null, id: null, i: 0 };
+var FDD = { kind: null, id: null, i: 0, win: null };
 function openFurnDraw(kind, id) {
   FDD.kind = kind;
   FDD.id = id;
   FDD.i = 0;
   let d = $('#fddlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'fddlg';
-    d.className = 'modal';
-    d.style.zIndex = '60';
-    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертежи мебели" style="width:min(1400px,100%);height:min(900px,100%)"><div class="dlgh"><h3>Чертежи: деталировка, раскрой, сборка</h3><span class="hint" id="fdSum"></span><label class="hint" style="display:flex;align-items:center;gap:6px">Крепёж корпуса<select id="fdJoin">${Object.entries(
-      DR_JOIN
-    )
-      .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
-      .join(
-        ''
-      )}</select></label><button class="btn" id="fdCsv" title="Отверстия всех деталей одной таблицей: деталь, пласть, X, Y, Ø, глубина">Присадка CSV</button><button class="btn" id="fdSvg">Скачать лист SVG</button><button class="btn" id="fdCad" title="Чертежи изделия в DWG или DXF: все листы рядом, слои по видам отверстий">DWG / DXF…</button><button class="btn" id="fdAll">Скачать комплект (HTML → PDF)</button><button class="btn pri" id="fdPrint">Печать / PDF</button><button class="x" id="fdClose" aria-label="Закрыть">×</button></div>
-  <div style="display:grid;grid-template-columns:200px minmax(0,1fr);min-height:0;overflow:hidden"><div id="fdList" style="padding:10px;overflow:auto;border-right:1px solid var(--line)"></div><div id="fdView" style="overflow:auto;background:#8f949a;padding:14px;display:flex;justify-content:center;align-items:flex-start"></div></div></div>`;
-    document.body.appendChild(d);
-    d.querySelector('#fdClose').onclick = () => {
-      d.hidden = true;
-    };
-    d.querySelector('#fdSvg').onclick = () => fdSave('svg');
-    d.querySelector('#fdCsv').onclick = () => fdSave('csv');
-    d.querySelector('#fdCad').onclick = () => fdCadMenu();
+  if (!d || !FDD.win) {
+    FDD.win = openWindow({
+      id: 'fddlg',
+      title: 'Чертежи: деталировка, раскрой, сборка',
+      size: 'xl',
+      over: true,
+      cls: 'fdwin',
+      closeId: 'fdClose',
+      // the three main buttons stay in the header, the rest in «⋮»
+      actions: [
+        { n: 'Печать / PDF', id: 'fdPrint', pri: true, a: () => fdPrint() },
+        { n: 'Скачать комплект (HTML → PDF)', id: 'fdAll', a: () => fdSave('html') },
+        { n: 'Скачать лист SVG', id: 'fdSvg', a: () => fdSave('svg') },
+        {
+          n: 'Присадка CSV',
+          id: 'fdCsv',
+          title: 'Отверстия всех деталей одной таблицей: деталь, пласть, X, Y, Ø, глубина',
+          a: () => fdSave('csv')
+        },
+        {
+          n: 'DWG / DXF…',
+          id: 'fdCad',
+          title: 'Чертежи изделия в DWG или DXF: все листы рядом, слои по видам отверстий',
+          a: () => fdCadMenu()
+        }
+      ],
+      left: '<div id="fdList" class="fd-list"></div>',
+      body: `<div class="fd-bar"><label class="fd-join">Крепёж корпуса<select id="fdJoin">${Object.entries(DR_JOIN)
+        .map(([k, n]) => `<option value="${k}">${esc(n)}</option>`)
+        .join('')}</select></label></div><div id="fdView" class="fd-view"></div>`
+    });
+    d = FDD.win.el;
     d.querySelector('#fdJoin').onchange = ev => {
       const e = byId(FDD.id);
       if (!e) return;
@@ -93326,8 +93738,6 @@ function openFurnDraw(kind, id) {
       changed();
       renderFurnDraw();
     };
-    d.querySelector('#fdAll').onclick = () => fdSave('html');
-    d.querySelector('#fdPrint').onclick = () => fdPrint();
   }
   d.hidden = false;
   renderFurnDraw();
@@ -93351,31 +93761,34 @@ function renderFurnDraw() {
   FDD.i = Math.min(FDD.i, SH.length - 1);
   const door = FDD.kind === 'door';
   for (const id of ['#fdCsv', '#fdCad']) $(id).hidden = door;
-  $('#fdJoin').parentElement.hidden = door;
-  $('#fddlg h3').textContent = door
-    ? 'Чертежи двери: полотно, коробка, фрезеровки, сборка'
-    : 'Чертежи: деталировка, раскрой, сборка';
+  const wm = $('#fddlg .win-more');
+  if (wm) wm.hidden = door;
+  $('#fdJoin').closest('.fd-bar').hidden = door;
+  if (FDD.win)
+    FDD.win.setTitle(
+      door ? 'Чертежи двери: полотно, коробка, фрезеровки, сборка' : 'Чертежи: деталировка, раскрой, сборка',
+      M.title
+    );
   if (door) {
     $('#fdList').innerHTML =
       SH.map(
         (s, i) =>
-          `<button class="btn ${i === FDD.i ? 'pri' : ''}" data-fdi="${i}" style="display:block;width:100%;margin:3px 0;text-align:left">${i + 1}. ${esc(s.n)}</button>`
+          `<button class="btn bld-item ${i === FDD.i ? 'pri' : ''}" data-fdi="${i}">${i + 1}. ${esc(s.n)}</button>`
       ).join('') +
-      `<div class="hint" style="margin-top:10px">Деталей: ${M.parts.reduce((a, p) => a + p.qty, 0)} · фрезеровок: ${M.mills.length}<br>${M.seal.len ? `Уплотнитель: ${M.seal.buy.toFixed(1).replace('.', ',')} м` : 'Без уплотнителя'}</div><p class="hint">Размеры фрезеровок — типовые для выбранной фурнитуры; сверьте с паспортом конкретной модели перед фрезеровкой.</p>`;
+      `<div class="hint bld-sech">Деталей: ${M.parts.reduce((a, p) => a + p.qty, 0)} · фрезеровок: ${M.mills.length}<br>${M.seal.len ? `Уплотнитель: ${M.seal.buy.toFixed(1).replace('.', ',')} м` : 'Без уплотнителя'}</div><p class="hint">Размеры фрезеровок — типовые для выбранной фурнитуры; сверьте с паспортом конкретной модели перед фрезеровкой.</p>`;
     $('#fdList')
       .querySelectorAll('[data-fdi]')
       .forEach(b => (b.onclick = () => ((FDD.i = +b.dataset.fdi), renderFurnDraw())));
-    $('#fdSum').textContent = M.title;
     $('#fdView').innerHTML =
-      `<div style="background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25);width:min(100%,1300px);aspect-ratio:420/297">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
+      `<div class="fd-sheet">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
     return;
   }
   $('#fdList').innerHTML =
     SH.map(
       (s, i) =>
-        `<button class="btn ${i === FDD.i ? 'pri' : ''}" data-fdi="${i}" style="display:block;width:100%;margin:3px 0;text-align:left">${i + 1}. ${esc(s.n)}</button>`
+        `<button class="btn bld-item ${i === FDD.i ? 'pri' : ''}" data-fdi="${i}">${i + 1}. ${esc(s.n)}</button>`
     ).join('') +
-    `<div class="hint" style="margin-top:10px">Поз.: ${M.P.length} · деталей ${M.P.reduce((a, p) => a + p.qty, 0)}<br>${Object.entries(
+    `<div class="hint bld-sech">Поз.: ${M.P.length} · деталей ${M.P.reduce((a, p) => a + p.qty, 0)}<br>${Object.entries(
       M.cut
     )
       .map(([m, C]) => `${FD_SHEET[m].n}: ${C.sheets.length} л.`)
@@ -93393,11 +93806,10 @@ function renderFurnDraw() {
           renderFurnDraw();
         })
     );
-  $('#fdSum').textContent = M.title;
   const js = $('#fdJoin');
   if (js) js.value = M.join;
   $('#fdView').innerHTML =
-    `<div style="background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25);width:min(100%,1300px);aspect-ratio:420/297">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
+    `<div class="fd-sheet">${SH[FDD.i].svg().replace('width="420mm" height="297mm"', 'width="100%" height="100%"')}</div>`;
 }
 /** Extensions the claude.ai downloads capability accepts; anything else (DWG, DXF, IFC) is handed over in a ZIP. */
 const DL_OK = /\.(gif|png|jpe?g|webp|mp4|webm|mov|txt|json|md|docx|pptx|epub|csv|ttf|html|svg|pdf|xlsx|zip)$/i;
@@ -93473,28 +93885,27 @@ function fdCadMenu() {
     .replace(/[\\/:*?"<>|×]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  let m = $('#fdCadMenu');
-  if (m) m.remove();
-  m = document.createElement('div');
-  m.id = 'fdCadMenu';
-  m.className = 'modal';
-  m.style.zIndex = '70';
-  m.innerHTML = `<div class="dlg" role="dialog" aria-label="Чертежи в DWG / DXF" style="width:min(480px,100%);height:auto"><div class="dlgh"><h3>Мебель в DWG / DXF</h3><button class="x" id="fdcX" aria-label="Закрыть">×</button></div>
-  <div style="padding:14px 16px;display:grid;gap:8px;align-content:start">
+  const win = openWindow({
+    id: 'fdCadMenu',
+    title: 'Мебель в DWG / DXF',
+    size: 's',
+    over: true,
+    closeId: 'fdcX',
+    body: `<div class="win-form">
   <label class="radio"><input type="radio" name="fdcw" value="real" checked> Чертежи в натуральную величину 1:1 — модули, детали с кромкой и отверстиями, раскрой листов (для работы в CAD)</label>
   <label class="radio"><input type="radio" name="fdcw" value="all"> Листы А3 как на бумаге (все, в масштабе листа)</label>
   <label class="radio"><input type="radio" name="fdcw" value="one"> Только текущий лист А3</label>
   <label class="radio"><input type="radio" name="fdcw" value="cnc"> Присадка для ЧПУ: все детали одной раскладкой</label>
   <label class="radio"><input type="radio" name="fdcw" value="cncz"> Присадка для ЧПУ: по файлу на деталь (ZIP)</label>
   <label>Формат<select id="fdcFmt"><option value="dwg">DWG (AutoCAD 2000)</option><option value="dxf">DXF (AutoCAD 2000)</option></select></label>
-  <p class="hint">1:1 — всё в миллиметрах модели: лист раскроя 2800×2070 в AutoCAD и есть 2800×2070. ЧПУ: контур детали на слое CONTOUR, отверстия пласти А — окружности на слоях DRILL_A_D⌀_Z⌀глубины (сквозные — …_THRU), пласть Б — справа, зеркально, отверстия в торцах — линии на слоях DRILL_E_…, глубиной как отверстие. Начало координат — левый нижний угол пласти А, как в таблице присадки.</p>
-  <div class="btnrow"><button class="btn pri" id="fdcGo">Сохранить</button></div></div></div>`;
-  document.body.appendChild(m);
-  m.querySelector('#fdcX').onclick = () => m.remove();
+  <p class="hint">1:1 — всё в миллиметрах модели: лист раскроя 2800×2070 в AutoCAD и есть 2800×2070. ЧПУ: контур детали на слое CONTOUR, отверстия пласти А — окружности на слоях DRILL_A_D⌀_Z⌀глубины (сквозные — …_THRU), пласть Б — справа, зеркально, отверстия в торцах — линии на слоях DRILL_E_…, глубиной как отверстие. Начало координат — левый нижний угол пласти А, как в таблице присадки.</p></div>`,
+    footer: [{ n: 'Сохранить', id: 'fdcGo', pri: true }]
+  });
+  const m = win.el;
   m.querySelector('#fdcGo').onclick = () => {
     const w = m.querySelector('input[name=fdcw]:checked').value,
       fmt = m.querySelector('#fdcFmt').value;
-    m.remove();
+    win.close();
     try {
       if (w === 'cnc' || w === 'cncz') saveCnc(X.M, fmt, w === 'cncz');
       else if (w === 'real') saveCad(furnCad11(FDD.kind, FDD.id), `${base} — 1-1`, fmt);
@@ -93552,7 +93963,7 @@ function fdPrint() {
 
 
 
-var CWD = { id: null, run: 0, sel: null, zone: null, view: 'front', hits: [] };
+var CWD = { id: null, run: 0, sel: null, zone: null, view: 'front', hits: [], win: null };
 var CW3 = mini3D({
   meshes: e => cwMeshes(e),
   runs: e => cwGeom(e).runs,
@@ -93606,20 +94017,41 @@ function openCasework(id) {
   CWD.sel = null;
   CWD.zone = null;
   let d = $('#cwdlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'cwdlg';
-    d.className = 'modal';
-    d.innerHTML = `<div class="dlg" role="dialog" aria-label="Конструктор корпусной мебели" style="width:min(1400px,100%);height:min(900px,100%)"><div class="dlgh"><h3>Конструктор корпусной мебели</h3><span class="hint" id="cwSum"></span><button class="x" id="cwClose" aria-label="Закрыть">×</button></div>
-  <div style="display:grid;grid-template-columns:270px minmax(0,1fr) 290px;min-height:0;overflow:hidden"><div id="cwLeft" style="padding:12px;overflow:auto;border-right:1px solid var(--line)"></div><div style="display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0"><div style="position:relative;min-height:0;overflow:hidden"><canvas id="cwCv" style="position:absolute;inset:0;width:100%;height:100%;background:#f4f2ee;cursor:pointer"></canvas><canvas id="cw3" style="position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#eeece6"></canvas><div class="cvbtns" style="position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2;flex-wrap:wrap;justify-content:end"><button class="btn" data-cwm="front">Фасады</button><button class="btn" data-cwm="inside">Наполнение</button><button class="btn" data-cwm="3d">3D</button><button class="btn" data-cwm="open">Открыть двери</button><button class="btn" data-cwm="dw">Чертежи и раскрой</button></div><div class="hint" id="cw3hint" style="position:absolute;left:10px;bottom:8px;pointer-events:none;z-index:2">3D: щелчок — секция · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="cwBottom" style="padding:8px 12px;border-top:1px solid var(--line);max-height:190px;overflow:auto"></div></div><div id="cwRight" style="padding:12px;overflow:auto;border-left:1px solid var(--line)"></div></div></div>`;
-    const st = document.createElement('style');
-    st.textContent =
-      '#cwdlg .fl input,#cwdlg .fl select{width:100%;box-sizing:border-box;min-width:0}#cwdlg .fl{min-width:0}';
-    d.appendChild(st);
-    document.body.appendChild(d);
-    d.querySelector('#cwClose').onclick = () => {
-      d.hidden = true;
+  if (!d || !CWD.win) {
+    const mode = m => () => {
+      const e = cwE();
+      if (m === 'dw') return openFurnDraw('casework', CWD.id);
+      if (m === 'open') {
+        if (e) {
+          e.cfg.showOpen = !e.cfg.showOpen;
+          changed();
+        }
+        if (CW3.mode !== '3d') CW3.mode = '3d';
+      } else if (m === '3d') CW3.mode = '3d';
+      else {
+        CW3.mode = '2d';
+        CWD.view = m;
+      }
+      renderCasework();
     };
+    CWD.win = openWindow({
+      id: 'cwdlg',
+      title: 'Конструктор корпусной мебели',
+      size: 'xl',
+      cls: 'bldwin cwwin',
+      closeId: 'cwClose',
+      actions: [
+        { n: 'Фасады', data: { cwm: 'front' }, a: mode('front') },
+        { n: 'Наполнение', data: { cwm: 'inside' }, a: mode('inside') },
+        { n: '3D', data: { cwm: '3d' }, a: mode('3d') },
+        { n: 'Открыть двери', data: { cwm: 'open' }, a: mode('open') },
+        { n: 'Чертежи и раскрой', data: { cwm: 'dw' }, a: mode('dw') }
+      ],
+      left: '<div id="cwLeft" class="bld-side"></div>',
+      right: '<div id="cwRight" class="bld-side"></div>',
+      body: `<div class="bld-view"><canvas id="cwCv" class="bld-cv2"></canvas><canvas id="cw3" class="bld-cv3"></canvas><div class="hint bld-hint" id="cw3hint">3D: щелчок — секция · перетаскивание — вращение · колесо — масштаб · правая кнопка / Shift — сдвиг</div></div><div id="cwBottom" class="bld-bottom"></div>`
+    });
+    d = CWD.win.el;
     d.querySelector('#cwCv').addEventListener('click', ev => {
       const r = ev.target.getBoundingClientRect();
       const x = ev.clientX - r.left,
@@ -93632,25 +94064,6 @@ function openCasework(id) {
     new ResizeObserver(() => {
       if (!d.hidden) cwDraw2();
     }).observe(d.querySelector('#cwCv'));
-    d.querySelectorAll('[data-cwm]').forEach(b => {
-      b.onclick = () => {
-        const m = b.dataset.cwm;
-        const e = cwE();
-        if (m === 'dw') return openFurnDraw('casework', CWD.id);
-        if (m === 'open') {
-          if (e) {
-            e.cfg.showOpen = !e.cfg.showOpen;
-            changed();
-          }
-          if (CW3.mode !== '3d') CW3.mode = '3d';
-        } else if (m === '3d') CW3.mode = '3d';
-        else {
-          CW3.mode = '2d';
-          CWD.view = m;
-        }
-        renderCasework();
-      };
-    });
   }
   d.hidden = false;
   renderCasework();
@@ -93663,7 +94076,7 @@ const cwCol = (lab, k, v) => `<label class="fl">${lab}<input type="color" data-c
 const cwChk = (lab, k, v) =>
   `<label class="ck"><input type="checkbox" data-cw="${k}" data-t="b" ${v ? 'checked' : ''}>${lab}</label>`;
 const cwGrp = (t, body, open = true) =>
-  `<details ${open ? 'open' : ''} style="margin:6px 0"><summary class="sech" style="cursor:pointer">${t}</summary><div style="display:grid;gap:6px;margin-top:6px">${body}</div></details>`;
+  `<details class="bld-det" ${open ? 'open' : ''}><summary class="sech">${t}</summary><div class="bld-grid bld-gtop">${body}</div></details>`;
 function cwSet(o, path, v) {
   const k = path.split('.');
   let t = o;
@@ -93697,8 +94110,8 @@ function renderCasework() {
     .map(([k, v]) => [k, v.n]);
   const FT = CW_FT[c.ft] || CW_FT.ldsp;
   $('#cwLeft').innerHTML =
-    `<div class="sech">Изделие</div><div style="display:grid;gap:6px">${cwSel('Шаблон', '_product', c.product, Object.entries(CW_PR))}<button class="btn" id="cwApplyT">Применить шаблон (перезаполнить секции)</button></div>
-    <div class="sech" style="margin-top:8px">Стены</div>${G.runs.map(R => `<button class="btn ${R.i === CWD.run ? 'pri' : ''}" data-run="${R.i}" style="display:block;width:100%;margin:3px 0;text-align:left">Стена ${R.i + 1} · ${Math.round(R.L)} мм · ${R.secs.length} секц.</button>`).join('')}
+    `<div class="sech">Изделие</div><div class="bld-grid">${cwSel('Шаблон', '_product', c.product, Object.entries(CW_PR))}<button class="btn" id="cwApplyT">Применить шаблон (перезаполнить секции)</button></div>
+    <div class="sech bld-sech">Стены</div>${G.runs.map(R => `<button class="btn bld-item ${R.i === CWD.run ? 'pri' : ''}" data-run="${R.i}">Стена ${R.i + 1} · ${Math.round(R.L)} мм · ${R.secs.length} секц.</button>`).join('')}
     ${cwGrp(
       'Габариты и зазоры',
       `${cwNum('Высота корпуса (0 — до потолка с зазором)', 'H', c.H)}${cwNum('Глубина общая (корпус + фасад / купе)', 'D', c.D)}${cwNum('Зазор до потолка, мм', 'gTop', c.gTop)}${cwSel(
@@ -93850,7 +94263,7 @@ function renderCasework() {
   if (S_) {
     const s = S_.sec;
     const zk = Object.entries(CW_ZK).map(([k, v]) => [k, v.n]);
-    rh = `<div class="sech">Секция С${S_.gi} · стена ${S_.R.i + 1}</div><div style="display:grid;gap:6px">${cwNum(`Ширина по осям (0 — авто, сейчас ${Math.round(S_.w)})`, 'w', s.w || 0)}${
+    rh = `<div class="sech">Секция С${S_.gi} · стена ${S_.R.i + 1}</div><div class="bld-grid">${cwNum(`Ширина по осям (0 — авто, сейчас ${Math.round(S_.w)})`, 'w', s.w || 0)}${
       c.open === 'hinge' || c.open === 'fixed'
         ? cwSel(
             'Створок',
@@ -93880,27 +94293,27 @@ function renderCasework() {
           cwChk('Глухая панель (не открывается)', 'fixed', !!s.fixed)
         : ''
     }</div>
-    <div class="sech" style="margin-top:8px">Наполнение (снизу вверх)</div>
+    <div class="sech bld-sech">Наполнение (снизу вверх)</div>
     ${S_.zones
       .map(
         (z, i) =>
-          `<div style="border:1px solid var(--line);border-radius:6px;padding:6px;margin:4px 0;${CWD.zone === i ? 'outline:2px solid var(--acc,#d9822b)' : ''}"><div style="display:grid;grid-template-columns:1fr 70px;gap:4px">${cwSel('', `zones.${i}.k`, z.k, zk)}<label class="fl" title="0 — авто">h<input type="number" data-cw="zones.${i}.h" data-t="n" value="${+s.zones[i].h || 0}"></label></div><div style="display:flex;gap:4px;align-items:center;margin-top:4px">${(CW_ZK[z.k] || {}).cnt ? `<label class="fl" style="width:70px">шт<input type="number" data-cw="zones.${i}.n" data-t="n" value="${z.n}"></label>` : ''}<span class="hint">${Math.round(z.z0)}…${Math.round(z.z1)} · ${Math.round(z.h)} мм</span><span style="flex:1"></span><button class="btn" data-zmv="${i}:-1" title="ниже">↓</button><button class="btn" data-zmv="${i}:1" title="выше">↑</button><button class="btn" data-zdel="${i}" title="удалить">✕</button></div></div>`
+          `<div class="bld-zone${CWD.zone === i ? ' on' : ''}"><div class="bld-z2">${cwSel('', `zones.${i}.k`, z.k, zk)}<label class="fl" title="0 — авто">h<input type="number" data-cw="zones.${i}.h" data-t="n" value="${+s.zones[i].h || 0}"></label></div><div class="bld-zrow">${(CW_ZK[z.k] || {}).cnt ? `<label class="fl bld-n">шт<input type="number" data-cw="zones.${i}.n" data-t="n" value="${z.n}"></label>` : ''}<span class="hint">${Math.round(z.z0)}…${Math.round(z.z1)} · ${Math.round(z.h)} мм</span><span class="bld-gap"></span><button class="btn" data-zmv="${i}:-1" title="ниже">↓</button><button class="btn" data-zmv="${i}:1" title="выше">↑</button><button class="btn" data-zdel="${i}" title="удалить">✕</button></div></div>`
       )
       .join('')}
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="btn" id="cwZAdd">+ зона</button></div>
-    <div class="sech">Быстрое наполнение</div><div style="display:flex;gap:4px;flex-wrap:wrap">${Object.entries(CW_SP)
+    <div class="bld-wrap bld-gtop"><button class="btn" id="cwZAdd">+ зона</button></div>
+    <div class="sech">Быстрое наполнение</div><div class="bld-wrap">${Object.entries(CW_SP)
       .map(([k, v]) => `<button class="btn" data-sp="${k}">${esc(v.n)}</button>`)
       .join('')}</div>
-    <div class="sech" style="margin-top:8px">Детали секции</div><div style="display:flex;gap:4px;flex-wrap:wrap">${
+    <div class="sech bld-sech">Детали секции</div><div class="bld-wrap">${
       s.parts
-        ? `<span class="hint" style="width:100%">Свои детали: ${s.parts.length} — правка внизу, под чертежом.</span><button class="btn" id="cwPGen" title="Вернуть сборку по наполнению (свои детали удалятся)">Вернуть генератор</button>`
+        ? `<span class="hint bld-full">Свои детали: ${s.parts.length} — правка внизу, под чертежом.</span><button class="btn" id="cwPGen" title="Вернуть сборку по наполнению (свои детали удалятся)">Вернуть генератор</button>`
         : `<button class="btn pri" id="cwPSplit" title="Боковины, крыша, дно, полки, задняя стенка — отдельными деталями: менять размеры, добавлять и удалять">Разобрать на детали</button>`
     }</div>
-    <div class="sech" style="margin-top:8px">Секция</div><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn" data-smv="-1">← левее</button><button class="btn" data-smv="1">правее →</button><button class="btn" id="cwSDup">Дублировать</button><button class="btn" id="cwSDel">Удалить</button></div>`;
+    <div class="sech bld-sech">Секция</div><div class="bld-wrap"><button class="btn" data-smv="-1">← левее</button><button class="btn" data-smv="1">правее →</button><button class="btn" id="cwSDup">Дублировать</button><button class="btn" id="cwSDel">Удалить</button></div>`;
   } else
-    rh = `<div class="sech">Секции</div><p class="hint">Щёлкните секцию на развёртке или в 3D, чтобы настроить ширину, створки, фасад, ящики и наполнение.</p>${R ? R.secs.map(q => `<button class="btn" data-pick="${q.sec.id}" style="display:block;width:100%;margin:3px 0;text-align:left">С${q.gi} · ${Math.round(q.w)} мм · ${q.zones.map(z => (CW_ZK[z.k] || {}).n || z.k).join(' / ')}</button>`).join('') : ''}<button class="btn" id="cwSAdd">+ секция на стене ${CWD.run + 1}</button>`;
+    rh = `<div class="sech">Секции</div><p class="hint">Щёлкните секцию на развёртке или в 3D, чтобы настроить ширину, створки, фасад, ящики и наполнение.</p>${R ? R.secs.map(q => `<button data-pick="${q.sec.id}" class="btn bld-item">С${q.gi} · ${Math.round(q.w)} мм · ${q.zones.map(z => (CW_ZK[z.k] || {}).n || z.k).join(' / ')}</button>`).join('') : ''}<button class="btn" id="cwSAdd">+ секция на стене ${CWD.run + 1}</button>`;
   const hw = cwHardware(e, G, U);
-  rh += `<div class="sech" style="margin-top:10px">Фурнитура (${hw.length})</div>${hw.map(h => `<div style="font-size:11.5px;margin:2px 0;display:flex;gap:6px"><span style="flex:1">${esc(h.n)}</span><b>${h.q} ${h.u}</b></div>`).join('')}`;
+  rh += `<div class="sech bld-sech">Фурнитура (${hw.length})</div>${hw.map(h => `<div class="bld-hw"><span>${esc(h.n)}</span><b>${h.q} ${h.u}</b></div>`).join('')}`;
   $('#cwRight').innerHTML = rh;
   const ch = () => {
     changed();
@@ -94038,17 +94451,23 @@ function renderCasework() {
       },
       `Детали секции С${selS.gi} (${Math.round(selS.w)} мм) — X от левой кромки секции, Y от задней кромки корпуса`
     );
-    $('#cwSum').textContent = `${CW_PR[c.product] || ''} · ${G.secs.length} секций · правка деталей секции С${selS.gi}`;
+    if (CWD.win)
+      CWD.win.setTitle(
+        'Конструктор корпусной мебели',
+        `${CW_PR[c.product] || ''} · ${G.secs.length} секций · правка деталей секции С${selS.gi}`
+      );
     cwDraw2();
     return;
   }
-  $('#cwBottom').style.maxHeight = '190px';
   $('#cwBottom').innerHTML =
-    `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline"><b>Проверки</b><span class="hint">ЛДСП, МДФ и стекло считаются по деталям; масса ≈ ${cwMass(e, U)} кг</span></div>` +
-    (ck.map(([l, m]) => `<div class="${l}" style="font-size:11.5px;margin:3px 0">${esc(m)}</div>`).join('') ||
+    `<div class="bld-row"><b>Проверки</b><span class="hint">ЛДСП, МДФ и стекло считаются по деталям; масса ≈ ${cwMass(e, U)} кг</span></div>` +
+    (ck.map(([l, m]) => `<div class="${l} bld-chk">${esc(m)}</div>`).join('') ||
       '<div class="hint">Зазоры, открывание, эргономика и монтаж ✓</div>');
-  $('#cwSum').textContent =
-    `${CW_PR[c.product] || ''} · ${G.secs.length} секций · В ${Math.round(G.zt)} · Г ${c.D} · до потолка ${Math.round(G.ceil - G.zt)} мм`;
+  if (CWD.win)
+    CWD.win.setTitle(
+      'Конструктор корпусной мебели',
+      `${CW_PR[c.product] || ''} · ${G.secs.length} секций · В ${Math.round(G.zt)} · Г ${c.D} · до потолка ${Math.round(G.ceil - G.zt)} мм`
+    );
   cwDraw2();
 }
 /** Redraws the view area: 3D, or the elevation of the current wall. */
@@ -95471,7 +95890,6 @@ const VP_PRESET_N = {
 
 
 
-
 /** Field tokens → values (sheet context). */
 const STAMP_TOK = [
   ['шифр', 'Обозначение (шифр)'],
@@ -95601,30 +96019,25 @@ function stampSvg(st, sel, ctxv) {
 }
 let SEL = -1;
 function openStampEditor() {
-  let d = $('#stampDlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'stampDlg';
-    d.className = 'modal';
-    d.style.zIndex = '62';
-    document.body.appendChild(d);
-  }
   const T = proj().tpl;
   const st = customStamp();
   const c = st.cells[SEL];
   const ctxv = { name: 'План этажа', no: 2, tot: 8, scale: '1:50' };
   const num = (k, n, v, step = '0.5') =>
     `<label class="fl">${esc(n)}<input type="number" step="${step}" data-sk="${k}" value="${v}"></label>`;
-  d.innerHTML = `<div class="dlg" role="dialog" aria-label="Редактор штампа" style="width:min(1100px,100%)"><div class="dlgh"><h3>Свой штамп</h3><span class="hint">щелчок по ячейке — выбрать</span><button class="x" id="stX" aria-label="Закрыть">×</button></div>
-  <div style="padding:14px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:16px;overflow:auto">
-    <div><div id="stPrev">${stampSvg(st, SEL, ctxv)}</div>
+  const win = openWindow({
+    id: 'stampDlg',
+    title: 'Свой штамп',
+    sub: 'щелчок по ячейке — выбрать',
+    size: 'l',
+    over: true,
+    closeId: 'stX',
+    body: `<div class="stwin-main"><div id="stPrev">${stampSvg(st, SEL, ctxv)}</div>
       <div class="btnrow"><button class="btn" data-sa="add">+ Ячейка</button><button class="btn" data-sa="dup" ${c ? '' : 'disabled'}>Дублировать</button><button class="btn" data-sa="splitw" ${c ? '' : 'disabled'}>Разделить по ширине</button><button class="btn" data-sa="splith" ${c ? '' : 'disabled'}>Разделить по высоте</button><button class="btn" data-sa="del" ${c ? '' : 'disabled'}>Удалить</button></div>
       <div class="btnrow"><select id="stPre" aria-label="Начать с"><option value="">Начать с шаблона…</option><option value="gost3">ГОСТ Р 21.101, форма 3</option><option value="studio">Студийная полоса</option><option value="empty">Пустой</option></select>
       <label class="fl fx"><input type="checkbox" id="stUse" ${T.stamp === 'custom' ? 'checked' : ''}> использовать на листах</label></div>
-      <p class="hint">Поля в тексте: ${STAMP_TOK.map(([k, n]) => `<code title="${esc(n)}">{${k}}</code>`).join(' ')} и свои поля ниже. Перенос строки — Enter в тексте ячейки.</p>
-    </div>
-    <div>
-      <div class="sech">Штамп</div>
+      <p class="hint">Поля в тексте: ${STAMP_TOK.map(([k, n]) => `<code title="${esc(n)}">{${k}}</code>`).join(' ')} и свои поля ниже. Перенос строки — Enter в тексте ячейки.</p></div>`,
+    right: `<div class="stwin-side"><div class="sech">Штамп</div>
       <div class="shrow2">${num('w', 'Ширина, мм', st.w)}${num('h', 'Высота, мм', st.h)}</div>
       <div class="sech">Ячейка ${c ? '#' + (SEL + 1) : '— не выбрана'}</div>
       ${
@@ -95652,20 +96065,15 @@ function openStampEditor() {
       }
       <div class="sech">Свои поля</div>
       <div class="kv">${(T.extra || []).map(([k, v], i) => `<input data-fk="${i}" value="${esc(k)}" placeholder="Поле" aria-label="Поле"><input data-fv="${i}" value="${esc(v)}" placeholder="Значение" aria-label="Значение"><button data-fx="${i}" aria-label="Удалить поле">×</button>`).join('')}</div>
-      <div class="btnrow"><button class="btn" id="stAddF">+ Поле</button></div>
-    </div>
-  </div><div class="btnrow" style="padding:0 14px 14px"><button class="btn pri" id="stOk">Готово</button></div></div>`;
-  d.hidden = false;
+      <div class="btnrow"><button class="btn" id="stAddF">+ Поле</button></div></div>`,
+    footer: [{ n: 'Готово', id: 'stOk', pri: true, a: w => w.close() }]
+  });
+  const d = win.el;
   const redraw = () => {
     changed();
     dirty();
     openStampEditor();
   };
-  const close = () => {
-    d.hidden = true;
-  };
-  d.querySelector('#stX').onclick = close;
-  d.querySelector('#stOk').onclick = close;
   d.querySelectorAll('[data-sc]').forEach(r => (r.onclick = () => ((SEL = +r.dataset.sc), openStampEditor())));
   d.querySelector('#stPre').onchange = e => {
     if (!e.target.value) return;
@@ -100578,20 +100986,22 @@ uiHooks.wsPanel = el => {
 
 /* ---------- template dialog ---------- */
 function openTpl() {
-  let d = $('#shTplDlg');
-  if (!d) {
-    d = document.createElement('div');
-    d.id = 'shTplDlg';
-    d.className = 'modal';
-    d.style.zIndex = '60';
-    document.body.appendChild(d);
-  }
   const T = proj().tpl,
     F = T.fields;
   const inp = (k, n, ph = '') =>
     `<label class="fl">${esc(n)}<input type="text" data-tf="${k}" value="${esc(F[k] || '')}" placeholder="${esc(ph)}"></label>`;
-  d.innerHTML = `<div class="dlg" role="dialog" aria-label="Шаблон листов" style="width:min(720px,100%)"><div class="dlgh"><h3>Шаблон листов</h3><button class="x" id="shTplX" aria-label="Закрыть">×</button></div>
-  <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;overflow:auto">
+  const win = openWindow({
+    id: 'shTplDlg',
+    title: 'Шаблон листов',
+    size: 'm',
+    over: true,
+    closeId: 'shTplX',
+    onClose: () => {
+      renderPanel();
+      fitSheet();
+    },
+    body: `<div class="win-form two">
+  <div class="sech span2">Лист</div>
   <label class="fl">Формат${selS(
     'data-tt="fmt"',
     Object.keys(SH_FMT).map(k => [k, `${k} (${SH_FMT[k][1]}×${SH_FMT[k][0]})`]),
@@ -100605,9 +101015,10 @@ function openTpl() {
     ],
     T.orient
   )}</label>
-  <label class="fl" style="grid-column:1/3">Основная надпись${selS('data-tt="stamp"', Object.entries(SH_STAMP), T.stamp)}</label><div class="btnrow" style="grid-column:1/3;margin:0"><button class="btn" id="shStampEd">Редактор своего штампа…</button></div>
-  <label class="fl fx"><input type="checkbox" data-tt="addCols" ${T.addCols ? 'checked' : ''}> Дополнительные графы на поле подшивки</label>
-  <label class="fl fx"><input type="checkbox" data-tt="vpTitles" ${T.vpTitles ? 'checked' : ''}> Заголовки видов с масштабом</label>
+  <label class="fl span2">Основная надпись${selS('data-tt="stamp"', Object.entries(SH_STAMP), T.stamp)}</label><div class="span2"><button class="btn" id="shStampEd">Редактор своего штампа…</button></div>
+  <label class="radio span2"><input type="checkbox" data-tt="addCols" ${T.addCols ? 'checked' : ''}> Дополнительные графы на поле подшивки</label>
+  <label class="radio span2"><input type="checkbox" data-tt="vpTitles" ${T.vpTitles ? 'checked' : ''}> Заголовки видов с масштабом</label>
+  <div class="sech span2">Объект</div>
   ${inp('code', 'Обозначение (шифр)', '2026-015-АИ')}${inp('object', 'Наименование объекта')}
   ${inp('address', 'Адрес')}<label class="fl">Стадия${selS(
     'data-tf="stage"',
@@ -100615,16 +101026,12 @@ function openTpl() {
     F.stage
   )}</label>
   ${inp('org', 'Организация / студия')}${inp('date', 'Дата (мм.гг)')}
+  <div class="sech span2">Исполнители</div>
   ${inp('dev', 'Разработал')}${inp('chk', 'Проверил')}${inp('nk', 'Н. контроль')}${inp('gip', 'ГИП / автор')}
-  </div><div class="btnrow" style="padding:0 14px 14px"><button class="btn pri" id="shTplOk">Готово</button></div></div>`;
-  d.hidden = false;
-  const close = () => {
-    d.hidden = true;
-    renderPanel();
-    fitSheet();
-  };
-  d.querySelector('#shTplX').onclick = close;
-  d.querySelector('#shTplOk').onclick = close;
+  </div>`,
+    footer: [{ n: 'Готово', id: 'shTplOk', pri: true, a: w => w.close() }]
+  });
+  const d = win.el;
   d.querySelector('#shStampEd').onclick = () => openStampEditor();
   d.querySelectorAll('[data-tt]').forEach(
     i =>
@@ -101477,28 +101884,41 @@ function stageBtn() {
   b.textContent = st ? st.n : 'Вся модель';
   b.classList.toggle('on', !!st);
 }
+/** The stage menu (stages, plan height, phase display): a floating window (openWindow float; a bottom sheet on a phone) under the stage button; a second call closes it. */
 function stageMenu(b) {
-  let m = $('#stageMenu');
-  if (m) {
-    m.remove();
+  const old = $('#stageMenu');
+  if (old && !old.hidden) {
+    old.hidden = true;
     return;
   }
   const g = stg();
-  m = document.createElement('div');
-  m.id = 'stageMenu';
-  m.className = 'pop menu';
-  m.innerHTML =
-    `<button data-o="">Вся модель</button>` +
-    g.list.map(s => `<button data-o="${s.id}">${esc(s.n)}${g.cur === s.id ? ' ✓' : ''}</button>`).join('') +
-    `<hr><button data-o="new">Новая стадия…</button><button data-o="pdemo">Стадия «План демонтажа»</button><button data-o="pmount">Стадия «План монтажа»</button>` +
-    `<hr><div class="mh">Высота плана, мм</div><label class="fl" style="padding:2px 10px 6px" title="Что лежит выше — на плане не показывается. 0 — показывать всё (воздуховоды и кондиционеры за потолком тоже)"><input type="number" id="planZIn" step="100" min="0" value="${+S.x.planZ || 0}" style="width:110px"></label>` +
-    `<hr><div class="mh">Показ фаз на этом чертеже</div>` +
-    Object.entries(PHM)
-      .map(([k, n]) => `<button data-ph="${k}">${n}${phaseMode() === k ? ' ✓' : ''}</button>`)
-      .join('');
-  const r = b.getBoundingClientRect();
-  m.style.cssText = `position:fixed;left:${r.left}px;top:${r.bottom + 4}px;z-index:60`;
-  document.body.appendChild(m);
+  const win = openWindow({
+    id: 'stageMenu',
+    title: 'Стадия',
+    float: true,
+    closeId: 'stgClose',
+    cls: 'stgmenu',
+    body:
+      `<button class="btn" data-o="">Вся модель</button>` +
+      g.list
+        .map(s => `<button class="btn" data-o="${s.id}">${esc(s.n)}${g.cur === s.id ? ' ✓' : ''}</button>`)
+        .join('') +
+      `<div class="mh">Новая</div><button class="btn" data-o="new">Новая стадия…</button><button class="btn" data-o="pdemo">Стадия «План демонтажа»</button><button class="btn" data-o="pmount">Стадия «План монтажа»</button>` +
+      `<div class="mh">Высота плана, мм</div><label class="fl" title="Что лежит выше — на плане не показывается. 0 — показывать всё (воздуховоды и кондиционеры за потолком тоже)"><input type="number" id="planZIn" step="100" min="0" value="${+S.x.planZ || 0}"></label>` +
+      `<div class="mh">Показ фаз на этом чертеже</div>` +
+      Object.entries(PHM)
+        .map(([k, n]) => `<button class="btn" data-ph="${k}">${n}${phaseMode() === k ? ' ✓' : ''}</button>`)
+        .join('')
+  });
+  const m = win.el;
+  // on a desktop the panel opens under the stage button; on a phone the frame makes it a bottom sheet
+  m.style.left = m.style.right = '';
+  if (window.innerWidth > 760) {
+    const r = b.getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 300)) + 'px';
+    m.style.right = 'auto';
+    m.style.top = r.bottom + 4 + 'px';
+  } else m.style.top = '';
   const pzi = m.querySelector('#planZIn');
   if (pzi)
     pzi.onchange = () => {
@@ -101506,10 +101926,10 @@ function stageMenu(b) {
       changed();
       log(S.x.planZ ? `План: показывается всё не выше ${S.x.planZ} мм` : 'План: показывается всё по высоте');
     };
-  m.onclick = ev => {
+  win.body.onclick = ev => {
     const x = ev.target.closest('button');
     if (!x) return;
-    m.remove();
+    win.close();
     if (x.dataset.ph) {
       setPhaseMode(x.dataset.ph);
       refresh();
@@ -101524,7 +101944,7 @@ function stageMenu(b) {
   setTimeout(
     () =>
       document.addEventListener('pointerdown', function off(e) {
-        if (!m.contains(e.target)) m.remove();
+        if (!m.contains(e.target) && !b.contains(e.target)) m.hidden = true;
         document.removeEventListener('pointerdown', off);
       }),
     0
@@ -101824,7 +102244,17 @@ uiHooks.phaseCol3 = e => {
   'Узел',
   'Тело из ГКЛ'
 ].forEach(g => openGroups.add(g));
-const OD = { id: null, view: '3d', side: 1, layer: 0, exp: 0.45, inited: false, obj: null, parts: [] };
+const OD = {
+  win: null,
+  id: null,
+  view: '3d',
+  side: 1,
+  layer: 0,
+  exp: 0.45,
+  inited: false,
+  obj: null,
+  parts: []
+};
 const odSupports = e =>
   ['door', 'window', 'wall', 'fix', 'col', 'beam', 'ceil', 'gbody', 'trim', 'reinf', 'load'].includes(e.type) ||
   (e.type === 'dev' && !!e.blk);
@@ -101853,12 +102283,52 @@ function odViews(e) {
     ['exp', 'Разнесённо']
   ];
 }
+/**
+ * The object settings window on the common frame (openWindow), built on the first opening: sections list on the left, the form in the middle,
+ * the 3D / exploded preview with its view tabs on the right (on a phone they go one under another). Returns the window handle.
+ */
+function odWindow() {
+  if (OD.win && document.body.contains(OD.win.el)) return OD.win;
+  const w = openWindow({
+    id: 'objdlg',
+    title: 'Параметры объекта',
+    size: 'xl',
+    cls: 'odwin',
+    closeId: 'odClose',
+    left: '<nav id="odNav" aria-label="Разделы параметров"></nav>',
+    body: '<div id="odForm"></div>',
+    right:
+      '<div class="win-tabs od-views" id="odViews"></div><div id="odPrev"><div id="od3"></div><canvas id="od2" hidden></canvas><div id="odLab"></div><div id="odBar"></div></div>',
+    onClose: () => {
+      OD.id = null;
+    }
+  });
+  OD.win = w;
+  $('#odViews').onclick = ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    OD.view = b.dataset.v;
+    odRefresh(true);
+  };
+  $('#odNav').onclick = ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d = [...$('#odForm').querySelectorAll('details.cfg')].find(x => x.dataset.g === b.dataset.g);
+    if (d) {
+      d.open = true;
+      openGroups.add(d.dataset.g);
+      d.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  };
+  return w;
+}
+/** Opens the object settings window for element e. */
 function openObj(e) {
   if (!e) return;
   OD.id = e.id;
   const v = odViews(e);
   if (!v.some(x => x[0] === OD.view)) OD.view = v[0][0];
-  $('#objdlg').hidden = false;
+  odWindow().el.hidden = false;
   odInit();
   odRefresh(true);
 }
@@ -101987,14 +102457,14 @@ function odExplode(e, g) {
 function odRefresh(fit) {
   const e = byId(OD.id);
   if (!e) {
-    $('#objdlg').hidden = true;
+    if (OD.win) OD.win.el.hidden = true;
     OD.id = null;
     return;
   }
-  $('#odTitle').textContent = groupName(e);
+  odWindow().setTitle(groupName(e));
   const views = odViews(e);
   $('#odViews').innerHTML = views
-    .map(([k, n]) => `<button data-v="${k}" class="${k === OD.view ? 'on' : ''}">${n}</button>`)
+    .map(([k, n]) => `<button type="button" data-v="${k}" class="${k === OD.view ? 'on' : ''}">${n}</button>`)
     .join('');
   const f = $('#odForm');
   const sc = f.scrollTop;
@@ -102015,7 +102485,7 @@ function odRefresh(fit) {
     return;
   }
   if (!OD.inited) {
-    $('#odLab').innerHTML = '<div class="hint" style="padding:12px">3D-просмотр недоступен.</div>';
+    $('#odLab').innerHTML = '<div class="hint od-none">3D-просмотр недоступен.</div>';
     return;
   }
   if (OD.obj) {
@@ -102055,7 +102525,7 @@ function odFit() {
   OD.ctl.update();
 }
 function odRender() {
-  if (!OD.inited || $('#objdlg').hidden) return;
+  if (!OD.inited || !OD.win || OD.win.el.hidden) return;
   OD.r.render(OD.scene, OD.cam);
   const lab = $('#odLab');
   const w = OD.host.clientWidth,
@@ -107205,19 +107675,6 @@ function arCss() {
 #arView .arpanel{touch-action:pan-y}
 #arView .arstat{position:absolute;left:10px;top:calc(env(safe-area-inset-top,0px) + 58px);font-size:11.5px;font-weight:600;background:rgba(0,0,0,.45);border-radius:8px;padding:4px 8px;max-width:70%;border:0;color:#fff;font-family:inherit;text-align:left}
 #arView .arperm{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);border:0;border-radius:16px;padding:16px 22px;background:#0a84ff;color:#fff;font-weight:700;font-size:16px;line-height:1.25;font-family:inherit;box-shadow:0 8px 30px rgba(0,0,0,.4);max-width:80%}
-#arChk{position:fixed;inset:0;z-index:210;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;font:14px var(--f-ui,system-ui,sans-serif)}
-#arChk .box{background:#1c1c1f;color:#fff;border-radius:16px;padding:16px;width:min(440px,100%);max-height:100%;overflow:auto}
-#arChk h4{margin:0 0 10px;font-size:16px}
-#arChk .r span{color:#fff}
-#arChk .r{display:flex;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.1);font-size:13px}
-#arChk .r i{font-style:normal;width:18px;flex:none;font-weight:700}
-#arChk .r.ok i{color:#30d158}#arChk .r.no i{color:#ff453a}#arChk .r.na i{color:#8e8e93}
-#arChk .fix{background:#2c2c30;border-radius:10px;padding:10px;margin-top:10px;font-size:13px;line-height:1.4}
-#arChk .fix b{display:block;margin-bottom:4px}
-#arChk .chkb{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-#arChk .chkb::before,#arChk .chkb::after{content:none}
-#arChk button{border:0;border-radius:999px;padding:9px 15px;font-weight:600;font-size:13px;font-family:inherit;background:#3a3a3e;color:#fff}
-#arChk button.pri{background:#0a84ff}
 #arView .arstat.bad{background:rgba(255,69,58,.85)}
 #arView .arbar{position:absolute;left:0;right:0;top:0;display:flex;gap:6px;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 8px) 10px 8px;background:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,0));flex-wrap:wrap}
 #arView .arbtn{border:0;border-radius:999px;padding:8px 13px;background:rgba(30,30,34,.72);color:#fff;font-weight:600;font-size:13px;font-family:inherit;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -107625,38 +108082,40 @@ async function sensorProbe(ask) {
       '<b>Датчики молчат</b>Поверните телефон и нажмите «Проверить ещё раз». Если не помогло — в этом браузере или на этом устройстве нет гироскопа; работает поворот пальцем и джойстик.';
   return { rows, fix };
 }
-/** The check dialog (from the AR screen or the menu). */
+/** The check dialog (from the AR screen or the menu): a window on the common frame (openWindow, over the AR view), its rules are in zz-windows-furniture.css. */
 async function openSensorCheck(pre) {
   if (typeof document === 'undefined') return;
-  arCss();
-  let d = document.getElementById('arChk');
-  if (!d) {
-    d = el('div');
-    d.id = 'arChk';
-    document.body.appendChild(d);
-  }
+  const win = openWindow({
+    id: 'arChk',
+    title: 'Датчики телефона',
+    size: 's',
+    over: true,
+    body: '<div class="hint">Проверяю…</div>',
+    footer: [
+      {
+        n: 'Разрешить датчики',
+        pri: true,
+        data: { k: 'ask' },
+        a: () => {
+          // the request leaves inside this tap
+          draw(true).then(() => AR.on && status());
+        }
+      },
+      { n: 'Проверить ещё раз', data: { k: 'again' }, a: () => draw(false) },
+      { n: 'Закрыть', data: { k: 'close' }, a: w => w.close() }
+    ]
+  });
   const draw = async ask => {
-    d.innerHTML = '<div class="box"><h4>Датчики телефона</h4><div class="muted">Проверяю…</div></div>';
+    win.setBody('<div class="hint">Проверяю…</div>');
     const R = await sensorProbe(ask);
-    d.innerHTML = `<div class="box"><h4>Датчики телефона</h4>${R.rows
-      .map(
-        r =>
-          `<div class="r ${r.ok === true ? 'ok' : r.ok === false ? 'no' : 'na'}"><i>${r.ok === true ? '✓' : r.ok === false ? '✕' : '–'}</i><span>${esc(r.t)}</span></div>`
-      )
-      .join('')}<div class="fix">${R.fix}</div>
-<div class="chkb"><button class="pri" data-k="ask">Разрешить датчики</button><button data-k="again">Проверить ещё раз</button><button data-k="close">Закрыть</button></div></div>`;
-  };
-  d.onclick = ev => {
-    const b = ev.target.closest('button');
-    if (ev.target === d) return d.remove();
-    if (!b) return;
-    if (b.dataset.k === 'close') return d.remove();
-    if (b.dataset.k === 'ask') {
-      // the request leaves inside this tap
-      draw(true).then(() => AR.on && status());
-      return;
-    }
-    if (b.dataset.k === 'again') draw(false);
+    win.setBody(
+      `<div class="archk">${R.rows
+        .map(
+          r =>
+            `<div class="r ${r.ok === true ? 'ok' : r.ok === false ? 'no' : 'na'}"><i>${r.ok === true ? '✓' : r.ok === false ? '✕' : '–'}</i><span>${esc(r.t)}</span></div>`
+        )
+        .join('')}<div class="fix">${R.fix}</div></div>`
+    );
   };
   await draw(false);
   void pre;
@@ -108519,7 +108978,7 @@ uiHooks.arPins = group => {
 };
 
 /* ---------- on the computer: the list and the marks on the plan ---------- */
-const NV_ = { open: false, sel: null, f: 'all' };
+const NV_ = { open: false, sel: null, f: 'all', win: null };
 uiHooks.planOverlay = () => {
   if (!NV_.open) return;
   const lv = LV().cur;
@@ -108549,20 +109008,6 @@ uiHooks.planOverlay = () => {
   }
   ctx.restore();
 };
-function panelEl() {
-  let p = $('#arnDlg');
-  if (!p) {
-    p = document.createElement('div');
-    p.id = 'arnDlg';
-    p.className = 'arnpop';
-    p.setAttribute('role', 'dialog');
-    p.setAttribute('aria-label', 'Заметки с объекта');
-    p.style.cssText =
-      'position:fixed;right:12px;top:96px;width:380px;max-width:calc(100vw - 24px);max-height:calc(100vh - 140px);overflow:auto;z-index:60;padding:12px;background:var(--canvas);color:var(--fg);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18)';
-    document.body.appendChild(p);
-  }
-  return p;
-}
 function arnEsc(ev) {
   if (ev.key === 'Escape' && NV_.open) closeArNotes();
 }
@@ -108573,22 +109018,46 @@ function openArNotes() {
   renderList();
   dirty();
 }
-function closeArNotes() {
+/** Ends the notes mode: the keyboard hook, the selection and the marks on the plan (the panel hides itself). */
+function arnEnd() {
   if (document.removeEventListener) document.removeEventListener('keydown', arnEsc);
   NV_.open = false;
   NV_.sel = null;
-  const p = $('#arnDlg');
-  if (p) p.remove();
   dirty();
 }
+function closeArNotes() {
+  const p = $('#arnDlg');
+  if (p) p.hidden = true;
+  arnEnd();
+}
+/** The notes panel: a floating window (openWindow float), built once and refilled by renderList. */
+function panelWin() {
+  const p = $('#arnDlg');
+  if (p && NV_.win && NV_.win.el === p) {
+    p.hidden = false;
+    return NV_.win;
+  }
+  NV_.win = openWindow({
+    id: 'arnDlg',
+    title: 'Заметки с объекта',
+    float: true,
+    closeId: 'arnX',
+    cls: 'arnwin',
+    body: '',
+    onClose: () => {
+      if (NV_.open) arnEnd();
+    }
+  });
+  return NV_.win;
+}
 function renderList() {
-  const p = panelEl();
+  const w = panelWin();
+  const sc = w.body.scrollTop;
   const L = arNotes()
     .filter(n => passF(n, NV_.f))
     .slice()
     .sort((a, b) => (a.t < b.t ? 1 : -1));
-  let h = `<div class="sech" style="display:flex;justify-content:space-between;align-items:center">Заметки с объекта<button class="x" id="arnX" aria-label="Закрыть">×</button></div>`;
-  h += `<div class="chips">${Object.entries(FILT)
+  let h = `<div class="chips">${Object.entries(FILT)
     .map(([k, n]) => `<button class="chipb ${NV_.f === k ? 'on' : ''}" data-f="${k}">${n}</button>`)
     .join('')}</div>`;
   if (!L.length)
@@ -108596,10 +109065,10 @@ function renderList() {
   for (const n of L) {
     const e = n.ent != null ? byId(n.ent) : null;
     const [kn, col] = ARN_KIND[n.kind] || ARN_KIND.info;
-    h += `<div class="arnrow" data-n="${n.id}" style="padding:8px 0;border-top:1px solid var(--line);${n.id === NV_.sel ? 'background:var(--panel2)' : ''}">
-<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>№${n.no}</b><span class="chip" style="background:${col};color:#fff;border-radius:999px;padding:0 8px;font-size:11px">${kn}</span><span class="hint">${fmtDT(n.t)}</span></div>
-<div style="margin:4px 0">${esc(n.text || '—')}</div>${e ? `<div class="hint">Объект: ${esc(groupName(e))}</div>` : ''}${n.photo ? `<img src="${n.photo}" alt="Снимок с объекта" style="width:100%;border-radius:6px;margin:4px 0">` : ''}
-<div class="btnrow" style="margin-top:4px">${
+    h += `<div class="arnrow${n.id === NV_.sel ? ' on' : ''}" data-n="${n.id}">
+<div class="arn-head"><b>№${n.no}</b><span class="chip arn-chip" style="background:${col}">${kn}</span><span class="hint">${fmtDT(n.t)}</span></div>
+<div class="arn-text">${esc(n.text || '—')}</div>${e ? `<div class="hint">Объект: ${esc(groupName(e))}</div>` : ''}${n.photo ? `<img src="${n.photo}" class="arn-photo" alt="Снимок с объекта">` : ''}
+<div class="btnrow arn-btns">${
       hasState(n.kind)
         ? `<select data-st="${n.id}" aria-label="Состояние">${Object.entries(ARN_STATE)
             .map(([k, s]) => `<option value="${k}" ${n.state === k ? 'selected' : ''}>${s}</option>`)
@@ -108611,8 +109080,9 @@ function renderList() {
         ''
       )}</select><button class="btn" data-go="${n.id}">На плане</button><button class="btn" data-del="${n.id}">Удалить</button></div></div>`;
   }
-  p.innerHTML = h;
-  p.querySelector('#arnX').onclick = closeArNotes;
+  w.setBody(h);
+  w.body.scrollTop = sc;
+  const p = w.body;
   p.querySelectorAll('[data-f]').forEach(
     b =>
       (b.onclick = () => {
@@ -108885,7 +109355,7 @@ function stageMoreItems() {
     const m = $('#stageMenu');
     const t = m && m.querySelector(`[data-o="${key}"]`);
     if (t) t.click();
-    else if (m) m.remove();
+    else if (m) m.hidden = true;
   };
   return [
     { n: '+ План демонтажа', k: 'красным — что сносится', a: viaMenu('pdemo') },
@@ -118236,37 +118706,35 @@ function solCur() {
   if (!ED.e || !S.ents.includes(ED.e)) ED.e = byId(ED.id);
   return ED.e;
 }
+/** Builds the solid editor window on the common frame: views are the tabs, tools on the left, the stage with its toolbar, the side panel on the right. */
 function buildDialog() {
-  const d = document.createElement('div');
-  d.id = 'soldlg';
-  d.className = 'modal';
-  d.innerHTML = `<div class="dlg sol" role="dialog" aria-label="Редактор тела">
-  <div class="dlgh"><h3 id="solTitle">Тело</h3>
-    <div class="seg" id="solViews">${Object.entries(SOL_VIEWS)
-      .map(([k, v]) => `<button data-v="${k}">${v.n}</button>`)
-      .join('')}</div>
-    <label class="chk"><input type="checkbox" id="solX"> Рентген</label>
-    <label class="chk"><input type="checkbox" id="solL"> Раскрой</label>
-    <button class="btn" id="solSvg">SVG вида</button>
-    <button class="btn" id="solUndo" title="Отменить (Ctrl+Z)">↶</button>
-    <button class="x" id="solClose" aria-label="Закрыть">×</button></div>
-  <div class="solbody">
-    <div class="soltools">${SOL_TOOLS.map(([k, n, key, h]) => `<button data-t="${k}" title="${h} · ${key}"><b>${key}</b>${n}</button>`).join('')}</div>
+  const w = openWindow({
+    id: 'soldlg',
+    title: 'Тело',
+    size: 'xl',
+    cls: 'solwin',
+    closeId: 'solClose',
+    tabs: Object.entries(SOL_VIEWS).map(([k, v]) => ({ k, n: v.n })),
+    tab: ED.view,
+    onTab: k => solSetView(k),
+    actions: [
+      { n: '↶', id: 'solUndo', title: 'Отменить (Ctrl+Z)' },
+      { n: 'SVG вида', id: 'solSvg' }
+    ],
+    left: `<div class="soltools">${SOL_TOOLS.map(([k, n, key, h]) => `<button data-t="${k}" title="${h} · ${key}"><b>${key}</b>${n}</button>`).join('')}</div>`,
+    body: `<div class="sol-bar"><label class="chk"><input type="checkbox" id="solX"> Рентген</label><label class="chk"><input type="checkbox" id="solL"> Раскрой</label></div>
     <div class="solstage"><canvas id="solGL"></canvas><canvas id="solOV"></canvas>
-      <div class="solvcb"><span id="solHint"></span><label>Значение <input id="solVCB" autocomplete="off"></label></div></div>
-    <div class="solside" id="solSide"></div>
-  </div></div>`;
-  document.body.appendChild(d);
-  d.querySelector('#solClose').onclick = () => {
-    d.hidden = true;
-    changed();
-  };
+      <div class="solvcb"><span id="solHint"></span><label>Значение <input id="solVCB" autocomplete="off"></label></div></div>`,
+    right: '<div class="solside" id="solSide"></div>',
+    onClose: () => changed()
+  });
+  ED.win = w;
+  const d = w.el;
   d.querySelector('#solUndo').onclick = () => {
     undo();
     solidTouch(solCur() || {});
     solRenderAll();
   };
-  d.querySelectorAll('#solViews button').forEach(b => (b.onclick = () => solSetView(b.dataset.v)));
   d.querySelectorAll('.soltools button').forEach(b => (b.onclick = () => solSetTool(b.dataset.t)));
   d.querySelector('#solX').onchange = ev => {
     ED.xray = ev.target.checked;
@@ -118311,7 +118779,7 @@ function solSetTool(t) {
 }
 function solSetView(v) {
   ED.view = v;
-  document.querySelectorAll('#solViews button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  if (ED.win) ED.win.setTab(v);
   const V = SOL_VIEWS[v];
   if (!V.unfold) Object.assign(ED.cam, { yaw: V.yaw, pitch: V.pitch, ortho: V.ortho });
   ED.draft = null;
@@ -118323,7 +118791,7 @@ function fitCamera() {
   if (!isFinite(bb.mn[0])) return;
   ED.cam.t = [0, 1, 2].map(k => (bb.mn[k] + bb.mx[k]) / 2);
   ED.cam.dist = Math.max(1500, sv3.len(sv3.sub(bb.mx, bb.mn)) * 1.9);
-  document.querySelectorAll('#solViews button').forEach(b => b.classList.toggle('on', b.dataset.v === ED.view));
+  if (ED.win) ED.win.setTab(ED.view);
 }
 
 /* ---------- camera / projection ---------- */
@@ -118538,7 +119006,7 @@ function solRenderAll() {
     d.hidden = true;
     return;
   }
-  $('#solTitle').textContent = `${e.name || 'Тело'} №${e.id} · ${Math.round(solidCalc(e).mass)} кг`;
+  if (ED.win) ED.win.setTitle(`${e.name || 'Тело'} №${e.id} · ${Math.round(solidCalc(e).mass)} кг`);
   buildScene();
   if (SOL_VIEWS[ED.view].unfold) {
     $('#solGL').style.visibility = 'hidden';
@@ -119073,7 +119541,7 @@ function solOnMove(ev) {
       if (ED.view !== 'persp') {
         ED.view = 'persp';
         ED.cam.ortho = false;
-        document.querySelectorAll('#solViews button').forEach(b => b.classList.toggle('on', b.dataset.v === 'persp'));
+        if (ED.win) ED.win.setTab('persp');
       }
     }
     solRenderAll();
@@ -119907,14 +120375,13 @@ const solidEditorState = ED;
 
 const VU_CSS = `#vulock{position:fixed;inset:0;z-index:9000;background:var(--bg,#f4f4f2);display:flex;align-items:center;justify-content:center;padding:16px}
 #vulock .vub{width:min(380px,100%)}
-#vulock .vub,#vudlg .vub{display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--fg,#222)}
+#vulock .vub,#vudlg .vub,#vuask .vub{display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--fg,#222)}
 #vulock h3{margin:0 0 2px;font-size:17px}
 .vub input{width:100%;padding:8px 10px;font-size:14px}
 .vub .vum{font-size:12px;color:var(--muted,#666);line-height:1.45}.vub .vue{font-size:12px;color:var(--danger,#c0392b);min-height:16px}
 .vub .vur{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .vub .vul{background:none;border:0;padding:0;color:var(--muted,#666);text-decoration:underline;font-size:12px;cursor:pointer}
-#vuask .dlg{height:auto;max-height:92vh}.vub label{display:flex;flex-direction:column;gap:4px}
-#vuask .dlg{width:min(380px,96vw)}#vuask .vub{width:auto;padding:14px 18px}`;
+.vub label{display:flex;flex-direction:column;gap:4px}`;
 const vuBound = new WeakMap();
 function vuCss() {
   if (document.getElementById('vucss')) return;
@@ -119971,30 +120438,33 @@ function vaultLockScreen() {
 function vaultAsk(again) {
   vuCss();
   return new Promise(res => {
-    const m = document.createElement('div');
-    m.id = 'vuask';
-    m.className = 'modal';
-    m.innerHTML = `<div class="dlg" role="dialog" aria-label="Пароль файла"><div class="dlgh"><h3>Файл зашифрован</h3><button class="x" type="button" data-vu="no" aria-label="Закрыть">×</button></div>
-<form class="vub" autocomplete="off"><div class="vum">Введите пароль, с которым сохранён этот проект.</div>
+    let fin = false;
+    const done = v => {
+      if (fin) return;
+      fin = true;
+      res(v);
+      w.close();
+    };
+    const w = openWindow({
+      id: 'vuask',
+      title: 'Файл зашифрован',
+      size: 's',
+      over: true,
+      onClose: () => done(null),
+      body: `<form class="vub" autocomplete="off"><div class="vum">Введите пароль, с которым сохранён этот проект.</div>
 <input type="password" aria-label="Пароль файла" placeholder="Пароль" autocomplete="off">
-<div class="vue" role="alert">${again ? 'Пароль не подошёл' : ''}</div>
-<div class="vur"><button class="btn pri" type="submit">Открыть</button><button class="btn" type="button" data-vu="no">Отмена</button></div></form></div>`;
-    document.body.appendChild(m);
+<div class="vue" role="alert">${again ? 'Пароль не подошёл' : ''}</div></form>`,
+      footer: [
+        { n: 'Открыть', pri: true, a: () => done(inp.value) },
+        { n: 'Отмена', a: () => done(null) }
+      ]
+    });
+    const m = w.el;
     const inp = m.querySelector('input');
     setTimeout(() => inp.focus(), 50);
-    const done = v => {
-      m.remove();
-      res(v);
-    };
     m.querySelector('form').addEventListener('submit', ev => {
       ev.preventDefault();
       done(inp.value);
-    });
-    m.addEventListener('click', ev => {
-      if (ev.target === m || (ev.target.closest && ev.target.closest('[data-vu="no"]'))) done(null);
-    });
-    m.addEventListener('keydown', ev => {
-      if (ev.key === 'Escape') done(null);
     });
   });
 }
@@ -120199,33 +120669,6 @@ function xBoot() {
     );
     new MutationObserver(sync).observe(pop, { subtree: true, attributes: true, attributeFilter: ['class'] });
   }
-  $('#odClose').onclick = () => {
-    $('#objdlg').hidden = true;
-    OD.id = null;
-    cin.focus({ preventScroll: true });
-  };
-  $('#objdlg').addEventListener('pointerdown', ev => {
-    if (ev.target.id === 'objdlg') {
-      $('#objdlg').hidden = true;
-      OD.id = null;
-    }
-  });
-  $('#odViews').onclick = ev => {
-    const b = ev.target.closest('button');
-    if (!b) return;
-    OD.view = b.dataset.v;
-    odRefresh(true);
-  };
-  $('#odNav').onclick = ev => {
-    const b = ev.target.closest('button');
-    if (!b) return;
-    const d = [...$('#odForm').querySelectorAll('details.cfg')].find(x => x.dataset.g === b.dataset.g);
-    if (d) {
-      d.open = true;
-      openGroups.add(d.dataset.g);
-      d.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    }
-  };
   renderTools();
   renderWS();
   renderIssues();
@@ -137339,15 +137782,19 @@ let SHF = null;
 function openSheetEditor(e, done) {
   const c = e.cfg;
   let dlg = $('#shdlg');
-  if (!dlg) {
-    dlg = document.createElement('div');
-    dlg.id = 'shdlg';
-    dlg.className = 'modal';
-    dlg.innerHTML = `<div class="dlg" role="dialog" aria-label="Изделие из листов" style="width:min(1180px,96vw)"><div class="dlgh"><h3 id="shTitle">Изделие из листов</h3><button class="x" id="shClose" aria-label="Закрыть">×</button></div><div id="shBody" style="padding:10px;overflow:auto;max-height:80vh"></div></div>`;
-    document.body.appendChild(dlg);
-    dlg.querySelector('#shClose').onclick = () => (dlg.hidden = true);
-  }
-  SHF = { e, done };
+  if (!dlg || !SHF || !SHF.win)
+    SHF = {
+      win: openWindow({
+        id: 'shdlg',
+        title: 'Изделие из листов',
+        size: 'l',
+        cls: 'shwin',
+        closeId: 'shClose',
+        body: '<div id="shBody"></div>'
+      })
+    };
+  dlg = SHF.win.el;
+  SHF = { win: SHF.win, e, done };
   dlg.hidden = false;
   renderSheet();
 }
@@ -137356,9 +137803,9 @@ function renderSheet() {
   const { e, done } = SHF,
     c = e.cfg;
   const body = $('#shBody');
-  $('#shTitle').textContent = `Изделие из листов ${c.w}×${c.h}×${c.d}`;
+  if (SHF.win) SHF.win.setTitle(`Изделие из листов ${c.w}×${c.h}×${c.d}`);
   const hw = sheetHardware(c, sheetParts(c));
-  body.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:8px"><label class="fl">Заготовка<select id="shPre">${Object.entries(
+  body.innerHTML = `<div class="bld-row bld-bar"><label class="fl">Заготовка<select id="shPre">${Object.entries(
     SHEET_PRE
   )
     .map(([k, v]) => `<option value="${k}">${esc(v)}</option>`)
@@ -137371,12 +137818,12 @@ function renderSheet() {
     .join(
       ''
     )}</select></label><span class="hint">Открывание двери — в столбце «Открывание»: ${esc(Object.values(PART_OPEN).join(', '))}.</span></div><div id="shParts"></div>
-  <div class="sech" style="margin-top:10px">Фурнитура (по деталям + своя)</div>
-  <table class="mtbl" style="width:100%"><tbody>${hw.map(([n, q, u]) => `<tr><td>${esc(n)}</td><td style="width:90px">${q} ${esc(u)}</td></tr>`).join('')}</tbody></table>
-  <div class="sech" style="margin-top:8px">Своя фурнитура</div>${(c.hwx || [])
+  <div class="sech bld-sech">Фурнитура (по деталям + своя)</div>
+  <table class="mtbl bld-tbl"><tbody>${hw.map(([n, q, u]) => `<tr><td>${esc(n)}</td><td class="bld-qty">${q} ${esc(u)}</td></tr>`).join('')}</tbody></table>
+  <div class="sech bld-sech">Своя фурнитура</div>${(c.hwx || [])
     .map(
       (x, i) =>
-        `<div style="display:flex;gap:6px;margin:3px 0"><input data-hx="${i}:n" value="${esc(x.n || '')}" style="flex:1" aria-label="Название"><input type="number" data-hx="${i}:q" value="${+x.q || 1}" style="width:70px" aria-label="Количество"><button class="btn" data-hxd="${i}" aria-label="Удалить">×</button></div>`
+        `<div class="bld-hx"><input data-hx="${i}:n" value="${esc(x.n || '')}" aria-label="Название"><input type="number" data-hx="${i}:q" value="${+x.q || 1}" aria-label="Количество"><button class="btn" data-hxd="${i}" aria-label="Удалить">×</button></div>`
     )
     .join('')}<button class="btn" id="shHwAdd">+ своя позиция (ручка, замок, подсветка, магнит…)</button>`;
   partsEditor(
