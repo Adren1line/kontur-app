@@ -10433,7 +10433,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.95';
+const APP_VER = '59.96';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -38104,7 +38104,7 @@ XT.fix = {
   k3: e => [
     S.ceil,
     e.kind === 'wcinst'
-      ? JSON.stringify([instOf(e), panOf(e), libModelReady(instOf(e).model), instOf(e).model ? instGeo(e).slab : 0])
+      ? JSON.stringify([instOf(e), panOf(e), libModelReady(instOf(e).model), instGeo(e).base])
       : e.kind === 'wcfloor'
         ? JSON.stringify(floorOf(e))
         : fixModelKey(e),
@@ -38319,7 +38319,6 @@ const SANLIB0 = [
     W: 500,
     D: 144,
     legs: 200,
-    frameBot: 62,
     frameCol: '#8d949c',
     bendCol: '#2a2d31',
     cistCol: '#e7ecf2',
@@ -38333,10 +38332,9 @@ const SANLIB0 = [
     inlet: { sides: ['left', 'right'], z: 1020, valve: 'наружная резьба R ½″ сбоку, под быстроразъёмные адаптеры' },
     plate: { w: 220, h: 150, z: 1000, style: 'tece', name: 'TECEloop / TECEnow 220×150' },
     plateIncl: false,
-    leg: { x: [222, 248], y: [1.7, 38.4], foot: [178, 249], col: '#c9cdd1' },
     feats: [
       'Модель производителя TECE (3D): рама, бачок Uni, подвод воды, отвод, шпильки M12',
-      'Опоры регулируются 0–200 мм: длина считается от низа рамы до плиты перекрытия',
+      'Ножки регулируются 0–200 мм: стоят на верху стяжки (без стяжки — на плите), рама поднимается отдельно',
       'Выпуск Ø90 к унитазу; в стояк Ø110 — вниз или отводом влево / вправо',
       'Подвод воды R ½″ слева или справа',
       'Шпильки M12 с шагом 180 или 230 мм'
@@ -38747,16 +38745,27 @@ function instGeo(e) {
   };
   g.model = M.model || '';
   g.plate = M.plate;
+  // what the feet stand on: the top of the screed at the place of the item (the top of the slab when the floor has no screed)
+  g.base = 0;
+  g.baseKind = 'плиты';
+  try {
+    const F = floorAt(e.p);
+    g.base = F.base - (e.z || 0);
+    g.baseKind = F.base > F.slabTop + 0.5 ? 'стяжки' : 'плиты';
+  } catch (err) {
+    /* no floor data: the feet stand on the floor level of the item */
+  }
+  g.legs = M.model ? (libModelInfo(M.model) || {}).legs || null : null;
+  g.travel = g.legs ? g.legs.travel : [0, M.legs];
   if (M.model) {
-    // the library model is placed by its drain axis: everything of the module moves with it; the legs reach the slab
+    // the library model is placed by its drain axis: everything of the module moves with it; its feet stand on the base
     g.dz = drainZ - M.drainZ;
     g.plate = { ...M.plate, z: M.plate.z + g.dz };
-    try {
-      g.slab = floorAt(e.p).slabTop - (e.z || 0);
-    } catch (err) {
-      g.slab = 0;
-    }
-    g.legLen = M.frameBot + g.dz - g.slab;
+  }
+  if (g.legs) {
+    // legLen: the bottom of the frame above the base; legGap: how far the frame has gone up from the feet relative to the model
+    g.legLen = g.legs.frameBot + g.dz - g.base;
+    g.legGap = g.dz - (g.base - g.legs.sole);
   }
   g.sup = instSupport(e, g);
   g.reinf = (c.reinf || 'auto') === 'on' || ((c.reinf || 'auto') === 'auto' && g.sup.need);
@@ -38858,20 +38867,12 @@ function buildPlate(mb, pl, y0, col) {
     }
   }
 }
-/** 3D of the installation: a library model near the camera (when it is loaded), the factory graphics from afar and as a fallback; sheets and export get the model alone. */
+/** 3D of the installation: the library model at every distance once it is loaded; the factory graphics only while the file loads (and when it cannot be loaded). */
 function buildInst(mb, e) {
   const g = instGeo(e);
-  const mdl = g.model && g.c.gfx !== 'factory' ? libModel(g.model) : null;
-  if (mdl) {
-    // raw mode (sheets, sections, export) draws the model alone: the near and far graphics together would overlap there
-    if (!sceneState.raw) {
-      mb.lod('f');
-      buildInstFactory(mb, g);
-    }
-    mb.lod(sceneState.raw ? '' : 'n');
-    buildInstModel(mb, g, mdl);
-    mb.lod('');
-  } else buildInstFactory(mb, g);
+  const mdl = g.model ? libModel(g.model) : null;
+  if (mdl) buildInstModel(mb, g, mdl);
+  else buildInstFactory(mb, g);
   buildInstTail(mb, g);
 }
 /** The revision shaft around the flush plate. */
@@ -38888,10 +38889,57 @@ function buildInstShaft(mb, g) {
 function instSideBox(mb, s, x0, x1, y0, y1, z0, z1, col) {
   mb.box(s > 0 ? x0 : -x1, y0, z0, s > 0 ? x1 : -x0, y1, z1, col);
 }
+/** Ring of a rounded rectangle (x0..x1, y0..y1, corner radius r) at height z, counter-clockwise. */
+function instRectRing(x0, x1, y0, y1, r, z) {
+  const out = [],
+    n = r > 0 ? 4 : 1;
+  for (const [cx, cy, a0] of [
+    [x1 - r, y1 - r, 0],
+    [x0 + r, y1 - r, Math.PI / 2],
+    [x0 + r, y0 + r, Math.PI],
+    [x1 - r, y0 + r, (3 * Math.PI) / 2]
+  ])
+    for (let i = 0; i <= n; i++) {
+      const t = a0 + ((r > 0 ? i / n : i) * Math.PI) / 2;
+      out.push([cx + r * Math.cos(t), cy + r * Math.sin(t), z]);
+      if (r <= 0) break;
+    }
+  return out;
+}
+/**
+ * Telescopic legs of a library installation (the «legs» of its model.json): the feet of the model stand on the base (the top of the
+ * screed, without a screed the top of the slab), the upper parts of the legs ride with the frame, and when the frame has gone up from
+ * the feet farther than the tube of the foot enters it (overlap), the generator fills the gap with a tube of the section of the model's tube.
+ */
+function buildInstLegs(mb, g, mdl, at) {
+  const L = g.legs,
+    yF = g.yF;
+  libModelPut(mb, mdl, [L.leg], at(0, g.dz));
+  libModelPut(mb, mdl, [L.foot], at(0, g.base - L.sole));
+  if (g.legGap <= L.overlap + 0.5) return;
+  const z0 = L.footTop + g.base - L.sole,
+    z1 = L.footTop + g.dz,
+    col = ((mdl.parts[L.leg] || mdl.parts[L.foot] || [])[0] || {}).col || '#c9cdd1';
+  mb.tag('Ножки: добор трубки');
+  mb.smooth(true);
+  for (const t of L.tubes)
+    sanLoft(
+      mb,
+      [
+        instRectRing(t.x[0], t.x[1], yF + t.y[0], yF + t.y[1], t.r, z0),
+        instRectRing(t.x[0], t.x[1], yF + t.y[0], yF + t.y[1], t.r, z1)
+      ],
+      col,
+      false,
+      false
+    );
+  mb.smooth(false);
+  mb.tag('');
+}
 /**
  * A library model in place of the factory frame / tank / inlet / bend: the model is shifted so that its drain Ø90 comes to the
- * drain axis of the pan and its face plane to the face plane of the frame; the legs below the frame are built by the
- * generator (frame bottom → slab), the studs follow the pan step, the inlet is mirrored for «справа», the bend and the
+ * drain axis of the pan and its face plane to the face plane of the frame; the feet stand on the base while the frame goes up
+ * with the pan (buildInstLegs), the studs follow the pan step, the inlet is mirrored for «справа», the bend and the
  * Ø110 stub of the model are used only for the drain «вниз» (left / right — the generator's horizontal bend).
  */
 function buildInstModel(mb, g, mdl) {
@@ -38901,24 +38949,17 @@ function buildInstModel(mb, g, mdl) {
   const stR = libModelInfo(g.model).ports.find(p => p.id === 'studR');
   const sh = g.bolt / 2 - stR.p[0];
   const at =
-    (ox = 0) =>
-    (x, y, z) => [x + ox, yF + y, z + dz];
-  libModelPut(mb, mdl, ['body', 'legs'], at());
+    (ox = 0, oz = dz) =>
+    (x, y, z) => [x + ox, yF + y, z + oz];
+  libModelPut(mb, mdl, ['body'], at());
+  buildInstLegs(mb, g, mdl, at);
   libModelPut(mb, mdl, ['studL'], at(-sh));
   libModelPut(mb, mdl, ['studR'], at(sh));
   if (g.dd === 'down') libModelPut(mb, mdl, ['drainBend', 'drainStub'], at());
   if (g.side === 'right') libModelPut(mb, mdl, ['inlet'], (x, y, z) => [-x, yF + y, z + dz], true);
   else libModelPut(mb, mdl, ['inlet'], at());
   buildInstShaft(mb, g);
-  const lg = M.leg,
-    zt = M.frameBot + dz;
-  if (g.legLen > 2) {
-    mb.tag('Регулируемые опоры (по длине до плиты)');
-    for (const s of [-1, 1]) {
-      instSideBox(mb, s, lg.x[0], lg.x[1], yF - lg.y[1], yF - lg.y[0], g.slab, zt + 0.3, lg.col);
-      instSideBox(mb, s, lg.foot[0], lg.foot[1], yF - lg.y[1] - 1, yF - lg.y[0] + 1, g.slab, g.slab + 5, lg.col);
-    }
-  }
+  const studCol = ((mdl.parts.studL || [])[0] || {}).col || '#c9cdd1';
   const ORG = '#e4572e',
     WH = '#f2f3f5',
     bc = M.bendCol,
@@ -38945,7 +38986,7 @@ function buildInstModel(mb, g, mdl) {
     tip = yF + 50;
   mb.tag('Шпильки M12');
   for (const s of [-1, 1]) {
-    if (yEnd > tip) mb.tube([(s * g.bolt) / 2, tip - 1, g.boltZ], [(s * g.bolt) / 2, yEnd, g.boltZ], 6, lg.col, 8);
+    if (yEnd > tip) mb.tube([(s * g.bolt) / 2, tip - 1, g.boltZ], [(s * g.bolt) / 2, yEnd, g.boltZ], 6, studCol, 8);
     if (!P) {
       mb.tag('Защитные колпачки');
       mb.tube([(s * g.bolt) / 2, y0 + 8, g.boltZ], [(s * g.bolt) / 2, y0 + 40, g.boltZ], 9, ORG, 10);
@@ -38985,10 +39026,11 @@ function buildInstFactory(mb, g) {
   mb.tag('Рама инсталляции');
   for (const s of [-1, 1]) {
     mb.box(s * ux - 20, yF - 40, 120, s * ux + 20, yF, H, fc);
+    // the feet stand on the base (the top of the screed), the frame keeps its own height
     mb.tag('Регулируемые ножки');
-    mb.box(s * ux - 13, yF - 33, 0, s * ux + 13, yF - 7, 150, STEEL);
-    mb.box(s * ux - 45, fb, 0, s * ux + 45, yF, 6, fc);
-    mb.box(s * ux - 20, fb, 6, s * ux + 20, fb + 30, 110, fc);
+    if (150 - g.base > 2) mb.box(s * ux - 13, yF - 33, g.base, s * ux + 13, yF - 7, 150, STEEL);
+    mb.box(s * ux - 45, fb, g.base, s * ux + 45, yF, g.base + 6, fc);
+    if (110 - g.base > 8) mb.box(s * ux - 20, fb, g.base + 6, s * ux + 20, fb + 30, 110, fc);
     mb.tag('Настенный кронштейн');
     mb.box(s * ux - 14, fb, H - 150, s * ux + 14, yF - 40, H - 120, STEEL);
     mb.tag('Рама инсталляции');
@@ -39249,22 +39291,15 @@ function instPanel(e) {
   const lowRim = g.rim < 360 || g.rim > 500 ? ' · ⚠ высота чаши вне обычной регулировки (360–500 мм)' : '';
   return [
     ['Модель инсталляции', 'cfg.inst', 's', sanAll('inst').map(m => [m.id, m.name + (m.user ? ' · своя' : '')])],
-    ...(M.model
+    ...(g.legs
       ? [
           [
-            'Графика',
-            'cfg.gfx',
-            's',
-            [
-              ['', `модель производителя: ${M.brand} ${M.art}`],
-              ['factory', 'заводская графика']
-            ]
-          ],
-          [
-            'Опоры до плиты',
+            'Ножки инсталляции',
             esc(
-              `${fmt(g.legLen)} мм (регулировка 0–${M.legs})` +
-                (g.legLen < 0 || g.legLen > M.legs ? ' — ⚠ вне регулировки: измените высоту чаши или пирог пола' : '')
+              `нужно ${fmt(g.legLen)} мм, ход ${g.travel[0]}–${g.travel[1]} мм; стоят на верху ${g.baseKind}` +
+                (g.legLen < g.travel[0] || g.legLen > g.travel[1]
+                  ? ' — ⚠ вне хода: измените высоту чаши или пирог пола'
+                  : '')
             ),
             'r'
           ]
@@ -62829,13 +62864,25 @@ function floorZoneAt(p) {
     }
   return best;
 }
+/**
+ * The floor build-up at a point: { zone, ffl (finished floor), slabTop, above (layers over the screed), scr (screed thickness),
+ * base } where base is the top of the screed when the build-up has one (the finished floor minus the layers over it, follows
+ * the slope), otherwise the top of the slab: what the feet of equipment stand on.
+ */
 function floorAt(p) {
   const top = lvCur().top;
   const z = p ? floorZoneAt(p) : null;
-  if (!z) return { zone: null, ffl: 0, slabTop: top, scr: -top, above: 0 };
+  if (!z) return { zone: null, ffl: 0, slabTop: top, scr: -top, above: 0, base: top };
   const St = zoneStack(z);
   const ffl = St.surf.f(p.x, p.y);
-  return { zone: z, ffl, slabTop: top, above: St.above, scr: St.si >= 0 ? ffl - St.above - top - St.below : 0 };
+  return {
+    zone: z,
+    ffl,
+    slabTop: top,
+    above: St.above,
+    scr: St.si >= 0 ? ffl - St.above - top - St.below : 0,
+    base: St.si >= 0 ? ffl - St.above : top
+  };
 }
 function scrMinAll() {
   let m = null;
@@ -131901,7 +131948,7 @@ function openConverter(openId) {
  * tools/models.js from models/src (model.json of each model) — do not edit by hand. The geometry lives in the separate files
  * dist/models/<id>.kmb (blocks/catalog/model-lib.js loads them on first use).
  */
-/** @type {Array<{id:string,section:string,type:string,brand:string,series:string,art:string,name:string,def:boolean,file:string,bbox:number[],tris:number,parts:string[],ports:object[]}>} */
+/** @type {Array<{id:string,section:string,type:string,brand:string,series:string,art:string,name:string,def:boolean,file:string,bbox:number[],tris:number,parts:string[],legs?:object,ports:object[]}>} */
 const LIBMODELS = [
   {
     id: 'tece-9300000',
@@ -131914,8 +131961,29 @@ const LIBMODELS = [
     def: true,
     file: 'tece-9300000.kmb',
     bbox: [-250, -172.6, -65.4, 250, 50, 1120],
-    tris: 21680,
-    parts: ['legs', 'studL', 'studR', 'drainBend', 'drainStub', 'inlet', 'body'],
+    tris: 24655,
+    parts: ['foot', 'leg', 'studL', 'studR', 'drainBend', 'drainStub', 'inlet', 'body'],
+    legs: {
+      travel: [0, 200],
+      sole: 0,
+      frameBot: 62,
+      foot: 'foot',
+      leg: 'leg',
+      footTop: 100,
+      overlap: 38,
+      tubes: [
+        {
+          x: [-248.3, -221.6],
+          y: [-38.4, -1.7],
+          r: 2
+        },
+        {
+          x: [221.6, 248.3],
+          y: [-38.4, -1.7],
+          r: 2
+        }
+      ]
+    },
     ports: [
       {
         id: 'drain90',
@@ -151127,11 +151195,11 @@ checkRule('fix-ports', {
           'Инсталляция «внутри стены» возможна только в каркасной стене — сейчас считается «к стене».',
           e.p
         );
-      if (g.model && (g.legLen < 0 || g.legLen > g.M.legs))
+      if (g.legs && (g.legLen < g.travel[0] || g.legLen > g.travel[1]))
         add_(
           e,
           'warn',
-          `Инсталляция ${g.M.art}: опоры от низа рамы до плиты ${Math.round(g.legLen)} мм — вне регулировки 0–${g.M.legs} мм (высота чаши ${Math.round(g.rim)} мм, пирог пола).`,
+          `Ножки инсталляции ${g.M.art}: нужно ${Math.round(g.legLen)} мм, ход ${g.travel[0]}–${g.travel[1]} мм (стоят на верху ${g.baseKind}; высота чаши ${Math.round(g.rim)} мм, пирог пола).`,
           e.p
         );
       if (g.mode === 'in' && g.cavity < g.M.D)
