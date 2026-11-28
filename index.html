@@ -1419,14 +1419,7 @@ details.ps dl {
   background: var(--panel2);
   color: var(--fg);
 }
-.catbody {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 320px;
-  min-height: 0;
-}
 #catlist {
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -1480,7 +1473,7 @@ details.ps dl {
   cursor: pointer;
 }
 .card:hover {
-  border-color: #4a525c;
+  border-color: var(--muted);
 }
 .card.on {
   border-color: var(--accent);
@@ -1492,7 +1485,8 @@ details.ps dl {
   max-width: 100%;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 40%, #2a3038, #1a1d22);
+  background: var(--scene);
+  color: var(--muted);
 }
 .card .th img {
   width: 100%;
@@ -1535,8 +1529,6 @@ details.ps dl {
   background: var(--c);
 }
 #catdet {
-  border-left: 1px solid var(--line);
-  overflow-y: auto;
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -1546,7 +1538,8 @@ details.ps dl {
   aspect-ratio: 4/3;
   max-width: 100%;
   border-radius: 6px;
-  background: radial-gradient(circle at 50% 40%, #2a3038, #1a1d22);
+  background: var(--scene);
+  color: var(--muted);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1596,47 +1589,6 @@ details.ps dl {
   font-family: var(--f-mono);
   font-size: 12px;
   color: var(--muted);
-}
-.imp {
-  width: min(520px, 100%);
-  height: auto;
-}
-.impb {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.impb label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.impb input,
-.impb select {
-  background: var(--canvas);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 6px 8px;
-}
-.impb .radio {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  color: var(--fg);
-  font-size: 13px;
-}
-.impb .two {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.impb .note {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
 }
 .busybox {
   background: var(--panel);
@@ -2269,25 +2221,6 @@ details.cfg .props {
     border-bottom: 1px solid var(--line);
   }
 }
-@media (max-width: 900px) {
-  .catbody {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  #catlist {
-    flex-direction: row;
-    overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  #catlist button {
-    white-space: nowrap;
-  }
-  #catdet {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    max-height: 45vh;
-  }
-}
 @media (max-width: 760px) {
   #sideGrip,
   #sideTog {
@@ -2751,14 +2684,7 @@ label.ck {
   gap: 6px;
   color: var(--fg);
 }
-.vwbody {
-  display: grid;
-  grid-template-columns: 240px 300px minmax(0, 1fr);
-  min-height: 0;
-}
 #vwList {
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -2787,9 +2713,7 @@ label.ck {
   color: var(--fg);
 }
 #vwForm {
-  overflow-y: auto;
   padding: 14px;
-  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2811,12 +2735,6 @@ label.ck {
   inset: 0;
   width: 100%;
   height: 100%;
-}
-@media (max-width: 900px) {
-  .vwbody {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto 50vh;
-  }
 }
 
 #pipemenu {
@@ -3467,44 +3385,6 @@ label.ck {
 }
 #cmdBar[hidden] {
   display: none;
-}
-
-/* «Контур Конвертор» inside Kontur: a full-window frame with its own bar */
-#kcvHost {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  display: flex;
-  flex-direction: column;
-  background: #14171c;
-}
-#kcvHost[hidden] {
-  display: none;
-}
-#kcvHost .kcvBar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  background: #1d2128;
-  color: #e8ebef;
-  border-bottom: 1px solid #2c323b;
-  font-size: 13px;
-}
-#kcvHost .kcvBar span {
-  opacity: 0.6;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#kcvHost iframe {
-  flex: 1;
-  border: 0;
-  width: 100%;
-  min-height: 0;
-  background: #14171c;
 }
 
 /* the panel tab: sections, checks, tables, 3D */
@@ -6726,11 +6606,9 @@ html[data-form='phone'] #spec table.sp {
   min-width: 0 !important;
 }
 html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'],
-html[data-form='phone'] .catbody,
 html[data-form='phone'] .wtbody,
 html[data-form='phone'] .prbody,
 html[data-form='phone'] .odbody,
-html[data-form='phone'] .vwbody,
 html[data-form='phone'] .solbody {
   display: flex !important;
   flex-direction: column !important;
@@ -6740,11 +6618,9 @@ html[data-form='phone'] .solbody {
   overflow-x: hidden !important;
 }
 html[data-form='phone'] .modal .dlg > div[style*='grid-template-columns'] > *,
-html[data-form='phone'] .catbody > *,
 html[data-form='phone'] .wtbody > *,
 html[data-form='phone'] .prbody > *,
 html[data-form='phone'] .odbody > *,
-html[data-form='phone'] .vwbody > *,
 html[data-form='phone'] .solbody > * {
   flex: none;
   width: auto !important;
@@ -6771,7 +6647,6 @@ html[data-form='phone']
   > div:last-child {
   max-height: 30vh;
 }
-html[data-form='phone'] .vwbody > :last-child,
 html[data-form='phone'] .solbody > :nth-child(2) {
   min-height: 50vh;
 }
@@ -7090,6 +6965,7 @@ html .modal.win > .win-panes {
 .win-cols {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -7271,7 +7147,7 @@ html[data-form='tablet'] .modal.win > .win-dlg {
     grid-template-columns: minmax(0, 1fr);
   }
   .win-cols {
-    grid-template-columns: minmax(0, 1fr);
+    display: block;
     overflow: auto;
   }
   .win-cols > .win-left,
@@ -7320,6 +7196,346 @@ html[data-form='tablet'] .modal.win > .win-dlg {
   height: 30px;
   padding: 0;
   flex: none;
+}
+
+/* ===== Windows of the group «Каталог и виды» on the common frame (uikit/window.js): catalogue (#catalog), import (#impdlg),
+   project views (#viewdlg), own product models (#skdlg), sanitary models (#sandlg), the frame of the converter (#kcvHost).
+   Colours — only theme variables; dark 3D / preview backgrounds — --scene. Loaded after zz-window.css. ===== */
+
+/* ---- 01 catalogue: categories | search + cards | details ---- */
+.catwin .win-left,
+.vwwin .win-left,
+.skwin .win-left,
+.sanwin .win-left {
+  min-width: 0;
+}
+.catwin .win-cols > .win-main {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.cat-q {
+  padding: 10px 14px 0;
+  flex: none;
+}
+.cat-q input {
+  width: 100%;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 9px;
+}
+.catwin #catgrid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.catwin .card .th .cat-ph {
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .catwin .win-cols > .win-main {
+    display: block;
+    overflow: visible;
+  }
+  .catwin #catgrid {
+    overflow: visible;
+  }
+  .catwin .win-cols > .win-left {
+    max-height: none;
+  }
+  .catwin #catlist {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .catwin #catlist button {
+    white-space: nowrap;
+  }
+}
+
+/* ---- 02 import ---- */
+#impdlg .win-form .two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+#impdlg .win-form .note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+#impdlg .win-form label.chk {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--fg);
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  #impdlg .win-form .two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- 10 project views: list | preview | form ---- */
+.vwwin .win-cols > .win-main {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+}
+.vwwin #vwPrev {
+  flex: 1 1 auto;
+}
+.vwwin .win-cols > .win-right {
+  width: 340px;
+}
+.vwwin #vwForm .form {
+  min-width: 0;
+}
+.vwwin #vwForm .form > label {
+  min-width: 0;
+}
+.vwwin #vwForm select,
+.vwwin #vwForm input:not([type='checkbox']):not([type='range']) {
+  width: 100%;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .vwwin .win-cols > .win-main {
+    overflow: visible;
+  }
+  .vwwin #vwPrev {
+    min-height: 50vh;
+  }
+  .vwwin .win-cols > .win-right {
+    width: auto;
+  }
+}
+
+/* ---- 24 own product models ---- */
+.skwin .win-cols > .win-left {
+  width: 300px;
+}
+.skwin .skl {
+  padding: 8px;
+}
+.skwin .skl input {
+  width: 100%;
+  margin-bottom: 6px;
+}
+.skwin .skg {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 10px 6px 4px;
+}
+.skwin .ski {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.skwin .ski:hover {
+  background: var(--panel2);
+}
+.skwin .ski.on {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.skwin .ski i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.skwin .skr {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px;
+}
+.skwin .skr h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.skwin .skh {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.skwin .skname {
+  color: var(--fg);
+}
+.skwin .skf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 14px;
+  align-items: end;
+}
+.skwin .skf label,
+.skwin .skfld {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+.skwin .skf label.ck {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.skwin .skm {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.skwin .skm img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  background: var(--scene);
+  border-radius: 8px;
+}
+.skwin .ska {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.skwin .ok {
+  color: var(--ok);
+}
+.skwin .warn {
+  color: var(--warn);
+}
+.skwin select.big {
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .skwin .win-cols > .win-left {
+    width: auto;
+  }
+}
+
+/* ---- 33 sanitary models: list | form with a side drawing ---- */
+.sanwin .sl-list {
+  padding: 8px;
+}
+.sanwin .sl-h {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 10px 0 4px;
+}
+.sanwin .sl-it {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.sanwin .sl-it span {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.sanwin .sl-it i {
+  float: right;
+  font-style: normal;
+  font-size: 10px;
+  background: var(--accent);
+  color: var(--win-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.sanwin .sl-it:hover {
+  background: var(--panel2);
+}
+.sanwin .sl-it.on {
+  border-color: var(--accent);
+}
+.sanwin .sl-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+.sanwin .sl-top h4 {
+  margin: 0 0 4px;
+}
+.sanwin .sl-svg {
+  background: var(--panel2);
+  border-radius: 6px;
+}
+.sanwin .sl-form {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.sanwin .sl-form textarea {
+  width: 100%;
+  background: var(--canvas);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.sanwin .sl-json {
+  font-family: var(--f-mono, monospace);
+  font-size: 11px;
+}
+.sanwin .sl-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sanwin .sl-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+@media (max-width: 760px) {
+  .sanwin .sl-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- 34 converter: the outer frame is a full-screen window, the iframe keeps its own palette ---- */
+#kcvHost.modal.win {
+  padding: 0;
+}
+#kcvHost.modal.win > .win-dlg {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+#kcvHost .win-body {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  background: var(--scene);
+}
+#kcvHost iframe {
+  flex: 1 1 auto;
+  border: 0;
+  width: 100%;
+  min-height: 0;
+  background: var(--scene);
 }
 
 /* ===== Window frame (docs/UI-LAYOUT.md): burger, two header rows, tool column, panel over the field, right panel,
@@ -9127,30 +9343,6 @@ html #app #hideBadge:hover {
   <button data-f="new">Новый чертёж</button>
 </div>
 
-<div id="catalog" class="modal" hidden>
-  <div class="dlg" role="dialog" aria-label="Каталог">
-    <div class="dlgh">
-      <h3>Каталог</h3>
-      <input type="search" id="catq" placeholder="Поиск: название, артикул, тег">
-      <button class="btn" id="catImport">Импорт в каталог…</button>
-      <button class="btn" id="catConv" title="Конвертор моделей: OBJ, FBX, GLB, STL, 3DS и моделирование — общая библиотека с каталогом">Конвертор…</button>
-      <button class="x" id="catClose" aria-label="Закрыть">×</button>
-    </div>
-    <div class="catbody">
-      <div id="catlist"></div>
-      <div id="catgrid"></div>
-      <div id="catdet"></div>
-    </div>
-  </div>
-</div>
-
-<div id="impdlg" class="modal" hidden>
-  <div class="dlg imp" role="dialog" aria-label="Импорт модели">
-    <div class="dlgh"><h3 id="impTitle">Импорт</h3><button class="x" id="impClose" aria-label="Закрыть">×</button></div>
-    <div class="impb" id="impBody"></div>
-  </div>
-</div>
-
 <div id="wtdlg" class="modal" hidden>
   <div class="dlg" role="dialog" aria-label="Типы стен">
     <div class="dlgh"><h3>Типы стен</h3><button class="btn" id="wtNewK">+ Система Кнауф</button><button class="btn" id="wtNewL">+ Стена из слоёв</button><button class="btn pri" id="wtNewC">+ Конструктор стены / облицовки</button><button class="x" id="wtClose" aria-label="Закрыть">×</button></div>
@@ -9175,12 +9367,6 @@ html #app #hideBadge:hover {
 <div id="pipemenu" class="pop" hidden role="dialog" aria-label="Выбор трубопровода"></div>
 <div id="arraymenu" class="pop" hidden role="dialog" aria-label="Массив"></div>
 <div id="flymenu" class="pop menu" hidden></div>
-<div id="viewdlg" class="modal" hidden>
-  <div class="dlg" role="dialog" aria-label="Проектные виды">
-    <div class="dlgh"><h3>Проектные виды</h3><span id="vwTitle" class="hint"></span><button class="x" id="vwClose" aria-label="Закрыть">×</button></div>
-    <div class="vwbody"><div id="vwList"></div><div id="vwForm"></div><div id="vwPrev"><canvas id="vwCv"></canvas><div id="vw3" class="pie3" hidden></div></div></div>
-  </div>
-</div>
 <div id="objdlg" class="modal" hidden>
   <div class="dlg od" role="dialog" aria-label="Параметры объекта">
     <div class="dlgh"><h3 id="odTitle">Параметры объекта</h3><div class="seg" id="odViews"></div><button class="x" id="odClose" aria-label="Закрыть">×</button></div>
@@ -9239,7 +9425,7 @@ html #app #hideBadge:hover {
  * Environment: DOM handles of the main canvas and command input, colour constants, math constants.
  */
 /** Version of the program (shown in «Справка → О программе» and on the logo). */
-const APP_VER = '59.88';
+const APP_VER = '59.89';
 /** Input scale: pick and snap radii in px are multiplied by k (touch screens — larger). */
 const INPUT = { k: 1 };
 const TAU = Math.PI * 2,
@@ -26321,6 +26507,7 @@ async function ensureThumbs(list) {
   if (n) renderCatalog();
 }
 function openCatalog(selectId) {
+  catWindow();
   $('#catalog').hidden = false;
   if (selectId) {
     catSel = selectId;
@@ -26334,7 +26521,7 @@ function openCatalog(selectId) {
 const thumbHtml = a =>
   safeThumb(a.thumb)
     ? `<img src="${esc(safeThumb(a.thumb))}" alt="">`
-    : `<svg viewBox="0 0 40 30" width="60" fill="none" stroke="#5d656f" stroke-width="1"><path d="M8 20l12-7 12 7-12 7z"/><path d="M8 20v-8l12-7 12 7v8M20 13v14"/></svg>`;
+    : `<svg class="cat-ph" viewBox="0 0 40 30" width="60" fill="none" stroke="currentColor" stroke-width="1"><path d="M8 20l12-7 12 7-12 7z"/><path d="M8 20v-8l12-7 12 7v8M20 13v14"/></svg>`;
 function priceOf(a) {
   const v = a.props && (a.props['Цена'] ?? a.props['цена']);
   const n = typeof v === 'number' ? v : parseFloat(String(v || '').replace(/[^\d.]/g, ''));
@@ -26349,7 +26536,7 @@ function renderCatalog() {
     .filter(c => cats.has(c))
     .concat([...cats.keys()].filter(c => !CATS.some(x => x[0] === c)));
   $('#catlist').innerHTML =
-    `<button class="${catFilter === 'Все' ? 'on' : ''}" data-c="Все"><span class="dot" style="--c:#d9dde3"></span>Все<span class="cnt">${items.length}</span></button>` +
+    `<button class="${catFilter === 'Все' ? 'on' : ''}" data-c="Все"><span class="dot" style="--c:var(--muted)"></span>Все<span class="cnt">${items.length}</span></button>` +
     order
       .map(
         c =>
@@ -26480,8 +26667,43 @@ function insertAsset(id) {
   cin.focus({ preventScroll: true });
 }
 
-/** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
-function initCatalog() {
+/** Builds the catalogue window on the first call (hidden): header buttons, search, categories, grid and the details pane, and wires its events. Not at start: the frame code is loaded after the start-up code. */
+function catWindow() {
+  if ($('#catalog')) return;
+  const w = openWindow({
+    id: 'catalog',
+    title: 'Каталог',
+    size: 'xl',
+    cls: 'catwin',
+    closeId: 'catClose',
+    actions: [
+      {
+        n: 'Импорт в каталог…',
+        id: 'catImport',
+        a: () => pickFile('.ifc,.glb,.gltf,.obj', 'catalog')
+      },
+      {
+        n: 'Конвертор…',
+        id: 'catConv',
+        title: 'Конвертор моделей: OBJ, FBX, GLB, STL, 3DS и моделирование — общая библиотека с каталогом',
+        a: wn => {
+          wn.close();
+          openConverter();
+        }
+      },
+      { n: 'Библиотека ▾', id: 'catLib', title: 'Загрузить или выгрузить всю библиотеку' }
+    ],
+    left: '<div id="catlist"></div>',
+    body: '<div class="cat-q"><input type="search" id="catq" placeholder="Поиск: название, артикул, тег" aria-label="Поиск по каталогу"></div><div id="catgrid"></div>',
+    right: '<div id="catdet"></div>'
+  });
+  // built at start: the window stays hidden and does not take the focus
+  w.closed = true;
+  w.el.hidden = true;
+  wireCatalog();
+}
+/** Wires the events of the catalogue window (the list, the cards, the search). */
+function wireCatalog() {
   $('#catlist').addEventListener('click', e => {
     const b = e.target.closest('button');
     if (b) {
@@ -26502,20 +26724,6 @@ function initCatalog() {
     if (c) insertAsset(c.dataset.id);
   });
   $('#catq').addEventListener('input', renderCatalog);
-  $('#catClose').onclick = () => {
-    $('#catalog').hidden = true;
-    cin.focus({ preventScroll: true });
-  };
-  $('#catalog').addEventListener('pointerdown', e => {
-    if (e.target.id === 'catalog') {
-      $('#catalog').hidden = true;
-    }
-  });
-  $('#catImport').onclick = () => pickFile('.ifc,.glb,.gltf,.obj', 'catalog');
-  $('#catConv').onclick = () => {
-    $('#catalog').hidden = true;
-    openConverter();
-  };
 }
 
 // ===== blocks/spec/spec.js =====
@@ -29845,6 +30053,22 @@ function busy(t) {
   $('#busy').hidden = !t;
   if (t) $('#busytxt').textContent = t;
 }
+/** Opens (rebuilds) the import window #impdlg: the title, the form body, «Импортировать» (runs `go`) and «Отмена» in the footer; returns the window handle. */
+function openImportWindow(title, body, go) {
+  const w = openWindow({
+    id: 'impdlg',
+    title,
+    size: 's',
+    closeId: 'impClose',
+    body: `<div class="win-form" id="impBody">${body}</div>`,
+    footer: [
+      { n: 'Импортировать', id: 'impGo', pri: true, a: () => go() },
+      { n: 'Отмена', id: 'impCancel', a: x => x.close() }
+    ]
+  });
+  w.el.querySelector('.win-head h3').id = 'impTitle';
+  return w;
+}
 function openImport(f) {
   pendingFile = f;
   const ext = f.name.split('.').pop().toLowerCase();
@@ -29878,8 +30102,9 @@ function openImport(f) {
   const base = f.name.replace(/\.[^.]+$/, '');
   const isIfc = ext === 'ifc';
   const toCat = impTarget === 'catalog';
-  $('#impTitle').textContent = 'Импорт · ' + f.name;
-  $('#impBody').innerHTML = `
+  openImportWindow(
+    'Импорт · ' + f.name,
+    `
     <div>
     <label class="radio"><input type="radio" name="imode" value="project" ${!toCat ? 'checked' : ''}> ${isIfc ? 'В проект, по элементам (стены, двери, мебель…)' : 'В проект, одним объектом'}</label>
     <label class="radio"><input type="radio" name="imode" value="catalog" ${toCat ? 'checked' : ''}> В каталог, одним объектом</label>
@@ -29889,13 +30114,9 @@ function openImport(f) {
     ${isIfc ? '<div></div>' : `<label>Единицы файла<select id="impUnit"><option value="1000" ${ext !== 'obj' ? 'selected' : ''}>метры</option><option value="10">сантиметры</option><option value="1" ${ext === 'obj' ? 'selected' : ''}>миллиметры</option></select></label>`}</div>
     ${isIfc ? `<label class="chk"><input type="checkbox" id="impLv" checked> Этажи IFC → уровни проекта (по отметкам)</label><label class="chk"><input type="checkbox" id="impNat" checked> Стены, двери и окна — элементами Контура (редактируются, считаются в спецификациях)</label>` : ''}
     ${isIfc ? '' : `<label>Вертикальная ось<select id="impUp"><option value="y" selected>Y (glTF, большинство программ)</option><option value="z">Z (Revit, 3ds Max, SketchUp)</option></select></label>`}
-    <div class="note">${isIfc ? 'Прямые стены становятся стенами Контура с типом нужной толщины, двери и окна встают в них проёмами. Остальное (перекрытия, лестницы, мебель, инженерия) — объектами по категориям IFC с параметрами (Pset) и типом. Стены сложной формы остаются объектами.' : 'Текстуры не переносятся, цвета материалов сохраняются. Из Revit удобнее выгружать IFC; GLB подходит для мебели и декора из других программ.'}</div>
-    <div class="btnrow"><button class="btn pri" id="impGo">Импортировать</button><button class="btn" id="impCancel">Отмена</button></div>`;
-  $('#impdlg').hidden = false;
-  $('#impGo').onclick = runImport;
-  $('#impCancel').onclick = () => {
-    $('#impdlg').hidden = true;
-  };
+    <div class="note">${isIfc ? 'Прямые стены становятся стенами Контура с типом нужной толщины, двери и окна встают в них проёмами. Остальное (перекрытия, лестницы, мебель, инженерия) — объектами по категориям IFC с параметрами (Pset) и типом. Стены сложной формы остаются объектами.' : 'Текстуры не переносятся, цвета материалов сохраняются. Из Revit удобнее выгружать IFC; GLB подходит для мебели и декора из других программ.'}</div>`,
+    runImport
+  );
 }
 function readFile(f, asText) {
   return new Promise((res, rej) => {
@@ -30098,9 +30319,6 @@ function initImport() {
     const f = e.target.files && e.target.files[0];
     if (f) openImport(f);
   });
-  $('#impClose').onclick = () => {
-    $('#impdlg').hidden = true;
-  };
 }
 
 // ===== blocks/io/files.js =====
@@ -36907,7 +37125,6 @@ XT.fix = {
 
 
 
-
 /* sanitary model library: GROHE / TECE installations, Roca WC pans
    Frame follows the pan: drain/flush axes and studs come from the pan
    model and the chosen rim height; inlet side and bend direction come
@@ -38378,7 +38595,7 @@ function sanSideSVG(m) {
   const axis = (z, lab, col, y1) => {
     const [a, b] = T(0, z),
       [c] = T(y1, z);
-    return `<line x1="${a}" y1="${b}" x2="${c}" y2="${b}" stroke="${col}" stroke-dasharray="4 3"/><text x="${a + 4}" y="${b - 3}" fill="${col}" font-size="10" paint-order="stroke" stroke="#20252c" stroke-width="3">${lab}</text>`;
+    return `<line x1="${a}" y1="${b}" x2="${c}" y2="${b}" style="stroke:${col}" stroke-dasharray="4 3"/><text x="${a + 4}" y="${b - 3}" style="fill:${col};stroke:var(--panel2)" font-size="10" paint-order="stroke" stroke-width="3">${lab}</text>`;
   };
   if (m.cat === 'inst') {
     sc = (H - 2 * pad) / Math.max(m.H, 1200);
@@ -38387,62 +38604,62 @@ function sanSideSVG(m) {
     const pan = sanM(SANDEF.wcw, 'wcw');
     const rim = 400;
     body +=
-      rect(10, 0, yF, m.H, 'fill="none" stroke="#7d8fb3"') +
-      rect(yF - m.cist.d - 5, m.cist.bot, yF - 5, m.cist.top, 'fill="#e9edf2" stroke="#9aa"') +
-      rect(y0, m.plate.z - m.plate.h / 2, y0 + 8, m.plate.z + m.plate.h / 2, 'fill="#c7ccd2"');
-    body += rect(y0, rim - pan.bodyH, y0 + pan.L, rim, 'fill="none" stroke="#ccc" stroke-dasharray="2 2"');
+      rect(10, 0, yF, m.H, 'style="fill:none;stroke:var(--muted)"') +
+      rect(yF - m.cist.d - 5, m.cist.bot, yF - 5, m.cist.top, 'style="fill:var(--panel);stroke:var(--muted)"') +
+      rect(y0, m.plate.z - m.plate.h / 2, y0 + 8, m.plate.z + m.plate.h / 2, 'style="fill:var(--line)"');
+    body += rect(y0, rim - pan.bodyH, y0 + pan.L, rim, 'style="fill:none;stroke:var(--fg)" stroke-dasharray="2 2"');
     body +=
-      axis(m.drainZ, 'выпуск +' + m.drainZ, '#a08060', y0 + pan.L) +
-      axis(m.flushZ, 'смыв +' + m.flushZ, '#6aa0d8', y0 + pan.L) +
-      axis(m.plate.z, 'клавиша +' + m.plate.z, '#c7ccd2', y0 + 40) +
+      axis(m.drainZ, 'выпуск +' + m.drainZ, 'var(--warn)', y0 + pan.L) +
+      axis(m.flushZ, 'смыв +' + m.flushZ, 'var(--accent)', y0 + pan.L) +
+      axis(m.plate.z, 'клавиша +' + m.plate.z, 'var(--muted)', y0 + 40) +
       axis(m.inlet.z, 'вода +' + m.inlet.z, PSYS.hvs.col, yF + 60);
   } else if (m.cat === 'wcw') {
     sc = (H - 2 * pad) / 520;
     const rim = 400;
     body +=
-      rect(0, 0, 6, 520, 'fill="#888"') +
-      rect(30, rim - m.bodyH, 30 + m.L, rim, 'fill="#f3f4f6" stroke="#aaa" rx="40"') +
-      axis(rim + m.outDz, 'выпуск +' + (rim + m.outDz), '#a08060', 30 + m.L) +
-      axis(rim + m.flushDz, 'смыв +' + (rim + m.flushDz), '#6aa0d8', 30 + m.L) +
-      axis(rim + m.boltDz, 'шпильки +' + (rim + m.boltDz), '#999', 30 + m.L);
+      rect(0, 0, 6, 520, 'style="fill:var(--muted)"') +
+      rect(30, rim - m.bodyH, 30 + m.L, rim, 'style="fill:var(--panel);stroke:var(--muted)" rx="40"') +
+      axis(rim + m.outDz, 'выпуск +' + (rim + m.outDz), 'var(--warn)', 30 + m.L) +
+      axis(rim + m.flushDz, 'смыв +' + (rim + m.flushDz), 'var(--accent)', 30 + m.L) +
+      axis(rim + m.boltDz, 'шпильки +' + (rim + m.boltDz), 'var(--muted)', 30 + m.L);
   } else if (m.cat === 'mix') {
     const zs = m.sizes || [];
     const mxH = Math.max(400, ...zs.map(z => z.H || 0));
     sc = (H - 2 * pad) / (mxH + 60);
-    body += rect(0, 0, 300 / sc, 8, 'fill="#666"');
+    body += rect(0, 0, 300 / sc, 8, 'style="fill:var(--muted)"');
     zs.forEach((z, i) => {
       const x = 20 + i * 70;
       body += z.H
-        ? rect(x, 0, x + 16, z.H, 'fill="#c7ccd2"') +
-          rect(x, z.spH, x + 16 + z.reach * 0.4, z.spH + 10, 'fill="#c7ccd2"') +
-          `<text x="${pad + x * sc}" y="${H - 6}" fill="#aaa" font-size="10">${z.k} ${z.spH}</text>`
-        : `<text x="${pad + x * sc}" y="${H / 2}" fill="#aaa" font-size="11">настенный, вылет ${z.reach}</text>`;
+        ? rect(x, 0, x + 16, z.H, 'style="fill:var(--line)"') +
+          rect(x, z.spH, x + 16 + z.reach * 0.4, z.spH + 10, 'style="fill:var(--line)"') +
+          `<text x="${pad + x * sc}" y="${H - 6}" style="fill:var(--muted)" font-size="10">${z.k} ${z.spH}</text>`
+        : `<text x="${pad + x * sc}" y="${H / 2}" style="fill:var(--muted)" font-size="11">настенный, вылет ${z.reach}</text>`;
     });
   } else if (m.cat === 'shs' || m.cat === 'hyg') {
     const vs = m.variants || [];
     body +=
-      `<text x="10" y="20" fill="#ccc" font-size="11">${m.cat === 'shs' ? (m.mount === 'concealed' ? 'Встраиваемые наборы' : 'Накладная система') : 'Наборы'}: ${vs.length}</text>` +
+      `<text x="10" y="20" style="fill:var(--fg)" font-size="11">${m.cat === 'shs' ? (m.mount === 'concealed' ? 'Встраиваемые наборы' : 'Накладная система') : 'Наборы'}: ${vs.length}</text>` +
       vs
         .slice(0, 9)
         .map(
           (v, i) =>
-            `<text x="10" y="${42 + i * 20}" fill="#9aa" font-size="10">${esc(v.k)} · ${esc(String(v.n).slice(0, 34))}</text>`
+            `<text x="10" y="${42 + i * 20}" style="fill:var(--muted)" font-size="10">${esc(v.k)} · ${esc(String(v.n).slice(0, 34))}</text>`
         )
         .join('');
   } else {
     sc = (H - 2 * pad) / Math.max(m.H, 800);
     body +=
-      rect(0, 0, 6, m.H, 'fill="#888"') +
-      rect(10, 0, 10 + m.L, m.rim, 'fill="#f3f4f6" stroke="#aaa" rx="30"') +
-      rect(10, m.rim, 10 + m.tank.d, m.H, 'fill="#f3f4f6" stroke="#aaa" rx="10"') +
-      (m.outlet !== 'v' ? axis(m.hOutZ, 'гориз. выпуск +' + m.hOutZ, '#a08060', 10 + m.L) : '');
+      rect(0, 0, 6, m.H, 'style="fill:var(--muted)"') +
+      rect(10, 0, 10 + m.L, m.rim, 'style="fill:var(--panel);stroke:var(--muted)" rx="30"') +
+      rect(10, m.rim, 10 + m.tank.d, m.H, 'style="fill:var(--panel);stroke:var(--muted)" rx="10"') +
+      (m.outlet !== 'v' ? axis(m.hOutZ, 'гориз. выпуск +' + m.hOutZ, 'var(--warn)', 10 + m.L) : '');
     if (m.outlet !== 'h') {
       const [a, b] = T(10 + m.vOutY, 0);
-      body += `<line x1="${a}" y1="${b}" x2="${a}" y2="${b - 40}" stroke="#a08060" stroke-dasharray="4 3"/><text x="${a + 3}" y="${b - 30}" fill="#a08060" font-size="10">в пол ${m.vOutY}</text>`;
+      body += `<line x1="${a}" y1="${b}" x2="${a}" y2="${b - 40}" style="stroke:var(--warn)" stroke-dasharray="4 3"/><text x="${a + 3}" y="${b - 30}" style="fill:var(--warn)" font-size="10">в пол ${m.vOutY}</text>`;
     }
     body += axis(m.inZ, 'кран +' + m.inZ, PSYS.hvs.col, 140);
   }
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2,#20252c);border-radius:6px">${body}</svg>`;
+  return `<svg class="sl-svg" viewBox="0 0 ${W} ${H}" width="100%">${body}</svg>`;
 }
 function openSanLib(cat) {
   cat = SAN_CATS[cat] ? cat : (SANSEL && SANSEL.cat) || 'inst';
@@ -38496,17 +38713,35 @@ function openSanLib(cat) {
         )
         .join('')}</span></label>`;
     if (k === 'lines')
-      return `<label class="wide">${l}<textarea data-sf="${p}" data-sk="lines" rows="4" ${dis}>${esc(v)}</textarea></label>`;
+      return `<label class="span2">${l}<textarea data-sf="${p}" data-sk="lines" rows="4" ${dis}>${esc(v)}</textarea></label>`;
     if (k === 'json')
-      return `<label class="wide">${l}<textarea data-sf="${p}" data-sk="json" rows="6" style="font-family:monospace;font-size:11px" ${dis}>${esc(JSON.stringify(v, null, 1))}</textarea></label>`;
+      return `<label class="span2">${l}<textarea data-sf="${p}" data-sk="json" rows="6" class="sl-json" ${dis}>${esc(JSON.stringify(v, null, 1))}</textarea></label>`;
     return `<label>${l}<input ${k === 'n' ? 'type="number" step="any"' : 'type="text"'} data-sf="${p}" data-sk="${k}" value="${esc(v ?? '')}" ${dis}></label>`;
   };
-  const html = `<div class="sanlib"><div class="sl-list">${list}</div><div class="sl-main">
+  const mainHtml = `<div class="sl-main">
     <div class="sl-top"><div><h4>${esc(m.name)}</h4><small>${ro ? 'Модель из встроенной библиотеки — чтобы изменить, создайте копию.' : 'Своя модель: хранится в проекте и в этом браузере.'}</small></div>${sanSideSVG(m)}</div>
-    <div class="sl-btns"><button class="btn" data-sla="dup">${ro ? 'Создать копию для правки' : 'Дублировать'}</button>${ro ? '' : '<button class="btn" data-sla="del">Удалить</button>'}<button class="btn" data-sla="def">Ставить по умолчанию</button>${canApply ? '<button class="btn pri" data-sla="apply">Применить к выбранному</button>' : ''}<span class="sp"></span><button class="btn" data-sla="exp">Экспорт своих…</button><button class="btn" data-sla="imp">Импорт…</button></div>
-    <div class="form sl-form">${SANF[m.cat].map(fld).join('')}</div><p class="sl-note">${esc(m.cat === 'mix' ? MIX_NOTE : m.cat === 'shs' || m.cat === 'hyg' ? SHS_NOTE : SAN_NOTE)}</p></div></div>`;
-  const d = miniDlg('sandlg', 'Каталог моделей сантехники', html, 1060);
-  const B = d.querySelector('.mbody');
+    <div class="win-form sl-form">${SANF[m.cat].map(fld).join('')}</div><p class="sl-note">${esc(m.cat === 'mix' ? MIX_NOTE : m.cat === 'shs' || m.cat === 'hyg' ? SHS_NOTE : SAN_NOTE)}</p></div>`;
+  // six actions: the first three in the header, the rest in the «⋮» menu (the handlers are bound below by data-sla)
+  const acts = [
+    { n: ro ? 'Создать копию для правки' : 'Дублировать', k: 'dup' },
+    canApply && { n: 'Применить к выбранному', k: 'apply', pri: true },
+    { n: 'Ставить по умолчанию', k: 'def' },
+    !ro && { n: 'Удалить', k: 'del' },
+    { n: 'Экспорт своих…', k: 'exp' },
+    { n: 'Импорт…', k: 'imp' }
+  ]
+    .filter(Boolean)
+    .map(x => ({ n: x.n, pri: x.pri, data: { sla: x.k }, a: () => sanAct(x.k) }));
+  const win = openWindow({
+    id: 'sandlg',
+    title: 'Каталог моделей сантехники',
+    size: 'l',
+    cls: 'sanwin',
+    actions: acts,
+    left: `<div class="sl-list">${list}</div>`,
+    body: mainHtml
+  });
+  const B = win.el;
   B.querySelectorAll('[data-sl]').forEach(
     b =>
       (b.onclick = () => {
@@ -38565,83 +38800,80 @@ function openSanLib(cat) {
         upd();
       })
   );
-  B.querySelectorAll('[data-sla]').forEach(
-    b =>
-      (b.onclick = () => {
-        const a = b.dataset.sla;
-        if (a === 'dup') {
-          const c = JSON.parse(JSON.stringify(m));
+  /** Runs one action of the window (copy, delete, default, apply, export, import) for the chosen model. */
+  function sanAct(a) {
+    if (a === 'dup') {
+      const c = JSON.parse(JSON.stringify(m));
+      delete c.user;
+      c.id = 'u-' + m.cat + '-' + Date.now().toString(36);
+      c.name = m.name + ' (копия)';
+      sanStore(c);
+      SANSEL = c;
+      log('Создана своя модель: ' + c.name);
+      openSanLib(c.cat);
+    } else if (a === 'del') {
+      sanDelete(m.id);
+      SANSEL = null;
+      changed();
+      log('Модель удалена');
+      openSanLib(m.cat);
+    } else if (a === 'def') {
+      SANDEF[m.cat] = m.id;
+      log(`По умолчанию для новых объектов: ${m.name}`);
+    } else if (a === 'apply' && canApply) {
+      pushUndo();
+      if (m.cat === 'inst') sel.cfg.inst = m.id;
+      else if (m.cat === 'wcw') sel.cfg.pan = m.id;
+      else if (sel.kind === 'sink') sel.cfg.mixModel = m.id;
+      else {
+        sel.cfg.model = m.id;
+        if ('v' in sel.cfg) sel.cfg.v = '';
+        if ('size' in sel.cfg) sel.cfg.size = '';
+      }
+      changed();
+      updateProps();
+      log(`Применено: ${m.name}`);
+    } else if (a === 'exp') {
+      const u = sanAll()
+        .filter(x => x.user)
+        .map(x => {
+          const c = { ...x };
           delete c.user;
-          c.id = 'u-' + m.cat + '-' + Date.now().toString(36);
-          c.name = m.name + ' (копия)';
-          sanStore(c);
-          SANSEL = c;
-          log('Создана своя модель: ' + c.name);
-          openSanLib(c.cat);
-        } else if (a === 'del') {
-          sanDelete(m.id);
-          SANSEL = null;
-          changed();
-          log('Модель удалена');
-          openSanLib(m.cat);
-        } else if (a === 'def') {
-          SANDEF[m.cat] = m.id;
-          log(`По умолчанию для новых объектов: ${m.name}`);
-        } else if (a === 'apply' && canApply) {
-          pushUndo();
-          if (m.cat === 'inst') sel.cfg.inst = m.id;
-          else if (m.cat === 'wcw') sel.cfg.pan = m.id;
-          else if (sel.kind === 'sink') sel.cfg.mixModel = m.id;
-          else {
-            sel.cfg.model = m.id;
-            if ('v' in sel.cfg) sel.cfg.v = '';
-            if ('size' in sel.cfg) sel.cfg.size = '';
+          return c;
+        });
+      if (!u.length) {
+        log('Своих моделей пока нет — создайте копию встроенной', true);
+        return;
+      }
+      saveFile('kontur-sanlib.json', { kontur: 'sanlib', v: 1, models: u });
+    } else if (a === 'imp') {
+      let f = $('#sanIn');
+      if (!f) {
+        f = document.createElement('input');
+        f.type = 'file';
+        f.id = 'sanIn';
+        f.accept = '.json';
+        f.hidden = true;
+        document.body.appendChild(f);
+        f.onchange = async () => {
+          const fl = f.files[0];
+          f.value = '';
+          if (!fl) return;
+          try {
+            const j = JSON.parse(await fl.text());
+            const ms = (j.models || (Array.isArray(j) ? j : [])).filter(x => x && SAN_CATS[x.cat] && x.id);
+            ms.forEach(x => sanStore(x));
+            changed();
+            log(`Импортировано моделей: ${ms.length}`);
+            openSanLib();
+          } catch (err) {
+            log('Не удалось прочитать файл библиотеки: ' + err.message, true);
           }
-          changed();
-          updateProps();
-          log(`Применено: ${m.name}`);
-        } else if (a === 'exp') {
-          const u = sanAll()
-            .filter(x => x.user)
-            .map(x => {
-              const c = { ...x };
-              delete c.user;
-              return c;
-            });
-          if (!u.length) {
-            log('Своих моделей пока нет — создайте копию встроенной', true);
-            return;
-          }
-          saveFile('kontur-sanlib.json', { kontur: 'sanlib', v: 1, models: u });
-        } else if (a === 'imp') {
-          let f = $('#sanIn');
-          if (!f) {
-            f = document.createElement('input');
-            f.type = 'file';
-            f.id = 'sanIn';
-            f.accept = '.json';
-            f.hidden = true;
-            document.body.appendChild(f);
-            f.onchange = async () => {
-              const fl = f.files[0];
-              f.value = '';
-              if (!fl) return;
-              try {
-                const j = JSON.parse(await fl.text());
-                const ms = (j.models || (Array.isArray(j) ? j : [])).filter(x => x && SAN_CATS[x.cat] && x.id);
-                ms.forEach(x => sanStore(x));
-                changed();
-                log(`Импортировано моделей: ${ms.length}`);
-                openSanLib();
-              } catch (err) {
-                log('Не удалось прочитать файл библиотеки: ' + err.message, true);
-              }
-            };
-          }
-          f.click();
-        }
-      })
-  );
+        };
+      }
+      f.click();
+    }
+  }
 }
 
 /** Wires this module to the page (DOM events, initial UI state). Called once by app/boot.js. */
@@ -38654,11 +38886,6 @@ function initSanitaryLib() {
         openSanLib(b.dataset.sanlib);
       }
     });
-  } catch (e) {}
-  try {
-    const st = document.createElement('style');
-    st.textContent = `.sanlib{display:grid;grid-template-columns:250px 1fr;gap:14px;min-height:480px}.sl-list{overflow:auto;max-height:640px;border-right:1px solid var(--line,#333);padding-right:8px}.sl-h{font-size:11px;text-transform:uppercase;opacity:.85;margin:10px 0 4px}.sl-it{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;color:inherit;padding:6px 8px;border-radius:6px;cursor:pointer;font:inherit}.sl-it span{opacity:.85;font-size:.9em}.sl-it i{float:right;font-style:normal;font-size:10px;background:var(--acc,#e9ab45);color:#111;border-radius:4px;padding:1px 5px}.sl-it:hover{background:rgba(255,255,255,.05)}.sl-it.on{border-color:var(--acc,#e9ab45)}.sl-top{display:grid;grid-template-columns:1fr 280px;gap:12px;align-items:start}.sl-top h4{margin:0 0 4px}.sl-btns{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.sl-btns .sp{flex:1}.sl-form{grid-template-columns:1fr 1fr 1fr!important;max-height:340px;overflow:auto}.sl-form .wide{grid-column:1/-1}.sl-form textarea{width:100%}.sl-sides{display:flex;flex-wrap:wrap;gap:6px}.sl-note{font-size:11px;opacity:.65;margin:8px 0 0}.sl-info div{margin:2px 0}.sl-info ul{margin:6px 0;padding-left:16px}.sl-info li{margin:2px 0}@media(max-width:760px){.sanlib{grid-template-columns:1fr}.sl-top{grid-template-columns:1fr}.sl-form{grid-template-columns:1fr!important}}`;
-    document.head.appendChild(st);
   } catch (e) {}
 }
 
@@ -52182,8 +52409,37 @@ defineTools({
 
 /* ---------- project views: plans, sections, elevations, nodes ---------- */
 const VW = { sel: 'plan', inited: false };
+/** Builds the «Проектные виды» window on the first call (the frame code is loaded after the start-up code, so not at start): the list of views, the preview and the form of the chosen view; wires the list and the preview resize. */
+function viewsWindow() {
+  if ($('#viewdlg')) return;
+  const w = openWindow({
+    id: 'viewdlg',
+    title: 'Проектные виды',
+    sub: '',
+    size: 'xl',
+    cls: 'vwwin',
+    closeId: 'vwClose',
+    left: '<div id="vwList"></div>',
+    body: '<div id="vwPrev"><canvas id="vwCv"></canvas><div id="vw3" class="pie3" hidden></div></div>',
+    right: '<div id="vwForm"></div>'
+  });
+  w.el.querySelector('.win-sub').id = 'vwTitle';
+  w.closed = true;
+  w.el.hidden = true;
+  $('#vwList').onclick = ev => {
+    const b = ev.target.closest('button[data-v]');
+    if (b) {
+      VW.sel = b.dataset.v === 'plan' ? 'plan' : +b.dataset.v;
+      renderViews();
+    }
+  };
+  new ResizeObserver(() => {
+    if (!$('#viewdlg').hidden) vwPreview();
+  }).observe($('#vwPrev'));
+}
 function openViews(id) {
   if (id != null) VW.sel = id;
+  viewsWindow();
   $('#viewdlg').hidden = false;
   renderViews();
 }
@@ -52291,7 +52547,7 @@ function renderViewsDialog() {
     extra =
       num('Низ куба', 'vwZ0', e.z0) +
       num('Верх куба', 'vwZ1b', e.z1) +
-      `<label style="grid-column:1/-1">Составные части объекта<select id="vwEx"><option value="">— не раскладывать —</option>${inside.map(x => `<option value="${x.id}" ${cfg.explode === x.id ? 'selected' : ''}>${esc(groupName(x))}</option>`).join('')}</select></label><label style="grid-column:1/-1">Разнос частей<input type="range" id="vwF" min="0" max="100" value="${Math.round((cfg.f ?? 0.6) * 100)}"></label>`;
+      `<label class="span2">Составные части объекта<select id="vwEx"><option value="">— не раскладывать —</option>${inside.map(x => `<option value="${x.id}" ${cfg.explode === x.id ? 'selected' : ''}>${esc(groupName(x))}</option>`).join('')}</select></label><label class="span2">Разнос частей<input type="range" id="vwF" min="0" max="100" value="${Math.round((cfg.f ?? 0.6) * 100)}"></label>`;
   }
   if (v.type === 'v3sb')
     extra =
@@ -52310,11 +52566,11 @@ function renderViewsDialog() {
         )}</select></label><label class="ck" style="align-self:end"><input type="checkbox" id="vwEdg" ${cfg.edges !== false ? 'checked' : ''}>Показать границы куба</label>`;
   const det =
     v.type !== 'plan' && v.type !== 'node' && v.type !== 'v3sb'
-      ? `<label class="ck" style="grid-column:1/-1"><input type="checkbox" id="vwDet" ${cfg.detail !== false ? 'checked' : ''}>Стены послойно (пирог: листы, профили, утеплитель)</label><label class="ck" style="grid-column:1/-1"><input type="checkbox" id="vwEng" ${cfg.eng !== false ? 'checked' : ''}>Монтажные трассы проводов: гофра, опуски, штробы, подрозетники</label>`
+      ? `<label class="ck span2"><input type="checkbox" id="vwDet" ${cfg.detail !== false ? 'checked' : ''}>Стены послойно (пирог: листы, профили, утеплитель)</label><label class="ck span2"><input type="checkbox" id="vwEng" ${cfg.eng !== false ? 'checked' : ''}>Монтажные трассы проводов: гофра, опуски, штробы, подрозетники</label>`
       : '';
   const fillSel =
     det || v.type === 'v3sb'
-      ? `<label style="grid-column:1/-1">Заливка сечения<select id="vwFill">${[
+      ? `<label class="span2">Заливка сечения<select id="vwFill">${[
           ['', v.type === 'v3sb' ? 'Чёрная (по умолчанию)' : 'По материалам слоёв (по умолчанию)'],
           ['black', 'Чёрная'],
           ['mat', 'По материалам слоёв']
@@ -52323,7 +52579,7 @@ function renderViewsDialog() {
           .join('')}</select></label>`
       : '';
   $('#vwForm').innerHTML =
-    `<div class="form" style="grid-template-columns:1fr 1fr"><label>Название<input id="vwName" value="${esc(e ? (v.type === 'node' ? e.title || '' : e.name || '') : v.st ? v.st.n : 'План этажа')}" ${v.type === 'plan' ? 'disabled' : ''}></label>
+    `<div class="form win-form two"><label>Название<input id="vwName" value="${esc(e ? (v.type === 'node' ? e.title || '' : e.name || '') : v.st ? v.st.n : 'План этажа')}" ${v.type === 'plan' ? 'disabled' : ''}></label>
     <label>Масштаб<select id="vwScale">${SCALES.map(s => `<option value="${s}" ${s === cfg.scale ? 'selected' : ''}>1:${s}</option>`).join('')}</select></label>${extra}<label>Лист<input id="vwSheet" value="${esc(cfg.sheet || '')}"></label>${
       v.type === 'stage'
         ? ''
@@ -109577,136 +109833,6 @@ if (typeof setTimeout !== 'undefined')
     if (l && S.curWt === 'wt_gb' && !S.ents.some(e => e.type === 'wall')) S.curWt = l;
   }, 0);
 
-// ===== blocks/catalog/converter-host.js =====
-/**
- * io/converter-host.js
- *
- * «Контур Конвертор» inside Kontur. The converter page is built into the program (base64 in #kcvSrc) and opens
- * in a full-window frame. Both work on one library:
- * - every element saved or deleted in the converter goes to / leaves the Kontur catalogue at once (postMessage);
- * - when the converter opens, it gets the catalogue's own (not built-in) models it does not have yet, edits made in
- *   the catalogue (name, category, tags, parameters) and the elements deleted in the catalogue since the last time;
- * - «Открыть в конверторе» on a catalogue card opens that element in the converter for editing.
- */
-
-
-
-
-
-const KCV_DEL = 'kontur.cvDeleted';
-let kcvWin = null,
-  kcvReady = false,
-  kcvQueue = [];
-/** Remembers an element deleted from the catalogue (sent to the converter on its next start). */
-function converterForget(id) {
-  try {
-    const a = JSON.parse(localStorage.getItem(KCV_DEL) || '[]');
-    if (!a.includes(id)) a.push(id);
-    localStorage.setItem(KCV_DEL, JSON.stringify(a.slice(-500)));
-  } catch (_) {}
-  kcvPost({ op: 'sync', assets: [], deleted: [id] });
-}
-function kcvPost(m) {
-  if (!kcvWin) return;
-  if (!kcvReady) {
-    kcvQueue.push(m);
-    return;
-  }
-  try {
-    kcvWin.postMessage(Object.assign({ kontur: 1 }, m), '*');
-  } catch (_) {}
-}
-/** The converter page (decoded once). */
-function converterHTML() {
-  const el = typeof document !== 'undefined' && document.getElementById && document.getElementById('kcvSrc');
-  const b64 = el && el.textContent.trim();
-  if (!b64 || b64.startsWith('/*')) return null;
-  const bin = atob(b64);
-  const u = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-  return new TextDecoder().decode(u);
-}
-/** Models of the catalogue shared with the converter (not built-in, with a mesh). */
-function sharedAssets() {
-  return [...ASSETS.values()].filter(a => a.inCatalog && !a.builtin && a.meshes && a.meshes.length);
-}
-function onMessage(e) {
-  const m = e.data || {};
-  if (!m.kontur || !kcvWin || e.source !== kcvWin) return;
-  if (m.op === 'ready') {
-    kcvReady = true;
-    let deleted = [];
-    try {
-      deleted = JSON.parse(localStorage.getItem(KCV_DEL) || '[]');
-      localStorage.removeItem(KCV_DEL);
-    } catch (_) {}
-    kcvPost({ op: 'sync', assets: sharedAssets().map(packAsset), deleted });
-    for (const q of kcvQueue.splice(0)) kcvPost(q);
-    return;
-  }
-  if (m.op === 'assets') {
-    const list = (m.assets || []).map(unpackAsset);
-    let n = 0;
-    for (const a of list) {
-      const old = ASSETS.get(a.id);
-      a.inCatalog = true;
-      a.updated = Date.now();
-      if (old && old.thumb && !a.thumb) a.thumb = old.thumb;
-      ASSETS.set(a.id, a);
-      n++;
-    }
-    idb.putMany('assets', list);
-    if (!document.getElementById('catalog').hidden) openCatalog();
-    if (n === 1) log(`Каталог: «${list[0].name}» — из конвертора (общая библиотека)`);
-    else if (n) log(`Каталог: общая библиотека с конвертором — ${n} элементов`);
-    return;
-  }
-  if (m.op === 'saveLib') {
-    exportLibrary(m.name);
-    return;
-  }
-  if (m.op === 'del') {
-    for (const id of m.ids || []) {
-      const a = ASSETS.get(id);
-      if (!a) continue;
-      a.inCatalog = false;
-      saveAsset(a);
-    }
-    if (!document.getElementById('catalog').hidden) openCatalog();
-    log(`Каталог: удалено в конверторе — ${(m.ids || []).length}`);
-  }
-}
-/** Opens the converter (and the element `openId` in it). */
-function openConverter(openId) {
-  let ov = document.getElementById('kcvHost');
-  if (!ov) {
-    const html = converterHTML();
-    if (!html) return log('Конвертор не встроен в эту сборку', true);
-    ov = document.createElement('div');
-    ov.id = 'kcvHost';
-    ov.innerHTML = `<div class="kcvBar"><b>Контур Конвертор</b><span>модели → элементы каталога · общая библиотека с каталогом Контура</span><button class="btn" id="kcvCat">Каталог Контура</button><button class="btn" id="kcvClose">✕ Закрыть</button></div><iframe id="kcvFrame" title="Контур Конвертор"></iframe>`;
-    document.body.appendChild(ov);
-    const fr = ov.querySelector('iframe');
-    fr.srcdoc = html.replace(
-      /<meta charset="utf-8">/i,
-      '<meta charset="utf-8"><scr' + 'ipt>window.__KONTUR_HOST=1</scr' + 'ipt>'
-    );
-    kcvWin = fr.contentWindow;
-    fr.addEventListener('load', () => (kcvWin = fr.contentWindow));
-    window.addEventListener('message', onMessage);
-    ov.querySelector('#kcvClose').onclick = () => (ov.hidden = true);
-    ov.querySelector('#kcvCat').onclick = () => {
-      ov.hidden = true;
-      openCatalog();
-    };
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && !ov.hidden) ov.hidden = true;
-    });
-  }
-  ov.hidden = false;
-  if (openId) kcvPost({ op: 'open', id: openId });
-}
-
 // ===== blocks/catalog/skins.js =====
 /**
  * core/skins.js
@@ -114205,7 +114331,6 @@ function initVentTerminals() {
 
 
 
-
 const KST = 'kontur.starter';
 /** The catalogue's own elements (not built-in). */
 function libAssets() {
@@ -114320,16 +114445,17 @@ async function loadStarter(force) {
 /** Wires the library menu of the catalogue window. Called once by app/boot.js. */
 function initLibrary() {
   try {
-    const bar = $('#catalog .dlgh');
-    if (!bar || document.getElementById('catLib')) return;
-    const b = document.createElement('button');
-    b.className = 'btn';
-    b.id = 'catLib';
-    b.textContent = 'Библиотека ▾';
-    b.title = 'Загрузить или выгрузить всю библиотеку';
-    const close = bar.querySelector('#catClose');
-    bar.insertBefore(b, close);
-    b.onclick = () => {
+    // «Библиотека ▾» is a header action of the catalogue window (ui/catalog.js), built on its first opening: a delegated click
+    document.addEventListener('click', ev => {
+      const b = ev.target && ev.target.closest && ev.target.closest('#catLib');
+      if (b) libMenu(b);
+    });
+  } catch (_) {}
+}
+/** Opens (or closes) the menu of the library under the button `b`. */
+function libMenu(b) {
+  try {
+    {
       const r = b.getBoundingClientRect();
       let m = document.getElementById('libMenu');
       if (m) {
@@ -114360,7 +114486,7 @@ function initLibrary() {
         () => document.addEventListener('pointerdown', ev => !m.contains(ev.target) && m.remove(), { once: true }),
         0
       );
-    };
+    }
   } catch (_) {}
 }
 
@@ -116470,35 +116596,22 @@ function skinSlotsInit() {
 }
 
 /* ---------- dialog ---------- */
-const SK_CSS = `#skdlg .dlg{width:min(1020px,96vw);height:min(720px,92vh);display:flex;flex-direction:column}
-#skdlg .skw{display:grid;grid-template-columns:330px 1fr;min-height:0;flex:1}
-#skdlg .skl{border-right:1px solid var(--line);overflow:auto;padding:8px}
-#skdlg .skl input{width:100%;margin-bottom:6px}
-#skdlg .skg{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 6px 4px}
-#skdlg .ski{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:6px 8px;border:0;background:none;border-radius:6px;font-size:12.5px;color:var(--fg);cursor:pointer}
-#skdlg .ski:hover{background:var(--panel2)}#skdlg .ski.on{background:var(--accent);color:#fff}
-#skdlg .ski i{font-style:normal;font-size:11px;opacity:.8;white-space:nowrap}
-#skdlg .skr{overflow:auto;padding:14px 18px;display:flex;flex-direction:column;gap:12px}
-#skdlg .skr h4{margin:0;font-size:15px}#skdlg .skh{font-size:12px;color:var(--muted);line-height:1.45}
-#skdlg .skf{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 14px;align-items:end}
-#skdlg .skf label{display:flex;flex-direction:column;gap:3px;font-size:12px}#skdlg .skf label.ck{flex-direction:row;align-items:center;gap:6px}
-#skdlg .skm{display:flex;gap:12px;align-items:center}#skdlg .skm img{width:96px;height:96px;object-fit:contain;background:var(--panel2);border-radius:8px}
-#skdlg .ska{font-size:12px;display:flex;flex-direction:column;gap:3px}#skdlg .ok{color:#2f855a}#skdlg .warn{color:#b7791f}
-#skdlg select.big{width:100%}
-@media(max-width:760px){#skdlg .skw{grid-template-columns:1fr;grid-template-rows:40% 60%}#skdlg .skl{border-right:0;border-bottom:1px solid var(--line)}}`;
 const SKP = { cur: '', q: '' };
+/** Builds the «Свои модели изделий» window once (hidden): the list of parts on the left, the seating of the chosen part in the main pane. */
 function skEnsure() {
   let m = document.getElementById('skdlg');
   if (m) return m;
-  const st = document.createElement('style');
-  st.textContent = SK_CSS;
-  document.head.appendChild(st);
-  m = document.createElement('div');
-  m.id = 'skdlg';
-  m.className = 'modal';
+  const w = openWindow({
+    id: 'skdlg',
+    title: 'Свои модели изделий',
+    size: 'l',
+    cls: 'skwin',
+    left: '<div class="skl" id="sklist"></div>',
+    body: '<div class="skr" id="skbody"></div>'
+  });
+  m = w.el;
+  w.closed = true;
   m.hidden = true;
-  m.innerHTML = `<div class="dlg" role="dialog" aria-label="Свои модели изделий"><div class="dlgh"><h3>Свои модели изделий</h3><button class="x" data-sk="close" aria-label="Закрыть">×</button></div><div class="skw"><div class="skl" id="sklist"></div><div class="skr" id="skbody"></div></div></div>`;
-  document.body.appendChild(m);
   m.addEventListener('click', skClick);
   m.addEventListener('change', skChange);
   m.addEventListener('input', ev => {
@@ -116506,9 +116619,6 @@ function skEnsure() {
       SKP.q = ev.target.value;
       skList(true);
     }
-  });
-  m.addEventListener('keydown', ev => {
-    if (ev.key === 'Escape') m.hidden = true;
   });
   return m;
 }
@@ -116570,7 +116680,7 @@ function skBody() {
   let h = `<h4>${esc(slot.n)}</h4><div class="skh">${esc(slot.grp)} · габарит заводского изделия ${slot.env.map(Math.round).join(' × ')} мм (ширина × глубина × высота).<br>${esc(slot.hint || '')}</div>`;
   if (slot.id.startsWith('el.'))
     h += `<div class="skh">Работает в блоках с серией «${esc(SER_OWN)}»: рамка выбирается по числу постов, механизмы — по вставкам блока, как у заводских серий. Чего в своей серии нет — рисуется заводским.</div><div class="skf"><label>Название своей серии (в свойствах и спецификации)<input type="text" data-skn value="${esc(skinsName())}"></label></div>`;
-  h += `<label style="font-size:12px;display:flex;flex-direction:column;gap:4px">Модель из каталога<select class="big" data-skf="asset">${opts}</select></label>`;
+  h += `<label class="skfld">Модель из каталога<select class="big" data-skf="asset">${opts}</select></label>`;
   if (offer)
     h += `<div class="btnrow"><button class="btn pri" data-sk="offer">Назначить «${esc(ASSETS.get(offer).name)}»</button></div>`;
   if (!models.length)
@@ -116589,7 +116699,7 @@ function skBody() {
           })
           .join('')
       : '<span>У этого изделия нет точек подключения — модель ставится по габариту.</span>';
-    h += `<div class="skm">${safeThumb(a.thumb) ? `<img src="${esc(safeThumb(a.thumb))}" alt="">` : ''}<div class="skh"><b style="color:var(--fg)">${esc(a.name)}</b><br>Размер после посадки: ${f ? f.size.map(v => skNum(v * k)).join(' × ') : '—'} мм${f && Math.abs(f.fit / k - 1) > 0.08 ? ` · <span class="warn">заводской габарит ${f.fit / k > 1 ? 'больше' : 'меньше'} в ${skNum(Math.max(f.fit / k, k / f.fit))} раза</span>` : ''}<br>Посадка: ${seatA ? 'по якорям модели' : 'по габариту'}</div></div>
+    h += `<div class="skm">${safeThumb(a.thumb) ? `<img src="${esc(safeThumb(a.thumb))}" alt="">` : ''}<div class="skh"><b class="skname">${esc(a.name)}</b><br>Размер после посадки: ${f ? f.size.map(v => skNum(v * k)).join(' × ') : '—'} мм${f && Math.abs(f.fit / k - 1) > 0.08 ? ` · <span class="warn">заводской габарит ${f.fit / k > 1 ? 'больше' : 'меньше'} в ${skNum(Math.max(f.fit / k, k / f.fit))} раза</span>` : ''}<br>Посадка: ${seatA ? 'по якорям модели' : 'по габариту'}</div></div>
 <div class="ska">${anch}</div>
 <div class="skf">
 <label>Поворот<select data-skf="rot">${[0, 90, 180, 270].map(r => `<option value="${r}" ${(+cur.rot || 0) === r ? 'selected' : ''}>${r}°</option>`).join('')}</select></label>
@@ -116631,10 +116741,6 @@ function skAssign(asset) {
 }
 function skClick(ev) {
   const t = ev.target;
-  if (t === ev.currentTarget) {
-    ev.currentTarget.hidden = true;
-    return;
-  }
   const s = t.closest('[data-sks]');
   if (s) {
     SKP.cur = s.dataset.sks;
@@ -116647,8 +116753,7 @@ function skClick(ev) {
   const a = b.dataset.sk;
   const slot = SKIN_SLOTS.get(SKP.cur);
   const cur = slot && skinGet(slot.id);
-  if (a === 'close') document.getElementById('skdlg').hidden = true;
-  else if (a === 'offer') skAssign(SKP.offer);
+  if (a === 'offer') skAssign(SKP.offer);
   else if (a === 'clear') skAssign('');
   else if (a === 'reset' && cur) {
     skinSet(slot.id, { asset: cur.asset, ...(slot.def || {}) });
@@ -118972,20 +119077,6 @@ function xBoot() {
   renderWS();
   renderIssues();
   initSide();
-  $('#vwClose').onclick = () => {
-    $('#viewdlg').hidden = true;
-    cin.focus({ preventScroll: true });
-  };
-  $('#vwList').onclick = ev => {
-    const b = ev.target.closest('button[data-v]');
-    if (b) {
-      VW.sel = b.dataset.v === 'plan' ? 'plan' : +b.dataset.v;
-      renderViews();
-    }
-  };
-  new ResizeObserver(() => {
-    if (!$('#viewdlg').hidden) vwPreview();
-  }).observe($('#vwPrev'));
   document.addEventListener(
     'pointerdown',
     e => {
@@ -119229,7 +119320,6 @@ initResponsive();
 initLayout();
 initLayersPanel();
 initBrowserPanel();
-initCatalog();
 initSpec();
 initWallTypesDialog();
 initProfilesDialog();
@@ -129451,6 +129541,151 @@ XT.wall = {
   },
   ifc: () => ['IFCWALL', 'STANDARD', 'Pset_WallCommon']
 };
+
+// ===== blocks/catalog/converter-host.js =====
+/**
+ * io/converter-host.js
+ *
+ * «Контур Конвертор» inside Kontur. The converter page is built into the program (base64 in #kcvSrc) and opens
+ * in a full-window frame. Both work on one library:
+ * - every element saved or deleted in the converter goes to / leaves the Kontur catalogue at once (postMessage);
+ * - when the converter opens, it gets the catalogue's own (not built-in) models it does not have yet, edits made in
+ *   the catalogue (name, category, tags, parameters) and the elements deleted in the catalogue since the last time;
+ * - «Открыть в конверторе» on a catalogue card opens that element in the converter for editing.
+ */
+
+
+
+
+
+const KCV_DEL = 'kontur.cvDeleted';
+let kcvWin = null,
+  kcvReady = false,
+  kcvQueue = [];
+/** Remembers an element deleted from the catalogue (sent to the converter on its next start). */
+function converterForget(id) {
+  try {
+    const a = JSON.parse(localStorage.getItem(KCV_DEL) || '[]');
+    if (!a.includes(id)) a.push(id);
+    localStorage.setItem(KCV_DEL, JSON.stringify(a.slice(-500)));
+  } catch (_) {}
+  kcvPost({ op: 'sync', assets: [], deleted: [id] });
+}
+function kcvPost(m) {
+  if (!kcvWin) return;
+  if (!kcvReady) {
+    kcvQueue.push(m);
+    return;
+  }
+  try {
+    kcvWin.postMessage(Object.assign({ kontur: 1 }, m), '*');
+  } catch (_) {}
+}
+/** The converter page (decoded once). */
+function converterHTML() {
+  const el = typeof document !== 'undefined' && document.getElementById && document.getElementById('kcvSrc');
+  const b64 = el && el.textContent.trim();
+  if (!b64 || b64.startsWith('/*')) return null;
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(u);
+}
+/** Models of the catalogue shared with the converter (not built-in, with a mesh). */
+function sharedAssets() {
+  return [...ASSETS.values()].filter(a => a.inCatalog && !a.builtin && a.meshes && a.meshes.length);
+}
+function onMessage(e) {
+  const m = e.data || {};
+  if (!m.kontur || !kcvWin || e.source !== kcvWin) return;
+  if (m.op === 'ready') {
+    kcvReady = true;
+    let deleted = [];
+    try {
+      deleted = JSON.parse(localStorage.getItem(KCV_DEL) || '[]');
+      localStorage.removeItem(KCV_DEL);
+    } catch (_) {}
+    kcvPost({ op: 'sync', assets: sharedAssets().map(packAsset), deleted });
+    for (const q of kcvQueue.splice(0)) kcvPost(q);
+    return;
+  }
+  if (m.op === 'assets') {
+    const list = (m.assets || []).map(unpackAsset);
+    let n = 0;
+    for (const a of list) {
+      const old = ASSETS.get(a.id);
+      a.inCatalog = true;
+      a.updated = Date.now();
+      if (old && old.thumb && !a.thumb) a.thumb = old.thumb;
+      ASSETS.set(a.id, a);
+      n++;
+    }
+    idb.putMany('assets', list);
+    if (catalogShown()) openCatalog();
+    if (n === 1) log(`Каталог: «${list[0].name}» — из конвертора (общая библиотека)`);
+    else if (n) log(`Каталог: общая библиотека с конвертором — ${n} элементов`);
+    return;
+  }
+  if (m.op === 'saveLib') {
+    exportLibrary(m.name);
+    return;
+  }
+  if (m.op === 'del') {
+    for (const id of m.ids || []) {
+      const a = ASSETS.get(id);
+      if (!a) continue;
+      a.inCatalog = false;
+      saveAsset(a);
+    }
+    if (catalogShown()) openCatalog();
+    log(`Каталог: удалено в конверторе — ${(m.ids || []).length}`);
+  }
+}
+/** True while the catalogue window is open (it is built on its first opening, so it may not exist yet). */
+function catalogShown() {
+  const c = document.getElementById('catalog');
+  return !!c && !c.hidden;
+}
+/** Opens the converter (and the element `openId` in it). */
+function openConverter(openId) {
+  let ov = document.getElementById('kcvHost');
+  if (!ov) {
+    const html = converterHTML();
+    if (!html) return log('Конвертор не встроен в эту сборку', true);
+    // the outer frame is the common window (full screen, class kcv); the content is the converter app in an iframe
+    const win = openWindow({
+      id: 'kcvHost',
+      title: 'Контур Конвертор',
+      sub: 'модели → элементы каталога · общая библиотека с каталогом Контура',
+      size: 'xl',
+      over: true,
+      cls: 'kcv',
+      closeId: 'kcvClose',
+      actions: [
+        {
+          n: 'Каталог Контура',
+          id: 'kcvCat',
+          a: w => {
+            w.close();
+            openCatalog();
+          }
+        }
+      ],
+      body: '<iframe id="kcvFrame" title="Контур Конвертор"></iframe>'
+    });
+    ov = win.el;
+    const fr = ov.querySelector('iframe');
+    fr.srcdoc = html.replace(
+      /<meta charset="utf-8">/i,
+      '<meta charset="utf-8"><scr' + 'ipt>window.__KONTUR_HOST=1</scr' + 'ipt>'
+    );
+    kcvWin = fr.contentWindow;
+    fr.addEventListener('load', () => (kcvWin = fr.contentWindow));
+    window.addEventListener('message', onMessage);
+  }
+  ov.hidden = false;
+  if (openId) kcvPost({ op: 'open', id: openId });
+}
 
 // ===== blocks/drafting/annot-xt.js =====
 /**
@@ -140213,8 +140448,9 @@ async function openCadImport(f) {
   const ver = String.fromCharCode(...u.subarray(0, 6));
   const isDwg = /^AC1\d{3}$/.test(ver);
   const needLib = isDwg && ver !== 'AC1015';
-  $('#impTitle').textContent = 'Импорт чертежа · ' + f.name;
-  $('#impBody').innerHTML = `
+  openImportWindow(
+    'Импорт чертежа · ' + f.name,
+    `
     <label>Размещение<select id="cadiMove"><option value="auto">Как в файле (далёкие координаты — к началу)</option><option value="keep">Строго как в файле</option><option value="origin">Левый нижний угол — в начало координат</option><option value="view">По центру экрана</option></select></label>
     <div class="two"><label>Единицы, если не указаны в файле<select id="cadiUnit"><option value="4">миллиметры</option><option value="5">сантиметры</option><option value="6">метры</option></select></label>
     <label>Префикс слоёв<input type="text" id="cadiPre" value="${ext.toUpperCase()} · "></label></div>
@@ -140222,31 +140458,29 @@ async function openCadImport(f) {
       needLib
         ? `Файл DWG ${DWG_VERS[ver] || ver}: для чтения загрузится модуль LibreDWG (≈11 МБ, лицензия GPL-3.0) — нужен интернет. Файлы DWG 2000 и DXF читаются без него.`
         : 'Чертёж ляжет на текущий этаж отдельными слоями: линии, полилинии, дуги, тексты и заливки можно привязывать, редактировать и скрывать. Блоки и размеры разбиваются на примитивы.'
-    } После импорта выделите линии стен и выполните «Стены по линиям» (меню «Чертёж»).</div>
-    <div class="btnrow"><button class="btn pri" id="impGo">Импортировать</button><button class="btn" id="impCancel">Отмена</button></div>`;
-  $('#impdlg').hidden = false;
-  $('#impCancel').onclick = () => ($('#impdlg').hidden = true);
-  $('#impGo').onclick = async () => {
-    const move = $('#cadiMove').value,
-      unit = +$('#cadiUnit').value,
-      prefix = $('#cadiPre').value;
-    $('#impdlg').hidden = true;
-    busy(needLib ? 'Загружаю LibreDWG и читаю DWG…' : 'Читаю чертёж…');
-    try {
-      let cad = await cadFromFile(f.name, bytes);
-      if (!cad.units && unit !== 4) cad = scaleCad(cad, INSUNITS_MM[unit]);
-      const r = cadToPlan(cad, { prefix, move: move === 'auto' ? null : move });
-      zoomExtents();
-      log(
-        `Импорт ${f.name} (${cad.via || ''}): ${r.n} элементов на ${r.layers} слоях${r.shift[0] || r.shift[1] ? (move === 'view' ? ', поставлен в центр экрана' : ', сдвинут к началу координат') : ''}`
-      );
-    } catch (err) {
-      console.error(err);
-      log('Чертёж не прочитан: ' + (err.message || err), true);
-    } finally {
-      busy(false);
+    } После импорта выделите линии стен и выполните «Стены по линиям» (меню «Чертёж»).</div>`,
+    async () => {
+      const move = $('#cadiMove').value,
+        unit = +$('#cadiUnit').value,
+        prefix = $('#cadiPre').value;
+      $('#impdlg').hidden = true;
+      busy(needLib ? 'Загружаю LibreDWG и читаю DWG…' : 'Читаю чертёж…');
+      try {
+        let cad = await cadFromFile(f.name, bytes);
+        if (!cad.units && unit !== 4) cad = scaleCad(cad, INSUNITS_MM[unit]);
+        const r = cadToPlan(cad, { prefix, move: move === 'auto' ? null : move });
+        zoomExtents();
+        log(
+          `Импорт ${f.name} (${cad.via || ''}): ${r.n} элементов на ${r.layers} слоях${r.shift[0] || r.shift[1] ? (move === 'view' ? ', поставлен в центр экрана' : ', сдвинут к началу координат') : ''}`
+        );
+      } catch (err) {
+        console.error(err);
+        log('Чертёж не прочитан: ' + (err.message || err), true);
+      } finally {
+        busy(false);
+      }
     }
-  };
+  );
 }
 
 // ===== blocks/io/cad-graph.js =====
